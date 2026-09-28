@@ -237,13 +237,13 @@ def _log_boost(*parts):
 
 async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
     """
-    Читает демо-баланс через db.get_user_0demo(user_id).
+    Читает демо-баланс через db.get_user_demo(user_id).
     Возвращает int или None, если получить/распарсить не удалось.
     """
     try:
-        bal = await db.get_user_0demo(user_id)
+        bal = await db.get_user_demo(user_id)
     except Exception as e:
-        _log_boost(f"get_user_0demo err uid={user_id} {e!r}")
+        _log_boost(f"get_user_demo err uid={user_id} {e!r}")
         return None
 
     if bal is None:
@@ -255,7 +255,7 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
         return int(bal)
     except Exception:
         pass
-    # float
+    # float → int
     try:
         return int(float(bal))
     except Exception:
@@ -285,7 +285,7 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
                     return int(bal[key])
     except Exception:
         pass
-    # tuple/list — первый числовой элемент
+    # tuple / list — первый числовой
     try:
         if isinstance(bal, (tuple, list)):
             for item in bal:

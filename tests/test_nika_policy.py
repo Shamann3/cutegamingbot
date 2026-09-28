@@ -17,6 +17,7 @@ from bot.runtime.nika.policy import (
     dead_zone,
     pick_sweep_dest,
     plan_drain_sweep,
+    plan_instant_topup,
     plan_sweep,
     plan_topup,
     suggest_caps,
@@ -282,6 +283,58 @@ def test_instant_sweep_takes_one_kut_without_waiting():
         daily_sweep_used=10**9,
     )
     assert admin.amount == 1
+
+
+def test_instant_topup_asks_for_the_whole_gap_and_one_kut():
+    policy = GroupPolicy(
+        chat_id=1,
+        target_balance=3000,
+        max_transfer=600,
+        max_daily_topup=10,
+        max_daily_sweep=6000,
+        dead_zone_min=250,
+        dead_zone_pct=0.05,
+    )
+    full = plan_instant_topup(policy, balance=2000)
+    assert full.action == "topup"
+    assert full.amount == 1000
+    assert full.amount > policy.max_transfer
+    one = plan_instant_topup(policy, balance=2999)
+    assert one.action == "topup"
+    assert one.amount == 1
+    assert plan_topup(policy, balance=2999).skip == "dead_zone"
+    on_target = plan_instant_topup(policy, balance=3000)
+    assert on_target.amount == 0
+    assert on_target.skip == "on_target"
+    assert plan_instant_topup(policy, balance=3001).skip == "on_target"
+    takes, left = allocate_from_ladder(
+        full.amount,
+        (
+            (GAME_COMMISSION_CHAT_ID, 100),
+            (BACKGROUND_EARNINGS_CHAT_ID, 0),
+            (TECH_CHAT_ID, 40),
+            (PROFIT_JAR_CHAT_ID, 0),
+        ),
+    )
+    assert takes == (
+        (GAME_COMMISSION_CHAT_ID, 100),
+        (TECH_CHAT_ID, 40),
+    )
+    assert left == 860
+    assert sum(amount for _, amount in takes) == 140
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "server"))
+    from nika.policy import GroupPolicy as AdminPolicy
+    from nika.policy import plan_instant_topup as admin_instant
+    admin = admin_instant(
+        AdminPolicy(chat_id=1, target_balance=3000, max_transfer=600, max_daily_topup=10),
+        balance=2000,
+    )
+    assert admin.amount == 1000
+    assert admin_instant(
+        AdminPolicy(chat_id=1, target_balance=3000),
+        balance=2999,
+    ).amount == 1
 
 
 def test_drain_sweep_takes_everything_above_target():

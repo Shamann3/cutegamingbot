@@ -67,31 +67,38 @@ def _clear_boost_cache(game_id: int) -> None:
         pass
 
 async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
-    """Читает демо-баланс через db.get_user_0demo, возвращает int или None."""
+    """
+    Читает демо-баланс через db.get_user_demo(user_id).
+    Возвращает int или None, если получить/распарсить не удалось.
+    """
     try:
-        bal = await db.get_user_0demo(user_id)
+        bal = await db.get_user_demo(user_id)
     except Exception as e:
-        _log_boost(f"get_user_0demo err uid={user_id} {e!r}")
+        _log_boost(f"get_user_demo err uid={user_id} {e!r}")
         return None
 
     if bal is None:
         _log_boost(f"demo balance None uid={user_id}")
         return None
 
+    # прямой int
     try:
         return int(bal)
     except Exception:
         pass
+    # float → int
     try:
         return int(float(bal))
     except Exception:
         pass
+    # Decimal
     try:
         from decimal import Decimal
         if isinstance(bal, Decimal):
             return int(bal)
     except Exception:
         pass
+    # объект с атрибутом
     for attr in ("balance", "amount", "value", "demo", "demo_balance"):
         try:
             v = getattr(bal, attr, None)
@@ -101,6 +108,7 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
                 return int(v)
         except Exception:
             continue
+    # dict
     try:
         if isinstance(bal, dict):
             for key in ("balance", "amount", "value", "demo", "demo_balance"):
@@ -108,6 +116,7 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
                     return int(bal[key])
     except Exception:
         pass
+    # tuple / list — первый числовой
     try:
         if isinstance(bal, (tuple, list)):
             for item in bal:

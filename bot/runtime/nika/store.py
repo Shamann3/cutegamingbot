@@ -268,10 +268,7 @@ async def ledger_events_24h(conn, chat_id: int) -> int:
 
 
 async def ledger_events_recent(conn, chat_id: int, seconds: int) -> int:
-    """Сколько игровых комиссий группа получила за короткое окно.
-
-    Ноль значит: сейчас никто не играет, постепенный долив ждёт.
-    """
+    """Сколько игровых комиссий эта группа получила за короткое окно."""
     window = int(max(60, seconds))
     try:
         value = await conn.fetchval(
@@ -282,6 +279,27 @@ async def ledger_events_recent(conn, chat_id: int, seconds: int) -> int:
               AND created_at > NOW() - $2 * INTERVAL '1 second'
             """,
             int(chat_id),
+            window,
+        )
+        return _as_int(value)
+    except Exception:
+        return 0
+
+
+async def ledger_events_anywhere(conn, seconds: int) -> int:
+    """Сколько игр прошло во всех чатах за короткое окно.
+
+    Ноль значит: сейчас никто не играет, постепенный долив ждёт.
+    Любая игра любого пользователя открывает одну порцию.
+    """
+    window = int(max(60, seconds))
+    try:
+        value = await conn.fetchval(
+            """
+            SELECT COUNT(*)::int
+            FROM growth_fund_ledger
+            WHERE created_at > NOW() - $1 * INTERVAL '1 second'
+            """,
             window,
         )
         return _as_int(value)

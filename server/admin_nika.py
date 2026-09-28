@@ -421,6 +421,7 @@ def forecast_tick(
         order = [int(cid) for cid, _ in SOURCE_LADDER]
         for cid in order:
             avail.setdefault(cid, 0)
+    pace = normalize_topup_pace(settings.get("topup_pace"))
 
     row_by_id: Dict[int, Any] = {}
     for row in group_rows or []:
@@ -454,10 +455,13 @@ def forecast_tick(
             continue
         policy = apply_sweep_speed(policy_from_row(row), settings.get("sweep_speed"))
         balance = _as_int(item.get("balance"))
-        pace = normalize_topup_pace(settings.get("topup_pace"))
         top = plan_instant_topup(policy, balance=balance) if pace == "instant" else plan_topup(policy, balance=balance)
         if top.action == "topup" and top.amount > 0:
-            sources = tuple((cid, max(0, int(avail.get(cid, 0)))) for cid in order)
+            sources = tuple(
+                (cid, max(0, int(avail.get(cid, 0))))
+                for cid in order
+                if cid != chat_id
+            )
             takes, still = allocate_from_ladder(top.amount, sources)
             if not takes:
                 items.append({
@@ -475,13 +479,13 @@ def forecast_tick(
                     moved += int(amt)
                 title = titles.get(int(src_id), str(src_id))
                 if pace == "instant" and still:
-                    text = f"{name}: заберёт все {int(moved)} кут из системы, до цели не хватает {int(still)}"
+                    text = f"{name}: заберёт все {int(moved)} кут из касс, до цели не хватает {int(still)}"
                 elif pace == "instant":
                     text = f"{name}: дольёт {int(moved)} и закроет цель"
                 elif still:
-                    text = f"{name}: когда играют, возьмёт {int(moved)} с «{title}», ещё не хватает {int(still)}"
+                    text = f"{name}: после игр возьмёт {int(moved)} с «{title}», в кассах на шаг не хватает {int(still)}"
                 else:
-                    text = f"{name}: когда играют, возьмёт {int(moved)} с «{title}»"
+                    text = f"{name}: после игр возьмёт {int(moved)} с «{title}»"
                 items.append({
                     "chatId": chat_id,
                     "name": name,
@@ -557,8 +561,10 @@ def forecast_tick(
         summary = f"Дольёт {n_top} и заберёт лишнее с {n_sweep} групп(ы) в техкассы."
     elif n_sweep:
         summary = f"На следующей проверке заберёт лишнее с {n_sweep} групп(ы) в техкассы."
+    elif n_top and pace == "instant":
+        summary = f"На следующей проверке закроет цель у {n_top} групп(ы). Если в кассах меньше — заберёт все куты и предупредит."
     elif n_top:
-        summary = f"На следующей проверке дольёт {n_top} групп(ы)."
+        summary = f"Когда люди играют, дольёт порцию {n_top} групп(ам)."
     elif n_watch:
         summary = "Баланс групп выше цели. Сбор ждёт короткую выдержку — потом в техкассы."
     elif not items:

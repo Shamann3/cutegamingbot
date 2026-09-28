@@ -31,8 +31,8 @@ const SPEED = [
 ]
 
 const TOPUP_PACE = [
-  { id: 'instant', label: 'Моментально', wait: 'сразу', hint: 'До цели за один шаг. Если в кассах меньше — заберёт все куты и предупредит.' },
-  { id: 'play', label: 'Постепенно', wait: 'когда играют', hint: 'Порция после игр других людей. Пустые кассы не трогает молча.' },
+  { id: 'instant', label: 'Моментально', wait: 'сразу', hint: 'До цели одним шагом. Если в кассах меньше — заберёт все куты и предупредит.' },
+  { id: 'play', label: 'Постепенно', wait: 'когда играют', hint: 'Порция после игр других людей. Пустые кассы предупреждают.', usual: true },
 ]
 
 const SWEEP_SPEED = [
@@ -42,12 +42,17 @@ const SWEEP_SPEED = [
   { id: 'slow', label: 'Тихо', wait: '15 мин', hint: 'Долго смотрит, снимает спокойно' },
 ]
 
-const THINK = [
-  'Смотрит баланс каждой группы и сравнивает его с целью.',
-  'Ниже цели — берёт куты из игр и касс, никогда не закрывает дыру одним разом.',
-  'Выше цели — быстро забирает лишнее в техкассы. Скорость задаёшь в «Система».',
-  'Игроки этого не видят. Деньги двигает только бот.',
-]
+function thinkLines(pace) {
+  const fill = pace === 'instant'
+    ? 'Ниже цели — забирает из игр и касс всё до цели. Если кутов меньше, забирает все и пишет предупреждение.'
+    : 'Ниже цели — одна порция из игр и касс, и только когда кто-то играет. Пустые кассы дают предупреждение.'
+  return [
+    'Смотрит баланс каждой группы и сравнивает его с целью.',
+    fill,
+    'Выше цели — забирает лишнее в техкассы. Скорость задаёшь рядом.',
+    'Игроки этого не видят. Деньги двигает только бот. Новых кут Ника не создаёт.',
+  ]
+}
 
 function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n) || 0)
@@ -162,6 +167,7 @@ function PacePicker({ value, onPick, saving, options, label }) {
           <strong>{s.label}</strong>
           <b>{s.wait}</b>
           <span>{s.hint}</span>
+          {s.usual ? <em>обычно</em> : null}
         </button>
       ))}
     </div>
@@ -650,7 +656,7 @@ export default function NikaSection() {
             <article className="nika-mach-tile">
               <small>Проверка</small>
               <b>{data?.lastTickAt ? ago(data.lastTickAt) : 'ещё не было'}</b>
-              <em>каждые {tickEvery} сек · сбор {sweepSpeedLabel(sweepNow).toLowerCase()}</em>
+              <em>каждые {tickEvery} сек · долив {topupNow === 'instant' ? 'сразу' : 'когда играют'} · сбор {sweepSpeedLabel(sweepNow).toLowerCase()}</em>
             </article>
             <article className={`nika-mach-tile${data?.staleWorker ? ' is-hot' : ''}`}>
               <small>Бот</small>
@@ -662,6 +668,21 @@ export default function NikaSection() {
               <em>{groups.filter((g) => g.enabled).length} групп под Никой</em>
             </article>
           </div>
+
+          <section className="nika-panel">
+            <h2>Долив групп</h2>
+            <p className="nika-help">
+              Куты берутся из игр, фона, дома игр и копилки. Пустые кассы дают предупреждение.
+              Если до цели не хватает — Ника заберёт все куты, которые там лежат.
+            </p>
+            <PacePicker
+              value={topupNow}
+              saving={String(sweepSaving || '').startsWith('topup:') ? sweepSaving.slice(6) : ''}
+              options={TOPUP_PACE}
+              label="Как доливать группы"
+              onPick={pickTopup}
+            />
+          </section>
 
           <section className="nika-panel">
             <h2>Сбор лишнего</h2>
@@ -762,7 +783,7 @@ export default function NikaSection() {
           <section className="nika-panel">
             <h2>Как думает</h2>
             <ol className="nika-think">
-              {THINK.map((line, idx) => (
+              {thinkLines(topupNow).map((line, idx) => (
                 <li key={line}>
                   <i>{idx + 1}</i>
                   <span>{line}</span>
@@ -1126,6 +1147,19 @@ export default function NikaSection() {
 
       {tab === 'settings' && (
         <div className="nika-pane nika-stack">
+          <section className="nika-panel">
+            <h2>Долив групп</h2>
+            <p className="nika-help">
+              Моментально закрывает цель из касс. Постепенно даёт порцию, когда люди играют.
+            </p>
+            <PacePicker
+              value={topupNow}
+              saving={String(sweepSaving || '').startsWith('topup:') ? sweepSaving.slice(6) : ''}
+              options={TOPUP_PACE}
+              label="Как доливать группы"
+              onPick={pickTopup}
+            />
+          </section>
           <section className="nika-panel">
             <h2>Сбор лишнего</h2>
             <p className="nika-help">
