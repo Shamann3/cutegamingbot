@@ -12,12 +12,7 @@
 .accent-aura-wash {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 78% 58% at 16% 8%, rgba(var(--e-g1, var(--e-accent-rgb, 168, 110, 255)), 0.95), transparent 68%),
-    radial-gradient(ellipse 72% 54% at 90% 10%, rgba(var(--e-g2, var(--e-accent-rgb, 70, 170, 255)), 0.88), transparent 66%),
-    radial-gradient(ellipse 84% 52% at 78% 92%, rgba(var(--e-g3, var(--e-accent-rgb, 255, 80, 150)), 0.8), transparent 64%),
-    radial-gradient(ellipse 70% 50% at 8% 88%, rgba(var(--e-g4, var(--e-accent-rgb, 255, 176, 64)), 0.74), transparent 64%),
-    linear-gradient(165deg, rgba(var(--e-g1, 168, 110, 255), 0.34), transparent 42%, rgba(var(--e-g3, 255, 80, 150), 0.28));
+  background: #050508;
 }
 
 .accent-aura-slot {
@@ -606,13 +601,30 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
   }
 }
 
-/* Рабочая зона прозрачная: цвет живёт на фоне, а не на карточке. */
+/* Рабочее поле прозрачное: градиент виден сквозь него, край поля остаётся линией. */
+html.is-desktop .panel-shell,
+html[data-viewport="desktop"] .panel-shell,
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell,
 html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main,
 html.is-phone .panel-shell .panel-shell-main,
-html[data-viewport="phone"] .panel-shell .panel-shell-main {
-  background: linear-gradient(180deg, rgba(5, 5, 7, 0.18) 0%, rgba(5, 5, 7, 0.34) 42%, rgba(5, 5, 7, 0.48) 100%) !important;
+html[data-viewport="phone"] .panel-shell .panel-shell-main,
+html.is-desktop .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout,
+html.is-phone .panel-shell .panel-layout,
+html[data-viewport="phone"] .panel-shell .panel-layout,
+.panel-shell .dash-home {
+  background: transparent !important;
+  background-image: none !important;
   box-shadow: none;
+}
+
+.panel-shell .panel-layout {
+  margin: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.62) !important;
+  border-radius: 24px !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--e-g1, 255, 255, 255), 0.42) !important;
 }
 
 html.is-phone .phone-dock.is-tabs-menu,
@@ -941,7 +953,10 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   flex-wrap: wrap;
 }
 
-.gate-palette-pop .accent-picker-panel.is-inline .accent-stops {
+.gate-palette-pop .accent-picker-panel.is-inline .accent-stops,
+.gate-palette-pop .accent-picker-panel.is-inline .accent-scenes,
+.gate-palette-pop .accent-picker-panel.is-inline > .accent-slider,
+.gate-palette-pop .accent-picker-panel.is-inline .accent-actions {
   grid-column: 1 / -1;
   width: 100%;
 }
@@ -970,60 +985,175 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   color: rgba(255, 255, 255, 0.46);
 }
 
-.accent-stops-row {
+.accent-stop-list {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
 }
 
 .accent-stop {
-  position: relative;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-height: 48px;
 }
 
-.accent-stop-chip,
-.accent-stop-add {
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  padding: 0;
+.accent-stop-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.accent-stop.is-on .accent-stop-chip {
-  box-shadow: 0 0 0 2px #0c0c0e, 0 0 0 4px #fff;
+.accent-stop.is-on .accent-stop-main {
+  border-color: #fff;
 }
 
-.accent-stop-add {
+.accent-stop-chip {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.accent-stop-main span {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.accent-stop-main em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.accent-stop-remove,
+.accent-stop-add,
+.accent-action {
+  min-height: 48px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   background: transparent;
   color: #fff;
-  font-size: 18px;
-  line-height: 1;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
 }
 
-.accent-stop-x {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 16px;
-  height: 16px;
-  border: 0;
-  border-radius: 999px;
-  padding: 0;
-  background: #111;
-  color: #fff;
-  font-size: 12px;
-  line-height: 16px;
-  cursor: pointer;
+.accent-stop-remove {
+  flex: 0 0 auto;
+  padding: 0 14px;
+}
+
+.accent-stop-add,
+.accent-action {
+  width: 100%;
 }
 
 .accent-stops-preview {
-  height: 22px;
+  height: 28px;
   border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow: none;
+}
+
+.accent-scenes,
+.accent-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.accent-actions {
+  flex-direction: row;
+}
+
+.accent-action {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.accent-action-ink {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #000;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.accent-scene-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 700px) {
+  .accent-scene-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.accent-scene {
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.accent-scene.is-on {
+  border-color: #fff;
+}
+
+.accent-scene span {
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.accent-scene-swatch {
+  display: block;
+  height: 36px;
+  border-radius: 10px;
+  background: #111;
+}
+
+.accent-picker-panel:not(.is-inline) {
+  width: min(380px, calc(100vw - 16px)) !important;
+  max-height: min(82dvh, 760px) !important;
+}
+
+@media (max-width: 700px) {
+  .accent-picker-panel:not(.is-inline) {
+    top: auto !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    width: auto !important;
+  }
 }
 
 .extras-settings {
@@ -1041,12 +1171,277 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   letter-spacing: -0.03em;
 }
 
-/* Вход и панели: один и тот же яркий фон из четырёх цветов. */
-.gate-veil {
+/* Схемы света. На экране — через rgb-переменные, в миниатюре палитры — через цвет. */
+html[data-scene="horizon"] .accent-aura-wash,
+html[data-scene="horizon"] .gate-veil {
   background:
-    radial-gradient(ellipse 72% 56% at 18% 16%, rgba(var(--e-g1, var(--e-accent-rgb, 168, 110, 255)), 0.9), transparent 70%),
-    radial-gradient(ellipse 66% 50% at 86% 14%, rgba(var(--e-g2, var(--e-accent-rgb, 70, 170, 255)), 0.84), transparent 68%),
-    radial-gradient(ellipse 74% 48% at 82% 88%, rgba(var(--e-g3, var(--e-accent-rgb, 255, 80, 150)), 0.76), transparent 66%),
-    radial-gradient(ellipse 62% 46% at 14% 90%, rgba(var(--e-g4, var(--e-accent-rgb, 255, 176, 64)), 0.7), transparent 66%),
-    radial-gradient(ellipse 48% 42% at 50% 48%, rgba(0, 0, 0, 0.5), transparent 74%);
+    linear-gradient(180deg, #050508 0%, #050508 46%, rgba(var(--e-g1), 0.35) 68%, rgba(var(--e-g2), 0.92) 86%, rgba(var(--e-g3), 1) 100%);
+}
+.scene-horizon {
+  background:
+    linear-gradient(180deg, #050508 0% 46%, color-mix(in srgb, var(--sw1) 70%, transparent) 68%, var(--sw2) 86%, var(--sw3) 100%);
+}
+
+html[data-scene="eclipse"] .accent-aura-wash,
+html[data-scene="eclipse"] .gate-veil {
+  background:
+    radial-gradient(circle at 50% 6%, transparent 0 4.5%, rgba(var(--e-g1), 1) 7%, rgba(var(--e-g2), 0.5) 16%, transparent 36%),
+    radial-gradient(ellipse 80% 22% at 50% 18%, rgba(var(--e-g1), 0.4), transparent 72%),
+    #07060e;
+}
+.scene-eclipse {
+  background:
+    radial-gradient(circle at 50% 28%, transparent 0 12%, var(--sw1) 18%, color-mix(in srgb, var(--sw2) 65%, transparent) 34%, transparent 58%),
+    #07060e;
+}
+
+html[data-scene="beam"] .accent-aura-wash,
+html[data-scene="beam"] .gate-veil {
+  background:
+    linear-gradient(128deg, transparent 18%, rgba(var(--e-g1), 0.18) 40%, rgba(var(--e-g2), 0.9) 50%, rgba(var(--e-g3), 0.28) 60%, transparent 78%),
+    radial-gradient(ellipse 50% 40% at 78% 18%, rgba(var(--e-g4), 0.45), transparent 70%),
+    #06070c;
+}
+.scene-beam {
+  background:
+    linear-gradient(128deg, #06070c 18%, color-mix(in srgb, var(--sw1) 40%, #06070c) 40%, var(--sw2) 50%, color-mix(in srgb, var(--sw3) 50%, #06070c) 62%, #06070c 80%);
+}
+
+html[data-scene="corners"] .accent-aura-wash,
+html[data-scene="corners"] .gate-veil {
+  background:
+    radial-gradient(ellipse 70% 50% at 12% 8%, rgba(var(--e-g1), 0.9), transparent 68%),
+    radial-gradient(ellipse 64% 48% at 92% 10%, rgba(var(--e-g2), 0.85), transparent 66%),
+    radial-gradient(ellipse 72% 46% at 84% 94%, rgba(var(--e-g3), 0.8), transparent 64%),
+    radial-gradient(ellipse 60% 44% at 8% 92%, rgba(var(--e-g4), 0.75), transparent 64%),
+    #050508;
+}
+.scene-corners {
+  background:
+    radial-gradient(circle at 0% 0%, var(--sw1), transparent 46%),
+    radial-gradient(circle at 100% 0%, var(--sw2), transparent 46%),
+    radial-gradient(circle at 100% 100%, var(--sw3), transparent 46%),
+    radial-gradient(circle at 0% 100%, var(--sw4), transparent 46%),
+    #050508;
+}
+
+html[data-scene="aurora"] .accent-aura-wash,
+html[data-scene="aurora"] .gate-veil {
+  background:
+    linear-gradient(180deg, rgba(var(--e-g1), 0.85) 0%, rgba(var(--e-g2), 0.55) 18%, rgba(var(--e-g3), 0.28) 34%, transparent 58%),
+    #050508;
+}
+.scene-aurora {
+  background:
+    linear-gradient(180deg, var(--sw1) 0%, var(--sw2) 22%, color-mix(in srgb, var(--sw3) 55%, #050508) 40%, #050508 62%);
+}
+
+html[data-scene="tide"] .accent-aura-wash,
+html[data-scene="tide"] .gate-veil {
+  background:
+    linear-gradient(90deg, rgba(var(--e-g1), 0.9) 0%, transparent 28%, transparent 72%, rgba(var(--e-g2), 0.9) 100%),
+    linear-gradient(180deg, transparent 40%, rgba(var(--e-g3), 0.35) 100%),
+    #050508;
+}
+.scene-tide {
+  background:
+    linear-gradient(90deg, var(--sw1) 0%, #050508 30%, #050508 70%, var(--sw2) 100%);
+}
+
+html[data-scene="lantern"] .accent-aura-wash,
+html[data-scene="lantern"] .gate-veil {
+  background:
+    radial-gradient(ellipse 80% 42% at 50% -8%, rgba(var(--e-g1), 0.95), rgba(var(--e-g2), 0.35) 42%, transparent 68%),
+    #050508;
+}
+.scene-lantern {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 0%, var(--sw1), var(--sw2) 42%, #050508 72%);
+}
+
+html[data-scene="rim"] .accent-aura-wash,
+html[data-scene="rim"] .gate-veil {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 48%, #050508 0%, #050508 52%, rgba(var(--e-g1), 0.55) 78%, rgba(var(--e-g2), 0.9) 100%);
+}
+.scene-rim {
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 50%, #050508 0% 48%, var(--sw1) 76%, var(--sw2) 100%);
+}
+
+/* Стекло: любая деталь, кроме текста и образцов цвета.
+   Край всегда виден, даже когда заливка почти пропала. */
+html {
+  --e-fill: rgba(8, 8, 10, var(--e-glass, 0.38));
+  --e-edge: rgba(255, 255, 255, 0.62);
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
+  button,
+  table,
+  th,
+  td,
+  pre,
+  details,
+  summary,
+  [role="tab"],
+  [class$="-card"], [class*="-card "],
+  [class$="-tile"], [class*="-tile "],
+  [class$="-shelf"], [class*="-shelf "],
+  [class$="-search"], [class*="-search "],
+  [class$="-btn"], [class*="-btn "],
+  [class$="-chip"], [class*="-chip "],
+  [class$="-pill"], [class*="-pill "],
+  [class$="-badge"], [class*="-badge "],
+  [class$="-sheet"], [class*="-sheet "],
+  [class$="-modal"], [class*="-modal "],
+  [class$="-row"], [class*="-row "],
+  [class$="-item"], [class*="-item "],
+  [class$="-box"], [class*="-box "],
+  .accent-hex-shell
+):where(:not(.accent-stop-chip):not(.accent-scene-swatch):not(.accent-stops-preview):not(.accent-hex-preview):not(.accent-wheel):not(.accent-action-ink)) {
+  background: var(--e-fill) !important;
+  background-image: none !important;
+  border: 1px solid var(--e-edge) !important;
+  box-shadow: none !important;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet) :is(
+  h1, h2, h3, h4, p, span, strong, em, small, b, time
+):not([class]) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+  select,
+  textarea
+) {
+  background: var(--e-fill) !important;
+  background-image: none !important;
+  border: 1px solid var(--e-edge) !important;
+  box-shadow: none !important;
+  color: #f4f4f5 !important;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
+  .elite-search,
+  .panel-sidebar-search,
+  .extras-hub-search
+) :is(input, textarea) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) .accent-hex-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field) {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) input[type="range"] {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  display: block !important;
+  width: 100% !important;
+  height: 22px !important;
+  margin: 6px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(
+    90deg,
+    rgba(var(--e-g1, 255, 255, 255), 0.95) var(--fill, var(--vol-pct, 0%)),
+    rgba(255, 255, 255, 0.12) var(--fill, var(--vol-pct, 0%))
+  );
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: rgba(8, 8, 10, 0.15);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(var(--e-g1, 255, 255, 255), 0.95);
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(8, 8, 10, 0.15);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
+}
+
+html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet) :is(
+  button.is-on,
+  button[aria-pressed="true"],
+  button[aria-current="page"],
+  [role="tab"][aria-selected="true"]
+) {
+  border-color: #fff !important;
+  box-shadow: inset 0 0 0 1px #fff !important;
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #fff !important;
+}
+
+html:is(.is-phone, .is-desktop) .phone-dock,
+html:is([data-viewport="phone"], [data-viewport="desktop"]) .phone-dock {
+  background: var(--e-fill) !important;
+  border-top: 1px solid var(--e-edge) !important;
+}
+
+.gate-stage,
+.focus-sheet,
+.case-sheet,
+.accent-picker-panel {
+  background: var(--e-fill) !important;
+  border: 1px solid var(--e-edge) !important;
+}
+
+.accent-wheel,
+.accent-stop-chip,
+.accent-scene-swatch,
+.accent-hex-preview,
+.accent-action-ink {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.accent-stops-preview {
+  border: 1px solid var(--e-edge) !important;
+  box-shadow: none !important;
 }

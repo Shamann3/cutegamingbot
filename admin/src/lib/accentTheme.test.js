@@ -45,4 +45,17 @@ describe('градиент из палитры', () => {
     expect(accent.stops).toEqual(['#ff0044', '#00cc88', '#2266ff', '#ffcc22'])
     expect(accent.hex).toBe('#ff0044')
   })
+
+  it('чёрный остаётся чёрным и не разгорается в неон', () => {
+    const stops = gradientStopsFrom({ hex: '#000000', stops: ['#000000'] })
+    expect(stops.every((hex) => hex === '#000000')).toBe(true)
+  })
+
+  it('помнит схему света и прозрачность', () => {
+    const accent = normalizeAccent({ hex: '#ffffff', scene: 'eclipse', clear: 20 })
+    expect(accent.scene).toBe('eclipse')
+    expect(accent.clear).toBe(20)
+    expect(normalizeAccent({ hex: '#ffffff', scene: 'nope', clear: 400 }).clear).toBe(100)
+    expect(normalizeAccent({ hex: '#ffffff' }).scene).toBe('horizon')
+  })
 })

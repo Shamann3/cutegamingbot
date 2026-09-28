@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import {
   clamp,
+  defaultAccent,
   gradientStopsFrom,
   hexToRgb,
   hsvToHex,
@@ -9,6 +10,7 @@ import {
   normalizeAccent,
   parseHexInput,
   rgbToHsv,
+  SCENES,
   suggestNextStop,
 } from '../lib/accentTheme'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
@@ -316,6 +318,18 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     }))
   }
 
+  const paintBlack = () => paintStop(stopIndex, '#000000')
+
+  const pickScene = (id) => {
+    pushAccent(normalizeAccent({ ...draftRef.current, scene: id }))
+  }
+
+  const resetAll = () => {
+    activeRef.current = 0
+    setActiveStop(0)
+    pushAccent(defaultAccent())
+  }
+
   const knobStyle = (() => {
     const rad = (activeHsv.h * Math.PI) / 180
     const knob = 16
@@ -360,7 +374,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
           <strong>{brightPct}%</strong>
           <input
             type="range"
-            min={12}
+            min={0}
             max={100}
             value={brightPct}
             onChange={(e) => commitHsv({ v: Number(e.target.value) / 100 })}
@@ -437,45 +451,96 @@ export default function AccentPalette({ value, onChange, inline = false }) {
             <span>Цвета градиента</span>
             <em>{stops.length} из {MAX_STOPS}</em>
           </div>
-          <div className="accent-stops-row" role="list">
+          <div className="accent-stop-list" role="list">
             {stops.map((hex, index) => (
               <div className={`accent-stop${index === stopIndex ? ' is-on' : ''}`} key={`${hex}-${index}`} role="listitem">
                 <button
                   type="button"
-                  className="accent-stop-chip"
-                  style={{ background: hex }}
+                  className="accent-stop-main"
                   aria-pressed={index === stopIndex}
-                  aria-label={`Цвет ${index + 1}`}
+                  aria-label={`Цвет ${index + 1}, ${hex}`}
                   onClick={() => selectStop(index)}
-                />
+                >
+                  <i className="accent-stop-chip" style={{ background: hex }} aria-hidden="true" />
+                  <span>Цвет {index + 1}</span>
+                  <em>{hex}</em>
+                </button>
                 {stops.length > 1 && (
                   <button
                     type="button"
-                    className="accent-stop-x"
+                    className="accent-stop-remove"
                     aria-label={`Убрать цвет ${index + 1}`}
                     onClick={() => removeStop(index)}
                   >
-                    ×
+                    Убрать
                   </button>
                 )}
               </div>
             ))}
-            {stops.length < MAX_STOPS && (
-              <button
-                type="button"
-                className="accent-stop-add"
-                aria-label="Добавить цвет градиента"
-                onClick={addStop}
-              >
-                +
-              </button>
-            )}
           </div>
+          {stops.length < MAX_STOPS && (
+            <button type="button" className="accent-stop-add" onClick={addStop}>
+              Добавить цвет
+            </button>
+          )}
           <div
             className="accent-stops-preview"
             style={{ background: `linear-gradient(100deg, ${painted.join(', ')})` }}
             aria-hidden="true"
           />
+        </div>
+
+        <div className="accent-scenes">
+          <div className="accent-stops-head">
+            <span>Где лежит свет</span>
+          </div>
+          <div className="accent-scene-grid">
+            {SCENES.map((scene) => (
+              <button
+                key={scene.id}
+                type="button"
+                className={`accent-scene${draft.scene === scene.id ? ' is-on' : ''}`}
+                aria-pressed={draft.scene === scene.id}
+                title={scene.hint}
+                onClick={() => pickScene(scene.id)}
+              >
+                <i className={`accent-scene-swatch scene-${scene.id}`} style={{
+                  '--sw1': painted[0],
+                  '--sw2': painted[1],
+                  '--sw3': painted[2],
+                  '--sw4': painted[3],
+                }} aria-hidden="true" />
+                <span>{scene.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <label className="accent-slider">
+          <span>Прозрачность деталей</span>
+          <strong>{Math.round(draft.clear)}%</strong>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(draft.clear)}
+            onChange={(e) => {
+              const current = normalizeAccent(draftRef.current)
+              pushAccent(normalizeAccent({ ...current, clear: Number(e.target.value) }))
+            }}
+            style={{ '--fill': `${Math.round(draft.clear)}%`, '--thumb': activeHex }}
+            aria-label="Прозрачность кнопок и карточек"
+          />
+        </label>
+
+        <div className="accent-actions">
+          <button type="button" className="accent-action" onClick={paintBlack}>
+            <i className="accent-action-ink" aria-hidden="true" />
+            Чёрный
+          </button>
+          <button type="button" className="accent-action" onClick={resetAll}>
+            Сбросить
+          </button>
         </div>
       </div>
   )

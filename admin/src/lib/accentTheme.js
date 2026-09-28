@@ -2,6 +2,7 @@
 
 export const ACCENT_SWATCHES = [
   { id: 'snow', label: 'Снег', hex: '#FFFFFF' },
+  { id: 'ink', label: 'Чёрный', hex: '#000000' },
   { id: 'mint', label: 'Мята', hex: '#7EB89A' },
   { id: 'sky', label: 'Небо', hex: '#6BA3C9' },
   { id: 'violet', label: 'Фиалка', hex: '#9B8BC9' },
@@ -10,9 +11,36 @@ export const ACCENT_SWATCHES = [
   { id: 'coral', label: 'Коралл', hex: '#E07A5F' },
 ]
 
+/** Куда ложится свет. Порядок — это порядок в палитре. */
+export const SCENES = [
+  { id: 'horizon', label: 'Горизонт', hint: 'Свет поднимается снизу' },
+  { id: 'eclipse', label: 'Кольцо', hint: 'Сияние в центре экрана' },
+  { id: 'beam', label: 'Луч', hint: 'Полоса наискосок' },
+  { id: 'corners', label: 'Углы', hint: 'Четыре лампы по краям' },
+  { id: 'aurora', label: 'Ленты', hint: 'Широкое сияние сверху' },
+  { id: 'tide', label: 'Берега', hint: 'Цвет слева и справа' },
+  { id: 'lantern', label: 'Фонарь', hint: 'Один мягкий свет сверху' },
+  { id: 'rim', label: 'Кромка', hint: 'Цвет только по краю' },
+]
+
 const STORAGE_KEY = 'epsilon.panel.accent.v2'
 const DEFAULT_GLOW = 55
+const DEFAULT_SCENE = 'horizon'
+const DEFAULT_CLEAR = 62
 const DEFAULT_ACCENT = ACCENT_SWATCHES[0]
+
+export function defaultAccent() {
+  const rgb = hexToRgb(DEFAULT_ACCENT.hex)
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+  return {
+    ...DEFAULT_ACCENT,
+    ...hsv,
+    glow: DEFAULT_GLOW,
+    stops: [DEFAULT_ACCENT.hex],
+    scene: DEFAULT_SCENE,
+    clear: DEFAULT_CLEAR,
+  }
+}
 
 export function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -137,7 +165,12 @@ function hsvOfHex(hex) {
  * Делает цвет фоном, на который приятно смотреть.
  * Бледный первый цвет остаётся лампой. Остальные сдвиги — уже насыщенные.
  */
+function isInk(hex) {
+  return hsvOfHex(hex).v < 0.08
+}
+
 function bloom(hex, shift = 0) {
+  if (isInk(hex)) return '#000000'
   const hsv = hsvOfHex(hex)
   const pale = hsv.s < 0.14
   if (pale && shift === 0) {
@@ -149,15 +182,20 @@ function bloom(hex, shift = 0) {
   return hsvToHex(h, s, v)
 }
 
+function readScene(input) {
+  const id = input && typeof input === 'object' ? input.scene : ''
+  return SCENES.some((scene) => scene.id === id) ? id : DEFAULT_SCENE
+}
+
+function readClear(input) {
+  const raw = input && typeof input === 'object' ? input.clear : undefined
+  return Number.isFinite(raw) ? clamp(raw, 0, 100) : DEFAULT_CLEAR
+}
+
 const FILL_SHIFTS = [34, 186, 308]
 
 export function normalizeAccent(input) {
-  if (!input) {
-    const base = DEFAULT_ACCENT
-    const rgb = hexToRgb(base.hex)
-    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
-    return { ...base, ...hsv, glow: DEFAULT_GLOW, stops: [base.hex] }
-  }
+  if (!input) return defaultAccent()
 
   let hex = input.hex
   let id = input.id || 'custom'
@@ -247,6 +285,8 @@ export function normalizeAccent(input) {
     v,
     glow,
     stops,
+    scene: readScene(input),
+    clear: readClear(input),
   }
 }
 
@@ -254,8 +294,13 @@ export function normalizeAccent(input) {
 export function gradientStopsFrom(accent) {
   const base = normalizeAccent(accent)
   const chosen = base.stops.length ? base.stops : [base.hex]
+  if (chosen.every(isInk)) {
+    const dark = chosen.map(() => '#000000')
+    while (dark.length < MAX_STOPS) dark.push('#000000')
+    return dark.slice(0, MAX_STOPS)
+  }
   const painted = chosen.map((hex) => bloom(hex, 0))
-  const seed = chosen[0]
+  const seed = chosen.find((hex) => !isInk(hex)) || chosen[0]
   let fill = 0
   while (painted.length < MAX_STOPS && fill < FILL_SHIFTS.length) {
     painted.push(bloom(seed, FILL_SHIFTS[fill]))
@@ -313,6 +358,9 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
+  root.dataset.scene = a.scene
+  root.style.setProperty('--e-glass', ((100 - a.clear) / 100).toFixed(3))
+  root.style.setProperty('--e-clear', String(a.clear))
   // Flash только при ручной смене палитры — не на первом paint (иначе двери на мгновение «пустые»).
   window.clearTimeout(root._accentFlashTimer)
   if (flash) {
@@ -362,6 +410,8 @@ export function persistAccent(accent) {
         glow: resolved.glow,
         label: resolved.label,
         stops: resolved.stops,
+        scene: resolved.scene,
+        clear: resolved.clear,
       }),
     )
   } catch {
