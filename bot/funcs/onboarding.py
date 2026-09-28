@@ -134,7 +134,12 @@ _PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
 
 def _farm_url() -> str:
     url = (os.getenv("WEBAPP_URL") or "").strip()
-    if not url.startswith("https://") or "ngrok" in url.lower():
+    low = url.lower()
+    if (
+        not url.startswith("https://")
+        or "ngrok" in low
+        or "cutegaming-mobet.ondigitalocean.app" in low
+    ):
         return _PROD_WEBAPP_URL
     return url
 

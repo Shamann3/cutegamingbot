@@ -349,7 +349,7 @@ def test_farm_deep_link_works_in_groups():
         is_our_mini_app,
     )
 
-    assert farm_url() == "https://t.me/CuteGamingBot/cute?startapp=farm"
+    assert farm_url() == "https://t.me/CuteGamingBot?startapp=farm"
     assert infer_startapp("https://cutegaming-ridbh.ondigitalocean.app/", "Открыть ферму") == "farm"
     assert infer_startapp("https://cutegaming-ridbh.ondigitalocean.app/?startapp=shop", "") == "shop"
     assert group_safe_url(

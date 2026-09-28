@@ -1730,7 +1730,7 @@ html[data-viewport="desktop"] .panel-sidebar-nav {
 
 @media (min-width: 901px) {
   .g-arc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 
   .g-arc-card:hover {
@@ -2580,7 +2580,7 @@ html[data-viewport="phone"] .panel-layout > .realm-main {
 
 @media (min-width: 901px) {
   .realm-main.nika-page .g-arc-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 }
 

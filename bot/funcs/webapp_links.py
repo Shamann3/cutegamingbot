@@ -37,7 +37,13 @@ def app_short_name() -> str:
 
 
 def mini_app_url(startapp: str = "") -> str:
-    link = f"https://t.me/{bot_username()}/{app_short_name()}"
+    """Ссылка на основное приложение, не на короткое имя /cute.
+
+    Короткое имя всё ещё привязано к удалённому хосту
+    cutegaming-mobet.ondigitalocean.app, поэтому t.me/бот/cute не открывается.
+    t.me/бот?startapp=... открывает кнопку меню, а у неё живой адрес.
+    """
+    link = f"https://t.me/{bot_username()}"
     start = (startapp or "").strip()
     if start:
         link += f"?startapp={start}"
@@ -49,12 +55,15 @@ def farm_url() -> str:
 
 
 _PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
+# Старый адрес приложения: домен снят, DNS его больше не находит.
+_DEAD_HOSTS = frozenset({"cutegaming-mobet.ondigitalocean.app"})
 
 
 def webapp_page_url(startapp: str = "") -> str:
     """Адрес Mini App с разделом в query. Его открывает кнопка web_app в личке."""
     base = (os.getenv("WEBAPP_URL") or "").strip()
-    if not base.startswith("https://") or "ngrok" in base.lower():
+    host = (urlsplit(base).hostname or "").lower()
+    if not base.startswith("https://") or "ngrok" in base.lower() or host in _DEAD_HOSTS:
         base = _PROD_WEBAPP_URL
     parts = urlsplit(base)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))

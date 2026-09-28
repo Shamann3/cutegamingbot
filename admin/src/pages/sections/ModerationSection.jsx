@@ -1099,8 +1099,8 @@ export default function ModerationSection({
       )}
 
       <style>{`
-        .arc-shell { padding: 24px 28px; max-width: 1400px; max-height: 100%; overflow: hidden; display:flex; flex-direction:column; min-height:0; }
-        .arc-shell .arc-grid { overflow-y:auto; flex:1; min-height:0; }
+        .arc-shell { padding: 8px 0 24px; width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; overflow-x: hidden; display:flex; flex-direction:column; min-height:0; }
+        .arc-shell .arc-grid { min-width: 0; }
         .arc-header { margin-bottom: 24px; }
         .arc-header-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
         .arc-title { font-size:24px; font-weight:800; color:#f5e6c8; letter-spacing:0.02em; margin-bottom:4px; }
@@ -1122,13 +1122,13 @@ export default function ModerationSection({
         .arc-main-tab-on { color:#d4a84b; border-bottom-color:#d4a84b; }
 
         /* Filters */
-        .arc-filters { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; width:100%; }
+        .arc-filters { display:flex; flex-direction:column; align-items:stretch; gap:10px; width:100%; min-width:0; }
         .arc-tabs { display:flex; gap:6px; flex-wrap:wrap; }
         .arc-tab { padding:6px 16px; border-radius:20px; border:1px solid #1e1e2e; background:transparent; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; }
         .arc-tab:hover { border-color:#d4a84b60; color:#d4a84b; }
         .arc-tab-on { background:#d4a84b18; border-color:#d4a84b; color:#d4a84b; font-weight:700; }
-        .arc-search { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; width:100%; max-width:420px; min-width:0; }
-        .arc-search-stack { flex-direction:column; align-items:stretch; max-width:320px; }
+        .arc-search { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; width:100%; max-width:100%; min-width:0; }
+        .arc-search-stack { flex-direction:column; align-items:stretch; width:100%; max-width:100%; }
         .arc-field { display:flex; flex-direction:column; gap:4px; padding:2px 0; min-width:0; }
         .arc-field > span { font-size:11px; color:#4b5563; }
         .arc-input { max-width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; background:#0e0e18; border:1px solid #1e1e2e; border-radius:8px; color:#e2e8f0; padding:7px 12px; font-size:13px; flex:1; width:100%; box-sizing:border-box; outline:none; transition:border-color 0.2s; }
@@ -1153,7 +1153,7 @@ export default function ModerationSection({
         .arc-empty-text { color:#374151; font-size:14px; }
 
         /* Grid */
-        .arc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; align-content:start; margin-bottom:28px; }
+        .arc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; align-content:start; width:100%; min-width:0; margin-bottom:28px; }
 
         /* Card */
         .arc-card { position:relative; background:#0b0b14; border:1px solid #1a1a28; border-radius:12px; padding:16px 16px 14px; display:flex; flex-direction:column; gap:11px; cursor:pointer; transition:border-color 0.2s, box-shadow 0.2s, transform 0.18s; overflow:hidden; min-height:170px; }
@@ -1196,7 +1196,7 @@ export default function ModerationSection({
         .mst-period-btn { padding:6px 18px; border-radius:20px; border:1px solid #1e1e2e; background:transparent; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; }
         .mst-period-btn:hover { border-color:#d4a84b60; color:#d4a84b; }
         .mst-period-on { background:#d4a84b18; border-color:#d4a84b; color:#d4a84b; font-weight:700; }
-        .mst-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; align-content:start; }
+        .mst-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; align-content:start; width:100%; min-width:0; }
         .mst-card { background:#0b0b14; border:1px solid #1a1a28; border-radius:12px; padding:18px; display:flex; flex-direction:column; gap:14px; transition:border-color 0.2s; }
         .mst-card:hover { border-color:#d4a84b40; }
         .mst-card-top { display:flex; align-items:center; gap:12px; }

@@ -40554,10 +40554,17 @@ async def botmain():
     # туннель — используем канонический хостинг-URL, чтобы кнопка всегда вела
     # на прод.
     _PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
+    # Снятый хост: DNS его больше не находит, кнопку меню на него не ставим.
+    _DEAD_WEBAPP_HOSTS = ("cutegaming-mobet.ondigitalocean.app",)
     _is_production = os.getenv("PRODUCTION", "").strip().lower() == "true"
     _menu_url = (WEBAPP_URL or "").strip()
-    if _menu_url and ("ngrok" in _menu_url.lower() or not _menu_url.startswith("https://")):
-        # дев-туннель / не-https — к BotFather не подпускаем
+    _menu_low = _menu_url.lower()
+    if _menu_url and (
+        "ngrok" in _menu_low
+        or not _menu_url.startswith("https://")
+        or any(host in _menu_low for host in _DEAD_WEBAPP_HOSTS)
+    ):
+        # дев-туннель / не-https / снятый адрес — к BotFather не подпускаем
         _menu_url = ""
     if not _is_production:
         print(

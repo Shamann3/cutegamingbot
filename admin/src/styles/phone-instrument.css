@@ -456,3 +456,142 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
 
   .accent-aura-slot { display: none; }
 }
+
+/* Рабочая зона: одна колонка на ширину окна.
+   Вкладки с grid-column: 2 уезжали в неявную колонку справа от пустого места. */
+html.is-desktop .panel-shell .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell .panel-shell-main {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+
+html.is-desktop .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout,
+html.is-phone .panel-shell .panel-layout,
+html[data-viewport="phone"] .panel-shell .panel-layout {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: min(1120px, 100%) !important;
+  justify-self: center !important;
+  box-sizing: border-box !important;
+}
+
+html.is-phone .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="phone"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  align-self: stretch !important;
+  box-sizing: border-box !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .arc-shell,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.arc-shell,
+.arc-header,
+.arc-filters,
+.arc-grid,
+.arc-stats,
+.mst-wrap,
+.mst-grid,
+.apl-wrap,
+.g-arc-grid,
+.realm-main,
+.grp-page {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.arc-shell {
+  width: 100% !important;
+  padding-inline: 0 !important;
+}
+
+.arc-filters {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
+
+.arc-tabs,
+.arc-main-tabs,
+.arc-sort,
+.apl-filters {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.arc-search,
+.arc-search-stack,
+.arc-field,
+.arc-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.arc-search-stack {
+  flex-direction: column !important;
+  align-items: stretch !important;
+}
+
+.arc-stats {
+  width: 100% !important;
+  justify-content: flex-start !important;
+}
+
+.arc-grid,
+.mst-grid,
+.g-arc-grid {
+  display: grid !important;
+  width: 100% !important;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)) !important;
+}
+
+.arc-pages {
+  width: 100% !important;
+  flex-wrap: wrap !important;
+}
+
+.arc-card,
+.g-arc-card,
+.mst-card,
+.apl-card {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 760px) {
+  .arc-grid,
+  .mst-grid,
+  .g-arc-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -766,7 +766,7 @@ export default function GroupPostsPanel() {
             <label className="panel-economy-field">
               <span>Кнопки</span>
               <p className="panel-shelf-muted">
-                «Ферма / Mini App» в группе уходит ссылкой t.me/CuteGamingBot/cute — иначе Telegram не откроет приложение.
+                «Ферма / Mini App» в группе уходит ссылкой t.me/CuteGamingBot?startapp=… — короткое имя /cute всё ещё смотрит на снятый сервер и не открывается.
               </p>
               <ButtonsBuilder rows={form.buttons} onChange={(buttons) => setForm({ ...form, buttons })} />
             </label>

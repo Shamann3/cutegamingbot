@@ -14,7 +14,7 @@ def test_group_web_app_farm_becomes_deep_link():
         "Открыть ферму",
         "web_app",
     )
-    assert url == "https://t.me/CuteGamingBot/cute?startapp=farm"
+    assert url == "https://t.me/CuteGamingBot?startapp=farm"
 
 
 def test_group_keyboard_never_emits_web_app():
@@ -25,7 +25,7 @@ def test_group_keyboard_never_emits_web_app():
     data = json.loads(raw)
     btn = data["inline_keyboard"][0][0]
     assert "web_app" not in btn
-    assert btn["url"] == "https://t.me/CuteGamingBot/cute?startapp=farm"
+    assert btn["url"] == "https://t.me/CuteGamingBot?startapp=farm"
 
 
 def test_private_keyboard_keeps_web_app():

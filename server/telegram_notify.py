@@ -17,7 +17,6 @@ from config import BOT_TOKEN
 logger = logging.getLogger("cute-farm.telegram")
 
 _BOT_USERNAME = os.getenv("BOT_USERNAME", "CuteGamingBot").lstrip("@")
-_APP_NAME = os.getenv("WEBAPP_SHORT_NAME", "cute").strip() or "cute"
 _STARTAPP_HINTS = (
     ("farm", ("farm", "ферм")),
     ("market", ("market", "бирж", "рынок", "маркет")),
@@ -82,7 +81,8 @@ def _is_group_chat(chat_id: str | None) -> bool:
 
 
 def _mini_app_url(startapp: str = "") -> str:
-    link = f"https://t.me/{_BOT_USERNAME}/{_APP_NAME}"
+    # Без короткого имени: /cute всё ещё смотрит на снятый хост mobet.
+    link = f"https://t.me/{_BOT_USERNAME}"
     start = (startapp or "").strip()
     if start:
         link += f"?startapp={start}"
@@ -139,7 +139,7 @@ def build_inline_keyboard(
     последняя защита перед отправкой в Telegram. Возвращает JSON для
     reply_markup или None, если после фильтрации кнопок не осталось.
 
-    group_safe=True: web_app → url t.me/bot/app (группы/каналы).
+    group_safe=True: web_app → url t.me/бот?startapp= (группы/каналы).
     group_safe=False: web_app остаётся web_app (личка, рассылки в PM).
     """
     keyboard: list[list[dict]] = []
