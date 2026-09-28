@@ -218,12 +218,45 @@ export function getAuthErrorMessage() {
   return 'Не удалось определить пользователя.'
 }
 
-const VALID_TABS = new Set(['farm', 'inventory', 'craft', 'quests', 'shop', 'market', 'trade', 'giveaways', 'settings'])
+const VALID_TABS = new Set(['farm', 'inventory', 'craft', 'quests', 'shop', 'market', 'trade', 'giveaways', 'settings', 'profile', 'chests'])
 
-export function getStartTab() {
+function firstFilled(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim()
+    if (text) return text
+  }
+  return ''
+}
+
+/** startapp из initData, из хэша Telegram и из query самой страницы. */
+export function readStartParam({ hash = '', search = '', unsafe = '', startParam = '' } = {}) {
+  const hashParams = new URLSearchParams(String(hash).replace(/^#/, ''))
+  const searchParams = new URLSearchParams(String(search).replace(/^\?/, ''))
+  return firstFilled(
+    unsafe,
+    startParam,
+    hashParams.get('tgWebAppStartParam'),
+    hashParams.get('startapp'),
+    searchParams.get('startapp'),
+    searchParams.get('tgWebAppStartParam'),
+  )
+}
+
+export function pickStartTab(raw) {
+  const value = String(raw || '').trim().split(/[\s?#&]/)[0]
+  return VALID_TABS.has(value) ? value : null
+}
+
+export function getStartTab(sources) {
+  if (sources) return pickStartTab(readStartParam(sources))
+  if (typeof window === 'undefined') return null
   const tg = window.Telegram?.WebApp
-  const param = tg?.initDataUnsafe?.start_param ?? ''
-  return VALID_TABS.has(param) ? param : null
+  return pickStartTab(readStartParam({
+    hash: window.location.hash,
+    search: window.location.search,
+    unsafe: tg?.initDataUnsafe?.start_param,
+    startParam: tg?.startParam,
+  }))
 }
 
 export function openTelegramBotLink(url) {

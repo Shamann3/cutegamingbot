@@ -6,7 +6,7 @@ from bot.config.config import *
 
 from aiogram.types import ReplyKeyboardRemove, \
     ReplyKeyboardMarkup, KeyboardButton, \
-    InlineKeyboardMarkup, InlineKeyboardButton
+    InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 import re
 from bot.db_create.db import *
@@ -17,6 +17,7 @@ import math
 import logging
 
 from bot.handlers.useitems import *
+from bot.funcs.webapp_links import section_button_fields
 from main import db, bot1,user_sorting_state,button_user_sorting_state,user_shop1234
 
 
@@ -637,11 +638,8 @@ async def build_shop_markup(
 
     # Добавляем кнопку веб-приложения только если buttonwebapp != 0
     if buttonwebapp == 1:
-        webapp_btn = InlineKeyboardButton(
-            text="Открыть в приложении",
-            url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=shop",
-            style="default",
-            icon_custom_emoji_id="5253767677670862169",
+        webapp_btn = _open_section_button(
+            "Открыть в приложении", "shop", message, "5253767677670862169",
         )
         keyboard.append([webapp_btn])
 
@@ -696,6 +694,16 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
     debug_print(f"Сгенерирована страница {page}/{total_pages}, длина текста: {len(catalog)}")
     return catalog.strip(), total_pages
 
+def _open_section_button(text, startapp, message, icon):
+    """Кнопка, которая открывает нужный раздел и в личке, и в группе."""
+    private = getattr(getattr(message, "chat", None), "type", "") == "private"
+    fields = section_button_fields(text, startapp, private=private, icon=icon)
+    web_app_url = fields.pop("web_app_url", None)
+    if web_app_url:
+        fields["web_app"] = WebAppInfo(url=web_app_url)
+    return InlineKeyboardButton(**fields)
+
+
 # ============================================================
 # ОБРАБОТЧИК ОТКРЫТИЯ МАГАЗИНА
 # ============================================================
@@ -706,12 +714,8 @@ async def shop_op(message: Message):
             return  # выходим из обработчика, ничего не отправляем
 
         STICKER_FARM = "CAACAgIAAxkBAz0Olmo3EismmDFcJjau6qhIBikZzK7wAAIwTQACGKbRSluouIGSQuh5PAQ"
-        url = f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=farm"
-        webapp_btn = InlineKeyboardButton(
-            text="Открыть ферму",
-            url=url,
-            style="default",
-            icon_custom_emoji_id="5208464835079082371",
+        webapp_btn = _open_section_button(
+            "Открыть ферму", "farm", message, "5208464835079082371",
         )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ webapp_btn ] ])
         await message.answer_sticker(STICKER_FARM , reply_markup=keyboard)
@@ -721,12 +725,8 @@ async def shop_op(message: Message):
             return
 
         STICKER_MARKET = "CAACAgIAAxkBAzsOFGo0URpw6VHeFJ0cV7uIWEXerD59AALNAAOYv4ANUzcwURozRpk8BA"
-        url = f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=market"
-        webapp_btn = InlineKeyboardButton(
-            text="Открыть биржу",
-            url=url,
-            style="default",
-            icon_custom_emoji_id="5438440765908874600",
+        webapp_btn = _open_section_button(
+            "Открыть биржу", "market", message, "5438440765908874600",
         )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ webapp_btn ] ])
         await message.answer_sticker(STICKER_MARKET , reply_markup=keyboard)
@@ -894,11 +894,8 @@ async def shop_op(message: Message):
 
             # Кнопка «Открыть в приложении» – добавляем только если buttonwebapp == 1
             if buttonwebapp == 1:
-                webapp_button = InlineKeyboardButton(
-                    text="Открыть в приложении",
-                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=craft",
-                    style="default",
-                    icon_custom_emoji_id="5253767677670862169",
+                webapp_button = _open_section_button(
+                    "Открыть в приложении", "craft", message, "5253767677670862169",
                 )
                 keyboard_rows.append([ webapp_button ])
 
@@ -1126,11 +1123,8 @@ async def shop_op(message: Message):
 
             # Кнопка веб-приложения – только если buttonwebapp != 0
             if buttonwebapp == 1:
-                webapp_button = InlineKeyboardButton(
-                    text="Открыть в приложении",
-                    url=f"https://t.me/{BOT_USERNAME123412}/{APP_NAME}?startapp=inventory",
-                    style="default",
-                    icon_custom_emoji_id="5253767677670862169",
+                webapp_button = _open_section_button(
+                    "Открыть в приложении", "inventory", message, "5253767677670862169",
                 )
                 keyboard_rows.append([webapp_button])
 

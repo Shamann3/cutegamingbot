@@ -8,7 +8,8 @@ https://t.me/bot/app?startapp=... открывает тот же Mini App вез
 
 from __future__ import annotations
 
-from urllib.parse import parse_qs, urlparse
+import os
+from urllib.parse import parse_qsl, parse_qs, urlencode, urlsplit, urlparse, urlunsplit
 
 try:
     from bot.config.config import APP_NAME, BOT_USERNAME123412
@@ -45,6 +46,38 @@ def mini_app_url(startapp: str = "") -> str:
 
 def farm_url() -> str:
     return mini_app_url("farm")
+
+
+_PROD_WEBAPP_URL = "https://cutegaming-ridbh.ondigitalocean.app/"
+
+
+def webapp_page_url(startapp: str = "") -> str:
+    """Адрес Mini App с разделом в query. Его открывает кнопка web_app в личке."""
+    base = (os.getenv("WEBAPP_URL") or "").strip()
+    if not base.startswith("https://") or "ngrok" in base.lower():
+        base = _PROD_WEBAPP_URL
+    parts = urlsplit(base)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    start = (startapp or "").strip()
+    if start:
+        query["startapp"] = start
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), ""))
+
+
+def section_button_fields(text: str, startapp: str, *, private: bool, icon: str = "") -> dict:
+    """Поля кнопки «открыть раздел».
+
+    В личке — web_app, он открывает приложение сразу.
+    В группе web_app не работает, поэтому обычная ссылка t.me.
+    """
+    fields = {"text": text, "style": "default"}
+    if icon:
+        fields["icon_custom_emoji_id"] = icon
+    if private:
+        fields["web_app_url"] = webapp_page_url(startapp)
+    else:
+        fields["url"] = mini_app_url(startapp)
+    return fields
 
 
 def infer_startapp(url: str = "", text: str = "") -> str:

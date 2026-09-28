@@ -44,6 +44,14 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from dateutil import parser
 
 from main import *
+from bot.funcs.translate_gate import translate_async, translate_blocking, translate_many_async
+
+async def _off_thread(func, *args, timeout=6, default=None):
+    """Сеть и перевод в отдельном потоке, чтобы цикл бота не замирал."""
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(func, *args), timeout)
+    except (asyncio.TimeoutError, Exception):
+        return default
 
 shown_books = set()
 BASE_URL = 'https://some-random-api.ml'
@@ -968,11 +976,22 @@ async def other(message: Message):
 
 
     elif message.text.lower() in [ 'кут цитаты' , 'Кут цитаты' , 'кут цитата' , 'Кут цитата','кут расскажи цитату','кут, расскажи цитату','кут покажи цитату','кут, покажи цитату' ]:
-        response = requests.get('https://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=ru')
-        data = response.json()
-        citata = data['quoteText']
-        author = data['quoteAuthor']
-        await message.reply(f'🕊 <b><i>{citata}</i></b>', parse_mode="HTML")
+        def _fetch_quote():
+            response = requests.get(
+                'https://api.forismatic.com/api/1.0/?method=getQuote&format=json&lang=ru',
+                timeout=4,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        try:
+            data = await _off_thread(_fetch_quote, timeout=5)
+            citata = (data or {}).get('quoteText') or ''
+            if not citata.strip():
+                raise ValueError('empty quote')
+            await message.reply(f'🕊 <b><i>{citata}</i></b>', parse_mode="HTML")
+        except Exception:
+            await message.reply('🕊 Сейчас не получилось достать цитату. Попробуйте ещё раз.')
 
     if message.text.lower().strip().startswith(
             ('кут посчитай','кут, посчитай' , 'кут посчитай' , 'кут калькулятор', 'кут, калькулятор' , 'кут калькулятор','кут рассчитай','кут, рассчитай','кут рассчитай',"кут реши","кут, реши","кут реши","Сколько будет","Сколько, будет","кут сколько будет","кут, сколько будет")):
@@ -996,9 +1015,6 @@ async def other(message: Message):
             await message.reply("⚠️ Ошибка в выражении")
 
     try:
-        # print("Попытка инициализации переводчика...")
-        translator = GoogleTranslator(source='auto' , target='ru')
-
         # Обработка команды "кут переведи"
         if message.text.strip() in [ 'кут переведи','Кут переведи','Кут перевод' , 'кут перевод' , 'кут, переведи','перевод','Перевод' , 'кут, перевод' ,
                                              '/translation@CuteGamingBot' ]:
@@ -1016,7 +1032,7 @@ async def other(message: Message):
 
                     # Переводим текст, если он не на русском
                     if text_language != 'ru':
-                        translated_text = translator.translate(original_text)
+                        translated_text = await translate_async(original_text, 'ru', 'auto')
                         print("[Перевод текста] Переведенный текст:" , translated_text)
                     else:
                         translated_text = original_text
@@ -1080,7 +1096,7 @@ async def other(message: Message):
 
                     if text_language != 'ru':
 
-                        translated_text = translator.translate(text_to_translate)
+                        translated_text = await translate_async(text_to_translate, 'ru', 'auto')
 
                         print("[Перевод текста] Переведенный текст:" , translated_text)
 
@@ -1160,8 +1176,7 @@ async def other(message: Message):
 
     async def translate_text(text , target_language='ru'):
         """Перевод текста на указанный язык"""
-        translator = GoogleTranslator(target=target_language)
-        return translator.translate(text)
+        return await translate_async(text , target_language , 'auto')
 
 
     if message.text.lower() in [ 'кут миф','кут мифы','кут расскажи миф','кут, расскажи миф','кут, напиши миф','кут напиши миф','кут, напиши миф','кут напиши миф','кут, напиши миф','кут, расскажи миф' ]:
@@ -1191,13 +1206,7 @@ async def other(message: Message):
 
     async def translate_text(text: str , target_language: str = 'ru') -> str:
         """Перевод текста на указанный язык"""
-        try:
-            translator = GoogleTranslator(target=target_language)
-            translated_text = translator.translate(text)
-            return translated_text
-        except Exception as e:
-            print(f"Ошибка при переводе: {e}")
-            return text
+        return await translate_async(text , target_language , 'auto')
 
     def limit_text(text: str , max_words: int) -> str:
         words = text.split()
@@ -1229,8 +1238,7 @@ async def other(message: Message):
 
     async def translate_text(text , target_language='ru'):
         """Перевод текста на указанный язык."""
-        translator = GoogleTranslator(target=target_language)
-        return translator.translate(text)
+        return await translate_async(text , target_language , 'auto')
 
 
     if message.text.lower() in [ 'кут факт','кут, факт','кут факты','кут, факты','кут, расскажи факт','кут расскажи факт','кут, напиши факт','кут напиши факт','кут покажи факт','кут, покажи факт' ]:
@@ -1330,11 +1338,7 @@ async def other(message: Message):
 
     def translate_text(text , dest_language='en'):
         """Перевод текста (сохранена оригинальная сигнатура)."""
-        try:
-            return GoogleTranslator(source='auto' , target=dest_language).translate(text) or text
-        except Exception as e:
-            print(f"Ошибка при переводе текста: {e}")
-            return text
+        return translate_blocking(text , dest_language , 'auto')
 
     def _translate_safe(text: str , target_lang: str) -> str:
         """Безопасный перевод с обработкой ошибок."""
@@ -1397,18 +1401,20 @@ async def other(message: Message):
     _HTTP_TIMEOUT = 4.0
     _HTTP_UA = "Mozilla/5.0 (compatible; CuteBot/1.0; +https://t.me/)"
 
-    def _request_with_retries(url , headers , timeout=_HTTP_TIMEOUT , retries=1):
-        """Выполняет HTTP-запрос с повторами (максимум 1 повтор)."""
+    def _request_with_retries(url , headers , timeout=_HTTP_TIMEOUT , retries=0):
+        """Один HTTP-запрос. Повтор только если его явно попросили."""
         for attempt in range(retries + 1):
             try:
                 resp = requests.get(url , headers=headers , timeout=timeout)
                 if resp.status_code == 200:
                     return resp
-                if resp.status_code != 404:
-                    time.sleep(0.3)
+                if resp.status_code == 404 or attempt == retries:
+                    return None
             except Exception as e:
-                print(f"⚠️ Попытка {attempt + 1} запроса к {url} не удалась: {e}")
-                time.sleep(0.3)
+                if attempt == retries:
+                    print(f"⚠️ Запрос определения не удался: {e}")
+                    return None
+            time.sleep(0.3)
         return None
 
     def get_definition_from_wikipedia(term: str) -> str:
@@ -1492,7 +1498,7 @@ async def other(message: Message):
 
         # Если язык запроса русский – пробуем русскую Википедию
         if detected_language == "ru":
-            ru_def = getwiki_ru(original_term)
+            ru_def = await _off_thread(getwiki_ru , original_term , timeout=6)
             if ru_def:
                 answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{ru_def}</i>"
                 for part in _split_long_message(answer_text):
@@ -1501,16 +1507,16 @@ async def other(message: Message):
 
         # Переводим термин на английский для поиска (если он не английский)
         if detected_language != "en":
-            term_en = _translate_safe(original_term , "en")
+            term_en = await _off_thread(_translate_safe , original_term , "en" , timeout=8 , default=original_term)
         else:
             term_en = original_term
-        term_en = _safe_term(term_en , max_len=120)
+        term_en = _safe_term(term_en or original_term , max_len=120)
 
         # 2) Английская Википедия
-        en_def = get_definition_from_wikipedia(term_en)
+        en_def = await _off_thread(get_definition_from_wikipedia , term_en , timeout=6)
         if en_def:
             if detected_language != "en":
-                translated = _translate_safe(en_def , detected_language)
+                translated = await _off_thread(_translate_safe , en_def , detected_language , timeout=8 , default=en_def)
             else:
                 translated = en_def
             answer_text = f"<tg-emoji emoji-id='5224450179368767019'>🌎</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
@@ -1519,10 +1525,10 @@ async def other(message: Message):
             return
 
         # 3) DuckDuckGo
-        ddg_def = get_definition_from_duckduckgo(term_en)
+        ddg_def = await _off_thread(get_definition_from_duckduckgo , term_en , timeout=6)
         if ddg_def:
             if detected_language != "en":
-                translated = _translate_safe(ddg_def , detected_language)
+                translated = await _off_thread(_translate_safe , ddg_def , detected_language , timeout=8 , default=ddg_def)
             else:
                 translated = ddg_def
             answer_text = f"<tg-emoji emoji-id='6021401276904905698'>🛠</tg-emoji> <b>Вот что я нашёл о «{original_term}»</b>:\n\n<i>{translated}</i>"
@@ -1860,23 +1866,20 @@ async def other(message: Message):
         articles = await get_world_news()  # Получаем новости
 
         if articles:
-            translator = GoogleTranslator(source='en' , target='ru')
             news_messages = [ ]
+            chunk = articles [ :5 ]
+            titles = [ article.get('title' , 'Без заголовка') for article in chunk ]
+            descriptions = [ ]
+            for article in chunk:
+                description = article.get('description' , '') or ''
+                descriptions.append(description if isinstance(description , str) else '')
+            translated_titles = await translate_many_async(titles , 'ru' , 'en')
+            translated_descriptions = await translate_many_async(descriptions , 'ru' , 'en')
 
             # Ограничиваем количество новостей до 5
-            for article in articles [ :5 ]:
-                title = article.get('title' , 'Без заголовка')
-                description = article.get('description' , 'Без описания') or ''  # Заменяем None на пустую строку
+            for article , translated_title , translated_description in zip(chunk , translated_titles , translated_descriptions):
                 url = article.get('url' , '#')
                 published_at = article.get('publishedAt' , 'Неизвестно')
-
-                # Переводим заголовок и описание
-                translated_title = translator.translate(title)
-                if isinstance(
-                        description , str) and description:  # Проверяем, что описание является строкой и не пустое
-                    translated_description = translator.translate(description)
-                else:
-                    translated_description = ''
 
                 # Форматируем дату и время
                 formatted_date = format_date(published_at)
@@ -1913,13 +1916,7 @@ async def other(message: Message):
             return "🛠 Ошибка при получении анекдота."
 
     async def translate_joke(text , target_language='ru'):
-        translator = GoogleTranslator(source='en' , target=target_language)
-        try:
-            translated_text = translator.translate(text)
-            return translated_text
-        except Exception as e:
-            print(f"Ошибка при переводе текста: {e}")
-            return text  # Возвращаем оригинальный текст в случае ошибки
+        return await translate_async(text , target_language , 'en')
 
     if message.text.lower() in [ 'кут анекдот','кут, анекдот','кут черные шутки','кут, черные шутки','кут черная шутка','кут, черная шутка','кут расскажи черную шутку','кут, расскажи черную шутку','кут расскажи темную шутку','кут, расскажи темную шутку','кут темная шутка','кут, темная шутка','кут шутка','кут, шутка','кут шутки','кут, шутки','кут расскажи шутку','кут, расскажи шутку','Кут напиши шутку','Кут, напиши шутку','кут, расскажи анекдот','кут, расскажи шутку','кут, напиши шутку','кут, напиши анекдот' ]:
         joke = await get_joke()

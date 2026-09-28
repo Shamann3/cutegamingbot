@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PlayerSyncProvider } from './context/PlayerSyncContext'
 import { PlayerProfileProvider } from './context/PlayerProfileContext'
 import { OnboardingProvider, useOnboardingOptional } from './context/OnboardingContext'
@@ -114,6 +114,22 @@ function AppWithOnboarding() {
   const [tab, setTab] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tab)
   const [tradeSegment, setTradeSegment] = useState(() => resolveStartTab(getStartTab() ?? 'farm').tradeSegment)
   const [farmSegment, setFarmSegment] = useState('plots')
+  const startApplied = useRef(false)
+
+  useEffect(() => {
+    const applyStart = () => {
+      if (startApplied.current) return
+      const raw = getStartTab()
+      if (!raw) return
+      startApplied.current = true
+      const next = resolveStartTab(raw)
+      setTab(next.tab)
+      setTradeSegment(next.tradeSegment)
+    }
+    applyStart()
+    window.addEventListener('hashchange', applyStart)
+    return () => window.removeEventListener('hashchange', applyStart)
+  }, [])
 
   return (
     <OnboardingProvider activeTab={tab}>
@@ -146,15 +162,17 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
     setShopSearch(item?.name ?? '')
     setShopItemId(item?.id ? String(item.id) : '')
     setShopHighlightOnly(true)
+    setTab('trade')
     setTradeSegment('shop')
-  }, [setTradeSegment])
+  }, [setTab, setTradeSegment])
 
   const handleGuideNavigateMarket = useCallback((item) => {
     setMarketSearch(item?.name ?? '')
     setMarketItemId(item?.itemId ? String(item.itemId) : '')
     setMarketHighlightOnly(true)
+    setTab('trade')
     setTradeSegment('market')
-  }, [setTradeSegment])
+  }, [setTab, setTradeSegment])
 
   useEffect(() => {
     const handler = () => {
