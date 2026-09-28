@@ -610,14 +610,13 @@ async def _topup_group(
                 quiet_wait = True
         if plan.amount <= 0:
             return plan.skip or "none"
-        if quiet_wait:
-            pass
-        elif skip_cooldown:
-            await store.force_touch_group_action(conn, policy.chat_id, "topup")
-        else:
-            claimed = await store.claim_group_action(conn, policy.chat_id, "topup", plan.cooldown_sec)
-            if not claimed:
-                return "cooldown"
+        if not quiet_wait:
+            if skip_cooldown:
+                await store.force_touch_group_action(conn, policy.chat_id, "topup")
+            else:
+                claimed = await store.claim_group_action(conn, policy.chat_id, "topup", plan.cooldown_sec)
+                if not claimed:
+                    return "cooldown"
 
     ladder_ids = [cid for cid, _ in SOURCE_LADDER if cid != policy.chat_id]
     async with db.pool.acquire() as conn:

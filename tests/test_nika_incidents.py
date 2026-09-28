@@ -22,6 +22,9 @@ def _read(*parts: str) -> str:
 def test_empty_ladder_has_money_and_pause_buttons():
     ids = {a["id"] for a in actions_for("empty_ladder")}
     assert {"force_tick", "force_topup", "pause_group", "pause_all"} <= ids
+    short = {a["id"] for a in actions_for("short_ladder")}
+    assert {"force_tick", "force_topup", "pause_group"} <= short
+    assert "pause_all" not in short
 
 
 def test_refund_stuck_offers_return_not_print():
@@ -57,6 +60,8 @@ def test_engine_raises_and_resolves_unfixable_only():
     engine = _read("bot", "runtime", "nika", "engine.py")
     assert "raise_incident" in engine
     assert "CODE_EMPTY_LADDER" in engine
+    assert "CODE_SHORT_LADDER" in engine
+    assert "plan_instant_topup" in engine
     assert "process_operator_commands" in engine
     assert "FOR UPDATE SKIP LOCKED" not in engine  # claim живёт в store
     assert "invalidate_balance_cache" in engine
@@ -115,6 +120,8 @@ def test_crisis_strip_exists():
     assert "NikaSpark" in section
     assert "Самый плюс" in section
     assert "id: 'machine'" in section
+    assert "Долив групп" in section
+    assert "topup_pace" in section
     assert "nika-machine" in section
     assert "Следующая проверка" in section
     assert "Баланс групп" in section
@@ -225,6 +232,17 @@ def test_forecast_tick_paused_and_topup():
     assert swept["items"][0]["action"] == "sweep"
     assert swept["items"][0]["amount"] > 0
     assert "дом игр" in swept["items"][0]["text"]
+
+    instant = forecast_tick(
+        {"enabled": True, "topup_pace": "instant"},
+        [row],
+        groups,
+        ladder,
+    )
+    assert instant["items"][0]["action"] == "topup"
+    assert instant["items"][0]["amount"] == 800
+    assert "не хватает" in instant["items"][0]["text"]
+    assert "закроет цель" in instant["summary"] or "заберёт все" in instant["summary"]
 
 
 class _FakeConn:

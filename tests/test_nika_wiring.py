@@ -122,6 +122,7 @@ def test_schema_uses_timestamptz_and_idempotency():
     assert "FIRST_MANAGED_CHAT_ID = -1001612636292" in schema
     assert "FIRST_MANAGED_TARGET = 5000" in schema
     assert "sweep_speed" in schema
+    assert "topup_pace" in schema
     assert "BETWEEN 15 AND 3600" in schema
 
 
