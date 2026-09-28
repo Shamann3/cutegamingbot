@@ -2,7 +2,6 @@
 
 export const ACCENT_SWATCHES = [
   { id: 'snow', label: 'Снег', hex: '#FFFFFF' },
-  { id: 'ink', label: 'Чёрный', hex: '#000000' },
   { id: 'mint', label: 'Мята', hex: '#7EB89A' },
   { id: 'sky', label: 'Небо', hex: '#6BA3C9' },
   { id: 'violet', label: 'Фиалка', hex: '#9B8BC9' },
@@ -13,22 +12,7 @@ export const ACCENT_SWATCHES = [
 
 const STORAGE_KEY = 'epsilon.panel.accent.v2'
 const DEFAULT_GLOW = 55
-const DEFAULT_SCENE = 'horizon'
-const DEFAULT_CLEAR = 62
 const DEFAULT_ACCENT = ACCENT_SWATCHES[0]
-
-export function defaultAccent() {
-  const rgb = hexToRgb(DEFAULT_ACCENT.hex)
-  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
-  return {
-    ...DEFAULT_ACCENT,
-    ...hsv,
-    glow: DEFAULT_GLOW,
-    stops: [DEFAULT_ACCENT.hex],
-    scene: DEFAULT_SCENE,
-    clear: DEFAULT_CLEAR,
-  }
-}
 
 export function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
@@ -127,39 +111,13 @@ function mixToward(hex, toward = '#ffffff', amount = 0.35) {
   return rgbToHex(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
 }
 
-export const MAX_STOPS = 4
-
-/** До четырёх цветов, которые человек сам выбрал. */
-export function sanitizeStops(raw, fallbackHex) {
-  const list = []
-  if (Array.isArray(raw)) {
-    for (const item of raw) {
-      const hex = parseHexInput(typeof item === 'string' ? item : item?.hex)
-      if (!hex) continue
-      list.push(hex)
-      if (list.length >= MAX_STOPS) break
-    }
-  }
-  if (!list.length && fallbackHex) list.push(fallbackHex)
-  return list
-}
-
-function hsvOfHex(hex) {
-  const { r, g, b } = hexToRgb(hex)
-  return rgbToHsv(r, g, b)
-}
-
-function isInk(hex) {
-  return hsvOfHex(hex).v < 0.08
-}
-
-function readClear(input) {
-  const raw = input && typeof input === 'object' ? input.clear : undefined
-  return Number.isFinite(raw) ? clamp(raw, 0, 100) : DEFAULT_CLEAR
-}
-
 export function normalizeAccent(input) {
-  if (!input) return defaultAccent()
+  if (!input) {
+    const base = DEFAULT_ACCENT
+    const rgb = hexToRgb(base.hex)
+    const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
+    return { ...base, ...hsv, glow: DEFAULT_GLOW }
+  }
 
   let hex = input.hex
   let id = input.id || 'custom'
@@ -225,17 +183,6 @@ export function normalizeAccent(input) {
 
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
 
-  const storedStops = input && typeof input === 'object' ? input.stops : null
-  const stops = sanitizeStops(storedStops, finalHex)
-  if (!input?.hexSource && Array.isArray(storedStops) && stops[0]) {
-    finalHex = stops[0]
-    const locked = hexToRgb(finalHex)
-    const fromStop = rgbToHsv(locked.r, locked.g, locked.b)
-    h = fromStop.h
-    s = fromStop.s
-    v = fromStop.v
-  }
-
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
     id: known ? known.id : id === 'custom' || !known ? 'custom' : id,
@@ -245,31 +192,7 @@ export function normalizeAccent(input) {
     s,
     v,
     glow,
-    stops: [finalHex],
-    scene: DEFAULT_SCENE,
-    clear: readClear(input),
   }
-}
-
-/** Один градиент: тот же оттенок, только разной яркости. */
-export function gradientStopsFrom(accent) {
-  const base = normalizeAccent(accent)
-  if (isInk(base.hex)) return Array.from({ length: MAX_STOPS }, () => '#000000')
-  const hsv = hsvOfHex(base.hex)
-  const pale = hsv.s < 0.14
-  return [1, 0.82, 0.64, 0.48].map((step) => hsvToHex(
-    hsv.h,
-    pale ? Math.min(hsv.s, 0.06) : hsv.s,
-    pale ? Math.max(hsv.v * step, 0.62) : clamp(hsv.v * step, 0.18, 1),
-  ))
-}
-
-/** Следующий цвет, который ещё не выбран: яркий сосед, а не копия. */
-export function suggestNextStop(stops) {
-  const list = sanitizeStops(stops, DEFAULT_ACCENT.hex)
-  const painted = gradientStopsFrom({ hex: list[0], stops: list })
-  const used = new Set(list.map((hex) => hex.toLowerCase()))
-  return painted.find((hex) => !used.has(hex.toLowerCase())) || painted[Math.min(list.length, MAX_STOPS - 1)]
 }
 
 /** @deprecated use normalizeAccent */
@@ -291,12 +214,7 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const brightToward = relativeLuminance(a.hex) > INK_LUMINANCE ? '#000000' : '#ffffff'
   const brightAmt = relativeLuminance(a.hex) > INK_LUMINANCE ? 0.22 : 0.28
 
-  const painted = gradientStopsFrom(a)
   const root = document.documentElement
-  painted.forEach((hex, index) => {
-    const rgb = hexToRgb(hex)
-    root.style.setProperty(`--e-g${index + 1}`, `${rgb.r}, ${rgb.g}, ${rgb.b}`)
-  })
   root.style.setProperty('--e-accent', a.hex)
   root.style.setProperty('--e-accent-rgb', `${r}, ${g}, ${b}`)
   root.style.setProperty('--e-accent-soft', `rgba(${r}, ${g}, ${b}, ${soft.toFixed(3)})`)
@@ -313,9 +231,6 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
-  root.dataset.scene = a.scene
-  root.style.setProperty('--e-glass', ((100 - a.clear) / 100).toFixed(3))
-  root.style.setProperty('--e-clear', String(a.clear))
   // Flash только при ручной смене палитры — не на первом paint (иначе двери на мгновение «пустые»).
   window.clearTimeout(root._accentFlashTimer)
   if (flash) {
@@ -347,8 +262,7 @@ export function accentIsPersonal(accent = loadStoredAccent()) {
     return false
   }
   const a = normalizeAccent(accent)
-  if (a.s >= 0.08) return true
-  return a.stops.some((hex) => hsvOfHex(hex).s >= 0.08)
+  return a.s >= 0.08
 }
 
 export function persistAccent(accent) {
@@ -364,9 +278,6 @@ export function persistAccent(accent) {
         v: resolved.v,
         glow: resolved.glow,
         label: resolved.label,
-        stops: resolved.stops,
-        scene: resolved.scene,
-        clear: resolved.clear,
       }),
     )
   } catch {

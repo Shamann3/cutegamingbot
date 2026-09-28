@@ -21,7 +21,14 @@ function SlidersIcon() {
   )
 }
 
-/** Нижняя полоса: главные вкладки. На компьютере слева ещё меню. */
+function shortLabel(text) {
+  const raw = String(text || '').trim()
+  if (!raw) return ''
+  const word = raw.split(/\s+/)[0]
+  return word.length > 12 ? `${word.slice(0, 11)}…` : word
+}
+
+/** Нижняя полоса в стиле CryptoBot: вкладки + меню (ползунки) справа на телефоне / слева на ПК. */
 export default function PhoneDock({
   sections = [],
   activeSection,
@@ -29,11 +36,14 @@ export default function PhoneDock({
   badges = {},
   onOpenMenu,
   menuOpen = false,
+  tabsInMenu = false,
 }) {
   const barRef = useRef(null)
   const activeRef = useRef(null)
-  const crowded = sections.length > 6
+  const crowded = sections.length > 5
   const reduce = useReducedMotion()
+  const current = sections.find((item) => item.id === activeSection)
+  const currentLabel = current?.labelRu || current?.label || 'Вкладки'
 
   useEffect(() => {
     const bar = barRef.current
@@ -47,19 +57,31 @@ export default function PhoneDock({
 
   return (
     <motion.nav
-      className={`phone-dock${crowded ? ' is-crowded' : ''}`}
+      className={`phone-dock${crowded ? ' is-crowded' : ''}${tabsInMenu ? ' is-tabs-menu' : ''}`}
       data-coach="dock"
       aria-label="Вкладки"
       initial={reduce ? false : { y: 16, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
     >
+      {tabsInMenu ? (
+        <button
+          type="button"
+          className={`phone-dock-all${menuOpen ? ' is-on' : ''}`}
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? 'Закрыть вкладки' : 'Все вкладки'}
+          onClick={onOpenMenu}
+        >
+          <span>Вкладки</span>
+          <b>{currentLabel}</b>
+        </button>
+      ) : (
       <div className="phone-dock-scroll" ref={barRef}>
         {sections.map((item) => {
           const Icon = NAV_ICONS[item.id] || FallbackIcon
           const on = item.id === activeSection
           const count = Number(badges[item.id] || 0)
-          const mark = String(item.labelRu || item.label || '').trim()
+          const mark = shortLabel(item.labelRu || item.label)
           return (
             <button
               key={item.id}
@@ -84,7 +106,8 @@ export default function PhoneDock({
           )
         })}
       </div>
-      {typeof onOpenMenu === 'function' && (
+      )}
+      {typeof onOpenMenu === 'function' && !tabsInMenu && (
         <button
           type="button"
           className={`phone-dock-menu${menuOpen ? ' is-on' : ''}`}

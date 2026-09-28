@@ -15,9 +15,9 @@ import {
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
 import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
-import PanelSidebar, { SettingsControls } from '../components/PanelSidebar'
-import AccentPalette from '../components/AccentPalette'
+import PanelSidebar from '../components/PanelSidebar'
 import PhoneDock from '../components/PhoneDock'
+import { PanelPocketTools } from '../components/ExtrasHub'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
@@ -129,12 +129,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
-    if (phone) return
     setRailOpen(Boolean(step?.openNav))
-  }, [phone])
-  useEffect(() => {
-    if (phone) setRailOpen(false)
-  }, [phone])
+  }, [])
   useEffect(() => {
     applyAccentToDocument(accent)
   }, [accent])
@@ -436,7 +432,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           onDone={() => setCoach(false)}
         />
       )}
-      <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />
+      {!phone && <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />}
       <main className="panel-shell-main">
       <div className="panel-layout panel-layout-page">
         <PanelSidebar
@@ -444,7 +440,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           activeSection={activeTab}
           onNavigate={pickTab}
           onChangeDoor={onLeave}
-          mobileOpen={railOpen}
+          mobileOpen={phone ? false : railOpen}
           onClose={closeRail}
           lightMode={lightMode}
           onTogglePerf={() => setLightMode(!lightMode)}
@@ -703,22 +699,9 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'more' && (
             <section>
               <h2 className="realm-h">Ещё</h2>
-              {phone && (
-                <div className="extras-settings">
-                  <h2>Настройки</h2>
-                  <AccentPalette value={accent} onChange={(next) => setAccent(persistAccent(next))} />
-                  <SettingsControls
-                    musicVolume={musicVolume}
-                    onToggleMusic={toggleMusicMute}
-                    onMusicVolumeChange={setMusicVolume}
-                    lightMode={lightMode}
-                    onTogglePerf={() => setLightMode(!lightMode)}
-                  />
-                </div>
-              )}
               <ul className="realm-list">
                 <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer" onClick={() => window.alert("Внимание: переход может закрыть панель — потом снова войдите в админку.")}><strong>Правила</strong><span>t.me/CuteRules · панель может закрыться</span></a></li>
-                <li><button type="button" className="realm-row" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
+                <li><button type="button" className="realm-row" data-coach="doors" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
                 {isCreator && (
                   <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>
                 )}
@@ -735,6 +718,17 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
                   </li>
                 )}
               </ul>
+              {phone && (
+                <PanelPocketTools
+                  accent={accent}
+                  onAccentChange={(next) => setAccent(persistAccent(next))}
+                  lightMode={lightMode}
+                  onTogglePerf={() => setLightMode(!lightMode)}
+                  musicVolume={musicVolume}
+                  onMusicVolumeChange={setMusicVolume}
+                  onToggleMusic={toggleMusicMute}
+                />
+              )}
             </section>
           )}
         </div>

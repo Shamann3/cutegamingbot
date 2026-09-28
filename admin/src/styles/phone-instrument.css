@@ -12,7 +12,12 @@
 .accent-aura-wash {
   position: absolute;
   inset: 0;
-  background: #050508;
+  background:
+    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.78), transparent 54%),
+    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.42), transparent 58%),
+    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.32), transparent 60%),
+    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 62%),
+    linear-gradient(165deg, #141018 0%, #07070a 42%, #050505 100%);
 }
 
 .accent-aura-slot {
@@ -20,19 +25,11 @@
   left: 0;
   right: 0;
   top: 0;
-  height: 48vh;
+  height: 82vh;
   overflow: hidden;
-  opacity: 0.46;
-  mask-image: linear-gradient(to bottom, #000 0%, #000 36%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 36%, transparent 100%);
-}
-
-html.is-phone .accent-aura-slot,
-html[data-viewport="phone"] .accent-aura-slot {
-  height: 100%;
-  opacity: 0.58;
-  mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgba(0, 0, 0, 0.28) 46%, rgba(0, 0, 0, 0.16) 68%, #000 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgba(0, 0, 0, 0.28) 46%, rgba(0, 0, 0, 0.16) 68%, #000 100%);
+  opacity: 0.62;
+  mask-image: linear-gradient(to bottom, #000 8%, rgba(0, 0, 0, 0.72) 42%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 8%, rgba(0, 0, 0, 0.72) 42%, transparent 100%);
 }
 
 .accent-aura-rain {
@@ -47,6 +44,17 @@ html[data-viewport="phone"] .accent-aura-slot {
   z-index: 1;
 }
 
+html.is-phone,
+html[data-viewport="phone"],
+html.is-desktop,
+html[data-viewport="desktop"] {
+  --craft-dock-h-phone: 64px;
+}
+
+html.is-phone .panel-shell,
+html.is-desktop .panel-shell,
+html[data-viewport="phone"] .panel-shell,
+html[data-viewport="desktop"] .panel-shell,
 html.is-phone .panel-shell-main,
 html.is-desktop .panel-shell-main,
 html[data-viewport="phone"] .panel-shell-main,
@@ -286,7 +294,7 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
 
 .metric-sheet-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -304,22 +312,12 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   flex: 0 0 44px;
   width: 44px;
   height: 44px;
-  margin: 0;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin: -8px -8px 0 0;
   border: 0;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
-  line-height: 0;
   cursor: pointer;
-}
-
-.metric-sheet-x svg,
-.focus-sheet-close svg {
-  display: block;
 }
 
 .metric-sheet-value {
@@ -363,28 +361,18 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  height: 148px;
+  height: 112px;
   margin-top: 18px;
 }
 
 .metric-bar {
-  position: relative;
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
   height: 100%;
-  margin: 0;
-  padding: 0 2px;
-  border: 0;
-  border-radius: 14px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
 }
 
 .metric-bar-track {
@@ -392,45 +380,22 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   width: 100%;
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.metric-bar.is-on .metric-bar-track,
-.metric-bar:hover .metric-bar-track,
-.metric-bar:focus-visible .metric-bar-track {
-  box-shadow: inset 0 0 0 1.5px #fff;
 }
 
 .metric-bar-col {
   display: block;
-  width: calc(100% - 10px);
+  width: 100%;
   border-radius: 8px 8px 4px 4px;
-  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.92);
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
   min-height: 0;
   transform-origin: bottom center;
   animation: metricBarIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.metric-bar-label,
-.metric-bar-value {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
 .metric-bar-label {
-  font-size: 0.72rem;
-  font-weight: 650;
-  color: #f4f4f5;
-}
-
-.metric-bar-value {
   font-size: 0.68rem;
-  color: #c8c8cc;
+  color: #8e8e93;
+  white-space: nowrap;
 }
 
 .metric-sheet-action {
@@ -505,104 +470,48 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   .accent-aura-slot { display: none; }
 }
 
-/* Оболочка приложения: слева меню, справа узкая рабочая колонка.
-   Контент не растягивается на всё окно и не ложится на меню. */
+/* Рабочая зона: одна колонка на ширину окна.
+   Вкладки с grid-column: 2 уезжали в неявную колонку справа от пустого места. */
 html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main {
   min-width: 0 !important;
   min-height: 0 !important;
-  overflow: hidden !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
 }
 
 html.is-desktop .panel-shell .panel-layout,
-html[data-viewport="desktop"] .panel-shell .panel-layout {
-  display: grid !important;
-  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr) !important;
-  grid-template-rows: auto minmax(0, 1fr) !important;
-  width: 100% !important;
-  max-width: none !important;
-  min-width: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  gap: 20px !important;
-  overflow: hidden !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-}
-
-html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar {
-  display: flex !important;
-  grid-column: 1 !important;
-  grid-row: 1 / -1 !important;
-  position: relative !important;
-  inset: auto !important;
-  width: auto !important;
-  max-width: none !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  justify-self: stretch !important;
-  z-index: 2 !important;
-  background: #101012 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  border-radius: 20px !important;
-  box-shadow: none !important;
-}
-
-html.is-desktop .panel-shell .panel-layout > .elite-topbar,
-html.is-desktop .panel-shell .panel-layout > .elite-topbar-compact,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .elite-topbar,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .elite-topbar-compact {
-  grid-column: 2 !important;
-  grid-row: 1 !important;
-  width: min(880px, 100%) !important;
-  max-width: 880px !important;
-  margin: 0 !important;
-  justify-self: start !important;
-  min-width: 0 !important;
-}
-
-html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact),
-html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact) {
-  grid-column: 2 !important;
-  grid-row: 2 !important;
-  width: min(880px, 100%) !important;
-  max-width: 880px !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  margin-left: 0 !important;
-  margin-right: auto !important;
-  justify-self: start !important;
-  box-sizing: border-box !important;
-  overflow: auto !important;
-}
-
+html[data-viewport="desktop"] .panel-shell .panel-layout,
 html.is-phone .panel-shell .panel-layout,
 html[data-viewport="phone"] .panel-shell .panel-layout {
   width: 100% !important;
   max-width: 100% !important;
-  margin: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
   grid-template-columns: minmax(0, 1fr) !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: min(1120px, 100%) !important;
+  justify-self: center !important;
+  box-sizing: border-box !important;
 }
 
 html.is-phone .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
 html[data-viewport="phone"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
-  grid-column: 1 !important;
   min-width: 0 !important;
   width: 100% !important;
   max-width: 100% !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
+  align-self: stretch !important;
   box-sizing: border-box !important;
 }
 
@@ -700,20 +609,13 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
   }
 }
 
-/* Поле читается: тёмный фон, без рамки на всё окно. */
-html.is-desktop .panel-shell,
-html[data-viewport="desktop"] .panel-shell,
-html.is-phone .panel-shell,
-html[data-viewport="phone"] .panel-shell,
+/* Рабочая зона прозрачная: цвет и матрица остаются на слое сзади. */
 html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main,
 html.is-phone .panel-shell .panel-shell-main,
-html[data-viewport="phone"] .panel-shell .panel-shell-main,
-.panel-shell .dash-home {
-  background: #07070a !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: #f4f4f5;
+html[data-viewport="phone"] .panel-shell .panel-shell-main {
+  background: transparent !important;
+  box-shadow: none;
 }
 
 html.is-phone .phone-dock.is-tabs-menu,
@@ -862,7 +764,7 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
 
 .focus-sheet-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 18px 16px 12px;
@@ -886,8 +788,6 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
 .focus-sheet-close {
   width: 36px;
   height: 36px;
-  margin: 0;
-  padding: 0;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -895,7 +795,6 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  line-height: 0;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -944,10 +843,12 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   }
 }
 
-/* Телефон: та же нижняя панель, что на компьютере, только по ширине экрана. */
-html.is-phone,
-html[data-viewport="phone"] {
-  --phone-dock-clearance: 78px;
+/* Телефон: нижняя полоса как на компьютере, без бокового меню. */
+html.is-phone .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shelf-sidebar,
+html.is-phone .panel-mobile-overlay,
+html[data-viewport="phone"] .panel-mobile-overlay {
+  display: none !important;
 }
 
 html.is-phone .phone-dock,
@@ -955,559 +856,141 @@ html[data-viewport="phone"] .phone-dock {
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
-  width: auto !important;
-  height: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+  width: 100% !important;
+  height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
   margin: 0 !important;
-  padding: 4px 2px env(safe-area-inset-bottom, 0px) !important;
-  border: 0 !important;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
   border-radius: 0 !important;
-  border-top: 1px solid rgba(var(--e-g1, var(--e-accent-rgb, 200, 175, 255)), 0.55) !important;
-  background: rgba(8, 8, 10, 0.38) !important;
-  box-shadow: none !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.28) !important;
+  background: linear-gradient(180deg, rgba(12, 12, 14, 0.28), rgba(8, 8, 10, 0.62)) !important;
+  box-shadow: 0 -16px 36px rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   overflow: hidden !important;
-  z-index: 60 !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
 }
 
 html.is-phone .phone-dock-scroll,
-html[data-viewport="phone"] .phone-dock-scroll,
-html.is-phone .phone-dock.is-crowded .phone-dock-scroll,
-html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll {
+html[data-viewport="phone"] .phone-dock-scroll {
   flex: 1 1 auto !important;
-  justify-content: stretch !important;
-  gap: 0 !important;
-  max-width: 100% !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: space-evenly !important;
+  gap: 4px !important;
+  min-width: 0 !important;
   overflow: hidden !important;
-  mask-image: none !important;
-  -webkit-mask-image: none !important;
 }
 
 html.is-phone .phone-dock button,
-html[data-viewport="phone"] .phone-dock button,
-html.is-phone .phone-dock.is-crowded .phone-dock-scroll button,
-html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll button {
+html[data-viewport="phone"] .phone-dock button {
   flex: 1 1 0 !important;
-  width: auto !important;
   min-width: 0 !important;
   max-width: none !important;
-  height: 48px !important;
-  padding: 0 2px !important;
-  border-radius: 14px !important;
-  color: rgba(255, 255, 255, 0.68) !important;
+  height: auto !important;
+  padding: 4px 2px !important;
+  border-radius: 16px !important;
+  gap: 3px !important;
+  color: rgba(255, 255, 255, 0.62) !important;
   background: transparent !important;
-  box-shadow: none !important;
 }
 
 html.is-phone .phone-dock button.is-on,
 html[data-viewport="phone"] .phone-dock button.is-on,
 html.is-phone.is-personal .phone-dock button.is-on,
 html[data-viewport="phone"].is-personal .phone-dock button.is-on {
-  background: rgba(255, 255, 255, 0.16) !important;
-  color: #fff !important;
-  box-shadow: none !important;
-}
-
-html.is-phone .phone-dock button.is-on .phone-dock-label,
-html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-label,
-html.is-phone .phone-dock button.is-on .phone-dock-icon,
-html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-icon {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
   color: #fff !important;
 }
 
 html.is-phone .phone-dock-label,
 html[data-viewport="phone"] .phone-dock-label {
   display: block !important;
-  max-width: 100% !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  font-size: 10px !important;
+  font-size: 11px !important;
   font-weight: 650 !important;
-  letter-spacing: -0.03em !important;
+  letter-spacing: -0.02em !important;
   line-height: 1.1 !important;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-html.is-phone .phone-dock-mark,
-html[data-viewport="phone"] .phone-dock-mark {
-  display: none !important;
+html.is-phone .phone-dock-icon svg,
+html[data-viewport="phone"] .phone-dock-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
-html.is-phone .panel-shelf-sidebar,
-html[data-viewport="phone"] .panel-shelf-sidebar,
-html.is-phone .panel-shelf-sidebar.panel-sidebar-mobile-open,
-html[data-viewport="phone"] .panel-shelf-sidebar.panel-sidebar-mobile-open,
-html.is-phone .panel-mobile-overlay,
-html.is-phone .panel-mobile-overlay.is-shown,
-html[data-viewport="phone"] .panel-mobile-overlay,
-html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
-  display: none !important;
+.pocket-tools {
+  margin-top: 22px;
 }
 
-.accent-picker-panel.is-inline {
-  flex-wrap: wrap;
-}
-
-.gate-palette-pop .accent-picker-panel.is-inline .accent-stops-preview,
-.gate-palette-pop .accent-picker-panel.is-inline > .accent-slider,
-.gate-palette-pop .accent-picker-panel.is-inline .accent-actions {
-  grid-column: 1 / -1;
-  width: 100%;
-}
-
-.accent-stops {
+.pocket-tools-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 100%;
-  min-width: 0;
-  flex: 1 1 100%;
+  padding: 8px;
+  border-radius: 22px;
+  background: rgba(16, 16, 18, 0.46);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.accent-stops-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.accent-stops-head em {
-  font-style: normal;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.46);
-}
-
-.accent-stop-list {
+.pocket-tools-row,
+.pocket-tools-music {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.accent-stop {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  min-height: 48px;
-}
-
-.accent-stop-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.04);
   color: #fff;
-  font: inherit;
   text-align: left;
-  cursor: pointer;
 }
 
-.accent-stop.is-on .accent-stop-main {
-  border-color: #fff;
-}
-
-.accent-stop-chip {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border-radius: 999px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
-}
-
-.accent-stop-main span {
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.accent-stop-main em {
-  margin-left: auto;
-  font-style: normal;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-.accent-stop-remove,
-.accent-stop-add,
-.accent-action {
-  min-height: 48px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: transparent;
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.accent-stop-remove {
-  flex: 0 0 auto;
-  padding: 0 14px;
-}
-
-.accent-stop-add,
-.accent-action {
-  width: 100%;
-}
-
-.accent-stops-preview {
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.62);
-  box-shadow: none;
-}
-
-.accent-scenes,
-.accent-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.accent-actions {
-  flex-direction: column;
-}
-
-.accent-reset {
-  width: 100%;
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 8px 14px;
-  border-radius: 16px;
-  color: #f4f4f5;
-  font: inherit;
+.pocket-tools-row strong,
+.pocket-tools-music strong {
   font-size: 15px;
   font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  text-align: center;
-  cursor: pointer;
 }
 
-@media (max-width: 700px) {
-  .accent-reset {
-    gap: 8px;
-    padding: 8px 12px;
-    font-size: 14px;
-    letter-spacing: -0.03em;
-  }
+.pocket-tools-row span,
+.pocket-tools-music span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
 }
 
-.accent-reset span {
-  min-width: 0;
+.pocket-tools-row.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.18);
 }
 
-.accent-reset-mark {
-  width: 28px;
-  height: 16px;
-  flex: 0 0 28px;
-  border-radius: 5px;
-  background: linear-gradient(180deg, #0a0a0c 0 52%, #ffffff 100%) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+.pocket-tools-row.is-leave strong {
+  color: #ffb4b4;
 }
 
-.accent-scene-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-@media (max-width: 700px) {
-  .accent-scene-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.accent-scene {
-  min-height: 72px;
+.pocket-tools-music span {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pocket-tools-music button {
+  border: 0;
   background: transparent;
   color: #fff;
   font: inherit;
-  cursor: pointer;
+  font-size: 13px;
 }
 
-.accent-scene.is-on {
-  border-color: #fff;
-}
-
-.accent-scene span {
-  font-size: 12px;
-  font-weight: 650;
-  text-align: left;
-}
-
-.accent-scene-swatch {
-  display: block;
-  height: 36px;
-  border-radius: 10px;
-  background: #111;
-}
-
-.accent-picker-panel:not(.is-inline) {
-  width: min(380px, calc(100vw - 16px)) !important;
-  max-height: min(82dvh, 760px) !important;
-}
-
-@media (max-width: 700px) {
-  .accent-picker-panel:not(.is-inline) {
-    top: auto !important;
-    left: 8px !important;
-    right: 8px !important;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
-    width: auto !important;
-  }
-}
-
-.extras-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.extras-settings h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  letter-spacing: -0.03em;
-}
-
-/* Фон ровный. Цвет пользователя не заливкой по всему экрану. */
-.accent-aura-wash,
-.gate-veil {
-  background:
-    radial-gradient(ellipse 70% 42% at 50% 42%, rgba(0, 0, 0, 0.55), transparent 72%),
-    #050508 !important;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
-  .elite-search,
-  .panel-sidebar-search,
-  .extras-hub-search
-) :is(input, textarea) {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  color: #f4f4f5 !important;
-  -webkit-text-fill-color: #f4f4f5 !important;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) .accent-hex-shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field) {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  color: #f4f4f5 !important;
-  -webkit-text-fill-color: #f4f4f5 !important;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) input[type="range"] {
-  -webkit-appearance: none !important;
-  appearance: none !important;
-  display: block !important;
-  width: 100% !important;
-  height: 22px !important;
-  margin: 6px 0 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  cursor: pointer;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: linear-gradient(
-    90deg,
-    var(--e-accent, #f4f4f5) var(--fill, var(--vol-pct, 0%)),
-    rgba(255, 255, 255, 0.12) var(--fill, var(--vol-pct, 0%))
-  );
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
-  border-radius: 50%;
-  background: rgba(8, 8, 10, 0.15);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-track {
-  height: 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.12);
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-progress {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--e-accent, #f4f4f5);
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: rgba(8, 8, 10, 0.15);
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
-}
-
-html:is(.is-phone, .is-desktop) .phone-dock,
-html:is([data-viewport="phone"], [data-viewport="desktop"]) .phone-dock {
-  background: rgba(12, 12, 14, 0.94) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
-}
-
-.gate-stage,
-.accent-picker-panel {
-  background: #101012 !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45) !important;
-}
-
-.gate-stage {
-  width: min(760px, calc(100% - 48px));
-  margin-inline: auto;
-}
-
-.metric-sheet,
-.focus-sheet,
-.case-sheet {
-  background: #141416 !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-}
-
-button:has(> svg:only-child),
-.metric-sheet-x,
-.focus-sheet-close,
-.elite-icon-btn,
-.elite-menu-btn,
-.img-lightbox-close,
-.panel-sidebar-close {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 0 !important;
-}
-
-.metric-sheet-x,
-.focus-sheet-close,
-.img-lightbox-close {
-  padding: 0 !important;
-}
-
-.accent-wheel,
-.accent-stop-chip,
-.accent-scene-swatch,
-.accent-hex-preview {
-  border: 0 !important;
-  box-shadow: none !important;
-}
-
-.accent-reset-mark {
-  border: 0 !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85) !important;
-  background: linear-gradient(180deg, #0a0a0c 0 52%, #ffffff 100%) !important;
-}
-
-.accent-stops-preview {
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  box-shadow: none !important;
-}
-
-/* Текст всегда светлый. Цвет пользователя — в цифрах и графиках. */
-.gate-root.is-personal,
-.realm-root.is-personal {
-  --gate-ink: #f4f4f5;
-  --gate-muted: rgba(244, 244, 244, 0.72);
-  --gate-line: rgba(255, 255, 255, 0.2);
-  --gate-fill: #f4f4f5;
-  --gate-fill-ink: #0a0a0a;
-}
-
-.gate-root .gate-title,
-.gate-root .gate-lead,
-.gate-root .gate-door,
-.gate-root .gate-door-title,
-.gate-root .gate-status,
-.panel-shell h1,
-.panel-shell h2,
-.panel-shell .panel-page-title,
-.panel-shell .sec-title,
-.panel-shell .elite-greeting-title,
-.panel-brand-name {
-  color: #f4f4f5 !important;
-  -webkit-text-fill-color: #f4f4f5 !important;
-  background: none !important;
-  text-shadow: none !important;
-}
-
-.gate-root .gate-lead,
-.gate-root .gate-door.is-sealed,
-.gate-root .gate-door-detail,
-.panel-shell .panel-page-lead,
-.panel-shell .sec-subtitle,
-.dash-bot-hero-sub,
-.dash-usage-hint {
-  color: rgba(244, 244, 244, 0.72) !important;
-  -webkit-text-fill-color: rgba(244, 244, 244, 0.72) !important;
-}
-
-.dash-bot-hero,
-.dash-usage-card,
-.dash-cyber-head,
-.dash-cyber-stage,
-.dash-usage-stage {
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  box-shadow: none !important;
-  background: #141416 !important;
-  background-image: none !important;
-}
-
-.dash-bot-hero::before,
-.dash-bot-hero::after {
-  display: none !important;
-}
-
-.dash-bot-hero-kicker,
-.dash-usage-label {
-  color: rgba(244, 244, 244, 0.62) !important;
-  -webkit-text-fill-color: rgba(244, 244, 244, 0.62) !important;
-}
-
-.dash-bot-hero-value,
-.dash-usage-card .dash-usage-value,
-.metric-sheet-value strong {
-  color: var(--e-accent, #f4f4f5) !important;
-  -webkit-text-fill-color: var(--e-accent, #f4f4f5) !important;
-  text-shadow: none !important;
-}
-
-.metric-bar-col {
-  background: var(--e-accent, #f4f4f5) !important;
+.pocket-tools-music input[type="range"] {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: rgb(var(--e-accent-rgb, 200, 175, 255));
 }

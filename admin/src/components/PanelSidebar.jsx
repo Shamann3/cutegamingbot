@@ -40,7 +40,7 @@ function SpeakerIcon({ muted }) {
   )
 }
 
-export function SettingsControls({
+function SettingsControls({
   accent,
   onAccentChange,
   onSessionExpired,

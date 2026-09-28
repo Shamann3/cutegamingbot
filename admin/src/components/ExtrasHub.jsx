@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { groupSections, SECTION_HINTS } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
+import AccentPalette from './AccentPalette'
 
 function FallbackIcon() {
   return (
@@ -10,12 +11,71 @@ function FallbackIcon() {
   )
 }
 
+/** Цвет, музыка и выход — на телефоне живут в «Ещё», а не в боковом меню. */
+export function PanelPocketTools({
+  accent,
+  onAccentChange,
+  lightMode = false,
+  onTogglePerf,
+  musicVolume = 0,
+  onMusicVolumeChange,
+  onToggleMusic,
+  onChangeDoor,
+  onLogout,
+}) {
+  const muted = Number(musicVolume) <= 0
+  return (
+    <section className="pocket-tools" aria-label="Настройки панели">
+      <h2 className="extras-hub-group-label">Панель</h2>
+      <div className="pocket-tools-card">
+        {typeof onAccentChange === 'function' && (
+          <AccentPalette value={accent} onChange={onAccentChange} />
+        )}
+        {typeof onTogglePerf === 'function' && (
+          <button type="button" className={`pocket-tools-row${lightMode ? ' is-on' : ''}`} onClick={onTogglePerf}>
+            <strong>{lightMode ? 'Обычный режим' : 'Оптимизировать'}</strong>
+            <span>{lightMode ? 'Вернуть матрицу и свечение' : 'Реже матрица, легче анимации'}</span>
+          </button>
+        )}
+        {typeof onMusicVolumeChange === 'function' && (
+          <label className="pocket-tools-music">
+            <span>
+              <strong>Музыка</strong>
+              <button type="button" onClick={onToggleMusic}>{muted ? 'Включить' : 'Выключить'}</button>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={Math.round(Number(musicVolume) * 100)}
+              onChange={(event) => onMusicVolumeChange(Number(event.target.value) / 100)}
+              aria-label="Громкость музыки"
+            />
+          </label>
+        )}
+        {typeof onChangeDoor === 'function' && (
+          <button type="button" className="pocket-tools-row" data-coach="doors" onClick={onChangeDoor}>
+            <strong>Сменить панель</strong>
+            <span>Выбор входа, без выхода из аккаунта</span>
+          </button>
+        )}
+        {typeof onLogout === 'function' && (
+          <button type="button" className="pocket-tools-row is-leave" onClick={onLogout}>
+            <strong>Выйти</strong>
+            <span>Завершить сессию</span>
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 /** Экран «Дополнительно»: сетка иконок остальных разделов. */
 export default function ExtrasHub({
   sections = [],
   badges = {},
   onOpen,
-  footer = null,
+  tools = null,
 }) {
   const [query, setQuery] = useState('')
 
@@ -90,7 +150,7 @@ export default function ExtrasHub({
           </div>
         </div>
       ))}
-      {footer}
+      {tools}
     </section>
   )
 }

@@ -4,8 +4,7 @@ import { usePerfMode } from '../lib/perfMode'
 
 function deviceIsStill() {
   if (typeof window === 'undefined') return true
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true
-  return (navigator.hardwareConcurrency || 4) <= 2
+  return Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
 }
 
 /**

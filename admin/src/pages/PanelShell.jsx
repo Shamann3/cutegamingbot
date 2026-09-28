@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PANEL_SECTIONS, visibleSections, splitDockSections, dockActiveId } from '../constants/panelNav'
-import PanelSidebar, { SettingsControls } from '../components/PanelSidebar'
-import AccentPalette from '../components/AccentPalette'
+import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
 import ToastHost from '../components/ToastHost'
 import { fetchAdminMe, fetchPrOverview, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
@@ -55,7 +54,7 @@ import useDrawerSwipe from '../lib/useDrawerSwipe'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 import PhoneDock from '../components/PhoneDock'
-import ExtrasHub from '../components/ExtrasHub'
+import ExtrasHub, { PanelPocketTools } from '../components/ExtrasHub'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -94,12 +93,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
-    if (phone) return
     setMobileNavOpen(Boolean(step?.openNav))
-  }, [phone])
-  useEffect(() => {
-    if (phone) setMobileNavOpen(false)
-  }, [phone])
+  }, [])
   useDrawerSwipe({
     enabled: false,
     open: mobileNavOpen,
@@ -342,7 +337,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       <PanelBackgroundMusic volume={musicVolume} />
 
       {/* Mobile: dimmer under fullscreen nav drawer */}
-      <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} ms={700} />
+      {!phone && (
+        <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} ms={700} />
+      )}
 
       {isProjectCreator && (
         <NikaCrisisStrip
@@ -405,7 +402,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             onLogout={handleLogout}
             onChangeDoor={onChangeDoor}
             onSessionExpired={handleSessionExpired}
-            mobileOpen={mobileNavOpen}
+            mobileOpen={phone ? false : mobileNavOpen}
             onClose={() => setMobileNavOpen(false)}
             role={role}
             lightMode={lightMode}
@@ -445,30 +442,18 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               sections={extraSections}
               badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
               onOpen={handleNavigate}
-              footer={phone ? (
-                <div className="extras-settings">
-                  <h2>Настройки</h2>
-                  <AccentPalette value={accent} onChange={handleAccentChange} />
-                  <SettingsControls
-                    accent={accent}
-                    onAccentChange={handleAccentChange}
-                    onSessionExpired={handleSessionExpired}
-                    musicVolume={musicVolume}
-                    onToggleMusic={toggleMusicMute}
-                    onMusicVolumeChange={setMusicVolume}
-                    lightMode={lightMode}
-                    onTogglePerf={() => setLightMode(!lightMode)}
-                  />
-                  {onChangeDoor && (
-                    <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
-                      Сменить панель
-                      <span className="panel-logout-hint">выбор панели, без выхода из аккаунта</span>
-                    </button>
-                  )}
-                  <button type="button" className="panel-logout-btn" onClick={handleLogout}>
-                    Выйти
-                  </button>
-                </div>
+              tools={phone ? (
+                <PanelPocketTools
+                  accent={accent}
+                  onAccentChange={handleAccentChange}
+                  lightMode={lightMode}
+                  onTogglePerf={() => setLightMode(!lightMode)}
+                  musicVolume={musicVolume}
+                  onMusicVolumeChange={setMusicVolume}
+                  onToggleMusic={toggleMusicMute}
+                  onChangeDoor={onChangeDoor}
+                  onLogout={handleLogout}
+                />
               ) : null}
             />
           )}
