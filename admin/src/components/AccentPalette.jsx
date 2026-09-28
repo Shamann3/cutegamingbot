@@ -3,15 +3,11 @@ import { createPortal } from 'react-dom'
 import {
   clamp,
   defaultAccent,
-  gradientStopsFrom,
   hexToRgb,
   hsvToHex,
-  MAX_STOPS,
   normalizeAccent,
   parseHexInput,
   rgbToHsv,
-  SCENES,
-  suggestNextStop,
 } from '../lib/accentTheme'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 
@@ -76,7 +72,6 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const [open, setOpen] = useState(inline)
   const [leaving, setLeaving] = useState(false)
   const [draft, setDraft] = useState(accent)
-  const [activeStop, setActiveStop] = useState(0)
   const [hexText, setHexText] = useState(accent.hex)
   const [hexOk, setHexOk] = useState(true)
   const [pos, setPos] = useState({ top: 0, left: 0 })
@@ -90,12 +85,10 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const draftRef = useRef(draft)
   const hexTextRef = useRef(hexText)
   const onChangeRef = useRef(onChange)
-  const activeRef = useRef(0)
 
   draftRef.current = draft
   hexTextRef.current = hexText
   onChangeRef.current = onChange
-  activeRef.current = activeStop
 
   const placePanel = useCallback(() => {
     const btn = triggerRef.current
@@ -122,21 +115,17 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const pushAccent = useCallback((next) => {
     const normalized = normalizeAccent(next)
     setDraft(normalized)
-    const index = Math.min(activeRef.current, Math.max(0, normalized.stops.length - 1))
-    setHexText(normalized.stops[index] || normalized.hex)
+    setHexText(normalized.hex)
     setHexOk(true)
     onChangeRef.current?.(normalized)
   }, [])
 
-  const paintStop = useCallback((index, hex) => {
+  const paintColor = useCallback((hex) => {
     const current = normalizeAccent(draftRef.current)
-    const nextStops = current.stops.slice()
-    const at = Math.min(Math.max(0, index), Math.max(0, nextStops.length - 1))
-    nextStops[at] = hex
     pushAccent(normalizeAccent({
       ...current,
-      hex: nextStops[0],
-      stops: nextStops,
+      hex,
+      stops: [hex],
       hexSource: true,
       id: 'custom',
       label: 'Свой',
@@ -145,34 +134,28 @@ export default function AccentPalette({ value, onChange, inline = false }) {
 
   const commitHsv = useCallback((partial) => {
     const current = normalizeAccent(draftRef.current)
-    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
-    const hex = current.stops[index] || current.hex
-    const { r, g, b } = hexToRgb(hex)
+    const { r, g, b } = hexToRgb(current.hex)
     const hsv = rgbToHsv(r, g, b)
     const next = {
       h: partial.h ?? hsv.h,
       s: partial.s ?? hsv.s,
       v: partial.v ?? hsv.v,
     }
-    paintStop(index, hsvToHex(next.h, next.s, next.v))
-  }, [paintStop])
+    paintColor(hsvToHex(next.h, next.s, next.v))
+  }, [paintColor])
 
   const commitHex = useCallback((raw, { silentInvalid = false } = {}) => {
     const parsed = parseHexInput(raw)
     if (!parsed) {
       setHexOk(false)
       if (!silentInvalid) {
-        const current = normalizeAccent(draftRef.current)
-        const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
-        setHexText(current.stops[index] || current.hex)
+        setHexText(normalizeAccent(draftRef.current).hex)
       }
       return false
     }
-    const current = normalizeAccent(draftRef.current)
-    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
-    paintStop(index, parsed)
+    paintColor(parsed)
     return true
-  }, [paintStop])
+  }, [paintColor])
 
   const closingRef = useRef(false)
   const closePalette = useCallback(() => {
@@ -191,15 +174,9 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     if (!open && !inline) return
     const next = normalizeAccent(value)
     setDraft(next)
-    const index = Math.min(activeRef.current, Math.max(0, next.stops.length - 1))
-    setHexText(next.stops[index] || next.hex)
+    setHexText(next.hex)
     setHexOk(true)
   }, [open, inline, value])
-
-  useEffect(() => {
-    if (open || inline) return
-    setActiveStop(0)
-  }, [open, inline])
 
   useLayoutEffect(() => {
     if (!open || inline) return undefined
@@ -243,9 +220,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     const canvas = canvasRef.current
     if (!canvas) return
     const current = normalizeAccent(draftRef.current)
-    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
-    const hex = current.stops[index] || current.hex
-    const { r, g, b } = hexToRgb(hex)
+    const { r, g, b } = hexToRgb(current.hex)
     const hsv = rgbToHsv(r, g, b)
     const rect = canvas.getBoundingClientRect()
     const picked = pointerToHsv(e.clientX, e.clientY, rect, hsv.v)
@@ -272,61 +247,11 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     }
   }
 
-  const stops = draft.stops?.length ? draft.stops : [draft.hex]
-  const stopIndex = Math.min(activeStop, Math.max(0, stops.length - 1))
-  const activeHex = stops[stopIndex] || draft.hex
+  const activeHex = draft.hex
   const activeRgb = hexToRgb(activeHex)
   const activeHsv = rgbToHsv(activeRgb.r, activeRgb.g, activeRgb.b)
-  const painted = gradientStopsFrom(draft)
-
-  const selectStop = (index) => {
-    activeRef.current = index
-    setActiveStop(index)
-    setHexText(stops[index] || draft.hex)
-    setHexOk(true)
-  }
-
-  const addStop = () => {
-    if (stops.length >= MAX_STOPS) return
-    const hex = suggestNextStop(stops)
-    const nextStops = [...stops, hex]
-    activeRef.current = nextStops.length - 1
-    setActiveStop(nextStops.length - 1)
-    pushAccent(normalizeAccent({
-      ...draftRef.current,
-      hex: nextStops[0],
-      stops: nextStops,
-      hexSource: true,
-      id: 'custom',
-      label: 'Свой',
-    }))
-  }
-
-  const removeStop = (index) => {
-    if (stops.length <= 1) return
-    const nextStops = stops.filter((_, item) => item !== index)
-    const nextIndex = Math.min(index, nextStops.length - 1)
-    activeRef.current = nextIndex
-    setActiveStop(nextIndex)
-    pushAccent(normalizeAccent({
-      ...draftRef.current,
-      hex: nextStops[0],
-      stops: nextStops,
-      hexSource: true,
-      id: 'custom',
-      label: 'Свой',
-    }))
-  }
-
-  const paintBlack = () => paintStop(stopIndex, '#000000')
-
-  const pickScene = (id) => {
-    pushAccent(normalizeAccent({ ...draftRef.current, scene: id }))
-  }
 
   const resetAll = () => {
-    activeRef.current = 0
-    setActiveStop(0)
     pushAccent(defaultAccent())
   }
 
@@ -446,75 +371,11 @@ export default function AccentPalette({ value, onChange, inline = false }) {
         </div>
         </div>
 
-        <div className="accent-stops">
-          <div className="accent-stops-head">
-            <span>Цвета градиента</span>
-            <em>{stops.length} из {MAX_STOPS}</em>
-          </div>
-          <div className="accent-stop-list" role="list">
-            {stops.map((hex, index) => (
-              <div className={`accent-stop${index === stopIndex ? ' is-on' : ''}`} key={`${hex}-${index}`} role="listitem">
-                <button
-                  type="button"
-                  className="accent-stop-main"
-                  aria-pressed={index === stopIndex}
-                  aria-label={`Цвет ${index + 1}, ${hex}`}
-                  onClick={() => selectStop(index)}
-                >
-                  <i className="accent-stop-chip" style={{ background: hex }} aria-hidden="true" />
-                  <span>Цвет {index + 1}</span>
-                  <em>{hex}</em>
-                </button>
-                {stops.length > 1 && (
-                  <button
-                    type="button"
-                    className="accent-stop-remove"
-                    aria-label={`Убрать цвет ${index + 1}`}
-                    onClick={() => removeStop(index)}
-                  >
-                    Убрать
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {stops.length < MAX_STOPS && (
-            <button type="button" className="accent-stop-add" onClick={addStop}>
-              Добавить цвет
-            </button>
-          )}
-          <div
-            className="accent-stops-preview"
-            style={{ background: `linear-gradient(100deg, ${painted.join(', ')})` }}
-            aria-hidden="true"
-          />
-        </div>
-
-        <div className="accent-scenes">
-          <div className="accent-stops-head">
-            <span>Где лежит свет</span>
-          </div>
-          <div className="accent-scene-grid">
-            {SCENES.map((scene) => (
-              <button
-                key={scene.id}
-                type="button"
-                className={`accent-scene${draft.scene === scene.id ? ' is-on' : ''}`}
-                aria-pressed={draft.scene === scene.id}
-                title={scene.hint}
-                onClick={() => pickScene(scene.id)}
-              >
-                <i className={`accent-scene-swatch scene-${scene.id}`} style={{
-                  '--sw1': painted[0],
-                  '--sw2': painted[1],
-                  '--sw3': painted[2],
-                  '--sw4': painted[3],
-                }} aria-hidden="true" />
-                <span>{scene.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <div
+          className="accent-stops-preview"
+          style={{ background: `linear-gradient(100deg, #050508 0%, ${activeHex} 100%)` }}
+          aria-hidden="true"
+        />
 
         <label className="accent-slider">
           <span>Прозрачность деталей</span>
@@ -534,12 +395,9 @@ export default function AccentPalette({ value, onChange, inline = false }) {
         </label>
 
         <div className="accent-actions">
-          <button type="button" className="accent-action" onClick={paintBlack}>
-            <i className="accent-action-ink" aria-hidden="true" />
-            Чёрный
-          </button>
-          <button type="button" className="accent-action" onClick={resetAll}>
-            Сбросить
+          <button type="button" className="accent-reset" onClick={resetAll}>
+            <i className="accent-reset-mark" aria-hidden="true" />
+            <span>Сброс до стандартного цвета</span>
           </button>
         </div>
       </div>
@@ -571,12 +429,12 @@ export default function AccentPalette({ value, onChange, inline = false }) {
       >
         <span
           className="panel-accent-trigger-swatch"
-          style={{ background: `linear-gradient(135deg, ${gradientStopsFrom(accent).join(', ')})` }}
+          style={{ background: `linear-gradient(135deg, #050508 0%, ${accent.hex} 100%)` }}
           aria-hidden
         />
         <span className="panel-accent-trigger-meta">
           <strong>Любой цвет</strong>
-          <em>{accent.stops.length > 1 ? `${accent.stops.length} цвета` : accent.hex}</em>
+          <em>{accent.hex}</em>
         </span>
         <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>
       </button>

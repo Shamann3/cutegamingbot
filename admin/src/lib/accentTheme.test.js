@@ -20,30 +20,32 @@ describe('inkOnAccent', () => {
 })
 
 describe('градиент из палитры', () => {
-  it('из одного цвета собирает четыре ярких', () => {
+  it('держит один оттенок и только меняет яркость', () => {
+    const source = rgbToHsv(...Object.values(hexToRgb('#6BA3C9')))
     const stops = gradientStopsFrom({ hex: '#6BA3C9' })
     expect(stops).toHaveLength(4)
-    expect(satOf(stops[0])).toBeGreaterThan(0.8)
-    stops.slice(1).forEach((hex) => {
-      expect(satOf(hex)).toBeGreaterThan(0.8)
+    stops.forEach((hex) => {
+      const hsv = rgbToHsv(...Object.values(hexToRgb(hex)))
+      expect(Math.abs(hsv.h - source.h)).toBeLessThan(1)
+      expect(Math.abs(hsv.s - source.s)).toBeLessThan(0.02)
     })
   })
 
-  it('белый остаётся лампой, а соседи становятся насыщенными', () => {
+  it('белый остаётся белым на всей полосе', () => {
     const stops = gradientStopsFrom({ hex: '#ffffff' })
-    expect(satOf(stops[0])).toBeLessThan(0.2)
-    stops.slice(1).forEach((hex) => {
-      expect(satOf(hex)).toBeGreaterThan(0.8)
+    stops.forEach((hex) => {
+      expect(satOf(hex)).toBeLessThan(0.2)
     })
   })
 
-  it('хранит до четырёх выбранных цветов и берёт первый как основной', () => {
+  it('оставляет один цвет, даже если раньше было несколько', () => {
     const accent = normalizeAccent({
       hex: '#112233',
       stops: ['#ff0044', '#00cc88', '#2266ff', '#ffcc22', '#000000'],
     })
-    expect(accent.stops).toEqual(['#ff0044', '#00cc88', '#2266ff', '#ffcc22'])
+    expect(accent.stops).toEqual(['#ff0044'])
     expect(accent.hex).toBe('#ff0044')
+    expect(gradientStopsFrom(accent)[0]).not.toBe('#00cc88')
   })
 
   it('чёрный остаётся чёрным и не разгорается в неон', () => {
@@ -51,9 +53,9 @@ describe('градиент из палитры', () => {
     expect(stops.every((hex) => hex === '#000000')).toBe(true)
   })
 
-  it('помнит схему света и прозрачность', () => {
+  it('держит один свет и помнит прозрачность', () => {
     const accent = normalizeAccent({ hex: '#ffffff', scene: 'eclipse', clear: 20 })
-    expect(accent.scene).toBe('eclipse')
+    expect(accent.scene).toBe('horizon')
     expect(accent.clear).toBe(20)
     expect(normalizeAccent({ hex: '#ffffff', scene: 'nope', clear: 400 }).clear).toBe(100)
     expect(normalizeAccent({ hex: '#ffffff' }).scene).toBe('horizon')

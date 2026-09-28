@@ -11,18 +11,6 @@ export const ACCENT_SWATCHES = [
   { id: 'coral', label: 'Коралл', hex: '#E07A5F' },
 ]
 
-/** Куда ложится свет. Порядок — это порядок в палитре. */
-export const SCENES = [
-  { id: 'horizon', label: 'Горизонт', hint: 'Свет поднимается снизу' },
-  { id: 'eclipse', label: 'Кольцо', hint: 'Сияние в центре экрана' },
-  { id: 'beam', label: 'Луч', hint: 'Полоса наискосок' },
-  { id: 'corners', label: 'Углы', hint: 'Четыре лампы по краям' },
-  { id: 'aurora', label: 'Ленты', hint: 'Широкое сияние сверху' },
-  { id: 'tide', label: 'Берега', hint: 'Цвет слева и справа' },
-  { id: 'lantern', label: 'Фонарь', hint: 'Один мягкий свет сверху' },
-  { id: 'rim', label: 'Кромка', hint: 'Цвет только по краю' },
-]
-
 const STORAGE_KEY = 'epsilon.panel.accent.v2'
 const DEFAULT_GLOW = 55
 const DEFAULT_SCENE = 'horizon'
@@ -161,38 +149,14 @@ function hsvOfHex(hex) {
   return rgbToHsv(r, g, b)
 }
 
-/**
- * Делает цвет фоном, на который приятно смотреть.
- * Бледный первый цвет остаётся лампой. Остальные сдвиги — уже насыщенные.
- */
 function isInk(hex) {
   return hsvOfHex(hex).v < 0.08
-}
-
-function bloom(hex, shift = 0) {
-  if (isInk(hex)) return '#000000'
-  const hsv = hsvOfHex(hex)
-  const pale = hsv.s < 0.14
-  if (pale && shift === 0) {
-    return hsvToHex(hsv.h, Math.min(hsv.s, 0.08), Math.max(hsv.v, 0.94))
-  }
-  const h = (((pale ? 262 : hsv.h) + shift) % 360 + 360) % 360
-  const s = pale ? 0.9 : Math.min(1, Math.max(hsv.s, 0.84))
-  const v = pale ? 0.96 : Math.min(1, Math.max(hsv.v, 0.74))
-  return hsvToHex(h, s, v)
-}
-
-function readScene(input) {
-  const id = input && typeof input === 'object' ? input.scene : ''
-  return SCENES.some((scene) => scene.id === id) ? id : DEFAULT_SCENE
 }
 
 function readClear(input) {
   const raw = input && typeof input === 'object' ? input.clear : undefined
   return Number.isFinite(raw) ? clamp(raw, 0, 100) : DEFAULT_CLEAR
 }
-
-const FILL_SHIFTS = [34, 186, 308]
 
 export function normalizeAccent(input) {
   if (!input) return defaultAccent()
@@ -262,10 +226,8 @@ export function normalizeAccent(input) {
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
 
   const storedStops = input && typeof input === 'object' ? input.stops : null
-  let stops = sanitizeStops(storedStops, finalHex)
-  if (input?.hexSource) {
-    stops = [finalHex, ...stops.slice(1)].slice(0, MAX_STOPS)
-  } else if (Array.isArray(storedStops) && stops[0]) {
+  const stops = sanitizeStops(storedStops, finalHex)
+  if (!input?.hexSource && Array.isArray(storedStops) && stops[0]) {
     finalHex = stops[0]
     const locked = hexToRgb(finalHex)
     const fromStop = rgbToHsv(locked.r, locked.g, locked.b)
@@ -273,7 +235,6 @@ export function normalizeAccent(input) {
     s = fromStop.s
     v = fromStop.v
   }
-  if (!stops.length) stops = [finalHex]
 
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
@@ -284,29 +245,23 @@ export function normalizeAccent(input) {
     s,
     v,
     glow,
-    stops,
-    scene: readScene(input),
+    stops: [finalHex],
+    scene: DEFAULT_SCENE,
     clear: readClear(input),
   }
 }
 
-/** Четыре ярких точки фона: выбранные цвета и, если их меньше, соседи по кругу. */
+/** Один градиент: тот же оттенок, только разной яркости. */
 export function gradientStopsFrom(accent) {
   const base = normalizeAccent(accent)
-  const chosen = base.stops.length ? base.stops : [base.hex]
-  if (chosen.every(isInk)) {
-    const dark = chosen.map(() => '#000000')
-    while (dark.length < MAX_STOPS) dark.push('#000000')
-    return dark.slice(0, MAX_STOPS)
-  }
-  const painted = chosen.map((hex) => bloom(hex, 0))
-  const seed = chosen.find((hex) => !isInk(hex)) || chosen[0]
-  let fill = 0
-  while (painted.length < MAX_STOPS && fill < FILL_SHIFTS.length) {
-    painted.push(bloom(seed, FILL_SHIFTS[fill]))
-    fill += 1
-  }
-  return painted.slice(0, MAX_STOPS)
+  if (isInk(base.hex)) return Array.from({ length: MAX_STOPS }, () => '#000000')
+  const hsv = hsvOfHex(base.hex)
+  const pale = hsv.s < 0.14
+  return [1, 0.82, 0.64, 0.48].map((step) => hsvToHex(
+    hsv.h,
+    pale ? Math.min(hsv.s, 0.06) : hsv.s,
+    pale ? Math.max(hsv.v * step, 0.62) : clamp(hsv.v * step, 0.18, 1),
+  ))
 }
 
 /** Следующий цвет, который ещё не выбран: яркий сосед, а не копия. */
