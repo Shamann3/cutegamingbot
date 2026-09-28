@@ -12,6 +12,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 CODE_EMPTY_LADDER = "empty_ladder"
+CODE_SHORT_LADDER = "short_ladder"
 CODE_REFUND_STUCK = "refund_stuck"
 CODE_TRANSFER_BROKEN = "transfer_broken"
 
@@ -59,6 +60,24 @@ def actions_for(code: str) -> List[Dict[str, str]]:
                 "hint": "Аварийный стоп. Куты больше не двигаются, пока не включишь.",
             },
         ]
+    if code == CODE_SHORT_LADDER:
+        return [
+            {
+                "id": "force_tick",
+                "label": "Проверить снова",
+                "hint": "Ника ещё раз посмотрит кассы и дольёт, если куты появились.",
+            },
+            {
+                "id": "force_topup",
+                "label": "Забрать всё, что есть",
+                "hint": "Снимет остаток из игр и касс. Новых кут не создаёт.",
+            },
+            {
+                "id": "pause_group",
+                "label": "Пауза этой группы",
+                "hint": "Автодолив этой группы останавливается, остальные не трогаем.",
+            },
+        ]
     if code == CODE_REFUND_STUCK:
         return [
             {
@@ -101,6 +120,10 @@ def actions_for(code: str) -> List[Dict[str, str]]:
 
 def fingerprint_empty_ladder(chat_id: int) -> str:
     return f"empty_ladder:{int(chat_id)}"
+
+
+def fingerprint_short_ladder(chat_id: int) -> str:
+    return f"short_ladder:{int(chat_id)}"
 
 
 def fingerprint_refund(log_id: int) -> str:

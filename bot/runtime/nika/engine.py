@@ -37,7 +37,10 @@ from bot.runtime.nika.policy import (
     apply_sweep_speed,
     allocate_from_ladder,
     pick_sweep_dest,
+    PLAY_RECENT_SEC,
+    normalize_topup_pace,
     plan_drain_sweep,
+    plan_instant_topup,
     plan_sweep,
     plan_topup,
 )
@@ -427,6 +430,77 @@ async def _raise_empty_ladder(
         )
 
 
+async def _raise_short_ladder(
+    db,
+    group_chat_id: int,
+    need: int,
+    moved: int,
+    snapshot: Dict[int, int],
+    *,
+    balance: int = 0,
+    target: int = 0,
+) -> None:
+    title = "В системе не хватило кут до цели"
+    body = (
+        f"Группа {group_chat_id}: цель {int(target)} кут, баланс был {int(balance)}.\n"
+        f"Ника забрала из игр и касс всё, что там лежало: {int(moved)} кут.\n"
+        f"До цели всё ещё не хватает {int(need)}.\n\n"
+        f"{_ladder_lines(snapshot)}\n\n"
+        "Новых кут Ника не создаёт. Когда в системных группах снова появятся куты, "
+        "следующая проверка дольёт остаток."
+    )
+    async with db.pool.acquire() as conn:
+        await incidents.raise_incident(
+            conn,
+            code=incidents.CODE_SHORT_LADDER,
+            fingerprint=incidents.fingerprint_short_ladder(group_chat_id),
+            title=title,
+            body=body,
+            chat_id=group_chat_id,
+            severity=incidents.SEVERITY_WARNING,
+            payload={
+                "need": int(need),
+                "moved": int(moved),
+                "balance": int(balance),
+                "target": int(target),
+                "ladder": {str(k): int(v) for k, v in snapshot.items()},
+            },
+        )
+
+
+async def _resolve_short_ladder(db, group_chat_id: int, note: str = "") -> None:
+    try:
+        async with db.pool.acquire() as conn:
+            await incidents.resolve_fingerprint(
+                conn,
+                incidents.fingerprint_short_ladder(group_chat_id),
+                note=note or "цель закрыта",
+            )
+    except Exception as exc:
+        _print(f"resolve short_ladder fail: {type(exc).__name__}: {exc}")
+
+
+async def _alert_short_ladder(
+    db, bot, settings: Dict[str, Any], group_chat_id: int, need: int, moved: int, snapshot: Dict[int, int],
+) -> None:
+    user_id = await _claim_alert(db, settings)
+    if not user_id or bot is None:
+        return
+    lines = [
+        "Ника: в системных группах не хватило кут до цели.",
+        f"Группа {group_chat_id}: забрала всё, что было — {int(moved)} кут.",
+        f"До цели ещё не хватает {int(need)}.",
+        "",
+        _ladder_lines(snapshot),
+        "",
+        "Смотри вкладку Ника. Как только в кассах появятся куты, проверка дольёт остаток.",
+    ]
+    try:
+        await bot.send_message(int(user_id), "\n".join(lines))
+    except Exception as exc:
+        _print(f"owner alert fail: {type(exc).__name__}: {exc}")
+
+
 async def _resolve_empty_ladder(db, group_chat_id: int, note: str = "") -> None:
     try:
         async with db.pool.acquire() as conn:
@@ -513,17 +587,24 @@ async def _topup_group(
     db, bot, *, policy, balance: int, settings: Dict[str, Any], dry_run: bool,
     skip_cooldown: bool = False,
 ) -> str:
+    pace = normalize_topup_pace((settings or {}).get("topup_pace"))
     async with db.pool.acquire() as conn:
         events = await store.ledger_events_24h(conn, policy.chat_id)
+        recent = await store.ledger_events_recent(conn, policy.chat_id, PLAY_RECENT_SEC)
         drain = await store.drain_per_hour(conn, policy.chat_id)
         daily = await store.daily_done_sum(conn, policy.chat_id, "topup")
-        plan = plan_topup(
-            policy,
-            balance=balance,
-            events_24h=events,
-            drain_per_hour=drain,
-            daily_topup_used=daily,
-        )
+        if pace == "instant":
+            plan = plan_instant_topup(policy, balance=balance)
+        elif recent <= 0 and not skip_cooldown:
+            return "quiet"
+        else:
+            plan = plan_topup(
+                policy,
+                balance=balance,
+                events_24h=events,
+                drain_per_hour=drain,
+                daily_topup_used=daily,
+            )
         if plan.amount <= 0:
             return plan.skip or "none"
         if skip_cooldown:
@@ -568,17 +649,31 @@ async def _topup_group(
     if leftover > 0 or moved_total < plan.amount:
         async with db.pool.acquire() as conn:
             snapshot = await store.fetch_balances(conn, ladder_ids)
-        if all(int(snapshot.get(cid, 0)) <= 0 for cid, _ in SOURCE_LADDER if cid != policy.chat_id):
+        still = int(plan.amount - moved_total)
+        dry = all(int(snapshot.get(cid, 0)) <= 0 for cid, _ in SOURCE_LADDER if cid != policy.chat_id)
+        if moved_total <= 0 and dry:
             await _raise_empty_ladder(
-                db, policy.chat_id, plan.amount - moved_total, snapshot,
+                db, policy.chat_id, still, snapshot,
                 balance=balance, moved=moved_total,
             )
-            await _alert_empty_ladder(db, bot, settings, policy.chat_id, plan.amount - moved_total, snapshot)
+            await _alert_empty_ladder(db, bot, settings, policy.chat_id, still, snapshot)
             return "partial_empty"
+        if pace == "instant" and still > 0:
+            if moved_total > 0:
+                await _resolve_empty_ladder(db, policy.chat_id, "забрали всё, что было в кассах")
+            await _raise_short_ladder(
+                db, policy.chat_id, still, moved_total, snapshot,
+                balance=balance, target=policy.target_balance,
+            )
+            await _alert_short_ladder(
+                db, bot, settings, policy.chat_id, still, moved_total, snapshot,
+            )
+            return "short_ladder"
         if moved_total > 0:
             return "partial"
         return "partial"
     await _resolve_empty_ladder(db, policy.chat_id, "долив закрыл этот шаг")
+    await _resolve_short_ladder(db, policy.chat_id, "долив закрыл этот шаг")
     return "topup"
 
 

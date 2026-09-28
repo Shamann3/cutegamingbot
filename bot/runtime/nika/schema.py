@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS nika_settings (
     dry_run BOOLEAN NOT NULL DEFAULT FALSE,
     tick_interval_sec INTEGER NOT NULL DEFAULT 20,
     sweep_speed TEXT NOT NULL DEFAULT 'fast',
+    topup_pace TEXT NOT NULL DEFAULT 'play',
     owner_alert_user_id BIGINT,
     owner_alert_cooldown_sec INTEGER NOT NULL DEFAULT 21600,
     last_owner_alert_at TIMESTAMPTZ,
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS nika_settings (
     CONSTRAINT nika_settings_singleton CHECK (id = 1),
     CONSTRAINT nika_settings_tick_range CHECK (tick_interval_sec BETWEEN 15 AND 3600),
     CONSTRAINT nika_settings_sweep_speed CHECK (sweep_speed IN ('instant', 'fast', 'medium', 'slow')),
+    CONSTRAINT nika_settings_topup_pace CHECK (topup_pace IN ('instant', 'play')),
     CONSTRAINT nika_settings_alert_cooldown CHECK (owner_alert_cooldown_sec >= 600)
 );
 
@@ -252,6 +254,10 @@ ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS ladder_balance BIGINT 
 ALTER TABLE nika_universe_sample ADD COLUMN IF NOT EXISTS vault_balance BIGINT NOT NULL DEFAULT 0;
 
 ALTER TABLE nika_settings ADD COLUMN IF NOT EXISTS sweep_speed TEXT NOT NULL DEFAULT 'fast';
+ALTER TABLE nika_settings ADD COLUMN IF NOT EXISTS topup_pace TEXT NOT NULL DEFAULT 'play';
+ALTER TABLE nika_settings DROP CONSTRAINT IF EXISTS nika_settings_topup_pace;
+ALTER TABLE nika_settings ADD CONSTRAINT nika_settings_topup_pace
+    CHECK (topup_pace IN ('instant', 'play'));
 ALTER TABLE nika_settings DROP CONSTRAINT IF EXISTS nika_settings_tick_range;
 ALTER TABLE nika_settings ADD CONSTRAINT nika_settings_tick_range
     CHECK (tick_interval_sec BETWEEN 15 AND 3600);

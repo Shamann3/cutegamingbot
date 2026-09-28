@@ -231,8 +231,57 @@ def test_fast_sweep_takes_user_case_152_above_3000():
         history_covers_delay=True,
     )
     assert instant.action == "sweep"
+    assert instant.amount == 152
     assert instant.amount >= ready.amount
     assert instant.cooldown_sec <= 15
+
+
+def test_instant_sweep_takes_one_kut_without_waiting():
+    policy = apply_sweep_speed(
+        GroupPolicy(
+            chat_id=1,
+            target_balance=3000,
+            max_transfer=600,
+            max_daily_topup=6000,
+            max_daily_sweep=0,
+        ),
+        "instant",
+    )
+    assert sweep_keep(policy) == 0
+    one = plan_sweep(
+        policy,
+        balance=3001,
+        stable_balance=None,
+        history_covers_delay=False,
+        daily_sweep_used=10**9,
+    )
+    assert one.action == "sweep"
+    assert one.amount == 1
+    assert plan_sweep(
+        policy,
+        balance=3000,
+        stable_balance=3000,
+        history_covers_delay=True,
+    ).amount == 0
+    assert plan_sweep(
+        policy,
+        balance=2999,
+        stable_balance=2999,
+        history_covers_delay=True,
+    ).amount == 0
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "server"))
+    from nika.policy import GroupPolicy as AdminPolicy
+    from nika.policy import apply_sweep_speed as admin_apply
+    from nika.policy import plan_sweep as admin_sweep
+    admin = admin_sweep(
+        admin_apply(AdminPolicy(chat_id=1, target_balance=3000, max_daily_sweep=0), "instant"),
+        balance=3001,
+        stable_balance=None,
+        history_covers_delay=False,
+        daily_sweep_used=10**9,
+    )
+    assert admin.amount == 1
 
 
 def test_drain_sweep_takes_everything_above_target():

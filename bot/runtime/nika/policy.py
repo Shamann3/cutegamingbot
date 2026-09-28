@@ -54,6 +54,12 @@ DEFAULT_SPEED_MODE = "auto"
 SWEEP_SPEEDS: Tuple[str, ...] = ("instant", "fast", "medium", "slow")
 DEFAULT_SWEEP_SPEED = "fast"
 
+# Как доливать группу из системных касс.
+# instant — сразу до цели, всем что есть. play — порция только после игр.
+TOPUP_PACES: Tuple[str, ...] = ("instant", "play")
+DEFAULT_TOPUP_PACE = "play"
+PLAY_RECENT_SEC = 15 * 60
+
 # ---------------------------------------------------------------------------
 # Готовые режимы владельца: (доля цели за один долив, максимальная доля
 # недостачи за один долив, минимальный интервал между доливами в секундах).
@@ -115,7 +121,8 @@ MIN_SWEEP_WAIT_SEC = 8
 
 # delay, cooldown, share, keep_pct, keep_min, recommended tick
 _SWEEP_SPEED_PRESETS: Dict[str, Tuple[int, int, float, float, int, int]] = {
-    "instant": (15, 15, 1.00, 0.005, 10, 15),
+    # Запас над целью нулевой: лишний кут, даже один, снимается целиком.
+    "instant": (15, 15, 1.00, 0.0, 0, 15),
     "fast": (45, 30, 0.90, 0.01, 15, 20),
     "medium": (180, 120, 0.60, 0.02, 40, 60),
     "slow": (900, 600, 0.35, 0.05, 100, 180),
@@ -183,6 +190,11 @@ def sweep_keep(policy: GroupPolicy) -> int:
 def normalize_speed_mode(mode: object) -> str:
     text = str(mode or "").strip().lower()
     return text if text in SPEED_MODES else DEFAULT_SPEED_MODE
+
+
+def normalize_topup_pace(mode: object) -> str:
+    text = str(mode or "").strip().lower()
+    return text if text in TOPUP_PACES else DEFAULT_TOPUP_PACE
 
 
 def normalize_sweep_speed(mode: object) -> str:
@@ -330,6 +342,29 @@ def plan_topup(
     return Plan("topup", int(amount), cooldown, tier, reason, dead_zone=dz, gap=gap, step_raw=step_raw)
 
 
+def plan_instant_topup(policy: GroupPolicy, *, balance: int) -> Plan:
+    """Закрыть всю недостачу до цели одним шагом.
+
+    Потолки порции и суточный лимит здесь не режут сумму: если в кассах
+    меньше, engine заберёт всё, что там лежит, и предупредит о нехватке.
+    """
+    target = int(max(0, policy.target_balance))
+    gap = target - int(balance)
+    if target <= 0:
+        return Plan("none", 0, 15, "instant", "цель не задана", skip="no_target", gap=gap)
+    if gap < 1:
+        return Plan("none", 0, 15, "instant", "баланс уже на цели", skip="on_target", gap=gap)
+    return Plan(
+        "topup",
+        int(gap),
+        15,
+        "instant",
+        f"моментальный долив до цели {target}: баланс {int(balance)}, не хватает {gap}",
+        gap=gap,
+        step_raw=int(gap),
+    )
+
+
 def plan_sweep(
     policy: GroupPolicy,
     *,
@@ -355,6 +390,23 @@ def plan_sweep(
 
     if target <= 0:
         return Plan("none", 0, wait, "sweep", "цель не задана", skip="no_target", dead_zone=keep, gap=gap)
+    # Мгновенный сбор не оставляет запас и не ждёт выдержку: увидел
+    # баланс выше цели хотя бы на 1 кут — снимает этот излишек в систему.
+    if float(policy.sweep_share) >= 1.0 and keep == 0:
+        excess = int(balance) - target
+        if excess < 1:
+            return Plan("none", 0, wait, "sweep", "лишнего над целью нет",
+                        skip="keep", dead_zone=0, gap=gap)
+        return Plan(
+            "sweep",
+            int(excess),
+            wait,
+            "sweep",
+            f"мгновенный сбор до цели {target}: баланс {int(balance)}, излишек {excess} уходит в систему",
+            dead_zone=0,
+            gap=gap,
+            step_raw=int(excess),
+        )
     if int(balance) - target <= keep:
         return Plan("none", 0, wait, "sweep", "излишек в пределах запаса над целью",
                     skip="keep", dead_zone=keep, gap=gap)

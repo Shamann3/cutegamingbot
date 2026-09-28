@@ -393,6 +393,8 @@ def forecast_tick(
         allocate_from_ladder,
         apply_sweep_speed,
         pick_sweep_dest,
+        normalize_topup_pace,
+        plan_instant_topup,
         plan_sweep,
         plan_topup,
         sweep_dest_title,
@@ -452,7 +454,8 @@ def forecast_tick(
             continue
         policy = apply_sweep_speed(policy_from_row(row), settings.get("sweep_speed"))
         balance = _as_int(item.get("balance"))
-        top = plan_topup(policy, balance=balance)
+        pace = normalize_topup_pace(settings.get("topup_pace"))
+        top = plan_instant_topup(policy, balance=balance) if pace == "instant" else plan_topup(policy, balance=balance)
         if top.action == "topup" and top.amount > 0:
             sources = tuple((cid, max(0, int(avail.get(cid, 0)))) for cid in order)
             takes, still = allocate_from_ladder(top.amount, sources)
@@ -465,18 +468,28 @@ def forecast_tick(
                     "text": f"{name}: хочет долить {int(top.amount)} кут, в играх и кассах пусто",
                 })
             else:
-                src_id, amt = takes[0]
-                avail[src_id] = max(0, int(avail.get(src_id, 0)) - int(amt))
+                moved = 0
+                src_id = takes[0][0]
+                for cid, amt in takes:
+                    avail[cid] = max(0, int(avail.get(cid, 0)) - int(amt))
+                    moved += int(amt)
                 title = titles.get(int(src_id), str(src_id))
-                extra = f", ещё не хватает {int(still)}" if still else ""
+                if pace == "instant" and still:
+                    text = f"{name}: заберёт все {int(moved)} кут из системы, до цели не хватает {int(still)}"
+                elif pace == "instant":
+                    text = f"{name}: дольёт {int(moved)} и закроет цель"
+                elif still:
+                    text = f"{name}: когда играют, возьмёт {int(moved)} с «{title}», ещё не хватает {int(still)}"
+                else:
+                    text = f"{name}: когда играют, возьмёт {int(moved)} с «{title}»"
                 items.append({
                     "chatId": chat_id,
                     "name": name,
                     "action": "topup",
-                    "amount": int(amt),
+                    "amount": int(moved),
                     "sourceChatId": int(src_id),
                     "sourceTitle": title,
-                    "text": f"{name}: возьмёт {int(amt)} с «{title}»{extra}",
+                    "text": text,
                 })
             continue
 
@@ -697,6 +710,7 @@ async def pulse() -> Dict[str, Any]:
         "forecast": forecast_tick(settings, groups, group_out, ladder),
         "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 20),
         "sweepSpeed": str(settings.get("sweep_speed") or "fast"),
+        "topupPace": str(settings.get("topup_pace") or "play"),
     }
 
 
@@ -756,6 +770,7 @@ async def overview() -> Dict[str, Any]:
             "tickIntervalSec": _as_int(settings.get("tick_interval_sec"), 20),
             "sweepSpeed": str(settings.get("sweep_speed") or "fast"),
             "sweepPreset": sweep_speed_preset(settings.get("sweep_speed")),
+            "topupPace": str(settings.get("topup_pace") or "play"),
             "ownerAlertUserId": settings.get("owner_alert_user_id"),
             "lastError": settings.get("last_error") or "",
             "lastErrorAt": _jsonable(settings.get("last_error_at")),
@@ -772,6 +787,7 @@ async def overview() -> Dict[str, Any]:
             ],
             "speedModes": list(SPEED_MODES),
             "sweepSpeeds": list(SWEEP_SPEEDS),
+            "topupPaces": ["instant", "play"],
             "sweepPreset": sweep_speed_preset(settings.get("sweep_speed")),
             "forbiddenChatIds": _forbidden(),
             "suggestCaps": suggest_caps(FIRST_MANAGED_TARGET),
@@ -1023,6 +1039,7 @@ async def save_settings(
     dry_run: Optional[bool] = None,
     tick_interval_sec: Optional[int] = None,
     sweep_speed: Optional[str] = None,
+    topup_pace: Optional[str] = None,
 ) -> Dict[str, Any]:
     await _ensure()
     from nika.store import update_global_settings
@@ -1033,6 +1050,7 @@ async def save_settings(
         dry_run=dry_run,
         tick_interval_sec=tick_interval_sec,
         sweep_speed=sweep_speed,
+        topup_pace=topup_pace,
     )
     return await pulse()
 

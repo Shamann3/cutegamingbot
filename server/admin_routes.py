@@ -4806,6 +4806,7 @@ class NikaSettingsBody(BaseModel):
     dry_run: bool | None = None
     tick_interval_sec: int | None = Field(default=None, ge=15, le=3600)
     sweep_speed: str | None = Field(default=None, max_length=16)
+    topup_pace: str | None = Field(default=None, max_length=16)
     model_config = {"extra": "forbid"}
 
 
@@ -4919,6 +4920,7 @@ async def admin_nika_settings(
         dry_run=body.dry_run,
         tick_interval_sec=body.tick_interval_sec,
         sweep_speed=body.sweep_speed,
+        topup_pace=body.topup_pace,
     )
     await log_admin_action(
         admin_id, "nika_settings",

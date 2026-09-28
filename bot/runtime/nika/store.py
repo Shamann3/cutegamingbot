@@ -20,6 +20,7 @@ from bot.runtime.nika.policy import (
     SWEEP_DEST_CHAT_ID,
     normalize_speed_mode,
     normalize_sweep_speed,
+    normalize_topup_pace,
     suggest_caps,
     sweep_speed_preset,
 )
@@ -260,6 +261,28 @@ async def ledger_events_24h(conn, chat_id: int) -> int:
               AND created_at > NOW() - INTERVAL '24 hours'
             """,
             int(chat_id),
+        )
+        return _as_int(value)
+    except Exception:
+        return 0
+
+
+async def ledger_events_recent(conn, chat_id: int, seconds: int) -> int:
+    """Сколько игровых комиссий группа получила за короткое окно.
+
+    Ноль значит: сейчас никто не играет, постепенный долив ждёт.
+    """
+    window = int(max(60, seconds))
+    try:
+        value = await conn.fetchval(
+            """
+            SELECT COUNT(*)::int
+            FROM growth_fund_ledger
+            WHERE chat_id = $1
+              AND created_at > NOW() - $2 * INTERVAL '1 second'
+            """,
+            int(chat_id),
+            window,
         )
         return _as_int(value)
     except Exception:
@@ -547,6 +570,7 @@ async def update_global_settings(
     dry_run: Optional[bool] = None,
     tick_interval_sec: Optional[int] = None,
     sweep_speed: Optional[str] = None,
+    topup_pace: Optional[str] = None,
 ) -> None:
     sets = ["updated_at = NOW()"]
     args: list = []
@@ -572,6 +596,9 @@ async def update_global_settings(
             tick = MAX_TICK_SEC
         args.append(tick)
         sets.append(f"tick_interval_sec = ${len(args)}")
+    if topup_pace is not None:
+        args.append(normalize_topup_pace(topup_pace))
+        sets.append(f"topup_pace = ${len(args)}")
     if len(args) == 0:
         return
     async with db.pool.acquire() as conn:

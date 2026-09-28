@@ -30,8 +30,13 @@ const SPEED = [
   { id: 'aggressive', label: 'Жёстко' },
 ]
 
+const TOPUP_PACE = [
+  { id: 'instant', label: 'Моментально', wait: 'сразу', hint: 'До цели за один шаг. Если в кассах меньше — заберёт все куты и предупредит.' },
+  { id: 'play', label: 'Постепенно', wait: 'когда играют', hint: 'Порция после игр других людей. Пустые кассы не трогает молча.' },
+]
+
 const SWEEP_SPEED = [
-  { id: 'instant', label: 'Мгновенно', wait: '15 сек', hint: 'Забирает всё над запасом сразу в дом игр' },
+  { id: 'instant', label: 'Мгновенно', wait: '15 сек', hint: 'Всё выше цели, даже 1 кут, сразу уходит в дом игр' },
   { id: 'fast', label: 'Быстро', wait: '45 сек', hint: 'Почти весь излишек в техкассы. Так и должно быть' },
   { id: 'medium', label: 'Средне', wait: '3 мин', hint: 'Большую часть, если излишек держится' },
   { id: 'slow', label: 'Тихо', wait: '15 мин', hint: 'Долго смотрит, снимает спокойно' },
@@ -138,6 +143,29 @@ function sweepSpeedLabel(mode) {
 function sweepSpeedHint(mode) {
   const s = SWEEP_SPEED.find((x) => x.id === mode) || SWEEP_SPEED[1]
   return `${s.wait} · ${s.hint}`
+}
+
+function PacePicker({ value, onPick, saving, options, label }) {
+  const current = value || options[1]?.id
+  return (
+    <div className="nika-sweep-grid" role="radiogroup" aria-label={label}>
+      {options.map((s) => (
+        <button
+          key={s.id}
+          type="button"
+          role="radio"
+          aria-checked={current === s.id}
+          className={`nika-sweep-card${current === s.id ? ' is-on' : ''}`}
+          aria-busy={saving === s.id}
+          onClick={() => onPick(s)}
+        >
+          <strong>{s.label}</strong>
+          <b>{s.wait}</b>
+          <span>{s.hint}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function SweepSpeedPicker({ value, onPick, saving }) {
@@ -337,6 +365,20 @@ export default function NikaSection() {
     return () => window.clearInterval(id)
   }, [load])
 
+  const pickTopup = useCallback(async (pace) => {
+    setSweepSaving(`topup:${pace.id}`)
+    applyPulse({ topupPace: pace.id })
+    try {
+      const pulse = await saveNikaSettings({ topup_pace: pace.id })
+      applyPulse({ ...(pulse || {}), topupPace: pace.id })
+      showToast(`Долив: ${pace.label}`)
+    } catch (err) {
+      showToast(err.message || 'Не сохранился долив', 'error')
+    } finally {
+      setSweepSaving('')
+    }
+  }, [applyPulse])
+
   const pickSweep = useCallback(async (speed) => {
     setSweepSaving(speed.id)
     applyPulse({ sweepSpeed: speed.id })
@@ -484,6 +526,7 @@ export default function NikaSection() {
   const queued = Number(data?.commands?.queued || data?.commands?.pending || 0)
   const tickEvery = Number(data?.tickIntervalSec || data?.settings?.tickIntervalSec || 20)
   const sweepNow = data?.sweepSpeed || data?.settings?.sweepSpeed || 'fast'
+  const topupNow = data?.topupPace || data?.settings?.topupPace || 'play'
   const recentMoves = transfers.slice(0, 6)
   const recentCmds = (data?.commandLog || []).slice(0, 6)
   const incidentCount = incidents.length + starving.length
