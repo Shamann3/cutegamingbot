@@ -5,6 +5,7 @@ import { portraitFrom } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
 import AccentPalette from '../components/AccentPalette'
 import MatrixRain from '../components/MatrixRain'
+import { useOutsideDismiss } from '../lib/outsideDismiss'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
 const GUEST_PORTRAIT = portraitFrom(null)
@@ -74,30 +75,9 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
   useEffect(() => load(), [load])
 
-  // Палитра закрывается по клику мимо неё и по Escape — как в панели Эпсилона.
-  useEffect(() => {
-    if (!colorOpen) return undefined
-    const onDown = (event) => {
-      const slot = paletteRef.current
-      const target = event.target
-      if (slot && target instanceof Node && slot.contains(target)) return
-      setColorOpen(false)
-    }
-    const onKey = (event) => {
-      if (event.key === 'Escape') setColorOpen(false)
-    }
-    // Capture-фаза: срабатывает раньше любых обработчиков, которые могли бы
-    // остановить всплытие. touchstart — для старых WebView без PointerEvent.
-    const downEvent = 'PointerEvent' in window ? 'pointerdown' : 'touchstart'
-    document.addEventListener(downEvent, onDown, true)
-    document.addEventListener('mousedown', onDown, true)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener(downEvent, onDown, true)
-      document.removeEventListener('mousedown', onDown, true)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [colorOpen])
+  // Палитра закрывается по тапу мимо неё и по Escape — как в панели Эпсилона.
+  // Тап, которым её закрыли, не нажимает дверь под пальцем.
+  useOutsideDismiss(colorOpen, [paletteRef], () => setColorOpen(false))
 
   const staffDetail = portrait.staffCanEnter
     ? 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта'

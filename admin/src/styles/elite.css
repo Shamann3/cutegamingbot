@@ -1104,6 +1104,7 @@ html.accent-changing::after {
   border: 0;
   background: rgba(0, 0, 0, 0.35);
   cursor: default;
+  pointer-events: none;
   animation: accent-backdrop-in 0.2s ease both;
 }
 

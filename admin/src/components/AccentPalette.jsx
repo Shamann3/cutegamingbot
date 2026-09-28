@@ -8,6 +8,7 @@ import {
   parseHexInput,
   rgbToHsv,
 } from '../lib/accentTheme'
+import { useOutsideDismiss } from '../lib/outsideDismiss'
 
 const WHEEL_SIZE = 148
 const WHEEL_RADIUS = WHEEL_SIZE / 2
@@ -148,12 +149,16 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     return true
   }, [pushAccent])
 
+  const closingRef = useRef(false)
   const closePalette = useCallback(() => {
+    if (closingRef.current) return
+    closingRef.current = true
     commitHex(hexTextRef.current, { silentInvalid: false })
     setLeaving(true)
     window.setTimeout(() => {
       setOpen(false)
       setLeaving(false)
+      closingRef.current = false
     }, 180)
   }, [commitHex])
 
@@ -199,22 +204,9 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     return () => observer.disconnect()
   }, [open, inline])
 
-  useEffect(() => {
-    if (!open || inline) return undefined
-    const onKey = (e) => {
-      if (e.key === 'Escape') closePalette()
-    }
-    const onDown = (e) => {
-      if (rootRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return
-      closePalette()
-    }
-    window.addEventListener('keydown', onKey)
-    window.addEventListener('mousedown', onDown)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('mousedown', onDown)
-    }
-  }, [open, closePalette])
+  // Тап мимо палитры закрывает только её. Если тап был ещё и мимо сайдбара,
+  // сайдбар закроется своим обработчиком — событие до него доходит.
+  useOutsideDismiss(open && !leaving && !inline, [rootRef, panelRef], closePalette)
 
   const onWheelPointer = (e) => {
     const canvas = canvasRef.current
@@ -360,12 +352,8 @@ export default function AccentPalette({ value, onChange, inline = false }) {
 
   const panel = (open || leaving) && !inline ? createPortal(
     <>
-      <button
-        type="button"
-        className={`accent-picker-backdrop${leaving ? ' is-leaving' : ''}`}
-        aria-label="Закрыть палитру"
-        onClick={closePalette}
-      />
+      {/* Только затемнение: клики проходят насквозь, закрытие — через useOutsideDismiss */}
+      <span className={`accent-picker-backdrop${leaving ? ' is-leaving' : ''}`} aria-hidden="true" />
       {wheel}
     </>,
     document.body,

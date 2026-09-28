@@ -5,6 +5,7 @@ import { isTextEntry } from './isTextEntry'
  * Глобальные горячие клавиши админки.
  *
  * Esc:
+ *  0) открыта палитра цвета — её закрывает она сама, дальше не идём
  *  1) закрыть открытый AdminSelect
  *  2) закрыть верхнюю модалку (кнопка отмены / backdrop)
  *  3) закрыть lightbox
@@ -46,6 +47,10 @@ export function useGlobalKeys({ onEscape, onEnter } = {}) {
       if (e.isComposing) return
 
       if (e.key === 'Escape') {
+        // Открытая палитра цвета закрывается сама (useOutsideDismiss) —
+        // Esc снимает только её, сайдбар под ней остаётся.
+        if (document.querySelector('.accent-picker-panel:not(.is-inline)')) return
+
         const openSelect = document.querySelector('.panel-select-open')
         if (openSelect) {
           e.preventDefault()
