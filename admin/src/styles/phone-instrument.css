@@ -505,48 +505,104 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   .accent-aura-slot { display: none; }
 }
 
-/* Рабочая зона: одна колонка на ширину окна.
-   Вкладки с grid-column: 2 уезжали в неявную колонку справа от пустого места. */
+/* Оболочка приложения: слева меню, справа узкая рабочая колонка.
+   Контент не растягивается на всё окно и не ложится на меню. */
 html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main {
   min-width: 0 !important;
   min-height: 0 !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
 }
 
 html.is-desktop .panel-shell .panel-layout,
-html[data-viewport="desktop"] .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout {
+  display: grid !important;
+  grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr) !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 20px !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar {
+  display: flex !important;
+  grid-column: 1 !important;
+  grid-row: 1 / -1 !important;
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  justify-self: stretch !important;
+  z-index: 2 !important;
+  background: #101012 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  box-shadow: none !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .elite-topbar,
+html.is-desktop .panel-shell .panel-layout > .elite-topbar-compact,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .elite-topbar,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .elite-topbar-compact {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  width: min(880px, 100%) !important;
+  max-width: 880px !important;
+  margin: 0 !important;
+  justify-self: start !important;
+  min-width: 0 !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact),
+html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar):not(.elite-topbar):not(.elite-topbar-compact) {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  width: min(880px, 100%) !important;
+  max-width: 880px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  justify-self: start !important;
+  box-sizing: border-box !important;
+  overflow: auto !important;
+}
+
 html.is-phone .panel-shell .panel-layout,
 html[data-viewport="phone"] .panel-shell .panel-layout {
   width: 100% !important;
   max-width: 100% !important;
-  min-width: 0 !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
   grid-template-columns: minmax(0, 1fr) !important;
-}
-
-html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
-html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
-  grid-column: 1 / -1 !important;
-  grid-row: auto !important;
-  min-width: 0 !important;
-  width: 100% !important;
-  max-width: min(1120px, 100%) !important;
-  justify-self: center !important;
-  box-sizing: border-box !important;
 }
 
 html.is-phone .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
 html[data-viewport="phone"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 1 !important;
   min-width: 0 !important;
   width: 100% !important;
   max-width: 100% !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
-  align-self: stretch !important;
   box-sizing: border-box !important;
 }
 
@@ -644,7 +700,7 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
   }
 }
 
-/* Свет остаётся за полем. Само поле тёмное, чтобы текст не пропадал. */
+/* Поле читается: тёмный фон, без рамки на всё окно. */
 html.is-desktop .panel-shell,
 html[data-viewport="desktop"] .panel-shell,
 html.is-phone .panel-shell,
@@ -654,18 +710,10 @@ html[data-viewport="desktop"] .panel-shell .panel-shell-main,
 html.is-phone .panel-shell .panel-shell-main,
 html[data-viewport="phone"] .panel-shell .panel-shell-main,
 .panel-shell .dash-home {
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none;
-}
-
-.panel-shell .panel-layout {
-  margin: 8px !important;
-  border: 1px solid rgba(255, 255, 255, 0.55) !important;
-  border-radius: 24px !important;
   background: #07070a !important;
   background-image: none !important;
   box-shadow: none !important;
+  color: #f4f4f5;
 }
 
 html.is-phone .phone-dock.is-tabs-menu,
@@ -1239,71 +1287,12 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   letter-spacing: -0.03em;
 }
 
-/* Лёгкий свет по краю экрана. В рабочее поле он не заходит. */
+/* Фон ровный. Цвет пользователя не заливкой по всему экрану. */
 .accent-aura-wash,
 .gate-veil {
   background:
-    radial-gradient(ellipse 120% 18% at 50% 100%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.42), transparent 72%),
-    radial-gradient(ellipse 22% 46% at 0% 80%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.14), transparent 70%),
-    radial-gradient(ellipse 22% 46% at 100% 80%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.14), transparent 70%),
+    radial-gradient(ellipse 70% 42% at 50% 42%, rgba(0, 0, 0, 0.55), transparent 72%),
     #050508 !important;
-}
-
-/* Стекло: любая деталь, кроме текста и образцов цвета.
-   Край всегда виден, даже когда заливка почти пропала. */
-html {
-  --e-fill: rgba(8, 8, 10, var(--e-glass, 0.38));
-  --e-edge: rgba(255, 255, 255, 0.62);
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
-  button,
-  table,
-  th,
-  td,
-  pre,
-  details,
-  summary,
-  [role="tab"],
-  [class$="-card"], [class*="-card "],
-  [class$="-tile"], [class*="-tile "],
-  [class$="-shelf"], [class*="-shelf "],
-  [class$="-search"], [class*="-search "],
-  [class$="-btn"], [class*="-btn "],
-  [class$="-chip"], [class*="-chip "],
-  [class$="-pill"], [class*="-pill "],
-  [class$="-badge"], [class*="-badge "],
-  [class$="-sheet"], [class*="-sheet "],
-  [class$="-modal"], [class*="-modal "],
-  [class$="-row"], [class*="-row "],
-  [class$="-item"], [class*="-item "],
-  [class$="-box"], [class*="-box "],
-  .accent-hex-shell
-):where(:not(.accent-stop-chip):not(.accent-scene-swatch):not(.accent-stops-preview):not(.accent-hex-preview):not(.accent-wheel):not(.accent-reset-mark)) {
-  background: var(--e-fill) !important;
-  background-image: none !important;
-  border: 1px solid var(--e-edge) !important;
-  box-shadow: none !important;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet) :is(
-  h1, h2, h3, h4, p, span, strong, em, small, b, time
-):not([class]) {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
-  select,
-  textarea
-) {
-  background: var(--e-fill) !important;
-  background-image: none !important;
-  border: 1px solid var(--e-edge) !important;
-  box-shadow: none !important;
-  color: #f4f4f5 !important;
 }
 
 html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet, .accent-picker-panel) :is(
@@ -1348,7 +1337,7 @@ html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-pan
   border: 1px solid rgba(255, 255, 255, 0.72);
   background: linear-gradient(
     90deg,
-    rgba(var(--e-g1, 255, 255, 255), 0.95) var(--fill, var(--vol-pct, 0%)),
+    var(--e-accent, #f4f4f5) var(--fill, var(--vol-pct, 0%)),
     rgba(255, 255, 255, 0.12) var(--fill, var(--vol-pct, 0%))
   );
 }
@@ -1374,7 +1363,7 @@ html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-pan
 html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-progress {
   height: 6px;
   border-radius: 999px;
-  background: rgba(var(--e-g1, 255, 255, 255), 0.95);
+  background: var(--e-accent, #f4f4f5);
 }
 
 html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-panel) input[type="range"]::-moz-range-thumb {
@@ -1386,37 +1375,31 @@ html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .accent-picker-pan
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7);
 }
 
-html:is(.is-phone, .is-desktop) :is(.panel-shell, .gate-root, .focus-sheet, .case-sheet) :is(
-  button.is-on,
-  button[aria-pressed="true"],
-  button[aria-current="page"],
-  [role="tab"][aria-selected="true"]
-) {
-  border-color: #fff !important;
-  box-shadow: inset 0 0 0 1px #fff !important;
-  background: rgba(255, 255, 255, 0.14) !important;
-  color: #fff !important;
-}
-
 html:is(.is-phone, .is-desktop) .phone-dock,
 html:is([data-viewport="phone"], [data-viewport="desktop"]) .phone-dock {
-  background: var(--e-fill) !important;
-  border-top: 1px solid var(--e-edge) !important;
+  background: rgba(12, 12, 14, 0.94) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .gate-stage,
 .accent-picker-panel {
-  background: #07070a !important;
-  border: 1px solid var(--e-edge) !important;
+  background: #101012 !important;
+  background-image: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
+.gate-stage {
+  width: min(760px, calc(100% - 48px));
+  margin-inline: auto;
 }
 
 .metric-sheet,
 .focus-sheet,
 .case-sheet {
-  background:
-    radial-gradient(ellipse 70% 18% at 50% 0%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.16), transparent 70%),
-    #121214 !important;
-  border: 1px solid var(--e-edge) !important;
+  background: #141416 !important;
+  background-image: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
 }
 
 button:has(> svg:only-child),
@@ -1453,6 +1436,78 @@ button:has(> svg:only-child),
 }
 
 .accent-stops-preview {
-  border: 1px solid var(--e-edge) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
   box-shadow: none !important;
+}
+
+/* Текст всегда светлый. Цвет пользователя — в цифрах и графиках. */
+.gate-root.is-personal,
+.realm-root.is-personal {
+  --gate-ink: #f4f4f5;
+  --gate-muted: rgba(244, 244, 244, 0.72);
+  --gate-line: rgba(255, 255, 255, 0.2);
+  --gate-fill: #f4f4f5;
+  --gate-fill-ink: #0a0a0a;
+}
+
+.gate-root .gate-title,
+.gate-root .gate-lead,
+.gate-root .gate-door,
+.gate-root .gate-door-title,
+.gate-root .gate-status,
+.panel-shell h1,
+.panel-shell h2,
+.panel-shell .panel-page-title,
+.panel-shell .sec-title,
+.panel-shell .elite-greeting-title,
+.panel-brand-name {
+  color: #f4f4f5 !important;
+  -webkit-text-fill-color: #f4f4f5 !important;
+  background: none !important;
+  text-shadow: none !important;
+}
+
+.gate-root .gate-lead,
+.gate-root .gate-door.is-sealed,
+.gate-root .gate-door-detail,
+.panel-shell .panel-page-lead,
+.panel-shell .sec-subtitle,
+.dash-bot-hero-sub,
+.dash-usage-hint {
+  color: rgba(244, 244, 244, 0.72) !important;
+  -webkit-text-fill-color: rgba(244, 244, 244, 0.72) !important;
+}
+
+.dash-bot-hero,
+.dash-usage-card,
+.dash-cyber-head,
+.dash-cyber-stage,
+.dash-usage-stage {
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: none !important;
+  background: #141416 !important;
+  background-image: none !important;
+}
+
+.dash-bot-hero::before,
+.dash-bot-hero::after {
+  display: none !important;
+}
+
+.dash-bot-hero-kicker,
+.dash-usage-label {
+  color: rgba(244, 244, 244, 0.62) !important;
+  -webkit-text-fill-color: rgba(244, 244, 244, 0.62) !important;
+}
+
+.dash-bot-hero-value,
+.dash-usage-card .dash-usage-value,
+.metric-sheet-value strong {
+  color: var(--e-accent, #f4f4f5) !important;
+  -webkit-text-fill-color: var(--e-accent, #f4f4f5) !important;
+  text-shadow: none !important;
+}
+
+.metric-bar-col {
+  background: var(--e-accent, #f4f4f5) !important;
 }
