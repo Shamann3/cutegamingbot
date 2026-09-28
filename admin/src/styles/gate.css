@@ -47,7 +47,7 @@
   height: 100%;
   pointer-events: none;
   opacity: 0;
-  mix-blend-mode: screen;
+  /* Без mix-blend-mode — полноэкранный блендинг ощутимо грузит композитор. */
   mask-image: radial-gradient(ellipse 86% 76% at 50% 44%, transparent 18%, #000 72%);
   -webkit-mask-image: radial-gradient(ellipse 86% 76% at 50% 44%, transparent 18%, #000 72%);
   animation: gateMatrixIn 1.4s 0.1s var(--gate-ease) both;
@@ -55,7 +55,7 @@
 
 @keyframes gateMatrixIn {
   from { opacity: 0; }
-  to   { opacity: 0.3; }
+  to   { opacity: 0.34; }
 }
 
 /* Мягкое затемнение поверх дождя, чтобы текст оставался читаемым */
@@ -98,6 +98,27 @@
   align-self: flex-start;
 }
 
+.gate-palette-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.gate-palette-pop {
+  width: 100%;
+  min-width: 0;
+  transform-origin: top left;
+  animation: gatePaletteIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes gatePaletteIn {
+  from { opacity: 0; transform: translate3d(0, -6px, 0) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+
 /* Блик по двери — только на устройствах с настоящим ховером */
 .gate-door-sheen {
   position: absolute;
@@ -115,7 +136,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .gate-anim .gate-door:hover {
-    transform: translate3d(0, -3px, 0);
+    translate: 0 -3px;
+    border-color: var(--gate-ink);
   }
 
   .gate-anim .gate-door:hover .gate-door-sheen {
@@ -133,6 +155,7 @@
   .gate-matrix,
   .gate-veil,
   .gate-anim .gate-rise,
+  .gate-palette-pop,
   .gate-door-sheen {
     animation: none !important;
   }
@@ -279,11 +302,11 @@
   background: transparent;
   color: var(--gate-ink);
   -webkit-text-fill-color: var(--gate-ink);
-  transition: transform 0.18s var(--gate-ease), background 0.18s var(--gate-ease), border-color 0.18s var(--gate-ease), color 0.18s var(--gate-ease);
+  transition: translate 0.2s var(--gate-ease), scale 0.2s var(--gate-ease), background 0.18s var(--gate-ease), border-color 0.18s var(--gate-ease), color 0.18s var(--gate-ease);
 }
 
 .gate-door:active {
-  transform: scale(0.985);
+  scale: 0.99;
 }
 
 .gate-door.is-open {

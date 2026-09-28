@@ -71,7 +71,8 @@
   height: 100%;
   pointer-events: none;
   opacity: 0;
-  mix-blend-mode: screen;
+  /* Без mix-blend-mode: на полноэкранном canvas блендинг заметно грузит
+     композитор на телефонах и создаёт ощущение подвисания. */
   mask-image: radial-gradient(ellipse 78% 70% at 50% 46%, transparent 16%, #000 62%);
   -webkit-mask-image: radial-gradient(ellipse 78% 70% at 50% 46%, transparent 16%, #000 62%);
   animation: entMatrixIn 1.1s 0.15s var(--ent-ease-soft) both;

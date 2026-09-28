@@ -49,6 +49,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [hold, setHold] = useState(false)
   const [calm] = useState(detectCalmGate)
   const requestId = useRef(0)
+  const paletteRef = useRef(null)
 
   const load = useCallback(() => {
     const id = requestId.current + 1
@@ -72,6 +73,24 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   }, [])
 
   useEffect(() => load(), [load])
+
+  // Палитра закрывается по клику мимо неё и по Escape — как в панели Эпсилона.
+  useEffect(() => {
+    if (!colorOpen) return undefined
+    const onDown = (event) => {
+      if (paletteRef.current?.contains(event.target)) return
+      setColorOpen(false)
+    }
+    const onKey = (event) => {
+      if (event.key === 'Escape') setColorOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [colorOpen])
 
   const staffDetail = portrait.staffCanEnter
     ? 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта'
@@ -102,7 +121,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
   return (
     <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
-      <MatrixRain className="gate-matrix" paused={calm} fps={16} />
+      <MatrixRain className="gate-matrix" paused={calm} fps={30} />
       <div className="gate-veil" aria-hidden="true" />
       <div className="gate-frame" aria-hidden="true" />
       <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>
@@ -113,27 +132,30 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <h1 className="gate-title gate-rise" style={{ '--rise': 1 }}>Куда вам нужно войти?</h1>
           <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Выберите один из вариантов</p>
           <p className="gate-lead gate-rise" style={{ '--rise': 3 }}>По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
-          <button
-            type="button"
-            className="gate-color-btn gate-rise"
-            style={{ '--rise': 4 }}
-            aria-expanded={colorOpen}
-            onClick={() => setColorOpen((open) => !open)}
-          >
-            {colorOpen ? 'Скрыть палитру' : 'Изменить цвет интерфейса'}
-          </button>
-          {colorOpen && (
-            <AccentPalette
-              inline
-              value={accent}
-              onChange={(next) => {
-                const saved = persistAccent(next)
-                applyAccentToDocument(saved, { flash: true })
-                setAccent(saved)
-                setPersonal(accentIsPersonal(saved))
-              }}
-            />
-          )}
+          <div className="gate-palette-slot gate-rise" style={{ '--rise': 4 }} ref={paletteRef}>
+            <button
+              type="button"
+              className="gate-color-btn"
+              aria-expanded={colorOpen}
+              onClick={() => setColorOpen((open) => !open)}
+            >
+              {colorOpen ? 'Скрыть палитру' : 'Изменить цвет интерфейса'}
+            </button>
+            {colorOpen && (
+              <div className="gate-palette-pop">
+                <AccentPalette
+                  inline
+                  value={accent}
+                  onChange={(next) => {
+                    const saved = persistAccent(next)
+                    applyAccentToDocument(saved, { flash: true })
+                    setAccent(saved)
+                    setPersonal(accentIsPersonal(saved))
+                  }}
+                />
+              </div>
+            )}
+          </div>
         </header>
 
         {error && (

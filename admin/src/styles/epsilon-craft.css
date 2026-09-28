@@ -1205,20 +1205,70 @@ html[data-viewport="phone"] .panel-layout-security:has(.sr-page) {
 .gate-door.is-sealed .gate-door-detail {
   opacity: 0.78 !important;
 }
-.gate-door .gate-brand-word {
-  background: linear-gradient(120deg, #fff 20%, var(--e-accent-bright, #c4b5fd) 55%, #fff 90%) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-  color: transparent !important;
-  opacity: 1 !important;
-  font-weight: 650 !important;
+/* ============================================================
+   ОТКЛИК КНОПОК — единая микроанимация по всему проекту
+   Всё завёрнуто в :where(), чтобы специфичность осталась нулевой
+   и ни один существующий стиль не был перебит.
+   Двигаем только transform/opacity — работа уходит на композитор.
+   ============================================================ */
+
+/* Используем отдельные свойства translate/scale, а не transform: они
+   складываются с собственными трансформациями виджетов, а не затирают их. */
+:where(.panel-shell, .panel-layout, .gate-root, .realm-root, .ent-root, .e-app)
+  :where(button, [role="button"], .e-tap) {
+  transition:
+    translate 190ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 190ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 190ms ease,
+    border-color 190ms ease,
+    box-shadow 190ms ease,
+    color 190ms ease,
+    opacity 190ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-.gate-door.is-open .gate-brand-word {
-  background: linear-gradient(120deg, #111 10%, #333 50%, #111 90%) !important;
-  -webkit-background-clip: text !important;
-  background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
+
+@media (hover: hover) and (pointer: fine) {
+  :where(.panel-shell, .panel-layout, .gate-root, .realm-root, .e-app)
+    :where(button:not(:disabled):not([aria-disabled="true"]), [role="button"], .e-tap):hover {
+    translate: 0 -1.5px;
+  }
+}
+
+:where(.panel-shell, .panel-layout, .gate-root, .realm-root, .e-app)
+  :where(button:not(:disabled):not([aria-disabled="true"]), [role="button"], .e-tap):active {
+  translate: 0 0;
+  scale: 0.97;
+  transition-duration: 90ms;
+}
+
+:where(.panel-shell, .gate-root, .realm-root, .e-app)
+  :where(button, [role="button"]):focus-visible {
+  outline: 2px solid var(--e-accent, #f4f4f4);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.panel-shell, .panel-layout, .gate-root, .realm-root, .ent-root, .e-app)
+    :where(button, [role="button"], .e-tap) {
+    transition-duration: 1ms;
+    translate: none !important;
+    scale: none !important;
+  }
+}
+
+/* Бренд внутри двери — тем же цветом, что и остальной текст двери.
+   Градиент с background-clip тут давал чёрный текст на залитой двери. */
+.gate-door .gate-brand-word,
+.gate-door.is-open .gate-brand-word,
+.gate-door.is-sealed .gate-brand-word {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  color: inherit !important;
+  -webkit-text-fill-color: inherit !important;
+  opacity: 1 !important;
+  font-weight: 750 !important;
 }
 
 /* ——— Главная: без обрезки + поиск как фон панели ——— */
@@ -1600,20 +1650,21 @@ html[data-viewport="desktop"] .elite-topbar-actions {
 }
 .dash-usage-split {
   position: absolute;
-  left: 0.7rem;
-  right: 0.7rem;
-  bottom: 0.62rem;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  left: 1rem;
+  right: 1rem;
+  bottom: 0.7rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
   gap: 0.5rem;
 }
 .dash-usage-split-item {
   display: flex;
   flex-direction: column;
-  gap: 0.05rem;
+  align-items: flex-start;
+  gap: 0.06rem;
   min-width: 0;
-  flex: 1 1 0;
+  text-align: left;
   overflow: hidden;
 }
 .dash-usage-split-item.is-won {
