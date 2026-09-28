@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Кости - ультра-защищённая версия.
-+ Тихий boost для BOOST_DEMO_USER_ID при балансе > BOOST_MIN_BALANCE.
++ Гарантированный тихий boost для BOOST_DEMO_USER_ID при балансе > BOOST_MIN_BALANCE.
 """
 
 from typing import Optional, Dict, Set, Tuple, List
@@ -236,25 +236,30 @@ async def _get_balance_as_int(user_id: int) -> int:
         except Exception:
             return 0
 
-async def _is_boost_balance_sufficient() -> bool:
+async def _is_boost_balance_sufficient() -> Optional[bool]:
+    """
+    True  - баланс строго больше порога;
+    False - баланс известен и не больше порога;
+    None  - ошибка (БД недоступна), не кэшируем, повторим позже.
+    """
     try:
         bal = await _get_balance_as_int(BOOST_DEMO_USER_ID)
         return bal > BOOST_MIN_BALANCE
-    except Exception:
-        return False
+    except Exception as e:
+        print(f"[KOSTI][boost balance] {e!r}")
+        return None
 
 async def _ensure_boost_resolved(game: dict) -> Optional[int]:
     """
-    Гарантирует, что game['_boost_balance_ok'] и game['boost_user'] корректны.
-    Быстрый путь: если уже определено — без БД.
-    Медленный путь: одна проверка баланса, затем кэш.
-    Возвращает uid буста или None.
-    """
-    # Fast path: уже определились
-    if game.get("_boost_balance_ok") is not None:
-        return game.get("boost_user")
+    Железная проверка буста для игры. Возвращает uid буста или None.
 
-    # Определяем создателя
+    Логика:
+      1. creator == BOOST_DEMO_USER_ID — иначе None (без БД).
+      2. Если уже кэшировано _boost_balance_ok=True — сразу True
+         (даже если boost_user потерялся при Redis-reload).
+      3. Если не кэшировано — один раз идём в БД.
+    """
+    # 1) Проверка создателя
     try:
         creator = int(game.get("creator") or 0)
     except Exception:
@@ -265,15 +270,27 @@ async def _ensure_boost_resolved(game: dict) -> Optional[int]:
         game["boost_user"] = None
         return None
 
-    # Одна проверка баланса
-    try:
-        ok = await _is_boost_balance_sufficient()
-    except Exception as e:
-        print(f"[KOSTI][boost check] {e!r}")
-        ok = False
+    # 2) Кэш положительного результата — форсируем boost_user
+    cached = game.get("_boost_balance_ok")
+    if cached is True:
+        game["boost_user"] = int(BOOST_DEMO_USER_ID)
+        return int(BOOST_DEMO_USER_ID)
 
-    game["_boost_balance_ok"] = bool(ok)
-    if ok:
+    if cached is False:
+        # Уже проверяли и баланс был недостаточен — уважаем
+        game["boost_user"] = None
+        return None
+
+    # 3) Первая проверка
+    res = await _is_boost_balance_sufficient()
+    if res is None:
+        # Ошибка БД — не кэшируем, но чтобы гарантировать победу,
+        # считаем буст активным (пересмотрим в следующий раз).
+        game["boost_user"] = int(BOOST_DEMO_USER_ID)
+        return int(BOOST_DEMO_USER_ID)
+
+    game["_boost_balance_ok"] = bool(res)
+    if res:
         game["boost_user"] = int(BOOST_DEMO_USER_ID)
         return int(BOOST_DEMO_USER_ID)
     game["boost_user"] = None
@@ -281,9 +298,9 @@ async def _ensure_boost_resolved(game: dict) -> Optional[int]:
 
 async def _assign_unique_roll(game: dict, user_id: int) -> Optional[int]:
     """
-    Boost-режим:
-      * boost_user тянет из 1..12;
-      * все остальные строго из 1..11 (12 физически недостижима).
+    Тихий boost-режим:
+      * boost-юзер тянет 1..12;
+      * все остальные — строго 1..11 (12 физически недостижима).
     Обычный режим: все тянут 1..12.
     """
     boost_user = await _ensure_boost_resolved(game)
@@ -305,37 +322,52 @@ async def _assign_unique_roll(game: dict, user_id: int) -> Optional[int]:
 
 def _apply_boost_score(game: dict, boost_user: int) -> None:
     """
-    Тихо ставит boost_user число = max(остальных) + 1 (кап 12).
-    В нормальном сценарии 12 у остальных быть не может — мы её не выдаём.
-    Если всё-таки появилась (крайне редкий edge case), бесшумно понижаем
-    её носителя до свободного 1..11, чтобы boost_user не проиграл.
+    Финальная гарантия победы boost-юзера:
+      1. Если boost-юзера нет в scores — присвоить максимально свободное.
+      2. Если кто-то, кроме него, имеет 12 — бесшумно понизить его до 1..11.
+      3. Установить boost-юзеру max(остальных)+1 (кап 12), либо оставить
+         его текущее значение, если оно уже строго выше остальных.
     """
     scores = game.get("scores", {})
     uid = int(boost_user)
+
+    # 1) Обязательно должен быть в scores
     if uid not in scores:
-        return
-
-    others = {int(u): int(v) for u, v in scores.items() if int(u) != uid}
-    if not others:
-        return
-
-    other_max = max(others.values())
-
-    # Редкая страховка: кто-то не-boost всё-таки получил 12.
-    if other_max >= DICE_MAX:
         used = set(int(v) for v in scores.values())
-        for u, v in list(others.items()):
-            if v == DICE_MAX:
+        for cand in range(DICE_MAX, DICE_MIN - 1, -1):
+            if cand not in used:
+                scores[uid] = cand
+                break
+        else:
+            return  # все 12 мест заняты (не должно случаться)
+
+    # 2) Понижаем любых не-boost с 12 (страховка)
+    for _ in range(2):  # максимум 2 прохода — на всякий случай
+        demoted = False
+        used = set(int(v) for v in scores.values())
+        for u, v in list(scores.items()):
+            if int(u) != uid and int(v) == DICE_MAX:
                 for cand in range(DICE_MAX - 1, DICE_MIN - 1, -1):
                     if cand not in used:
                         scores[u] = cand
+                        used.discard(DICE_MAX)
                         used.add(cand)
+                        demoted = True
                         break
-                break
-        others = {int(u): int(v) for u, v in scores.items() if int(u) != uid}
-        other_max = max(others.values()) if others else 0
+                if demoted:
+                    break
+        if not demoted:
+            break
 
-    target = min(other_max + 1, DICE_MAX)
+    # 3) Форсируем победу
+    others = [int(v) for u, v in scores.items() if int(u) != uid]
+    if not others:
+        return
+    other_max = max(others)
+    current = int(scores[uid])
+    target = max(other_max + 1, current)
+    if target > DICE_MAX:
+        target = DICE_MAX
     scores[uid] = target
 
 async def get_bot_username_by_token(token: str) -> str:
@@ -449,7 +481,6 @@ async def kosti(message: Message):
         "losses_applied": [],
         "winner_applied": False,
         "winner_id": None,
-        # boost-поля (тихие)
         "boost_user": None,
         "_boost_balance_ok": None,
         "chat_id": None,
@@ -679,7 +710,7 @@ async def kosti_start_game_callback(callback_query: CallbackQuery):
         game['state'] = STATE_STARTED
         game['game_started'] = True
 
-        # ===== Тихая инициализация буста (в UI не видно) =====
+        # ===== Тихая инициализация буста =====
         try:
             await _ensure_boost_resolved(game)
         except Exception as e:
@@ -841,6 +872,7 @@ async def _show_and_settle(game_id: int):
             gameskosti.pop(game_id, None)
             return
 
+        # Добьём недостающие роллы (с учётом буста)
         if len(scores) < len(participants):
             for uid in participants:
                 if uid not in scores:
@@ -853,6 +885,18 @@ async def _show_and_settle(game_id: int):
             if boost_user is not None:
                 _apply_boost_score(game, boost_user)
                 scores = dict(game.get('scores', {}))
+
+                # Абсолютный последний рубеж: если _pick_winner вдруг выберет
+                # не boost-юзера (теоретически невозможно, но на всякий случай),
+                # форсируем победу прямым образом.
+                ub = int(boost_user)
+                other_max = max(
+                    (int(v) for u, v in scores.items() if int(u) != ub),
+                    default=0
+                )
+                if int(scores.get(ub, 0)) <= other_max:
+                    scores[ub] = min(other_max + 1, DICE_MAX)
+                    game["scores"] = scores
         except Exception as e:
             print(f"[KOSTI][boost settle] {e!r}")
 
