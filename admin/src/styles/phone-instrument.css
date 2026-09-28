@@ -1,0 +1,458 @@
+/* Карманный инструмент: градиент цвета, плитки, лист детали.
+   Последний слой — перебивает исторические !important. */
+
+.accent-aura {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.accent-aura-wash {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 38% at 50% -6%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.34), transparent 62%),
+    radial-gradient(ellipse 42% 28% at 100% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.16), transparent 58%),
+    radial-gradient(ellipse 36% 22% at 0% 8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.1), transparent 60%);
+}
+
+.accent-aura-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 34vh;
+  overflow: hidden;
+  opacity: 0.18;
+  mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
+}
+
+.accent-aura-rain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.panel-shell-main {
+  position: relative;
+  z-index: 1;
+}
+
+html.is-phone .panel-shell-main,
+html.is-desktop .panel-shell-main,
+html[data-viewport="phone"] .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell-main {
+  background: transparent !important;
+}
+
+/* Меню вкладок без размытия — оно и давало «мыло» */
+.panel-mobile-overlay,
+html.is-phone .panel-mobile-overlay,
+html.is-desktop .panel-mobile-overlay,
+html[data-viewport="phone"] .panel-mobile-overlay,
+html[data-viewport="desktop"] .panel-mobile-overlay {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(0, 0, 0, 0.62) !important;
+}
+
+html.is-phone .phone-dock,
+html[data-viewport="phone"] .phone-dock {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(18, 18, 20, 0.96) !important;
+}
+
+html.is-phone .phone-dock button,
+html[data-viewport="phone"] .phone-dock button {
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), background 160ms ease, color 160ms ease !important;
+}
+
+html.is-phone .phone-dock button:active,
+html[data-viewport="phone"] .phone-dock button:active {
+  transform: scale(0.96);
+}
+
+html.is-phone .phone-dock button.is-on,
+html[data-viewport="phone"] .phone-dock button.is-on,
+html.is-phone.is-personal .phone-dock button.is-on,
+html[data-viewport="phone"].is-personal .phone-dock button.is-on {
+  background: var(--e-accent, #c8afff) !important;
+  color: var(--e-accent-ink, #111111) !important;
+  box-shadow: 0 8px 18px rgba(var(--e-accent-rgb, 200, 175, 255), 0.28) !important;
+}
+
+html.is-phone .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-label,
+html.is-phone .phone-dock button.is-on .phone-dock-icon,
+html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-icon {
+  color: var(--e-accent-ink, #111111) !important;
+}
+
+html.is-phone .phone-dock-menu,
+html[data-viewport="phone"] .phone-dock-menu {
+  border-radius: 18px !important;
+  background: #2c2c2e !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .panel-users,
+html[data-viewport="phone"] .panel-users,
+html.is-phone .grp-page,
+html[data-viewport="phone"] .grp-page {
+  animation: none !important;
+  filter: none !important;
+}
+
+/* Заголовки всегда в строку. Узкая колонка сжимала «Игроки» в столбик букв. */
+html.is-phone .nika-head,
+html[data-viewport="phone"] .nika-head {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100% !important;
+}
+
+html.is-phone .nika-head-copy,
+html[data-viewport="phone"] .nika-head-copy {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+html.is-phone .nika-head h1,
+html[data-viewport="phone"] .nika-head h1,
+html.is-phone .craft-page-head h1,
+html[data-viewport="phone"] .craft-page-head h1,
+html.is-phone .panel-page-title,
+html[data-viewport="phone"] .panel-page-title,
+html.is-phone .realm-h,
+html[data-viewport="phone"] .realm-h,
+html.is-phone .panel-users-name,
+html[data-viewport="phone"] .panel-users-name {
+  display: block !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  width: auto !important;
+  max-width: 100% !important;
+  line-height: 1.12 !important;
+}
+
+html.is-phone .nika-head-copy p,
+html[data-viewport="phone"] .nika-head-copy p {
+  display: block !important;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  margin: 6px 0 0 !important;
+  color: #aeaeb2 !important;
+  font-size: 0.88rem !important;
+  line-height: 1.4 !important;
+}
+
+html.is-phone .phone-dock-label,
+html[data-viewport="phone"] .phone-dock-label {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  writing-mode: horizontal-tb !important;
+}
+
+html.is-phone .nika-status,
+html[data-viewport="phone"] .nika-status {
+  max-width: none !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+/* Плитка, которая открывает лист */
+.metric-tile {
+  position: relative;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+button.metric-tile {
+  font: inherit;
+  color: inherit;
+}
+
+.metric-tile:active {
+  transform: scale(0.985);
+}
+
+.metric-tile:focus-visible {
+  outline: 2px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.8);
+  outline-offset: 2px;
+}
+
+.metric-tile-mark {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+  pointer-events: none;
+}
+
+html.is-phone .dash-bot-hero.metric-tile,
+html.is-phone .dash-usage-card.metric-tile,
+html[data-viewport="phone"] .dash-bot-hero.metric-tile,
+html[data-viewport="phone"] .dash-usage-card.metric-tile {
+  width: 100%;
+}
+
+.panel-users-stats > .metric-tile {
+  min-width: 0;
+  text-align: left;
+}
+
+/* Лист детали */
+.metric-sheet-root {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.metric-sheet-root.is-desk {
+  align-items: center;
+  padding: 24px;
+}
+
+.metric-sheet-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  pointer-events: none;
+  animation: metricDimIn 220ms ease both;
+}
+
+.metric-sheet {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  width: min(460px, 100%);
+  max-height: min(82vh, 680px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 10px 20px calc(22px + env(safe-area-inset-bottom, 0px));
+  border-radius: 28px 28px 0 0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.2), transparent 60%),
+    #1c1c1e;
+  color: #fff;
+  box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.5);
+  animation: metricSheetUp 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.metric-sheet-root.is-desk .metric-sheet {
+  border-radius: 28px;
+  padding: 22px 24px 24px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+  animation-name: metricSheetPop;
+}
+
+.metric-sheet-grab {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 4px auto 12px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.metric-sheet-root.is-desk .metric-sheet-grab {
+  display: none;
+}
+
+.metric-sheet-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metric-sheet-top h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  writing-mode: horizontal-tb;
+}
+
+.metric-sheet-x {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  margin: -8px -8px 0 0;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+.metric-sheet-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.metric-sheet-value strong {
+  font-size: clamp(2.2rem, 8vw, 3rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-sheet-value span,
+.metric-sheet-hint,
+.metric-sheet-note {
+  color: #aeaeb2;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.metric-sheet-hint,
+.metric-sheet-note,
+.metric-sheet-delta {
+  margin: 8px 0 0;
+}
+
+.metric-sheet-delta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.metric-sheet-delta.is-up { color: #86efac; }
+.metric-sheet-delta.is-down { color: #fca5a5; }
+
+.metric-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 112px;
+  margin-top: 18px;
+}
+
+.metric-bar {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+}
+
+.metric-bar-track {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.metric-bar-col {
+  display: block;
+  width: 100%;
+  border-radius: 8px 8px 4px 4px;
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  min-height: 0;
+  transform-origin: bottom center;
+  animation: metricBarIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.metric-bar-label {
+  font-size: 0.68rem;
+  color: #8e8e93;
+  white-space: nowrap;
+}
+
+.metric-sheet-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--e-accent, #c8afff);
+  color: var(--e-accent-ink, #111111);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.metric-sheet-action:focus-visible,
+.metric-sheet-x:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.metric-sheet-root.is-leaving .metric-sheet {
+  animation: metricSheetOut 200ms ease both;
+}
+
+.metric-sheet-root.is-leaving .metric-sheet-dim {
+  animation: metricDimOut 200ms ease both;
+}
+
+@keyframes metricSheetUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes metricSheetPop {
+  from { transform: translateY(10px) scale(0.98); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes metricSheetOut {
+  to { transform: translateY(12px); opacity: 0; }
+}
+
+@keyframes metricBarIn {
+  from { transform: scaleY(0.08); }
+  to { transform: scaleY(1); }
+}
+
+@keyframes metricDimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes metricDimOut {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-tile,
+  .metric-sheet,
+  .metric-sheet-dim,
+  .metric-bar-col,
+  .metric-sheet-root.is-leaving .metric-sheet,
+  .metric-sheet-root.is-leaving .metric-sheet-dim {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .accent-aura-slot { display: none; }
+}

@@ -38,6 +38,8 @@ import CommandCenterSection from './sections/CommandCenterSection'
 import RulesGateModal from '../components/RulesGateModal'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
+import AccentAura from '../components/AccentAura'
+import { MetricSheetProvider } from '../components/MetricSheet'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
@@ -325,7 +327,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isSoftRestart = section === 'softRestart'
 
   return (
+    <MetricSheetProvider>
     <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
+      <AccentAura />
       {coach && (
         <FirstRun
           storageKey="epsilon.onboard.staff.v4"
@@ -596,5 +600,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         onOpenMenu={() => setMobileNavOpen((open) => !open)}
       />
     </div>
+    </MetricSheetProvider>
   )
 }

@@ -3,12 +3,8 @@ import { useEffect, useState } from 'react'
 const STORAGE_KEY = 'cf_admin_perf'
 
 function autoDetectLight() {
-  if (typeof window === 'undefined') return false
-  const isMobile = /iPhone|iPad|Android|Mobile/i.test(navigator.userAgent)
-  const isSmallScreen = window.innerWidth <= 1024
-  const isWeak = (navigator.hardwareConcurrency || 4) <= 4
-  const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  return isMobile || isSmallScreen || isWeak || prefersReduced
+  // Цвет палитры остаётся и на телефоне. Монохром включается только кнопкой «Оптимизировать».
+  return false
 }
 
 export function usePerfMode() {
@@ -30,17 +26,6 @@ export function usePerfMode() {
     document.body.classList.toggle('perf-light', lightMode)
     return () => document.body.classList.remove('perf-light')
   }, [lightMode])
-
-  // Следим за изменением системной настройки prefers-reduced-motion
-  useEffect(() => {
-    const mql = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-    if (!mql) return
-    const onChange = (e) => {
-      if (e.matches) setLightModeState(true)
-    }
-    mql.addEventListener('change', onChange)
-    return () => mql.removeEventListener('change', onChange)
-  }, [])
 
   return { lightMode, setLightMode }
 }

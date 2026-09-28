@@ -7,6 +7,14 @@ import {
 import { useIsPhone } from '../../lib/useIsDesktop'
 import { awaitDashboardStats, readDashboardSnapshot } from '../../lib/dashboardPrefetch'
 import { fmt, fmtCompact } from '../../lib/numberFormat'
+import { useMetricSheet } from '../../components/MetricSheet'
+
+function periodBars(map) {
+  return PERIODS.map((item) => ({
+    label: item.label,
+    value: Number(map?.[item.id]?.current ?? 0),
+  }))
+}
 
 const PERIODS = [
   { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
@@ -35,12 +43,15 @@ function CollectingCopy() {
   )
 }
 
-function UsageCard({ title, pair, meta, loading, suffix, period, split }) {
+function UsageCard({ title, pair, meta, loading, suffix, period, split, onOpen }) {
   const current = Number(pair?.current ?? 0)
   const previous = pair?.previous
+  const Tag = loading || !onOpen ? 'div' : 'button'
   return (
-    <div
-      className={`dash-usage-card${loading ? ' is-collecting' : ''}${split ? ' has-split' : ''} ${loading ? '' : toneClass(current, previous)}`}
+    <Tag
+      type={Tag === 'button' ? 'button' : undefined}
+      className={`dash-usage-card${onOpen && !loading ? ' metric-tile' : ''}${loading ? ' is-collecting' : ''}${split ? ' has-split' : ''} ${loading ? '' : toneClass(current, previous)}`}
+      onClick={onOpen}
     >
       <span className="dash-usage-label">{title}</span>
       {loading ? (
@@ -69,13 +80,14 @@ function UsageCard({ title, pair, meta, loading, suffix, period, split }) {
           )}
         </>
       )}
-    </div>
+    </Tag>
   )
 }
 
 /** Главная сотрудника: realtime-статистика проекта. */
 export default function DashboardSection() {
   const phone = useIsPhone()
+  const metric = useMetricSheet()
   const primed = readDashboardSnapshot()
   const [stats, setStats] = useState(primed)
   const [loading, setLoading] = useState(!primed)
@@ -195,6 +207,64 @@ export default function DashboardSection() {
   const botPrev = Number(botPair.previous ?? 0)
   const collecting = loading || !stats
 
+  const botSpec = {
+    id: 'dash-bot',
+    title: 'Вызовы бота',
+    value: fmt(botNow),
+    hint: `${meta.now} · ${meta.prev}: ${fmt(botPrev)}`,
+    current: botNow,
+    previous: botPrev,
+    previousLabel: meta.prev,
+    bars: periodBars(usage.botEvents),
+  }
+  const allSpec = {
+    id: 'dash-all',
+    title: 'Сообщения во всех группах с ботом',
+    value: fmt(usage.allMessages?.[period]?.current ?? 0),
+    hint: `${meta.now} · ${meta.prev}: ${fmtCompact(usage.allMessages?.[period]?.previous)}`,
+    current: Number(usage.allMessages?.[period]?.current ?? 0),
+    previous: Number(usage.allMessages?.[period]?.previous ?? 0),
+    previousLabel: meta.prev,
+    bars: periodBars(usage.allMessages),
+  }
+  const wagerSpec = {
+    id: 'dash-wager',
+    title: 'Оборот кут в системе',
+    value: fmt(wagerPair.current ?? 0),
+    unit: 'кут',
+    hint: `${meta.now} · ${meta.prev}: ${fmtCompact(wagerPair.previous)}`,
+    note: `проиграно ${fmtCompact(wagerPair.lost ?? 0)} · выиграно ${fmtCompact(wagerPair.won ?? 0)}`,
+    current: Number(wagerPair.current ?? 0),
+    previous: Number(wagerPair.previous ?? 0),
+    previousLabel: meta.prev,
+    bars: periodBars(usage.gameWager),
+  }
+  const officialSpec = {
+    id: 'dash-official',
+    title: 'Сообщения в официальных группах',
+    value: fmt(usage.officialMessages?.[period]?.current ?? 0),
+    hint: `${meta.now} · ${meta.prev}: ${fmtCompact(usage.officialMessages?.[period]?.previous)}`,
+    current: Number(usage.officialMessages?.[period]?.current ?? 0),
+    previous: Number(usage.officialMessages?.[period]?.previous ?? 0),
+    previousLabel: meta.prev,
+    bars: periodBars(usage.officialMessages),
+  }
+  const playersSpec = {
+    id: 'dash-players',
+    title: 'Пользователи в базе',
+    value: fmt(stats?.players),
+    hint: 'Все, кто есть в базе проекта',
+  }
+
+  useEffect(() => {
+    if (collecting) return
+    metric.sync(botSpec)
+    metric.sync(allSpec)
+    metric.sync(wagerSpec)
+    metric.sync(officialSpec)
+    metric.sync(playersSpec)
+  }, [liveTick, period, collecting])
+
   return (
     <section className={`grp-page nika-page users-page panel-users dash-home dash-cyber${phone ? ' is-phone' : ' is-desktop'}`}>
       <article className="panel-shelf panel-shelf-page panel-users-search dash-home-head dash-cyber-head">
@@ -218,7 +288,21 @@ export default function DashboardSection() {
         </div>
       </article>
 
-      <div className={`dash-bot-hero${collecting ? ' is-collecting' : ''}`} aria-live="polite" data-live={liveTick}>
+      <div
+        className={`dash-bot-hero${collecting ? ' is-collecting' : ' metric-tile'}`}
+        aria-live="polite"
+        data-live={liveTick}
+        role={collecting ? undefined : 'button'}
+        tabIndex={collecting ? undefined : 0}
+        onClick={() => { if (!collecting) metric.open(botSpec) }}
+        onKeyDown={(event) => {
+          if (collecting) return
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            metric.open(botSpec)
+          }
+        }}
+      >
         <div className="dash-bot-hero-top">
           <span className="dash-bot-hero-kicker">Вызовы бота · все группы</span>
           {!collecting && (
@@ -259,6 +343,7 @@ export default function DashboardSection() {
             meta={meta}
             loading={collecting}
             period={period}
+            onOpen={collecting ? null : () => metric.open(allSpec)}
           />
           <UsageCard
             title="Оборот кут в системе"
@@ -268,6 +353,7 @@ export default function DashboardSection() {
             period={period}
             suffix=" кут"
             split={{ lost: wagerPair.lost ?? 0, won: wagerPair.won ?? 0 }}
+            onOpen={collecting ? null : () => metric.open(wagerSpec)}
           />
           <UsageCard
             title="Сообщения во всех официальных группах проекта"
@@ -275,11 +361,24 @@ export default function DashboardSection() {
             meta={meta}
             loading={collecting}
             period={period}
+            onOpen={collecting ? null : () => metric.open(officialSpec)}
           />
         </div>
       </div>
 
-      <article className="panel-shelf panel-shelf-stat panel-shelf-players panel-shelf-quiet dash-db-line">
+      <article
+        className={`panel-shelf panel-shelf-stat panel-shelf-players panel-shelf-quiet dash-db-line${collecting ? '' : ' metric-tile'}`}
+        role={collecting ? undefined : 'button'}
+        tabIndex={collecting ? undefined : 0}
+        onClick={() => { if (!collecting) metric.open(playersSpec) }}
+        onKeyDown={(event) => {
+          if (collecting) return
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            metric.open(playersSpec)
+          }
+        }}
+      >
         {collecting ? (
           <div className="dash-db-line-text">
             <CollectingCopy />

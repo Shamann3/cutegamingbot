@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
+import { MetricTile } from '../../components/MetricSheet'
 import {
   adjustAdminUserBalance,
   adjustAdminUserItem,
@@ -2181,7 +2182,20 @@ export default function UsersSection({
                 )}
               </div>
 
-              <div className="pu-hero-balance">
+              <MetricTile
+                className="pu-hero-balance"
+                disabled={!hasProfile}
+                spec={hasProfile ? {
+                  id: `player-balance-${profile.userId}`,
+                  title: 'Баланс кут',
+                  value: Number(profile.balance || 0).toLocaleString('ru-RU'),
+                  unit: 'кут',
+                  hint: profile.displayName || 'Игрок',
+                  note: intel?.dossier?.donated
+                    ? `Донат ${Number(intel.dossier.donated).toLocaleString('ru-RU')}`
+                    : 'Игровой баланс',
+                } : null}
+              >
                 <span className="pu-hero-balance-label">Баланс кут</span>
                 <strong className={`pu-hero-balance-value${!hasProfile ? ' panel-users-placeholder' : ''}`}>
                   {hasProfile ? profile.balance?.toLocaleString('ru-RU') : '—'}
@@ -2191,7 +2205,7 @@ export default function UsersSection({
                     ? `донат ${Number(intel.dossier.donated).toLocaleString('ru-RU')}`
                     : 'игровой баланс'}
                 </span>
-              </div>
+              </MetricTile>
             </div>
 
             {hasProfile && profile.staffPortrait && (
@@ -2199,27 +2213,63 @@ export default function UsersSection({
             )}
 
             <div className="panel-users-stats pu-hero-keystats">
-              <div>
+              <MetricTile
+                disabled={!hasProfile}
+                spec={hasProfile ? {
+                  id: `player-plots-${profile.userId}`,
+                  title: 'Грядки',
+                  value: `${profile.ownedPlots}/${profile.maxPlots}`,
+                  hint: profile.displayName || 'Игрок',
+                } : null}
+              >
                 <span className="panel-users-stat-label">Грядки</span>
                 <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
                   {hasProfile ? `${profile.ownedPlots}/${profile.maxPlots}` : '—'}
                 </strong>
-              </div>
-              <div>
+              </MetricTile>
+              <MetricTile
+                disabled={!hasProfile}
+                spec={hasProfile ? {
+                  id: `player-market-${profile.userId}`,
+                  title: 'Биржа',
+                  value: String(profile.marketSalesCount ?? 0),
+                  hint: 'Продажи на бирже',
+                } : null}
+              >
                 <span className="panel-users-stat-label">Биржа</span>
                 <strong className={!hasProfile ? 'panel-users-placeholder' : ''}>
                   {hasProfile ? profile.marketSalesCount ?? 0 : '—'}
                 </strong>
-              </div>
-              <div>
+              </MetricTile>
+              <MetricTile
+                disabled={!hasProfile}
+                spec={hasProfile ? {
+                  id: `player-wl-${profile.userId}`,
+                  title: 'Победы и поражения',
+                  value: `${Number(intel?.dossier?.wins ?? 0).toLocaleString('ru-RU')} / ${Number(intel?.dossier?.losses ?? 0).toLocaleString('ru-RU')}`,
+                  hint: 'Победы / поражения в играх',
+                } : null}
+              >
                 <span className="panel-users-stat-label">Wins / Losses</span>
                 <strong>
                   {hasProfile
                     ? `${Number(intel?.dossier?.wins ?? 0).toLocaleString('ru-RU')} / ${Number(intel?.dossier?.losses ?? 0).toLocaleString('ru-RU')}`
                     : '—'}
                 </strong>
-              </div>
-              <div>
+              </MetricTile>
+              <MetricTile
+                disabled={!hasProfile}
+                spec={hasProfile ? {
+                  id: `player-msgs-${profile.userId}`,
+                  title: 'Сообщения за 30 дней',
+                  value: intel?.activity30d?.totalMessages != null
+                    ? Number(intel.activity30d.totalMessages).toLocaleString('ru-RU')
+                    : '…',
+                  hint: intel?.activity30d?.mostActive
+                    ? `Чаще всего в «${intel.activity30d.mostActive.chatName}»`
+                    : 'По всем группам с ботом',
+                } : null}
+              >
                 <span className="panel-users-stat-label">Сообщения · 30д</span>
                 <strong>
                   {hasProfile
@@ -2228,7 +2278,7 @@ export default function UsersSection({
                       : '…')
                     : '—'}
                 </strong>
-              </div>
+              </MetricTile>
             </div>
 
             {hasProfile && intel?.activity30d?.mostActive && (

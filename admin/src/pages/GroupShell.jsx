@@ -20,6 +20,8 @@ import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
+import AccentAura from '../components/AccentAura'
+import { MetricSheetProvider, useMetricSheet } from '../components/MetricSheet'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
@@ -73,8 +75,17 @@ function tabsFor(rights, isCreator) {
   return items
 }
 
-export default function GroupShell({ portrait, onLeave, onStaffApply }) {
+export default function GroupShell(props) {
+  return (
+    <MetricSheetProvider>
+      <GroupShellView {...props} />
+    </MetricSheetProvider>
+  )
+}
+
+function GroupShellView({ portrait, onLeave, onStaffApply }) {
   const personal = accentIsPersonal(loadStoredAccent())
+  const metric = useMetricSheet()
   const isCreator = Boolean(portrait?.isOwner)
   const groups = portrait?.groups || []
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
@@ -411,6 +422,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
 
   return (
     <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+      <AccentAura />
       <PanelBackgroundMusic volume={musicVolume} />
       {coach && (
         <FirstRun
@@ -524,15 +536,33 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'overview' && (
             <section>
               <div className="act-bento grp-overview-stats">
-                <button type="button" className="is-on" onClick={() => canActivity && pickTab('activity')}>
+                <button type="button" className="is-on metric-tile" onClick={() => metric.open({
+                  id: 'grp-writers',
+                  title: 'Активные за 30 дней',
+                  value: fmt(summary?.writers30d ?? summary?.members),
+                  hint: 'Участники, которые писали в этот чат',
+                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
+                })}>
                   <strong>{fmt(summary?.writers30d ?? summary?.members)}</strong>
                   <span>активных за 30 дней</span>
                 </button>
-                <button type="button" onClick={() => canActivity && pickTab('activity')}>
+                <button type="button" className="metric-tile" onClick={() => metric.open({
+                  id: 'grp-messages',
+                  title: 'Сообщения за 30 дней',
+                  value: fmt(summary?.messages30d),
+                  hint: 'Все сообщения этого чата',
+                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
+                })}>
                   <strong>{fmt(summary?.messages30d)}</strong>
                   <span>сообщений за 30 дней</span>
                 </button>
-                <button type="button" onClick={() => canActivity && pickTab('activity')}>
+                <button type="button" className="metric-tile" onClick={() => metric.open({
+                  id: 'grp-members',
+                  title: 'Участники в учёте',
+                  value: fmt(summary?.members),
+                  hint: 'Сколько человек панель видит в этой группе',
+                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
+                })}>
                   <strong>{fmt(summary?.members)}</strong>
                   <span>участников в учёте</span>
                 </button>
@@ -546,8 +576,15 @@ export default function GroupShell({ portrait, onLeave, onStaffApply }) {
                       <button
                         key={point.date}
                         type="button"
-                        className="is-on"
-                        onClick={() => canActivity && pickTab('activity')}
+                        className="is-on metric-tile"
+                        onClick={() => metric.open({
+                          id: `grp-peak-${point.date}`,
+                          title: String(point.date),
+                          value: fmt(point.messages),
+                          unit: 'сообщений',
+                          hint: 'Пиковый день этого чата',
+                          action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
+                        })}
                       >
                         {point.date}: {fmt(point.messages)}
                       </button>

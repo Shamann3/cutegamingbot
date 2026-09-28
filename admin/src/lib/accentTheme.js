@@ -52,9 +52,12 @@ export function relativeLuminance(hex) {
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 }
 
+/** Белый текст только на тёмном акценте, где он держит контраст 4.5:1. */
+const INK_LUMINANCE = 0.18
+
 /** Чёрный текст на светлом акценте, белый — на тёмном */
 export function inkOnAccent(hex) {
-  return relativeLuminance(hex) > 0.58 ? '#111111' : '#ffffff'
+  return relativeLuminance(hex) > INK_LUMINANCE ? '#111111' : '#ffffff'
 }
 
 export function rgbToHsv(r, g, b) {
@@ -208,8 +211,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const glowPx = 28 + glow * 72
   const glowAlpha = 0.22 + glow * 0.48
   const ink = inkOnAccent(a.hex)
-  const brightToward = relativeLuminance(a.hex) > 0.58 ? '#000000' : '#ffffff'
-  const brightAmt = relativeLuminance(a.hex) > 0.58 ? 0.22 : 0.28
+  const brightToward = relativeLuminance(a.hex) > INK_LUMINANCE ? '#000000' : '#ffffff'
+  const brightAmt = relativeLuminance(a.hex) > INK_LUMINANCE ? 0.22 : 0.28
 
   const root = document.documentElement
   root.style.setProperty('--e-accent', a.hex)

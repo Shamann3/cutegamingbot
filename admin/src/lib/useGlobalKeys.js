@@ -47,8 +47,8 @@ export function useGlobalKeys({ onEscape, onEnter } = {}) {
       if (e.isComposing) return
 
       if (e.key === 'Escape') {
-        // Открытая палитра цвета закрывается сама (useOutsideDismiss) —
-        // Esc снимает только её, сайдбар под ней остаётся.
+        // Лист метрики и палитра закрываются сами. Esc снимает только их.
+        if (document.querySelector('.metric-sheet')) return
         if (document.querySelector('.accent-picker-panel:not(.is-inline)')) return
 
         const openSelect = document.querySelector('.panel-select-open')
