@@ -1257,6 +1257,68 @@ html[data-viewport="phone"] .panel-layout-security:has(.sr-page) {
   }
 }
 
+/* ============================================================
+   ПАЛИТРА НА ГЕЙТЕ — горизонтальный прямоугольник
+   elite.css зажимает любую .accent-picker-panel в колонку 248px
+   через !important, поэтому здесь перебиваем тем же способом.
+   ============================================================ */
+
+.gate-palette-pop {
+  width: min(560px, 100%);
+}
+
+.gate-palette-pop .accent-picker-panel.is-inline {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  z-index: 1 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 18px !important;
+  border-radius: 16px !important;
+  display: grid !important;
+  grid-template-columns: 168px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 22px !important;
+  overflow: visible !important;
+  animation: none !important;
+}
+
+.gate-palette-pop .accent-picker-panel.is-inline .accent-wheel-wrap {
+  width: 168px !important;
+  height: 168px !important;
+  max-width: 168px !important;
+  margin: 0 !important;
+}
+
+.gate-palette-pop .accent-picker-panel.is-inline .accent-wheel {
+  width: 168px !important;
+  height: 168px !important;
+}
+
+.gate-palette-pop .accent-picker-panel.is-inline .accent-picker-side {
+  width: auto !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+}
+
+@media (max-width: 520px) {
+  .gate-palette-pop .accent-picker-panel.is-inline {
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-items: center !important;
+    gap: 16px !important;
+    padding: 16px !important;
+  }
+
+  .gate-palette-pop .accent-picker-panel.is-inline .accent-picker-side {
+    width: 100% !important;
+  }
+}
+
 /* Бренд внутри двери — тем же цветом, что и остальной текст двери.
    Градиент с background-clip тут давал чёрный текст на залитой двери. */
 .gate-door .gate-brand-word,

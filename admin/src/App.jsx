@@ -46,14 +46,16 @@ export default function App() {
   }, [])
 
   // Статистика главной готовится уже на визуальной загрузке —
-  // к моменту входа в панель цифры есть в памяти.
+  // к моменту входа в панель цифры есть в памяти. Экран перехода в панель
+  // сотрудника (SecurityBoot kind="staff") запускает прогрев сам.
   useEffect(() => {
-    if (screen !== 'boot' && screen !== 'entrance' && screen !== 'channel') return
+    if (screen !== 'boot' && screen !== 'entrance') return
     if (!(isAdminSessionValid() || hasTelegramInitData())) return
     primeDashboardStats()
   }, [screen])
 
   const finishAuth = useCallback(() => {
+    primeDashboardStats()
     setScreen('entrance')
   }, [])
 
@@ -79,6 +81,7 @@ export default function App() {
 
   const openStaff = useCallback(() => {
     if (isAdminSessionValid() || hasTelegramInitData()) {
+      primeDashboardStats()
       openChannel('staff', 'panel')
       return
     }

@@ -86,13 +86,14 @@
 /* «Печать кода» под подписью */
 .ent-trace {
   margin: 0.9rem auto 0;
-  width: max-content;
-  max-width: 100%;
+  /* Место под все 8 строк резервируется заранее: пока идёт печать,
+     блок не растёт и не сдвигается. */
+  width: min(37ch, 100%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.12rem;
-  min-height: 7.4em;
+  min-height: calc(8 * 1.5em + 7 * 0.12rem);
   font-family: "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
   font-size: 0.68rem;
   line-height: 1.5;
@@ -110,6 +111,16 @@
 
 .ent-trace-line:first-child {
   color: var(--ent-ink);
+}
+
+.ent-trace-line.is-live {
+  color: var(--ent-ink);
+  animation: entTraceLive 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes entTraceLive {
+  from { opacity: 0; transform: translate3d(0, 3px, 0); }
+  to   { opacity: 1; transform: none; }
 }
 
 .ent-trace-caret {

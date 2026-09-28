@@ -919,10 +919,83 @@ html[data-viewport="phone"] .arc-search {
     #000;
   color: #f4f4f4;
   text-align: left;
-  cursor: pointer;
+  cursor: progress;
   font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
   overflow: hidden;
 }
+
+/* Матричный дождь на экране перехода — в цвет интерфейса */
+.boot-matrix {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, transparent 12%, #000 70%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, transparent 12%, #000 70%);
+  animation: bootMatrixIn 0.45s cubic-bezier(0.33, 1, 0.68, 1) both;
+}
+
+@keyframes bootMatrixIn {
+  from { opacity: 0; }
+  to   { opacity: 0.5; }
+}
+
+/* Затемнение под текстом, чтобы цифры и шаги читались поверх дождя */
+.boot-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 70% 60% at 50% 38%, rgba(0, 0, 0, 0.78) 0%, rgba(0, 0, 0, 0.3) 62%, transparent 100%);
+}
+
+@media (min-width: 901px) {
+  .boot-matrix {
+    mask-image: radial-gradient(ellipse 70% 80% at 28% 42%, transparent 14%, #000 68%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 80% at 28% 42%, transparent 14%, #000 68%);
+  }
+
+  .boot-veil {
+    background: radial-gradient(ellipse 56% 70% at 26% 42%, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.3) 60%, transparent 100%);
+  }
+}
+
+.boot-stage,
+.boot-corner,
+.boot-sweep {
+  z-index: 1;
+}
+
+.boot-stage {
+  position: relative;
+}
+
+/* Шаг «Статистика главной»: пока грузится — мягко пульсирует, а не стоит */
+.boot-log li.boot-log-data.is-loading {
+  opacity: 0.7;
+  animation: bootDataPulse 1.1s ease-in-out infinite;
+}
+
+.boot-log li.boot-log-data.is-on {
+  opacity: 1;
+  animation: bootDataDone 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes bootDataPulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9; }
+}
+
+@keyframes bootDataDone {
+  from { opacity: 0.6; transform: translate3d(0, 3px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+.boot.is-still .boot-matrix { display: none; }
+.boot.is-still .boot-log li.boot-log-data { animation: none; }
 
 .boot.is-personal {
   color: var(--e-accent, #f4f4f4);
@@ -1046,14 +1119,6 @@ html[data-viewport="phone"] .arc-search {
 .boot.is-still .boot-sweep {
   animation: none;
   opacity: 0;
-}
-
-.boot-skip {
-  color: rgba(244, 244, 244, 0.62);
-  font-size: 13px;
-  min-height: 44px;
-  display: flex;
-  align-items: flex-end;
 }
 
 @media (min-width: 901px) {

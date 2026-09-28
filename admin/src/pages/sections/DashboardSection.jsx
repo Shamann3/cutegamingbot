@@ -6,6 +6,7 @@ import {
 } from '../../lib/adminClient'
 import { useIsPhone } from '../../lib/useIsDesktop'
 import { awaitDashboardStats, readDashboardSnapshot } from '../../lib/dashboardPrefetch'
+import { fmt, fmtCompact } from '../../lib/numberFormat'
 
 const PERIODS = [
   { id: 'day', label: 'День', now: 'сегодня', prev: 'вчера' },
@@ -15,34 +16,6 @@ const PERIODS = [
 ]
 
 const LIVE_MS = 1000
-
-function fmt(n) {
-  if (n == null || Number.isNaN(Number(n))) return '—'
-  return new Intl.NumberFormat('ru-RU').format(Number(n))
-}
-
-const COMPACT_STEPS = [
-  { at: 1e12, unit: 'трлн' },
-  { at: 1e9, unit: 'млрд' },
-  { at: 1e6, unit: 'млн' },
-  { at: 1e3, unit: 'тыс' },
-]
-
-/** Короткая запись — чтобы миллионные суммы не распирали карточку. */
-function fmtCompact(n) {
-  const value = Number(n)
-  if (!Number.isFinite(value)) return '—'
-  const abs = Math.abs(value)
-  const step = COMPACT_STEPS.find((item) => abs >= item.at)
-  if (!step) return new Intl.NumberFormat('ru-RU').format(value)
-  const scaled = value / step.at
-  const digits = Math.abs(scaled) >= 100 ? 0 : 1
-  const text = new Intl.NumberFormat('ru-RU', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: digits,
-  }).format(scaled)
-  return `${text} ${step.unit}`
-}
 
 function toneClass(current, previous) {
   const a = Number(current)
@@ -138,18 +111,26 @@ export default function DashboardSection() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      // Сначала — то, что успели прогреть на экране загрузки.
+      // Сначала — то, что прогрели на экране загрузки. Если данные есть,
+      // дальше их ведёт 1 Гц-поллинг, отдельный запрос не нужен.
+      const warmed = await awaitDashboardStats()
+      if (cancelled) return
+      if (warmed) {
+        applyPayload(warmed)
+        return
+      }
       try {
-        const warmed = await awaitDashboardStats()
-        if (!cancelled && warmed) applyPayload(warmed)
+        const data = await fetchDashboardLive()
+        if (!cancelled) applyPayload(data)
+        return
       } catch {
-        // Главный экран без ошибок.
+        // Главный экран без ошибок — пробуем полный снимок.
       }
       try {
         const data = await fetchDashboardStats()
         if (!cancelled) applyPayload(data)
       } catch {
-        // Главный экран без ошибок — остаёмся в состоянии сбора / последних цифр.
+        // Остаёмся в состоянии сбора данных.
       }
     })()
     return () => { cancelled = true }

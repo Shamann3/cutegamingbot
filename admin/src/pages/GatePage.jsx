@@ -78,16 +78,23 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   useEffect(() => {
     if (!colorOpen) return undefined
     const onDown = (event) => {
-      if (paletteRef.current?.contains(event.target)) return
+      const slot = paletteRef.current
+      const target = event.target
+      if (slot && target instanceof Node && slot.contains(target)) return
       setColorOpen(false)
     }
     const onKey = (event) => {
       if (event.key === 'Escape') setColorOpen(false)
     }
-    window.addEventListener('pointerdown', onDown)
+    // Capture-фаза: срабатывает раньше любых обработчиков, которые могли бы
+    // остановить всплытие. touchstart — для старых WebView без PointerEvent.
+    const downEvent = 'PointerEvent' in window ? 'pointerdown' : 'touchstart'
+    document.addEventListener(downEvent, onDown, true)
+    document.addEventListener('mousedown', onDown, true)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('pointerdown', onDown)
+      document.removeEventListener(downEvent, onDown, true)
+      document.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('keydown', onKey)
     }
   }, [colorOpen])
@@ -121,7 +128,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
   return (
     <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
-      <MatrixRain className="gate-matrix" paused={calm} fps={30} />
+      <MatrixRain className="gate-matrix" paused={calm} fps={30} prewarm={40} />
       <div className="gate-veil" aria-hidden="true" />
       <div className="gate-frame" aria-hidden="true" />
       <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>

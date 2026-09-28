@@ -1,4 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import MatrixRain from './MatrixRain'
+import { waitForDashboardStats } from '../lib/dashboardPrefetch'
+import { bootIsComplete, bootProgressFrame } from '../lib/bootProgress'
+
+/** Дольше этого экран статистику не ждёт — панель сама доберёт её поллингом. */
+export const STATS_WAIT_CAP_MS = 6000
+
+const DATA_STEP_LABEL = 'Статистика главной'
+
+const DATA_STATE_TEXT = {
+  loading: 'загрузка',
+  ready: 'готово',
+  later: 'догрузим',
+}
 
 const GATE_LINES = [
   [
@@ -26,12 +40,12 @@ const STAFF_LINES = [
   [
     { at: 0.28, label: 'Открываем панель сотрудника' },
     { at: 0.62, label: 'Страницы вашей должности' },
-    { at: 0.9, label: 'Готово' },
+    { at: 0.86, label: 'Права на месте' },
   ],
   [
     { at: 0.28, label: 'Вас узнали' },
     { at: 0.62, label: 'Закрытые страницы не показываем' },
-    { at: 0.9, label: 'Готово' },
+    { at: 0.86, label: 'Доступ подтверждён' },
   ],
 ]
 
@@ -63,21 +77,42 @@ function nextTurn(kind) {
 export function bootScript(kind) {
   const turn = nextTurn(kind)
   const code = turn % 3 === 2
+  // Панель сотрудника открывается сразу на главной — её цифры грузим здесь.
+  const needsData = kind === 'staff'
   if (code) {
-    return { title: 'Идёт проверка', steps: CODE_LINES, duration: 1700, code: true }
+    return { title: 'Идёт проверка', steps: CODE_LINES, duration: 1800, code: true, needsData }
   }
   if (kind === 'staff') {
     const steps = STAFF_LINES[turn % STAFF_LINES.length]
-    return { title: 'Открываем панель сотрудника', steps, duration: 1100, code: false }
+    return { title: 'Открываем панель сотрудника', steps, duration: 1600, code: false, needsData }
   }
   if (kind === 'group') {
     const steps = GROUP_LINES[turn % GROUP_LINES.length]
-    return { title: 'Открываем панель группы', steps, duration: 1100, code: false }
+    return { title: 'Открываем панель группы', steps, duration: 1400, code: false, needsData }
   }
   const steps = GATE_LINES[turn % GATE_LINES.length]
-  return { title: turn % 2 === 0 ? 'Проверяем вход' : 'Вас узнали', steps, duration: 1600, code: false }
+  return { title: turn % 2 === 0 ? 'Проверяем вход' : 'Вас узнали', steps, duration: 1600, code: false, needsData }
 }
 
+function detectStill() {
+  if (typeof window === 'undefined') return true
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true
+  return false
+}
+
+function detectCalm() {
+  if (detectStill()) return true
+  try {
+    if (localStorage.getItem('cf_admin_perf') === '1') return true
+  } catch { /* ignore */ }
+  return (navigator.hardwareConcurrency || 4) <= 2
+}
+
+/**
+ * Экран перехода в панель. Пропустить его нельзя: он заканчивается, когда
+ * полоса дошла до конца, а для панели сотрудника — ещё и когда статистика
+ * главной уже в памяти (не дольше STATS_WAIT_CAP_MS).
+ */
 export default function SecurityBoot({
   personal = false,
   kind = 'gate',
@@ -87,7 +122,11 @@ export default function SecurityBoot({
   if (!scriptRef.current) scriptRef.current = bootScript(kind)
   const script = scriptRef.current
   const [progress, setProgress] = useState(0)
-  const [reduce, setReduce] = useState(false)
+  const [still] = useState(detectStill)
+  const [calm] = useState(detectCalm)
+  const [dataState, setDataState] = useState(script.needsData ? 'loading' : 'ready')
+  const dataReady = dataState !== 'loading'
+  const dataReadyRef = useRef(!script.needsData)
   const onDoneRef = useRef(onDone)
   const fired = useRef(false)
   onDoneRef.current = onDone
@@ -99,30 +138,57 @@ export default function SecurityBoot({
   }
 
   useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const still = media.matches
-    setReduce(still)
-    const backup = window.setTimeout(finish, 8000)
-    if (still) {
-      setProgress(1)
-      const timer = window.setTimeout(finish, 420)
-      return () => {
-        window.clearTimeout(timer)
-        window.clearTimeout(backup)
-      }
+    if (!script.needsData) return undefined
+    let alive = true
+    waitForDashboardStats(STATS_WAIT_CAP_MS).then((snapshot) => {
+      if (!alive) return
+      dataReadyRef.current = true
+      setDataState(snapshot ? 'ready' : 'later')
+    })
+    return () => {
+      alive = false
     }
+  }, [script.needsData])
+
+  useEffect(() => {
+    if (!still) return undefined
+    setProgress(dataReady ? 1 : 0.5)
+    if (!dataReady) return undefined
+    const timer = window.setTimeout(finish, 260)
+    return () => window.clearTimeout(timer)
+  }, [still, dataReady])
+
+  useEffect(() => {
+    if (still) return undefined
+    // Страховка на случай, если rAF заморожен (вкладка в фоне и т.п.).
+    const backup = window.setTimeout(finish, script.duration + STATS_WAIT_CAP_MS + 2000)
 
     const start = performance.now()
     let frame = 0
     let hold = 0
+    let value = 0
+    let readyAt = null
+    let readyFrom = 0
     const tick = (now) => {
-      const value = Math.min(1, (now - start) / script.duration)
+      const elapsed = now - start
+      if (dataReadyRef.current && readyAt == null) {
+        readyAt = elapsed
+        readyFrom = value
+      }
+      value = bootProgressFrame({
+        elapsed,
+        duration: script.duration,
+        needsData: script.needsData,
+        readyAt,
+        readyFrom,
+      })
       setProgress(value)
-      if (value < 1) {
-        frame = window.requestAnimationFrame(tick)
+      if (bootIsComplete(value)) {
+        setProgress(1)
+        hold = window.setTimeout(finish, 180)
         return
       }
-      hold = window.setTimeout(finish, 180)
+      frame = window.requestAnimationFrame(tick)
     }
     frame = window.requestAnimationFrame(tick)
     return () => {
@@ -130,23 +196,19 @@ export default function SecurityBoot({
       window.clearTimeout(hold)
       window.clearTimeout(backup)
     }
-  }, [script.duration])
+  }, [still, script.duration, script.needsData])
 
   const pct = Math.round(progress * 100)
 
   return (
     <div
-      className={`boot${personal ? ' is-personal' : ''}${reduce ? ' is-still' : ''}`}
-      role="button"
-      tabIndex={0}
-      onClick={finish}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          finish()
-        }
-      }}
+      className={`boot${personal ? ' is-personal' : ''}${still ? ' is-still' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-busy={pct < 100}
     >
+      <MatrixRain className="boot-matrix" paused={calm} prewarm={40} />
+      <span className="boot-veil" aria-hidden="true" />
       <span className="boot-sweep" aria-hidden="true" />
       <span className="boot-corner boot-corner-tl" aria-hidden="true" />
       <span className="boot-corner boot-corner-tr" aria-hidden="true" />
@@ -169,10 +231,18 @@ export default function SecurityBoot({
               </li>
             )
           })}
+          {script.needsData && (
+            <li
+              className={`boot-log-data${dataReady ? ' is-on' : ' is-loading'}`}
+              data-state={dataState}
+            >
+              <span>{DATA_STEP_LABEL}</span>
+              <span>{DATA_STATE_TEXT[dataState]}</span>
+            </li>
+          )}
         </ol>
-        <p className="boot-live" role="status">{script.code ? 'Пишем проверку' : 'Проверка'} {pct} из 100</p>
+        <p className="boot-live">{script.code ? 'Пишем проверку' : 'Проверка'} {pct} из 100</p>
       </div>
-      <span className="boot-skip">Нажмите, чтобы войти сразу</span>
     </div>
   )
 }

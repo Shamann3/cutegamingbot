@@ -3,6 +3,7 @@ import { hasTelegramInitData, isAdminSessionValid } from '../lib/adminClient'
 import { vivoEpsilonLogo } from './EpsilonLogo'
 import { applyAccentToDocument, loadStoredAccent } from '../lib/accentTheme'
 import MatrixRain from './MatrixRain'
+import { waitForDashboardStats } from '../lib/dashboardPrefetch'
 
 /**
  * Жёсткий таймлайн на 6.0с:
@@ -17,6 +18,8 @@ export const ENTRANCE_HOLD_MS = 5550
 export const ENTRANCE_EXIT_MS = 450
 export const ENTRANCE_LOGIN_HOLD_MS = 5550
 export const ENTRANCE_LITE_HOLD_MS = 1600
+/** Сколько после таймлайна вход ещё ждёт статистику главной. */
+export const ENTRANCE_DATA_GRACE_MS = 3000
 
 function detectLiteEntrance() {
   if (typeof window === 'undefined') return false
@@ -48,14 +51,24 @@ const TRACE_LINES = [
   '> realtime 1 Hz ........... ready',
 ]
 
-/** Построчная «печать кода» — заполняет время визуальной загрузки. */
-function ConsoleTrace({ durationMs }) {
+const DATA_TRACE = {
+  loading: '> статистика главной ..... загрузка',
+  ready: '> статистика главной ..... ready',
+  later: '> статистика главной ..... фон',
+}
+
+/**
+ * Построчная «печать кода» — заполняет время визуальной загрузки.
+ * tail — живая строка после скрипта (реальное состояние загрузки данных).
+ */
+function ConsoleTrace({ durationMs, tail = null }) {
   const script = useMemo(() => TRACE_LINES.join('\n'), [])
   const [typed, setTyped] = useState(0)
 
   useEffect(() => {
     const total = script.length
-    const step = Math.max(12, Math.floor(durationMs / Math.max(total, 1)))
+    // Печать занимает ~80% таймлайна, чтобы живая строка успела показаться.
+    const step = Math.max(10, Math.floor((durationMs * 0.8) / Math.max(total, 1)))
     let i = 0
     const timer = window.setInterval(() => {
       i += 1
@@ -65,12 +78,17 @@ function ConsoleTrace({ durationMs }) {
     return () => window.clearInterval(timer)
   }, [script, durationMs])
 
+  const done = typed >= script.length
   const visible = script.slice(0, typed).split('\n')
+  if (done && tail) visible.push(tail)
 
   return (
     <pre className="ent-trace" aria-hidden="true">
       {visible.map((line, index) => (
-        <span className="ent-trace-line" key={TRACE_LINES[index] || index}>
+        <span
+          className={`ent-trace-line${done && tail && index === visible.length - 1 ? ' is-live' : ''}`}
+          key={TRACE_LINES[index] || `tail-${index}`}
+        >
           {line}
           {index === visible.length - 1 ? <i className="ent-trace-caret" /> : null}
         </span>
@@ -91,6 +109,9 @@ export default function EntranceSeal({
   const [phase, setPhase] = useState('in')
   const [lite] = useState(detectLiteEntrance)
   const [logoTint] = useState(resolveEntranceLogoTint)
+  // После логина сразу открывается главная — её цифры грузим, пока идёт заставка.
+  const needsData = variant === 'login'
+  const [dataState, setDataState] = useState(needsData ? 'loading' : null)
   const doneRef = useRef(false)
   const holdMs = lite
     ? ENTRANCE_LITE_HOLD_MS
@@ -101,6 +122,17 @@ export default function EntranceSeal({
   useEffect(() => {
     applyAccentToDocument(loadStoredAccent())
   }, [])
+
+  useEffect(() => {
+    if (!needsData) return undefined
+    let alive = true
+    waitForDashboardStats().then((snapshot) => {
+      if (alive) setDataState(snapshot ? 'ready' : 'later')
+    })
+    return () => {
+      alive = false
+    }
+  }, [needsData])
 
   const finish = () => {
     if (doneRef.current) return
@@ -119,17 +151,31 @@ export default function EntranceSeal({
 
     const hold = reduced ? 700 : holdMs
     const exit = reduced ? 200 : ENTRANCE_EXIT_MS
+    const grace = needsData ? ENTRANCE_DATA_GRACE_MS : 0
 
-    const t1 = window.setTimeout(() => setPhase('out'), hold)
-    const t2 = window.setTimeout(finish, hold + exit)
-    const backup = window.setTimeout(finish, hold + exit + 4000)
+    let alive = true
+    const timers = []
+    const later = (fn, ms) => timers.push(window.setTimeout(fn, ms))
+    const leave = () => {
+      if (!alive) return
+      setPhase('out')
+      later(finish, exit)
+    }
+
+    later(() => {
+      if (!needsData) {
+        leave()
+        return
+      }
+      waitForDashboardStats(grace).then(leave)
+    }, hold)
+    later(finish, hold + grace + exit + 4000)
 
     return () => {
-      window.clearTimeout(t1)
-      window.clearTimeout(t2)
-      window.clearTimeout(backup)
+      alive = false
+      timers.forEach((id) => window.clearTimeout(id))
     }
-  }, [holdMs, onFinished])
+  }, [holdMs, needsData, onFinished])
 
   const authed =
     variant === 'login' || isAdminSessionValid() || hasTelegramInitData()
@@ -209,7 +255,12 @@ export default function EntranceSeal({
             <span className="ent-meta-dot" />
             <span>Поддержка</span>
           </div>
-          {!lite && <ConsoleTrace durationMs={holdMs} />}
+          {!lite && (
+            <ConsoleTrace
+              durationMs={holdMs}
+              tail={dataState ? DATA_TRACE[dataState] : null}
+            />
+          )}
         </div>
       </div>
 
