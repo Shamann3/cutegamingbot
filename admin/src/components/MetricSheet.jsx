@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useIsPhone } from '../lib/useIsDesktop'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { barPercents, metricDelta } from '../lib/metricModel'
-import { fmt } from '../lib/numberFormat'
+import { fmt, fmtCompact } from '../lib/numberFormat'
 
 const MetricCtx = createContext(null)
 
@@ -68,6 +68,9 @@ function MetricSheetView({ spec, leaving, onClose }) {
   const panelRef = useRef(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  const firstKey = spec.bars?.[0] ? (spec.bars[0].id || spec.bars[0].label) : null
+  const [pinned, setPinned] = useState(spec.activeBar || firstKey)
+  const [hover, setHover] = useState(null)
 
   useOutsideDismiss(true, [panelRef], () => onCloseRef.current())
 
@@ -80,9 +83,15 @@ function MetricSheetView({ spec, leaving, onClose }) {
     }
   }, [])
 
-  const percents = barPercents((spec.bars || []).map((bar) => bar.value))
-  const delta = metricDelta(spec.current, spec.previous)
+  const bars = spec.bars || []
+  const percents = barPercents(bars.map((bar) => bar.value))
+  const focusKey = hover || pinned
+  const focus = bars.find((bar) => (bar.id || bar.label) === focusKey) || null
+  const shownCurrent = focus ? focus.value : spec.current
+  const shownPrevious = focus && focus.previous != null ? focus.previous : spec.previous
+  const delta = metricDelta(shownCurrent, shownPrevious)
   const tone = delta == null ? '' : delta > 0 ? 'is-up' : delta < 0 ? 'is-down' : ''
+  const previousLabel = focus?.previousLabel || spec.previousLabel
 
   return createPortal(
     <div className={`metric-sheet-root${phone ? ' is-phone' : ' is-desk'}${leaving ? ' is-leaving' : ''}`}>
@@ -104,29 +113,47 @@ function MetricSheetView({ spec, leaving, onClose }) {
             </svg>
           </button>
         </div>
-        <p className="metric-sheet-value">
-          <strong>{spec.value}</strong>
-          {spec.unit ? <span>{spec.unit}</span> : null}
-        </p>
-        {spec.hint ? <p className="metric-sheet-hint">{spec.hint}</p> : null}
-        {delta != null && (
-          <p className={`metric-sheet-delta ${tone}`}>
-            {delta > 0 ? '+' : ''}
-            {fmt(delta)}
-            {spec.previousLabel ? ` к «${spec.previousLabel}»` : ' к прошлому периоду'}
+        <div className="metric-sheet-read" role="status">
+          <p className="metric-sheet-value">
+            <strong>{focus ? fmt(focus.value) : spec.value}</strong>
+            {spec.unit ? <span>{spec.unit}</span> : null}
           </p>
-        )}
-        {spec.note ? <p className="metric-sheet-note">{spec.note}</p> : null}
-        {spec.bars?.length > 0 && (
-          <div className="metric-bars" aria-hidden="true">
-            {spec.bars.map((bar, index) => (
-              <div className="metric-bar" key={bar.label}>
-                <span className="metric-bar-track">
-                  <span className="metric-bar-col" style={{ height: `${percents[index]}%` }} />
-                </span>
-                <span className="metric-bar-label">{bar.label}</span>
-              </div>
-            ))}
+          {focus?.when ? <p className="metric-sheet-hint">{focus.when}</p> : spec.hint ? <p className="metric-sheet-hint">{spec.hint}</p> : null}
+          {delta != null && (
+            <p className={`metric-sheet-delta ${tone}`}>
+              {delta > 0 ? '+' : ''}
+              {fmt(delta)}
+              {previousLabel ? ` к «${previousLabel}»` : ' к прошлому периоду'}
+            </p>
+          )}
+          {spec.note && (!focus || focusKey === spec.activeBar) ? <p className="metric-sheet-note">{spec.note}</p> : null}
+        </div>
+        {bars.length > 0 && (
+          <div className="metric-bars" role="group" aria-label="Периоды">
+            {bars.map((bar, index) => {
+              const key = bar.id || bar.label
+              const on = focusKey === key
+              return (
+                <button
+                  type="button"
+                  className={`metric-bar${on ? ' is-on' : ''}`}
+                  key={key}
+                  aria-pressed={pinned === key}
+                  aria-label={`${bar.label}${bar.when ? `, ${bar.when}` : ''}, ${fmt(bar.value)}`}
+                  onMouseEnter={() => setHover(key)}
+                  onMouseLeave={() => setHover(null)}
+                  onFocus={() => setHover(key)}
+                  onBlur={() => setHover(null)}
+                  onClick={() => setPinned(key)}
+                >
+                  <span className="metric-bar-track">
+                    <span className="metric-bar-col" style={{ height: `${Math.max(percents[index], bar.value > 0 ? 8 : 0)}%` }} />
+                  </span>
+                  <span className="metric-bar-label">{bar.label}</span>
+                  <span className="metric-bar-value">{fmtCompact(bar.value)}</span>
+                </button>
+              )
+            })}
           </div>
         )}
         {spec.action && (

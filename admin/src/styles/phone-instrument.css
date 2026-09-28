@@ -286,7 +286,7 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
 
 .metric-sheet-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -304,12 +304,22 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   flex: 0 0 44px;
   width: 44px;
   height: 44px;
-  margin: -8px -8px 0 0;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
+  line-height: 0;
   cursor: pointer;
+}
+
+.metric-sheet-x svg,
+.focus-sheet-close svg {
+  display: block;
 }
 
 .metric-sheet-value {
@@ -353,18 +363,28 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  height: 112px;
+  height: 148px;
   margin-top: 18px;
 }
 
 .metric-bar {
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   height: 100%;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
 .metric-bar-track {
@@ -372,22 +392,45 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   width: 100%;
   display: flex;
   align-items: flex-end;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.metric-bar.is-on .metric-bar-track,
+.metric-bar:hover .metric-bar-track,
+.metric-bar:focus-visible .metric-bar-track {
+  box-shadow: inset 0 0 0 1.5px #fff;
 }
 
 .metric-bar-col {
   display: block;
-  width: 100%;
+  width: calc(100% - 10px);
   border-radius: 8px 8px 4px 4px;
-  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.92);
   min-height: 0;
   transform-origin: bottom center;
   animation: metricBarIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.metric-bar-label {
-  font-size: 0.68rem;
-  color: #8e8e93;
+.metric-bar-label,
+.metric-bar-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-bar-label {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: #f4f4f5;
+}
+
+.metric-bar-value {
+  font-size: 0.68rem;
+  color: #c8c8cc;
 }
 
 .metric-sheet-action {
@@ -601,7 +644,7 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
   }
 }
 
-/* Рабочее поле прозрачное: градиент виден сквозь него, край поля остаётся линией. */
+/* Свет остаётся за полем. Само поле тёмное, чтобы текст не пропадал. */
 html.is-desktop .panel-shell,
 html[data-viewport="desktop"] .panel-shell,
 html.is-phone .panel-shell,
@@ -610,10 +653,6 @@ html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main,
 html.is-phone .panel-shell .panel-shell-main,
 html[data-viewport="phone"] .panel-shell .panel-shell-main,
-html.is-desktop .panel-shell .panel-layout,
-html[data-viewport="desktop"] .panel-shell .panel-layout,
-html.is-phone .panel-shell .panel-layout,
-html[data-viewport="phone"] .panel-shell .panel-layout,
 .panel-shell .dash-home {
   background: transparent !important;
   background-image: none !important;
@@ -622,9 +661,11 @@ html[data-viewport="phone"] .panel-shell .panel-layout,
 
 .panel-shell .panel-layout {
   margin: 8px !important;
-  border: 1px solid rgba(255, 255, 255, 0.62) !important;
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
   border-radius: 24px !important;
-  box-shadow: inset 0 0 0 1px rgba(var(--e-g1, 255, 255, 255), 0.42) !important;
+  background: #07070a !important;
+  background-image: none !important;
+  box-shadow: none !important;
 }
 
 html.is-phone .phone-dock.is-tabs-menu,
@@ -773,7 +814,7 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
 
 .focus-sheet-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 18px 16px 12px;
@@ -797,6 +838,8 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
 .focus-sheet-close {
   width: 36px;
   height: 36px;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
@@ -804,6 +847,7 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 0;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -1195,18 +1239,14 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   letter-spacing: -0.03em;
 }
 
-/* Один свет: тёмное поле, выбранный цвет поднимается снизу. */
+/* Лёгкий свет по краю экрана. В рабочее поле он не заходит. */
 .accent-aura-wash,
 .gate-veil {
   background:
-    linear-gradient(
-      180deg,
-      #050508 0%,
-      #050508 48%,
-      rgba(var(--e-accent-rgb, 255, 255, 255), 0.22) 68%,
-      rgba(var(--e-accent-rgb, 255, 255, 255), 0.62) 86%,
-      rgba(var(--e-accent-rgb, 255, 255, 255), 0.92) 100%
-    ) !important;
+    radial-gradient(ellipse 120% 18% at 50% 100%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.42), transparent 72%),
+    radial-gradient(ellipse 22% 46% at 0% 80%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.14), transparent 70%),
+    radial-gradient(ellipse 22% 46% at 100% 80%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.14), transparent 70%),
+    #050508 !important;
 }
 
 /* Стекло: любая деталь, кроме текста и образцов цвета.
@@ -1365,11 +1405,37 @@ html:is([data-viewport="phone"], [data-viewport="desktop"]) .phone-dock {
 }
 
 .gate-stage,
-.focus-sheet,
-.case-sheet,
 .accent-picker-panel {
-  background: var(--e-fill) !important;
+  background: #07070a !important;
   border: 1px solid var(--e-edge) !important;
+}
+
+.metric-sheet,
+.focus-sheet,
+.case-sheet {
+  background:
+    radial-gradient(ellipse 70% 18% at 50% 0%, rgba(var(--e-accent-rgb, 255, 255, 255), 0.16), transparent 70%),
+    #121214 !important;
+  border: 1px solid var(--e-edge) !important;
+}
+
+button:has(> svg:only-child),
+.metric-sheet-x,
+.focus-sheet-close,
+.elite-icon-btn,
+.elite-menu-btn,
+.img-lightbox-close,
+.panel-sidebar-close {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 0 !important;
+}
+
+.metric-sheet-x,
+.focus-sheet-close,
+.img-lightbox-close {
+  padding: 0 !important;
 }
 
 .accent-wheel,

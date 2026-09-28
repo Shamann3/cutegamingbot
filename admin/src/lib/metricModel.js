@@ -24,6 +24,28 @@ export function barPercents(values) {
   })
 }
 
+const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
+const MONTHS_NOM = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
+
+/** Человеческая дата периода: день, неделя, месяц или год. */
+export function periodWhen(id, now = new Date()) {
+  const day = now.getDate()
+  const month = now.getMonth()
+  const year = now.getFullYear()
+  if (id === 'year') return String(year)
+  if (id === 'month') return `${MONTHS_NOM[month]} ${year}`
+  if (id === 'week') {
+    const start = new Date(now)
+    start.setDate(day - ((now.getDay() + 6) % 7))
+    const sameMonth = start.getMonth() === month && start.getFullYear() === year
+    const startText = sameMonth
+      ? String(start.getDate())
+      : `${start.getDate()} ${MONTHS_GEN[start.getMonth()]}`
+    return `${startText}–${day} ${MONTHS_GEN[month]} ${year}`
+  }
+  return `${day} ${MONTHS_GEN[month]} ${year}`
+}
+
 export function metricDelta(current, previous) {
   if (current == null || previous == null || current === '' || previous === '') return null
   const a = Number(current)

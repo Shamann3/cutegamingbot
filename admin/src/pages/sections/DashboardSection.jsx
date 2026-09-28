@@ -8,11 +8,16 @@ import { useIsPhone } from '../../lib/useIsDesktop'
 import { awaitDashboardStats, readDashboardSnapshot } from '../../lib/dashboardPrefetch'
 import { fmt, fmtCompact } from '../../lib/numberFormat'
 import { useMetricSheet } from '../../components/MetricSheet'
+import { periodWhen } from '../../lib/metricModel'
 
-function periodBars(map) {
+function periodBars(map, now = new Date()) {
   return PERIODS.map((item) => ({
+    id: item.id,
     label: item.label,
     value: Number(map?.[item.id]?.current ?? 0),
+    previous: Number(map?.[item.id]?.previous ?? 0),
+    previousLabel: item.prev,
+    when: periodWhen(item.id, now),
   }))
 }
 
@@ -216,6 +221,7 @@ export default function DashboardSection() {
     previous: botPrev,
     previousLabel: meta.prev,
     bars: periodBars(usage.botEvents),
+    activeBar: period,
   }
   const allSpec = {
     id: 'dash-all',
@@ -226,6 +232,7 @@ export default function DashboardSection() {
     previous: Number(usage.allMessages?.[period]?.previous ?? 0),
     previousLabel: meta.prev,
     bars: periodBars(usage.allMessages),
+    activeBar: period,
   }
   const wagerSpec = {
     id: 'dash-wager',
@@ -238,6 +245,7 @@ export default function DashboardSection() {
     previous: Number(wagerPair.previous ?? 0),
     previousLabel: meta.prev,
     bars: periodBars(usage.gameWager),
+    activeBar: period,
   }
   const officialSpec = {
     id: 'dash-official',
@@ -248,6 +256,7 @@ export default function DashboardSection() {
     previous: Number(usage.officialMessages?.[period]?.previous ?? 0),
     previousLabel: meta.prev,
     bars: periodBars(usage.officialMessages),
+    activeBar: period,
   }
   const playersSpec = {
     id: 'dash-players',

@@ -16,8 +16,8 @@ const SPEC = {
   previous: 16020,
   previousLabel: 'вчера',
   bars: [
-    { label: 'День', value: 18452 },
-    { label: 'Неделя', value: 9000 },
+    { id: 'day', label: 'День', value: 18452, previous: 16020, previousLabel: 'вчера', when: '29 сентября 2026' },
+    { id: 'week', label: 'Неделя', value: 9000, previous: 8000, previousLabel: 'прошлая неделя', when: '23–29 сентября 2026' },
   ],
   action: { label: 'Открыть активность', run: vi.fn() },
 }
@@ -56,7 +56,7 @@ describe('MetricSheet', () => {
     tap(screen.getByRole('button', { name: /цифра/ }))
     const sheet = screen.getByRole('dialog', { name: 'Вызовы бота' })
     expect(sheet.closest('.metric-sheet-root').classList.contains('is-desk')).toBe(true)
-    expect(sheet.textContent).toContain('18 452')
+    expect(sheet.textContent.replace(/\u00a0/g, ' ')).toContain('18 452')
     expect(sheet.textContent.replace(/\u00a0/g, ' ')).toContain('+2 432')
     expect(sheet.textContent).toContain('День')
   })
@@ -80,6 +80,17 @@ describe('MetricSheet', () => {
       await vi.advanceTimersByTimeAsync(250)
     })
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('столбец показывает дату и число', () => {
+    renderTile()
+    tap(screen.getByRole('button', { name: /цифра/ }))
+    const day = screen.getByRole('button', { name: /День/ })
+    fireEvent.mouseEnter(day)
+    expect(screen.getByRole('status').textContent).toContain('29 сентября 2026')
+    expect(screen.getByRole('status').textContent.replace(/\u00a0/g, ' ')).toContain('18 452')
+    tap(day)
+    expect(day.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('кнопка действия выполняет переход и закрывает лист', async () => {
