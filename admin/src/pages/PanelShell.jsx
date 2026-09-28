@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PANEL_SECTIONS, visibleSections, splitDockSections, dockActiveId } from '../constants/panelNav'
-import PanelSidebar from '../components/PanelSidebar'
+import PanelSidebar, { SettingsControls } from '../components/PanelSidebar'
+import AccentPalette from '../components/AccentPalette'
 import EliteTopbar from '../components/EliteTopbar'
 import ToastHost from '../components/ToastHost'
 import { fetchAdminMe, fetchPrOverview, fetchSupportStats, fetchTiktokCounts, logoutAdmin, registerUnauthorizedHandler } from '../lib/adminClient'
@@ -93,8 +94,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
+    if (phone) return
     setMobileNavOpen(Boolean(step?.openNav))
-  }, [])
+  }, [phone])
+  useEffect(() => {
+    if (phone) setMobileNavOpen(false)
+  }, [phone])
   useDrawerSwipe({
     enabled: false,
     open: mobileNavOpen,
@@ -440,6 +445,31 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               sections={extraSections}
               badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
               onOpen={handleNavigate}
+              footer={phone ? (
+                <div className="extras-settings">
+                  <h2>Настройки</h2>
+                  <AccentPalette value={accent} onChange={handleAccentChange} />
+                  <SettingsControls
+                    accent={accent}
+                    onAccentChange={handleAccentChange}
+                    onSessionExpired={handleSessionExpired}
+                    musicVolume={musicVolume}
+                    onToggleMusic={toggleMusicMute}
+                    onMusicVolumeChange={setMusicVolume}
+                    lightMode={lightMode}
+                    onTogglePerf={() => setLightMode(!lightMode)}
+                  />
+                  {onChangeDoor && (
+                    <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
+                      Сменить панель
+                      <span className="panel-logout-hint">выбор панели, без выхода из аккаунта</span>
+                    </button>
+                  )}
+                  <button type="button" className="panel-logout-btn" onClick={handleLogout}>
+                    Выйти
+                  </button>
+                </div>
+              ) : null}
             />
           )}
 
@@ -579,9 +609,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           prGroups: prPending,
           more: moreBadge,
         }}
-        menuOpen={mobileNavOpen}
-        onOpenMenu={() => setMobileNavOpen((open) => !open)}
-        tabsInMenu={phone}
+        menuOpen={phone ? false : mobileNavOpen}
+        onOpenMenu={phone ? undefined : () => setMobileNavOpen((open) => !open)}
       />
     </div>
     </MetricSheetProvider>

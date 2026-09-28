@@ -13,9 +13,11 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 90% 38% at 50% -6%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.34), transparent 62%),
-    radial-gradient(ellipse 42% 28% at 100% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.16), transparent 58%),
-    radial-gradient(ellipse 36% 22% at 0% 8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.1), transparent 60%);
+    radial-gradient(ellipse 78% 58% at 16% 8%, rgba(var(--e-g1, var(--e-accent-rgb, 168, 110, 255)), 0.95), transparent 68%),
+    radial-gradient(ellipse 72% 54% at 90% 10%, rgba(var(--e-g2, var(--e-accent-rgb, 70, 170, 255)), 0.88), transparent 66%),
+    radial-gradient(ellipse 84% 52% at 78% 92%, rgba(var(--e-g3, var(--e-accent-rgb, 255, 80, 150)), 0.8), transparent 64%),
+    radial-gradient(ellipse 70% 50% at 8% 88%, rgba(var(--e-g4, var(--e-accent-rgb, 255, 176, 64)), 0.74), transparent 64%),
+    linear-gradient(165deg, rgba(var(--e-g1, 168, 110, 255), 0.34), transparent 42%, rgba(var(--e-g3, 255, 80, 150), 0.28));
 }
 
 .accent-aura-slot {
@@ -23,11 +25,19 @@
   left: 0;
   right: 0;
   top: 0;
-  height: 34vh;
+  height: 48vh;
   overflow: hidden;
-  opacity: 0.18;
-  mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
+  opacity: 0.46;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 36%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 36%, transparent 100%);
+}
+
+html.is-phone .accent-aura-slot,
+html[data-viewport="phone"] .accent-aura-slot {
+  height: 100%;
+  opacity: 0.58;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgba(0, 0, 0, 0.28) 46%, rgba(0, 0, 0, 0.16) 68%, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 20%, rgba(0, 0, 0, 0.28) 46%, rgba(0, 0, 0, 0.16) 68%, #000 100%);
 }
 
 .accent-aura-rain {
@@ -596,15 +606,13 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > .arc-shell {
   }
 }
 
-/* Рабочая зона несёт цвет пользователя и тает в чёрный фон. */
+/* Рабочая зона прозрачная: цвет живёт на фоне, а не на карточке. */
 html.is-desktop .panel-shell .panel-shell-main,
 html[data-viewport="desktop"] .panel-shell .panel-shell-main,
 html.is-phone .panel-shell .panel-shell-main,
 html[data-viewport="phone"] .panel-shell .panel-shell-main {
-  background:
-    radial-gradient(88% 42% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.34), transparent 58%),
-    linear-gradient(180deg, rgba(var(--e-accent-rgb, 200, 175, 255), 0.14) 0%, rgba(16, 16, 18, 0.96) 34%, #050505 100%) !important;
-  box-shadow: inset 0 1px 0 rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+  background: linear-gradient(180deg, rgba(5, 5, 7, 0.18) 0%, rgba(5, 5, 7, 0.34) 42%, rgba(5, 5, 7, 0.48) 100%) !important;
+  box-shadow: none;
 }
 
 html.is-phone .phone-dock.is-tabs-menu,
@@ -830,4 +838,215 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   .gate-stage {
     animation: none !important;
   }
+}
+
+/* Телефон: та же нижняя панель, что на компьютере, только по ширине экрана. */
+html.is-phone,
+html[data-viewport="phone"] {
+  --phone-dock-clearance: 78px;
+}
+
+html.is-phone .phone-dock,
+html[data-viewport="phone"] .phone-dock {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+  margin: 0 !important;
+  padding: 4px 2px env(safe-area-inset-bottom, 0px) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  border-top: 1px solid rgba(var(--e-g1, var(--e-accent-rgb, 200, 175, 255)), 0.55) !important;
+  background: rgba(8, 8, 10, 0.38) !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  z-index: 60 !important;
+}
+
+html.is-phone .phone-dock-scroll,
+html[data-viewport="phone"] .phone-dock-scroll,
+html.is-phone .phone-dock.is-crowded .phone-dock-scroll,
+html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll {
+  flex: 1 1 auto !important;
+  justify-content: stretch !important;
+  gap: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+}
+
+html.is-phone .phone-dock button,
+html[data-viewport="phone"] .phone-dock button,
+html.is-phone .phone-dock.is-crowded .phone-dock-scroll button,
+html[data-viewport="phone"] .phone-dock.is-crowded .phone-dock-scroll button {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 48px !important;
+  padding: 0 2px !important;
+  border-radius: 14px !important;
+  color: rgba(255, 255, 255, 0.68) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .phone-dock button.is-on,
+html[data-viewport="phone"] .phone-dock button.is-on,
+html.is-phone.is-personal .phone-dock button.is-on,
+html[data-viewport="phone"].is-personal .phone-dock button.is-on {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-label,
+html.is-phone .phone-dock button.is-on .phone-dock-icon,
+html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-icon {
+  color: #fff !important;
+}
+
+html.is-phone .phone-dock-label,
+html[data-viewport="phone"] .phone-dock-label {
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.1 !important;
+}
+
+html.is-phone .phone-dock-mark,
+html[data-viewport="phone"] .phone-dock-mark {
+  display: none !important;
+}
+
+html.is-phone .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shelf-sidebar,
+html.is-phone .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html.is-phone .panel-mobile-overlay,
+html.is-phone .panel-mobile-overlay.is-shown,
+html[data-viewport="phone"] .panel-mobile-overlay,
+html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
+  display: none !important;
+}
+
+.accent-picker-panel.is-inline {
+  flex-wrap: wrap;
+}
+
+.gate-palette-pop .accent-picker-panel.is-inline .accent-stops {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.accent-stops {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 100%;
+}
+
+.accent-stops-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.accent-stops-head em {
+  font-style: normal;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.accent-stops-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.accent-stop {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.accent-stop-chip,
+.accent-stop-add {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  padding: 0;
+  cursor: pointer;
+}
+
+.accent-stop.is-on .accent-stop-chip {
+  box-shadow: 0 0 0 2px #0c0c0e, 0 0 0 4px #fff;
+}
+
+.accent-stop-add {
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.accent-stop-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: #111;
+  color: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.accent-stops-preview {
+  height: 22px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.extras-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.extras-settings h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+}
+
+/* Вход и панели: один и тот же яркий фон из четырёх цветов. */
+.gate-veil {
+  background:
+    radial-gradient(ellipse 72% 56% at 18% 16%, rgba(var(--e-g1, var(--e-accent-rgb, 168, 110, 255)), 0.9), transparent 70%),
+    radial-gradient(ellipse 66% 50% at 86% 14%, rgba(var(--e-g2, var(--e-accent-rgb, 70, 170, 255)), 0.84), transparent 68%),
+    radial-gradient(ellipse 74% 48% at 82% 88%, rgba(var(--e-g3, var(--e-accent-rgb, 255, 80, 150)), 0.76), transparent 66%),
+    radial-gradient(ellipse 62% 46% at 14% 90%, rgba(var(--e-g4, var(--e-accent-rgb, 255, 176, 64)), 0.7), transparent 66%),
+    radial-gradient(ellipse 48% 42% at 50% 48%, rgba(0, 0, 0, 0.5), transparent 74%);
 }

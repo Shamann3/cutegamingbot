@@ -15,7 +15,8 @@ import {
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
 import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
-import PanelSidebar from '../components/PanelSidebar'
+import PanelSidebar, { SettingsControls } from '../components/PanelSidebar'
+import AccentPalette from '../components/AccentPalette'
 import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
@@ -128,8 +129,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
+    if (phone) return
     setRailOpen(Boolean(step?.openNav))
-  }, [])
+  }, [phone])
+  useEffect(() => {
+    if (phone) setRailOpen(false)
+  }, [phone])
   useEffect(() => {
     applyAccentToDocument(accent)
   }, [accent])
@@ -698,6 +703,19 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           {!chapter && activeTab === 'more' && (
             <section>
               <h2 className="realm-h">Ещё</h2>
+              {phone && (
+                <div className="extras-settings">
+                  <h2>Настройки</h2>
+                  <AccentPalette value={accent} onChange={(next) => setAccent(persistAccent(next))} />
+                  <SettingsControls
+                    musicVolume={musicVolume}
+                    onToggleMusic={toggleMusicMute}
+                    onMusicVolumeChange={setMusicVolume}
+                    lightMode={lightMode}
+                    onTogglePerf={() => setLightMode(!lightMode)}
+                  />
+                </div>
+              )}
               <ul className="realm-list">
                 <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer" onClick={() => window.alert("Внимание: переход может закрыть панель — потом снова войдите в админку.")}><strong>Правила</strong><span>t.me/CuteRules · панель может закрыться</span></a></li>
                 <li><button type="button" className="realm-row" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
@@ -726,9 +744,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
         sections={navSections}
         activeSection={activeTab}
         onNavigate={pickTab}
-        menuOpen={railOpen}
-        onOpenMenu={() => setRailOpen((open) => !open)}
-        tabsInMenu={phone}
+        menuOpen={phone ? false : railOpen}
+        onOpenMenu={phone ? undefined : () => setRailOpen((open) => !open)}
       />
     </div>
   )

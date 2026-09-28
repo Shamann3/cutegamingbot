@@ -2,11 +2,14 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import {
   clamp,
+  gradientStopsFrom,
   hexToRgb,
   hsvToHex,
+  MAX_STOPS,
   normalizeAccent,
   parseHexInput,
   rgbToHsv,
+  suggestNextStop,
 } from '../lib/accentTheme'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 
@@ -66,26 +69,12 @@ function pointerToHsv(clientX, clientY, rect, value) {
   return { h: angle, s: sat, v: value }
 }
 
-function accentFromHex(hex, glow) {
-  const parsed = parseHexInput(hex)
-  if (!parsed) return null
-  const { r, g, b } = hexToRgb(parsed)
-  const hsv = rgbToHsv(r, g, b)
-  return normalizeAccent({
-    hex: parsed,
-    ...hsv,
-    glow,
-    id: 'custom',
-    label: 'Свой',
-    hexSource: true,
-  })
-}
-
 export default function AccentPalette({ value, onChange, inline = false }) {
   const accent = normalizeAccent(value)
   const [open, setOpen] = useState(inline)
   const [leaving, setLeaving] = useState(false)
   const [draft, setDraft] = useState(accent)
+  const [activeStop, setActiveStop] = useState(0)
   const [hexText, setHexText] = useState(accent.hex)
   const [hexOk, setHexOk] = useState(true)
   const [pos, setPos] = useState({ top: 0, left: 0 })
@@ -99,10 +88,12 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const draftRef = useRef(draft)
   const hexTextRef = useRef(hexText)
   const onChangeRef = useRef(onChange)
+  const activeRef = useRef(0)
 
   draftRef.current = draft
   hexTextRef.current = hexText
   onChangeRef.current = onChange
+  activeRef.current = activeStop
 
   const placePanel = useCallback(() => {
     const btn = triggerRef.current
@@ -127,27 +118,59 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   }, [])
 
   const pushAccent = useCallback((next) => {
-    setDraft(next)
-    setHexText(next.hex)
+    const normalized = normalizeAccent(next)
+    setDraft(normalized)
+    const index = Math.min(activeRef.current, Math.max(0, normalized.stops.length - 1))
+    setHexText(normalized.stops[index] || normalized.hex)
     setHexOk(true)
-    onChangeRef.current?.(next)
+    onChangeRef.current?.(normalized)
   }, [])
 
-  const commitHsv = useCallback((partial) => {
-    const next = normalizeAccent({ ...draftRef.current, ...partial, hexSource: false })
-    pushAccent(next)
+  const paintStop = useCallback((index, hex) => {
+    const current = normalizeAccent(draftRef.current)
+    const nextStops = current.stops.slice()
+    const at = Math.min(Math.max(0, index), Math.max(0, nextStops.length - 1))
+    nextStops[at] = hex
+    pushAccent(normalizeAccent({
+      ...current,
+      hex: nextStops[0],
+      stops: nextStops,
+      hexSource: true,
+      id: 'custom',
+      label: 'Свой',
+    }))
   }, [pushAccent])
 
+  const commitHsv = useCallback((partial) => {
+    const current = normalizeAccent(draftRef.current)
+    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
+    const hex = current.stops[index] || current.hex
+    const { r, g, b } = hexToRgb(hex)
+    const hsv = rgbToHsv(r, g, b)
+    const next = {
+      h: partial.h ?? hsv.h,
+      s: partial.s ?? hsv.s,
+      v: partial.v ?? hsv.v,
+    }
+    paintStop(index, hsvToHex(next.h, next.s, next.v))
+  }, [paintStop])
+
   const commitHex = useCallback((raw, { silentInvalid = false } = {}) => {
-    const next = accentFromHex(raw, draftRef.current.glow)
-    if (!next) {
+    const parsed = parseHexInput(raw)
+    if (!parsed) {
       setHexOk(false)
-      if (!silentInvalid) setHexText(draftRef.current.hex)
+      if (!silentInvalid) {
+        const current = normalizeAccent(draftRef.current)
+        const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
+        setHexText(current.stops[index] || current.hex)
+      }
       return false
     }
-    pushAccent(next)
+    const current = normalizeAccent(draftRef.current)
+    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
+    paintStop(index, parsed)
     return true
-  }, [pushAccent])
+  }, [paintStop])
 
   const closingRef = useRef(false)
   const closePalette = useCallback(() => {
@@ -163,12 +186,18 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   }, [commitHex])
 
   useEffect(() => {
-    if (!open) return
+    if (!open && !inline) return
     const next = normalizeAccent(value)
     setDraft(next)
-    setHexText(next.hex)
+    const index = Math.min(activeRef.current, Math.max(0, next.stops.length - 1))
+    setHexText(next.stops[index] || next.hex)
     setHexOk(true)
-  }, [open, value])
+  }, [open, inline, value])
+
+  useEffect(() => {
+    if (open || inline) return
+    setActiveStop(0)
+  }, [open, inline])
 
   useLayoutEffect(() => {
     if (!open || inline) return undefined
@@ -211,9 +240,14 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   const onWheelPointer = (e) => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const current = normalizeAccent(draftRef.current)
+    const index = Math.min(activeRef.current, Math.max(0, current.stops.length - 1))
+    const hex = current.stops[index] || current.hex
+    const { r, g, b } = hexToRgb(hex)
+    const hsv = rgbToHsv(r, g, b)
     const rect = canvas.getBoundingClientRect()
-    const hsv = pointerToHsv(e.clientX, e.clientY, rect, draftRef.current.v)
-    commitHsv(hsv)
+    const picked = pointerToHsv(e.clientX, e.clientY, rect, hsv.v)
+    commitHsv(picked)
   }
 
   const onWheelDown = (e) => {
@@ -236,22 +270,69 @@ export default function AccentPalette({ value, onChange, inline = false }) {
     }
   }
 
+  const stops = draft.stops?.length ? draft.stops : [draft.hex]
+  const stopIndex = Math.min(activeStop, Math.max(0, stops.length - 1))
+  const activeHex = stops[stopIndex] || draft.hex
+  const activeRgb = hexToRgb(activeHex)
+  const activeHsv = rgbToHsv(activeRgb.r, activeRgb.g, activeRgb.b)
+  const painted = gradientStopsFrom(draft)
+
+  const selectStop = (index) => {
+    activeRef.current = index
+    setActiveStop(index)
+    setHexText(stops[index] || draft.hex)
+    setHexOk(true)
+  }
+
+  const addStop = () => {
+    if (stops.length >= MAX_STOPS) return
+    const hex = suggestNextStop(stops)
+    const nextStops = [...stops, hex]
+    activeRef.current = nextStops.length - 1
+    setActiveStop(nextStops.length - 1)
+    pushAccent(normalizeAccent({
+      ...draftRef.current,
+      hex: nextStops[0],
+      stops: nextStops,
+      hexSource: true,
+      id: 'custom',
+      label: 'Свой',
+    }))
+  }
+
+  const removeStop = (index) => {
+    if (stops.length <= 1) return
+    const nextStops = stops.filter((_, item) => item !== index)
+    const nextIndex = Math.min(index, nextStops.length - 1)
+    activeRef.current = nextIndex
+    setActiveStop(nextIndex)
+    pushAccent(normalizeAccent({
+      ...draftRef.current,
+      hex: nextStops[0],
+      stops: nextStops,
+      hexSource: true,
+      id: 'custom',
+      label: 'Свой',
+    }))
+  }
+
   const knobStyle = (() => {
-    const rad = (draft.h * Math.PI) / 180
+    const rad = (activeHsv.h * Math.PI) / 180
     const knob = 16
     const disk = ((WHEEL_RADIUS - 1) / WHEEL_SIZE) * wheelPx
     const reach = Math.max(0, disk - knob / 2 - 1)
-    const dist = clamp(draft.s, 0, 1) * reach
+    const dist = clamp(activeHsv.s, 0, 1) * reach
     const x = (wheelPx / 2 + Math.cos(rad) * dist) / wheelPx
     const y = (wheelPx / 2 + Math.sin(rad) * dist) / wheelPx
     return {
       left: `${x * 100}%`,
       top: `${y * 100}%`,
-      background: draft.hex,
+      background: activeHex,
     }
   })()
 
-  const previewHex = parseHexInput(hexText) || draft.hex
+  const previewHex = parseHexInput(hexText) || activeHex
+  const brightPct = Math.round(activeHsv.v * 100)
 
   const wheel = (
       <div
@@ -276,14 +357,14 @@ export default function AccentPalette({ value, onChange, inline = false }) {
         <div className="accent-picker-side">
         <label className="accent-slider">
           <span>Яркость цвета</span>
-          <strong>{Math.round(draft.v * 100)}%</strong>
+          <strong>{brightPct}%</strong>
           <input
             type="range"
             min={12}
             max={100}
-            value={Math.round(draft.v * 100)}
+            value={brightPct}
             onChange={(e) => commitHsv({ v: Number(e.target.value) / 100 })}
-            style={{ '--fill': `${Math.round(draft.v * 100)}%`, '--thumb': draft.hex }}
+            style={{ '--fill': `${brightPct}%`, '--thumb': activeHex }}
           />
         </label>
 
@@ -295,8 +376,11 @@ export default function AccentPalette({ value, onChange, inline = false }) {
             min={0}
             max={100}
             value={Math.round(draft.glow)}
-            onChange={(e) => commitHsv({ glow: Number(e.target.value) })}
-            style={{ '--fill': `${Math.round(draft.glow)}%`, '--thumb': draft.hex }}
+            onChange={(e) => {
+              const current = normalizeAccent(draftRef.current)
+              pushAccent(normalizeAccent({ ...current, glow: Number(e.target.value) }))
+            }}
+            style={{ '--fill': `${Math.round(draft.glow)}%`, '--thumb': activeHex }}
           />
         </label>
 
@@ -347,6 +431,52 @@ export default function AccentPalette({ value, onChange, inline = false }) {
           </div>
         </div>
         </div>
+
+        <div className="accent-stops">
+          <div className="accent-stops-head">
+            <span>Цвета градиента</span>
+            <em>{stops.length} из {MAX_STOPS}</em>
+          </div>
+          <div className="accent-stops-row" role="list">
+            {stops.map((hex, index) => (
+              <div className={`accent-stop${index === stopIndex ? ' is-on' : ''}`} key={`${hex}-${index}`} role="listitem">
+                <button
+                  type="button"
+                  className="accent-stop-chip"
+                  style={{ background: hex }}
+                  aria-pressed={index === stopIndex}
+                  aria-label={`Цвет ${index + 1}`}
+                  onClick={() => selectStop(index)}
+                />
+                {stops.length > 1 && (
+                  <button
+                    type="button"
+                    className="accent-stop-x"
+                    aria-label={`Убрать цвет ${index + 1}`}
+                    onClick={() => removeStop(index)}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            {stops.length < MAX_STOPS && (
+              <button
+                type="button"
+                className="accent-stop-add"
+                aria-label="Добавить цвет градиента"
+                onClick={addStop}
+              >
+                +
+              </button>
+            )}
+          </div>
+          <div
+            className="accent-stops-preview"
+            style={{ background: `linear-gradient(100deg, ${painted.join(', ')})` }}
+            aria-hidden="true"
+          />
+        </div>
       </div>
   )
 
@@ -374,10 +504,14 @@ export default function AccentPalette({ value, onChange, inline = false }) {
           else setOpen(true)
         }}
       >
-        <span className="panel-accent-trigger-swatch" style={{ background: accent.hex }} aria-hidden />
+        <span
+          className="panel-accent-trigger-swatch"
+          style={{ background: `linear-gradient(135deg, ${gradientStopsFrom(accent).join(', ')})` }}
+          aria-hidden
+        />
         <span className="panel-accent-trigger-meta">
           <strong>Любой цвет</strong>
-          <em>{accent.hex}</em>
+          <em>{accent.stops.length > 1 ? `${accent.stops.length} цвета` : accent.hex}</em>
         </span>
         <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>
       </button>

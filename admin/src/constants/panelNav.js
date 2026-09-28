@@ -220,7 +220,7 @@ export function getSectionById(id) {
 export const DOCK_PRIMARY_IDS = [
   'dashboard',
   'users',
-  'farm',
+  'moderation',
   'support',
   'market',
   'analytics',

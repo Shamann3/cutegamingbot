@@ -15,6 +15,7 @@ export default function ExtrasHub({
   sections = [],
   badges = {},
   onOpen,
+  footer = null,
 }) {
   const [query, setQuery] = useState('')
 
@@ -89,6 +90,7 @@ export default function ExtrasHub({
           </div>
         </div>
       ))}
+      {footer}
     </section>
   )
 }

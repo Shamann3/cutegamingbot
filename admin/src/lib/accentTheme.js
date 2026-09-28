@@ -111,12 +111,52 @@ function mixToward(hex, toward = '#ffffff', amount = 0.35) {
   return rgbToHex(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
 }
 
+export const MAX_STOPS = 4
+
+/** До четырёх цветов, которые человек сам выбрал. */
+export function sanitizeStops(raw, fallbackHex) {
+  const list = []
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const hex = parseHexInput(typeof item === 'string' ? item : item?.hex)
+      if (!hex) continue
+      list.push(hex)
+      if (list.length >= MAX_STOPS) break
+    }
+  }
+  if (!list.length && fallbackHex) list.push(fallbackHex)
+  return list
+}
+
+function hsvOfHex(hex) {
+  const { r, g, b } = hexToRgb(hex)
+  return rgbToHsv(r, g, b)
+}
+
+/**
+ * Делает цвет фоном, на который приятно смотреть.
+ * Бледный первый цвет остаётся лампой. Остальные сдвиги — уже насыщенные.
+ */
+function bloom(hex, shift = 0) {
+  const hsv = hsvOfHex(hex)
+  const pale = hsv.s < 0.14
+  if (pale && shift === 0) {
+    return hsvToHex(hsv.h, Math.min(hsv.s, 0.08), Math.max(hsv.v, 0.94))
+  }
+  const h = (((pale ? 262 : hsv.h) + shift) % 360 + 360) % 360
+  const s = pale ? 0.9 : Math.min(1, Math.max(hsv.s, 0.84))
+  const v = pale ? 0.96 : Math.min(1, Math.max(hsv.v, 0.74))
+  return hsvToHex(h, s, v)
+}
+
+const FILL_SHIFTS = [34, 186, 308]
+
 export function normalizeAccent(input) {
   if (!input) {
     const base = DEFAULT_ACCENT
     const rgb = hexToRgb(base.hex)
     const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b)
-    return { ...base, ...hsv, glow: DEFAULT_GLOW }
+    return { ...base, ...hsv, glow: DEFAULT_GLOW, stops: [base.hex] }
   }
 
   let hex = input.hex
@@ -183,6 +223,20 @@ export function normalizeAccent(input) {
 
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
 
+  const storedStops = input && typeof input === 'object' ? input.stops : null
+  let stops = sanitizeStops(storedStops, finalHex)
+  if (input?.hexSource) {
+    stops = [finalHex, ...stops.slice(1)].slice(0, MAX_STOPS)
+  } else if (Array.isArray(storedStops) && stops[0]) {
+    finalHex = stops[0]
+    const locked = hexToRgb(finalHex)
+    const fromStop = rgbToHsv(locked.r, locked.g, locked.b)
+    h = fromStop.h
+    s = fromStop.s
+    v = fromStop.v
+  }
+  if (!stops.length) stops = [finalHex]
+
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
     id: known ? known.id : id === 'custom' || !known ? 'custom' : id,
@@ -192,7 +246,30 @@ export function normalizeAccent(input) {
     s,
     v,
     glow,
+    stops,
   }
+}
+
+/** Четыре ярких точки фона: выбранные цвета и, если их меньше, соседи по кругу. */
+export function gradientStopsFrom(accent) {
+  const base = normalizeAccent(accent)
+  const chosen = base.stops.length ? base.stops : [base.hex]
+  const painted = chosen.map((hex) => bloom(hex, 0))
+  const seed = chosen[0]
+  let fill = 0
+  while (painted.length < MAX_STOPS && fill < FILL_SHIFTS.length) {
+    painted.push(bloom(seed, FILL_SHIFTS[fill]))
+    fill += 1
+  }
+  return painted.slice(0, MAX_STOPS)
+}
+
+/** Следующий цвет, который ещё не выбран: яркий сосед, а не копия. */
+export function suggestNextStop(stops) {
+  const list = sanitizeStops(stops, DEFAULT_ACCENT.hex)
+  const painted = gradientStopsFrom({ hex: list[0], stops: list })
+  const used = new Set(list.map((hex) => hex.toLowerCase()))
+  return painted.find((hex) => !used.has(hex.toLowerCase())) || painted[Math.min(list.length, MAX_STOPS - 1)]
 }
 
 /** @deprecated use normalizeAccent */
@@ -214,7 +291,12 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const brightToward = relativeLuminance(a.hex) > INK_LUMINANCE ? '#000000' : '#ffffff'
   const brightAmt = relativeLuminance(a.hex) > INK_LUMINANCE ? 0.22 : 0.28
 
+  const painted = gradientStopsFrom(a)
   const root = document.documentElement
+  painted.forEach((hex, index) => {
+    const rgb = hexToRgb(hex)
+    root.style.setProperty(`--e-g${index + 1}`, `${rgb.r}, ${rgb.g}, ${rgb.b}`)
+  })
   root.style.setProperty('--e-accent', a.hex)
   root.style.setProperty('--e-accent-rgb', `${r}, ${g}, ${b}`)
   root.style.setProperty('--e-accent-soft', `rgba(${r}, ${g}, ${b}, ${soft.toFixed(3)})`)
@@ -262,7 +344,8 @@ export function accentIsPersonal(accent = loadStoredAccent()) {
     return false
   }
   const a = normalizeAccent(accent)
-  return a.s >= 0.08
+  if (a.s >= 0.08) return true
+  return a.stops.some((hex) => hsvOfHex(hex).s >= 0.08)
 }
 
 export function persistAccent(accent) {
@@ -278,6 +361,7 @@ export function persistAccent(accent) {
         v: resolved.v,
         glow: resolved.glow,
         label: resolved.label,
+        stops: resolved.stops,
       }),
     )
   } catch {
