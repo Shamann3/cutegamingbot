@@ -1411,20 +1411,23 @@ async def inline_help_game(inline_query: types.InlineQuery):
                     parse_mode=ParseMode.HTML) , thumb_url="https://i.imgur.com/kfxeqQn.png")
             results.append(error_result)
 
+    _orel_q = (query_text or "").replace("ё", "е")
     if any(
-            query_text.startswith(keyword) for keyword in
-            [ "орел или решка" , "орел" , "Орёл" , "орел и решка" , "орёл и решка" , "решка или орёл" ,
-              "решка или орел" , "решка" , "решка и орёл" , "решка и орел" ]):
+            _orel_q.startswith(keyword) for keyword in
+            ("орел или решка", "решка или орел", "орел и решка", "решка и орел", "орел", "решка")):
         # Обработка команды "Орел или решка"
         try:
             query_text = query_text.strip()
+            _orel_q = query_text.replace("ё", "е")
 
-            # Определение стороны монеты, если указано
+            # Первое из двух слов и есть сторона: «решка или орел» — решка.
             choice = None
-            if "орел" in query_text.lower():
-                choice = "орел"
-            elif "решка" in query_text.lower():
+            orel_at = _orel_q.find("орел")
+            resh_at = _orel_q.find("решка")
+            if resh_at >= 0 and (orel_at < 0 or resh_at < orel_at):
                 choice = "решка"
+            elif orel_at >= 0:
+                choice = "орел"
 
             # Проверка на наличие ставки в запросе
             bet_amount = 0

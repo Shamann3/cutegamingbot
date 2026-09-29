@@ -1,10 +1,12 @@
 """Одинаковый вызов игр: регистр, пробелы, слитая ставка, чужие слова."""
 from bot.games.invoke import (
     command_filter,
+    command_line,
     format_line,
     howto_reply,
     looks_like_game_command,
     open_command,
+    orel_side,
     parse_embedded_stake,
     parse_optional_stake,
     parse_phrase_stake,
@@ -124,6 +126,24 @@ def test_fortuna_lobby_accepts_the_menu_stake():
     kind, bet = parse_optional_stake("Фортуна 1.000", ("фортуна",))
     assert kind == "play" and bet == 1000
     assert parse_optional_stake("Фортуна 10,5", ("фортуна",))[0] == "bad"
+
+
+def test_bombs_and_coin_ignore_letter_case():
+    for text in (
+        "бомбы 10", "Бомбы 10", "БОМБЫ 10", "бомба 10", "Бомба10", "бомбы10",
+        "\u200bбомбы 10", "  бомбы 10",
+    ):
+        assert parse_embedded_stake(text, ("бомба", "бомбы")) == ("play", 10), text
+        assert command_line(text).startswith(("бомбы", "бомба")), text
+    assert parse_embedded_stake("бомбы", ("бомба", "бомбы")) == ("bad", None)
+    assert command_line("Бомбы") == command_line("бомбы") == "бомбы"
+    assert orel_side("орел или решка") == "орел"
+    assert orel_side("Орел или решка 10") == "орел"
+    assert orel_side("решка или орел") == "решка"
+    assert orel_side("Решка") == "решка"
+    assert orel_side("решка10") == "решка"
+    assert orel_side("орёл") == "орел"
+    assert command_line("Орёл или решка").startswith("орел")
 
 
 def test_foreign_words_are_not_games():

@@ -7208,7 +7208,8 @@ custom_commands = {"мои рефы","мои приграшенные","мой �
 _custom_cmds_by_first_char: dict = None
 
 def _normalize_command_text(text: str) -> str:
-    return " ".join((text or "").lower().strip().split())
+    from bot.games.invoke import command_line
+    return command_line(text)
 
 
 def _matches_custom_command(text: str) -> bool:
@@ -7221,9 +7222,10 @@ def _matches_custom_command(text: str) -> bool:
     if _custom_cmds_by_first_char is None:
         idx: dict = {}
         for cmd in custom_commands:
-            if not cmd:
+            cmd_key = _normalize_command_text(cmd)
+            if not cmd_key:
                 continue
-            idx.setdefault(cmd[0].lower(), []).append(cmd)
+            idx.setdefault(cmd_key[0], []).append(cmd)
         _custom_cmds_by_first_char = idx
     for cmd in _custom_cmds_by_first_char.get(tl[0], ()):
         cmd_norm = _normalize_command_text(cmd)
@@ -36558,7 +36560,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
 
 
-    text_lower = (message.text or message.caption or "").lower()  # Приводим текст к нижнему регистру для проверки
+    from bot.games.invoke import command_line
+    text_lower = command_line(message.text or message.caption or "")
     text_text = message.text or message.caption or ""
     # text_lower = text_words.split()
 

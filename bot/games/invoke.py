@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Collection, Iterable, Optional, Sequence, Tuple
 
 HELP_TAILS = frozenset({"хелп", "помощь", "инструкция", "help", "хепл", "hepl"})
@@ -97,7 +98,16 @@ _STAKE_GROUP = re.compile(r"\d{1,3}(?:[.,]\d{3})+")
 
 
 def fold(token: str) -> str:
-    return (token or "").strip().lower().replace("ё", "е")
+    raw = "".join(
+        ch for ch in (token or "")
+        if unicodedata.category(ch) != "Cf"
+    )
+    return raw.strip().lower().replace("ё", "е")
+
+
+def command_line(text: str) -> str:
+    """Команда как её сравнивает диспетчер: регистр, ё и невидимые символы не важны."""
+    return " ".join(fold(text or "").split())
 
 
 def format_line(example: str) -> str:
@@ -218,6 +228,17 @@ def parse_phrase_stake(text: str, phrases: Sequence[str], *, required: bool = Fa
     if kind != "ready":
         return kind, None
     return _stake_from_tail(tokens[count:], required=required)
+
+
+def orel_side(text: str) -> str:
+    """Сторона монеты по первому слову: «решка или орел» → решка, «решка10» → решка."""
+    kind, tokens, _count = open_phrase(text, OREL_PHRASES)
+    if kind == "ignore":
+        kind, tokens = open_command(text, ("решка", "орел"))
+    head = tokens[0] if kind != "ignore" and tokens else ""
+    if head == "решка":
+        return "решка"
+    return "орел"
 
 
 def parse_embedded_stake(text: str, names: Collection[str]) -> Tuple[str, Optional[int]]:

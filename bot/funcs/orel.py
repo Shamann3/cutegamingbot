@@ -10,7 +10,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from bot.games.group_only import reject_if_private_game
-from bot.games.invoke import OREL_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
+from bot.games.invoke import OREL_PHRASES, format_line, orel_side, parse_optional_stake, parse_phrase_stake
 from main import (
     gamesorel, button_gamesorel,  # если button_gamesorel нужен тебе где-то ещё - оставляем
     db, bot1, dp,
@@ -216,8 +216,7 @@ async def orel(message: Message):
         # game_id как у тебя
         game_id = message.message_id
 
-        # выбор стороны (берём из первого слова)
-        choice = p0
+        choice = orel_side(message.text or "")
         if choice not in ("орел", "решка"):
             choice = "орел"
 
