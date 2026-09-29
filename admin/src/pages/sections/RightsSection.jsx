@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import { createGroupPosition, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
@@ -79,7 +79,7 @@ function StaffTabsEditor() {
 
   return (
     <div>
-      <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Внутренняя вкладка работает только если открыта сама страница. Исключение одному человеку по-прежнему ставится в «Админ панель».</p>
+      <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Внутренняя вкладка работает только если открыта сама страница. Исключение одному человеку ставится в Стаффе, в разделе «Доступ».</p>
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
       <div className="role-ladder">
@@ -140,7 +140,7 @@ function StaffTabsEditor() {
   )
 }
 
-export default function RightsSection({ embedded = false } = {}) {
+export default function RightsSection({ embedded = false, office = null, onPreview = null } = {}) {
   const [groups, setGroups] = useState([])
   const [chatId, setChatId] = useState(null)
   const [error, setError] = useState('')
@@ -149,8 +149,10 @@ export default function RightsSection({ embedded = false } = {}) {
   const [purgeId, setPurgeId] = useState('')
   const [purgeQuery, setPurgeQuery] = useState('')
   const [purging, setPurging] = useState(false)
-  const [chapter, setChapter] = useState('group')
+  const [chapter, setChapter] = useState(office === 'staff' ? 'staff' : 'group')
   const [posQuery, setPosQuery] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+  const [newRank, setNewRank] = useState('2')
 
   const load = useCallback(async () => {
     setError('')
@@ -165,6 +167,35 @@ export default function RightsSection({ embedded = false } = {}) {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (office === 'staff' || office === 'group') setChapter(office)
+  }, [office])
+
+  const createPosition = async (event) => {
+    event.preventDefault()
+    if (!chatId) return
+    const title = newTitle.trim()
+    if (title.length < 2) {
+      setError('Название должности — хотя бы два символа')
+      return
+    }
+    setError('')
+    setNotice('')
+    try {
+      await createGroupPosition({
+        chat_id: Number(chatId),
+        title,
+        rank: Math.min(4, Math.max(1, Number(newRank) || 1)),
+        rights: ['view_members'],
+      })
+      setNewTitle('')
+      setNotice(`Должность «${title}» создана. Отметьте, какие наказания и страницы ей открыты, и сохраните.`)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Должность не создалась')
+    }
+  }
 
   const current = groups.find((group) => group.chatId === chatId) || null
 
@@ -209,13 +240,23 @@ export default function RightsSection({ embedded = false } = {}) {
   return (
     <section className={embedded ? 'realm-in-panel pa-rights-embed' : 'panel-shelf-page realm-in-panel'}>
       {!embedded && <h1 className="panel-page-title">Права</h1>}
-      <p className={embedded ? 'pa-hint' : 'panel-page-lead'}>
-        Сначала выберите, что выдаёте: страницы и наказания должности в группе или вкладки панели сотрудника.
-      </p>
-      <div className="realm-actions">
-        <button type="button" className={chapter === 'group' ? 'is-on' : ''} onClick={() => setChapter('group')}>Должности группы</button>
-        <button type="button" className={chapter === 'staff' ? 'is-on' : ''} onClick={() => setChapter('staff')}>Вкладки сотрудника</button>
-      </div>
+      {!office && (
+        <>
+          <p className={embedded ? 'pa-hint' : 'panel-page-lead'}>
+            Сначала выберите, что выдаёте: страницы и наказания должности в группе или вкладки панели сотрудника.
+          </p>
+          <div className="realm-actions">
+            <button type="button" className={chapter === 'group' ? 'is-on' : ''} onClick={() => setChapter('group')}>Должности группы</button>
+            <button type="button" className={chapter === 'staff' ? 'is-on' : ''} onClick={() => setChapter('staff')}>Вкладки сотрудника</button>
+          </div>
+        </>
+      )}
+      {office === 'staff' && (
+        <p className="pa-hint">Лестница сотрудников проекта фиксирована: владелец, старший, младший, модератор. Здесь каждая должность получает свои вкладки панели. Наказания этой же лестницы — матрица выше.</p>
+      )}
+      {office === 'group' && (
+        <p className="pa-hint">Должности живут внутри официальной группы. Новая должность сразу получает «Кто пишет». Мут, бан, кик, варн, голос и страницы кабинета включаются отдельно и начинают работать после сохранения.</p>
+      )}
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (
       <>
@@ -238,11 +279,28 @@ export default function RightsSection({ embedded = false } = {}) {
           <label className="realm-field">Найти должность в этой группе
             <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
           </label>
+          <form className="realm-form staff-new-post" onSubmit={createPosition}>
+            <h2 className="realm-h">Новая должность</h2>
+            <label>Название
+              <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Например, Хелпер" />
+            </label>
+            <label>Ранг, 1 младше 4
+              <input value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} inputMode="numeric" />
+            </label>
+            <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
+          </form>
           <PositionEditor
             positions={(current.positions || []).filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
             creator
             onSave={save}
             savingId={savingId}
+            onPreview={onPreview ? (row) => onPreview({
+              title: row.title,
+              rights: row.rights || [],
+              rank: row.rank,
+              chatId: current.chatId,
+              chatTitle: current.title,
+            }) : null}
           />
         </>
       )}

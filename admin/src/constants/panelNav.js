@@ -88,7 +88,7 @@ export const PANEL_SECTIONS = [
   },
   {
     id: 'staff', label: 'Staff', labelRu: 'Стафф', group: 'team',
-    blurb: 'Команда: заявки, сотрудники, зарплаты, смены и жалобы.',
+    blurb: 'Должности, доступ к панели, заявки, ключи, зарплаты и смены.',
   },
   {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
@@ -164,7 +164,7 @@ export const SECTION_HINTS = {
   achievements: 'Значки в профиле',
   events: 'Игровые события',
   broadcast: 'Сообщение многим людям',
-  staff: 'Сотрудники, смены и жалобы',
+  staff: 'Доступ, должности, заявки и ключи',
   rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',
@@ -194,8 +194,10 @@ export function visibleSections(
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (allowedIds && s.id !== 'groupGuard' && s.id !== 'panelAccess' && !allowedIds.has(s.id)) return false
-    if (s.permission && !perms.has(s.permission) && !(s.id === 'panelAccess' && creatorOk)) return false
+    if (s.id === 'panelAccess') return false
+    const staffForced = s.id === 'staff' && (creatorOk || perms.has('manage_panel_access'))
+    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
+    if (s.permission && !perms.has(s.permission) && !staffForced) return false
     return true
   })
 }

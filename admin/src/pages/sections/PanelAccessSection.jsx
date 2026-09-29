@@ -542,13 +542,14 @@ const ComparePane = memo(function ComparePane({
   )
 })
 
-export default function PanelAccessSection({ isProjectCreator = false, initialTab = null } = {}) {
+export default function PanelAccessSection({ isProjectCreator = false, initialTab = null, only = null, onRole = null, onOpenPreview = null } = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busyKeys, setBusyKeys] = useState(() => new Set())
   const [selectedId, setSelectedId] = useState(null)
   const [roleTab, setRoleTab] = useState('senior_admin')
   const [viewTab, setViewTab] = useState(() => {
+    if (only) return only
     if (isProjectCreator && (initialTab === 'rights' || initialTab === 'punish')) return initialTab
     return initialTab && BASE_TABS.some((t) => t.id === initialTab) ? initialTab : 'wizard'
   })
@@ -564,12 +565,20 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
   }, [isProjectCreator])
 
   useEffect(() => {
+    if (only) {
+      setViewTab(only)
+      return
+    }
     if (!initialTab) return
     if ((initialTab === 'rights' || initialTab === 'punish') && !isProjectCreator) return
     if (initialTab === 'rights' || initialTab === 'punish' || BASE_TABS.some((t) => t.id === initialTab)) {
       setViewTab(initialTab)
     }
-  }, [initialTab, isProjectCreator])
+  }, [initialTab, isProjectCreator, only])
+
+  useEffect(() => {
+    onRole?.(roleTab)
+  }, [roleTab, onRole])
 
   const markBusy = useCallback((key) => {
     setBusyKeys((prev) => {
@@ -1019,8 +1028,8 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
   }
 
   return (
-    <section className="panel-security panel-panel-access">
-      <header className="sec-header pa-header">
+    <section className={only ? 'pa-embed' : 'panel-security panel-panel-access'}>
+      {!only && <header className="sec-header pa-header">
         <div className="pa-header-text">
           <h2 className="sec-title">Админ панель</h2>
           <p className="sec-subtitle">
@@ -1039,9 +1048,9 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
           <span className="pa-help-btn-icon" aria-hidden="true">?</span>
           <span className="pa-help-btn-text">Справка</span>
         </button>
-      </header>
+      </header>}
 
-      <nav className="sec-tabs pa-view-tabs" aria-label="Разделы доступов">
+      {!only && <nav className="sec-tabs pa-view-tabs" aria-label="Разделы доступов">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -1060,9 +1069,17 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
         >
           {loading ? '…' : 'Обновить'}
         </button>
-      </nav>
+      </nav>}
 
-      <div className="sec-tab-body pa-tab-body">
+      {only && (
+        <div className="pa-embed-bar">
+          <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={load} disabled={loading}>
+            {loading ? 'Сверяем…' : 'Обновить'}
+          </button>
+        </div>
+      )}
+
+      <div className={only ? 'pa-tab-body' : 'sec-tab-body pa-tab-body'}>
         {loading && !data && <p className="sec-loading">Загрузка матрицы доступов…</p>}
         {error && (
           <div className="pa-error elite-block">
@@ -1098,6 +1115,18 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
                 </button>
               ))}
             </div>
+            {isProjectCreator && onOpenPreview && (
+              <button
+                type="button"
+                className="sec-btn preview-open"
+                onClick={() => {
+                  const label = (data.roles || []).find((item) => item.id === roleTab)?.label || roleTab
+                  onOpenPreview(roleTab, label, data.roleDefaults || {})
+                }}
+              >
+                Открыть панель как эту должность
+              </button>
+            )}
             <p className="pa-hint">
               Базовый набор при выдаче роли. Нажмите ▸ у раздела, чтобы настроить внутренние вкладки
               (например Стафф → Зарплаты).

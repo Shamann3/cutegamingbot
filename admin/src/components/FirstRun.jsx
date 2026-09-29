@@ -330,3 +330,15 @@ export function coachClosed(storageKey) {
     return true
   }
 }
+
+/** Сбрасывает «уже видел» и «больше не показывать», чтобы тур начался с первого шага. */
+export function restartCoach(storageKey) {
+  const key = String(storageKey || '')
+  try {
+    localStorage.removeItem(key)
+    localStorage.removeItem(neverKey(key))
+    sessionStorage.removeItem(key)
+  } catch {
+    /* хранилище может быть закрыто */
+  }
+}

@@ -33,7 +33,6 @@ import StaffSection from './sections/StaffSection'
 import SupportSection from './sections/SupportSection'
 import ModerationSection from './sections/ModerationSection'
 import ChronicleSection from './sections/ChronicleSection'
-import PanelAccessSection from './sections/PanelAccessSection'
 import CommandCenterSection from './sections/CommandCenterSection'
 import RulesGateModal from '../components/RulesGateModal'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
@@ -53,7 +52,10 @@ import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useTabScroll } from '../lib/useTabScroll'
 import GroupGuardDesk from './sections/GroupGuardDesk'
-import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
+import FirstRun, { staffSteps, coachClosed, restartCoach } from '../components/FirstRun'
+import PanelPreviewBar from '../components/PanelPreviewBar'
+import GroupShell from './GroupShell'
+import { previewAccessFromDefaults } from '../lib/panelPreview'
 import PhoneDock from '../components/PhoneDock'
 import ExtrasHub, { PanelPocketTools } from '../components/ExtrasHub'
 
@@ -92,9 +94,11 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [canBanfull, setCanBanfull] = useState(false)
   const [staffPerms, setStaffPerms] = useState([])
   const [contentInitialTab, setContentInitialTab] = useState(null)
-  const [panelAccessInitialTab, setPanelAccessInitialTab] = useState(null)
+  const [staffEntry, setStaffEntry] = useState(null)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
+  const [coachRun, setCoachRun] = useState(0)
+  const [preview, setPreview] = useState(null)
   const onCoachStep = useCallback((step) => {
     if (phone) return
     setMobileNavOpen(Boolean(step?.openNav))
@@ -176,14 +180,84 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     }
   }, [onLogout])
 
-  const navSections = useMemo(
-    () => visibleSections(permissions, panelSections, role, {
-      myUserId,
-      projectCreatorId,
-      isProjectCreator,
-    }),
-    [permissions, panelSections, role, myUserId, projectCreatorId, isProjectCreator],
+  const staffPreview = preview?.kind === 'staff' ? preview : null
+  const showCreator = isProjectCreator && !staffPreview
+  const previewPerms = useMemo(
+    () => [...new Set(PANEL_SECTIONS.map((item) => item.permission).filter((item) => item && item !== 'manage_panel_access'))],
+    [],
   )
+  const tabsForView = staffPreview?.tabs || panelTabs
+
+  const navSections = useMemo(
+    () => visibleSections(
+      staffPreview ? previewPerms : permissions,
+      staffPreview ? staffPreview.sections : panelSections,
+      staffPreview ? staffPreview.role : role,
+      {
+        myUserId,
+        projectCreatorId,
+        isProjectCreator: showCreator,
+      },
+    ),
+    [staffPreview, previewPerms, permissions, panelSections, role, myUserId, projectCreatorId, showCreator],
+  )
+
+  const replayCoach = useCallback(() => {
+    restartCoach('epsilon.onboard.staff.v4')
+    setCoachRun((n) => n + 1)
+    setCoach(true)
+    setMobileNavOpen(false)
+  }, [])
+
+  const exitPreview = useCallback(() => {
+    const back = preview?.returnTo || 'staff'
+    const entry = preview?.kind === 'group'
+      ? { office: 'group', slice: 'posts' }
+      : { office: 'staff', slice: 'access' }
+    setPreview(null)
+    setStaffEntry(entry)
+    setSection(back)
+  }, [preview])
+
+  const openStaffPreview = useCallback((roleId, label, roleDefaults) => {
+    if (!isProjectCreator) return
+    const access = previewAccessFromDefaults(roleDefaults?.[roleId] || {})
+    setPreview({
+      kind: 'staff',
+      role: roleId,
+      label: label || roleId,
+      sections: access.sections,
+      tabs: access.tabs,
+      returnTo: 'staff',
+    })
+    setSection('dashboard')
+    setMobileNavOpen(false)
+  }, [isProjectCreator])
+
+  const openGroupPreview = useCallback((position) => {
+    if (!isProjectCreator || !position) return
+    setPreview({
+      kind: 'group',
+      label: position.title || 'Должность',
+      returnTo: 'staff',
+      portrait: {
+        isOwner: Number(position.rank) >= 5,
+        staffCanEnter: false,
+        groups: [{
+          chatId: position.chatId,
+          title: position.chatTitle || 'Группа',
+          rights: position.rights || [],
+          position: position.title || '',
+        }],
+      },
+    })
+    setMobileNavOpen(false)
+  }, [isProjectCreator])
+
+  useEffect(() => {
+    document.body.classList.toggle('is-preview', Boolean(preview))
+    return () => document.body.classList.remove('is-preview')
+  }, [preview])
 
   const { dock: dockSections, extras: extraSections, primaryIds } = useMemo(
     () => splitDockSections(navSections),
@@ -268,14 +342,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
 
   const handleNavigate = useCallback((id, opts = null) => {
     let next = id
-    // Старый раздел «Права» влит в «Админ панель»
-    if (next === 'rights') {
-      next = 'panelAccess'
-      setPanelAccessInitialTab(opts?.tab || 'punish')
-    } else if (next === 'panelAccess' && opts?.tab) {
-      setPanelAccessInitialTab(opts.tab)
-    } else if (next !== 'panelAccess') {
-      setPanelAccessInitialTab(null)
+    // «Админ панель» и старые «Права» живут внутри «Стафф».
+    if (next === 'rights' || (next === 'panelAccess' && opts?.tab === 'rights')) {
+      next = 'staff'
+      setStaffEntry({ office: 'group', slice: 'posts' })
+    } else if (next === 'panelAccess') {
+      next = 'staff'
+      setStaffEntry({ office: 'staff', slice: 'access' })
+    } else if (next !== 'staff') {
+      setStaffEntry(null)
     }
     if (next === 'content' && opts?.tab) {
       setContentInitialTab(opts.tab)
@@ -316,16 +391,36 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isSupport = section === 'support'
   const isModeration = section === 'moderation'
   const isChronicle  = section === 'chronicle'
-  const isPanelAccess = section === 'panelAccess' || section === 'rights'
   const isGroupGuard = section === 'groupGuard'
   const isSoftRestart = section === 'softRestart'
+
+  if (preview?.kind === 'group') {
+    return (
+      <MetricSheetProvider>
+        <PanelPreviewBar
+          title={`Копия кабинета группы · ${preview.label}`}
+          detail="Страницы кабинета такие, как у этой должности. Сообщения и цифры группы остаются вашими."
+          onExit={exitPreview}
+        />
+        <GroupShell portrait={preview.portrait} onLeave={onChangeDoor} />
+      </MetricSheetProvider>
+    )
+  }
 
   return (
     <MetricSheetProvider>
     <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
       <AccentAura />
+      {staffPreview && (
+        <PanelPreviewBar
+          title={`Копия панели сотрудника · ${staffPreview.label}`}
+          detail="Вкладки такие, как у этой должности. Цифры на страницах остаются вашими."
+          onExit={exitPreview}
+        />
+      )}
       {coach && (
         <FirstRun
+          key={coachRun}
           storageKey="epsilon.onboard.staff.v4"
           steps={staffSteps(phone)}
           layoutKey={mobileNavOpen ? 1 : 0}
@@ -368,13 +463,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
           accent={accent}
           onAccentChange={handleAccentChange}
+          onReplayCoach={replayCoach}
           recentSectionIds={recentSections}
         />
       )}
 
-      {isProjectCreator && (
+      {showCreator && (
         <NikaCrisisStrip
-          enabled={isProjectCreator}
+          enabled={showCreator}
           onOpen={() => handleNavigate('nika')}
           onPulse={handleNikaPulse}
         />
@@ -421,7 +517,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                       ? ' panel-layout-support'
                                       : isChronicle
                                         ? ' panel-layout-chronicle'
-                                        : isPanelAccess || isSoftRestart || isGroupsStudio || isNika || isGames
+                                        : isSoftRestart || isGroupsStudio || isNika || isGames
                                           ? ' panel-layout-security'
                                           : ' panel-layout-page'
           }`}
@@ -460,6 +556,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                   onChangeDoor={onChangeDoor}
                   onLogout={handleLogout}
                   onSessionExpired={handleSessionExpired}
+                  onReplayCoach={replayCoach}
                 />
               ) : null}
             />
@@ -473,7 +570,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               permissions={permissions}
               role={role}
               myUserId={myUserId}
-              isProjectCreator={isProjectCreator}
+              isProjectCreator={showCreator}
               canBanfull={canBanfull}
               canOpenGroups={navSections.some((s) => s.id === 'groupsStudio')}
               onOpenGroup={(chatId) => {
@@ -498,7 +595,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isMarket && <MarketSection />}
           {isFarm && (
             <FarmSection
-              isProjectCreator={isProjectCreator}
+              isProjectCreator={showCreator}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
@@ -508,7 +605,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isContent && (
             <ContentSection
               role={role}
-              panelTabs={panelTabs}
+              panelTabs={tabsForView}
               initialTab={contentInitialTab}
               onInitialTabConsumed={() => setContentInitialTab(null)}
             />
@@ -516,21 +613,21 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isGiveaways && <GiveawaysSection />}
           {isTiktok && (
             <TikTokSection
-              panelTabs={panelTabs}
+              panelTabs={tabsForView}
               role={role}
-              isProjectCreator={isProjectCreator}
+              isProjectCreator={showCreator}
             />
           )}
           {isBotQuests && role === 'owner' && <BotQuestsSection />}
           {isGroupBalanceLevel && role === 'owner' && <GroupBalanceLevelSection />}
-          {isGroupsStudio && isProjectCreator && (
+          {isGroupsStudio && showCreator && (
             <GroupsStudioSection
               initialChatId={groupsInitialId}
               onInitialChatConsumed={() => setGroupsInitialId(null)}
               canBanfull={canBanfull}
               permissions={permissions}
               role={role}
-              isProjectCreator={isProjectCreator}
+              isProjectCreator={showCreator}
               staffPerms={staffPerms}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
@@ -538,9 +635,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               }}
             />
           )}
-          {isNika && isProjectCreator && <NikaSection />}
-          {isPrGroups && isProjectCreator && <PrGroupsSection />}
-          {isGames && isProjectCreator && <GamesSection />}
+          {isNika && showCreator && <NikaSection />}
+          {isPrGroups && showCreator && <PrGroupsSection />}
+          {isGames && showCreator && <GamesSection />}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {
@@ -549,27 +646,38 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               }}
             />
           )}
-          {isBroadcast && <BroadcastSection panelTabs={panelTabs} />}
+          {isBroadcast && <BroadcastSection panelTabs={tabsForView} />}
           {isLogs && (
             <LogsSection
-              panelTabs={panelTabs}
+              panelTabs={tabsForView}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
               }}
             />
           )}
-          {isAnalytics && <AnalyticsSection panelTabs={panelTabs} />}
-          {isSettings && <SystemSection panelTabs={panelTabs} />}
-          {isEvents && <EventsSection panelTabs={panelTabs} />}
-          {isSecurity && <SecuritySection panelTabs={panelTabs} />}
-          {isStaff && <StaffSection role={role} permissions={permissions} myUserId={myUserId} panelTabs={panelTabs} isProjectCreator={isProjectCreator} />}
+          {isAnalytics && <AnalyticsSection panelTabs={tabsForView} />}
+          {isSettings && <SystemSection panelTabs={tabsForView} />}
+          {isEvents && <EventsSection panelTabs={tabsForView} />}
+          {isSecurity && <SecuritySection panelTabs={tabsForView} />}
+          {isStaff && (
+            <StaffSection
+              role={role}
+              permissions={staffPreview ? previewPerms : permissions}
+              myUserId={myUserId}
+              panelTabs={tabsForView}
+              isProjectCreator={showCreator}
+              entry={staffEntry}
+              onPreviewStaff={openStaffPreview}
+              onPreviewGroup={openGroupPreview}
+            />
+          )}
           {isSupport && <SupportSection />}
           {isModeration && (
             <ModerationSection
               role={role}
               permissions={permissions}
-              panelTabs={panelTabs}
+              panelTabs={tabsForView}
               onOpenUser={(userId) => {
                 setUsersInitialId(userId)
                 setSection('users')
@@ -577,15 +685,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isChronicle && <ChronicleSection />}
-          {isPanelAccess && (
-            <PanelAccessSection
-              isProjectCreator={isProjectCreator}
-              initialTab={panelAccessInitialTab || (section === 'rights' ? 'punish' : null)}
-            />
-          )}
-          {isGroupGuard && isProjectCreator && <GroupGuardDesk />}
-          {isSoftRestart && isProjectCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isPanelAccess && !isGroupGuard && !isSoftRestart && (
+          {isGroupGuard && showCreator && <GroupGuardDesk />}
+          {isSoftRestart && showCreator && <SoftRestartSection />}
+          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

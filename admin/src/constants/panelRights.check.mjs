@@ -23,8 +23,11 @@ if (!untouched.some((item) => item.id === 'users')) {
 }
 
 const creator = visibleSections([], [], 'owner', { isProjectCreator: true })
-if (!creator.some((item) => item.id === 'panelAccess')) {
-  throw new Error('creator must keep admin panel (rights merged)')
+if (creator.some((item) => item.id === 'panelAccess')) {
+  throw new Error('admin panel is a separate menu row again')
+}
+if (!creator.some((item) => item.id === 'staff')) {
+  throw new Error('creator must open staff, where panel access now lives')
 }
 if (!creator.some((item) => item.id === 'groupGuard')) {
   throw new Error('creator must keep the guard page')

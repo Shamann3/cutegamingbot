@@ -168,7 +168,7 @@ function LockCard({ tab, map }) {
           <b>{people.length ? people.map((p) => `${p.name}${p.roleLabel ? ` · ${p.roleLabel}` : ''}`).join(', ') : 'никого'}</b>
         </div>
       </div>
-      <p className="tt-lock-push">Когда доверят выше - окажетесь здесь. Доступ выдаёт создатель в «Админ панель».</p>
+      <p className="tt-lock-push">Когда доверят выше — окажетесь здесь. Доступ выдаёт создатель в «Стафф».</p>
     </div>
   )
 }

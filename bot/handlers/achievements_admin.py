@@ -586,7 +586,7 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
         await message.reply(
             f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
             f"<b>Нет права выдавать достижения.</b>\n"
-            f"Создатель выдаёт доступ во вкладке «Админ панель».",
+            f"Создатель выдаёт доступ в разделе «Стафф».",
             parse_mode="HTML",
         )
         return True

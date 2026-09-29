@@ -4,6 +4,7 @@ import { useIsPhone } from '../lib/useIsDesktop'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { barPercents, metricDelta } from '../lib/metricModel'
 import { fmt } from '../lib/numberFormat'
+import { sheetSwipeDecision, swipeVelocity } from '../lib/sheetSwipe'
 
 const MetricCtx = createContext(null)
 
@@ -39,8 +40,14 @@ export function MetricSheetProvider({ children }) {
         specs.current.set(spec.id, spec)
         setTick((n) => n + 1)
       },
-      close() {
+      close(opts) {
         if (!openId.current) return
+        if (opts?.immediate) {
+          openId.current = null
+          setLeaving(false)
+          setTick((n) => n + 1)
+          return
+        }
         setLeaving(true)
         window.setTimeout(() => {
           openId.current = null
@@ -70,6 +77,110 @@ function MetricSheetView({ spec, leaving, onClose }) {
   onCloseRef.current = onClose
 
   useOutsideDismiss(true, [panelRef], () => onCloseRef.current())
+
+  const dismissTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(dismissTimer.current), [])
+
+  useEffect(() => {
+    if (!phone) return undefined
+    const sheet = panelRef.current
+    if (!sheet) return undefined
+    let drag = null
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+
+    const dim = () => sheet.closest('.metric-sheet-root')?.querySelector('.metric-sheet-dim')
+
+    const place = (dy, mode) => {
+      sheet.classList.toggle('is-dragging', mode === 'drag')
+      sheet.classList.toggle('is-settling', mode === 'back')
+      sheet.classList.toggle('is-swipe', mode === 'away')
+      if (mode === 'back') sheet.style.transform = 'translate3d(0, 0, 0)'
+      else if (dy > 0) sheet.style.transform = `translate3d(0, ${Math.round(dy)}px, 0)`
+      else sheet.style.transform = ''
+      const veil = dim()
+      if (!veil) return
+      if (mode === 'drag' && dy > 0) veil.style.opacity = String(Math.max(0, 1 - dy / 280))
+      else if (mode === 'away') veil.style.opacity = '0'
+      else veil.style.opacity = ''
+    }
+
+    const onDown = (event) => {
+      if (leaving || (event.button != null && event.button > 0)) return
+      if (event.target.closest('button, a, input, textarea, select, [role="option"]')) return
+      drag = {
+        id: event.pointerId,
+        y0: event.clientY,
+        samples: [{ y: event.clientY, t: performance.now() }],
+        fromGrab: Boolean(event.target.closest('.metric-sheet-grab, .metric-sheet-top')),
+        active: false,
+      }
+      sheet.setPointerCapture?.(event.pointerId)
+    }
+
+    const onMove = (event) => {
+      if (!drag || event.pointerId !== drag.id) return
+      const dy = event.clientY - drag.y0
+      const now = performance.now()
+      drag.samples.push({ y: event.clientY, t: now })
+      drag.samples = drag.samples.filter((sample) => now - sample.t < 90)
+      if (!drag.fromGrab && sheet.scrollTop > 2 && !drag.active) return
+      if (dy <= 0) {
+        if (drag.active) place(0, 'back')
+        drag.active = false
+        return
+      }
+      if (!drag.active && dy < 8) return
+      drag.active = true
+      event.preventDefault()
+      place(dy, 'drag')
+    }
+
+    const release = (event, cancel) => {
+      if (!drag || event.pointerId !== drag.id) return
+      const current = drag
+      drag = null
+      if (!current.active || cancel) {
+        place(0, 'back')
+        return
+      }
+      const dy = event.clientY - current.y0
+      const height = Math.max(sheet.offsetHeight || 0, 240)
+      const decision = sheetSwipeDecision({
+        dy,
+        velocity: swipeVelocity(current.samples),
+        height,
+      })
+      if (decision === 'close') {
+        const off = Math.max(height + 32, Math.round(window.innerHeight * 0.55))
+        place(off, 'away')
+        window.clearTimeout(dismissTimer.current)
+        dismissTimer.current = window.setTimeout(() => {
+          onCloseRef.current({ immediate: true })
+        }, reduced ? 0 : 320)
+        return
+      }
+      place(0, 'back')
+      window.clearTimeout(dismissTimer.current)
+      dismissTimer.current = window.setTimeout(() => {
+        if (!sheet.classList.contains('is-settling')) return
+        sheet.classList.remove('is-settling')
+        sheet.style.transform = ''
+      }, reduced ? 0 : 340)
+    }
+
+    const onUp = (event) => release(event, false)
+    const onCancel = (event) => release(event, true)
+    sheet.addEventListener('pointerdown', onDown)
+    sheet.addEventListener('pointermove', onMove, { passive: false })
+    sheet.addEventListener('pointerup', onUp)
+    sheet.addEventListener('pointercancel', onCancel)
+    return () => {
+      sheet.removeEventListener('pointerdown', onDown)
+      sheet.removeEventListener('pointermove', onMove)
+      sheet.removeEventListener('pointerup', onUp)
+      sheet.removeEventListener('pointercancel', onCancel)
+    }
+  }, [phone, leaving, spec.id])
 
   useEffect(() => {
     const node = panelRef.current

@@ -45,7 +45,7 @@ function toneOf(title, rank) {
   return 'seat'
 }
 
-export default function PositionEditor({ positions, creator, onSave, savingId }) {
+export default function PositionEditor({ positions, creator, onSave, savingId, onPreview = null }) {
   const [drafts, setDrafts] = useState(positions || [])
   const [openId, setOpenId] = useState(null)
 
@@ -98,6 +98,7 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
           byId={byId}
           creator={creator}
           savingId={savingId}
+          onPreview={creator ? onPreview : null}
           onClose={() => setOpenId(null)}
           onPatch={patch}
           onSave={onSave}
@@ -107,7 +108,7 @@ export default function PositionEditor({ positions, creator, onSave, savingId })
   )
 }
 
-function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch, onSave }) {
+function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch, onSave, onPreview }) {
   const locked = row.rank >= 5
   const rights = new Set(row.rights || [])
   const pages = PAGE_RIGHTS.filter((item) => creator || item.id !== 'manage_positions')
@@ -163,6 +164,15 @@ function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch,
             compareSet={compareSet}
           />
         </fieldset>
+        {onPreview && (
+          <button
+            type="button"
+            className="realm-back"
+            onClick={() => onPreview(row)}
+          >
+            Открыть кабинет как эту должность
+          </button>
+        )}
         <button type="submit" className="realm-back" disabled={savingId === row.id || row.title.trim().length < 2}>
           {savingId === row.id ? 'Запись…' : 'Сохранить должность'}
         </button>

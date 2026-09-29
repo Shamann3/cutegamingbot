@@ -68,6 +68,35 @@ describe('MetricSheet', () => {
     expect(screen.getByRole('dialog').closest('.metric-sheet-root').classList.contains('is-phone')).toBe(true)
   })
 
+  it('на телефоне провод вниз закрывает лист', async () => {
+    phone.value = true
+    renderTile()
+    tap(screen.getByRole('button', { name: /цифра/ }))
+    const sheet = screen.getByRole('dialog')
+    fireEvent.pointerDown(sheet, { pointerId: 1, clientY: 40, button: 0 })
+    fireEvent.pointerMove(sheet, { pointerId: 1, clientY: 220 })
+    fireEvent.pointerUp(sheet, { pointerId: 1, clientY: 220 })
+    expect(sheet.style.transform).toContain('translate3d')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('короткий сдвиг оставляет лист открытым', async () => {
+    phone.value = true
+    renderTile()
+    tap(screen.getByRole('button', { name: /цифра/ }))
+    const sheet = screen.getByRole('dialog')
+    fireEvent.pointerDown(sheet, { pointerId: 1, clientY: 40, button: 0 })
+    fireEvent.pointerMove(sheet, { pointerId: 1, clientY: 70 })
+    fireEvent.pointerUp(sheet, { pointerId: 1, clientY: 70 })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400)
+    })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
   it('тап мимо закрывает лист и не нажимает то, что под ним', async () => {
     renderTile()
     tap(screen.getByRole('button', { name: /цифра/ }))

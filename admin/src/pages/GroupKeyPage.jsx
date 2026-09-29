@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { checkGroupKey } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import AccentAura from '../components/AccentAura'
 
 export default function GroupKeyPage({ onBack, onPassed }) {
   const personal = accentIsPersonal(loadStoredAccent())
@@ -23,9 +24,10 @@ export default function GroupKeyPage({ onBack, onPassed }) {
   }
 
   return (
-    <div className={`gate-root${personal ? ' is-personal' : ''}`}>
+    <div className={`gate-root entry-root${personal ? ' is-personal' : ''}`}>
+      <AccentAura />
       <div className="gate-frame" aria-hidden="true" />
-      <div className="gate-sheet">
+      <div className="gate-sheet entry-card">
         <header className="gate-head">
           <h1 className="gate-title">Личный ключ</h1>
           <p className="gate-lead">Из бота Telegram ключ не спрашивается. Здесь он нужен, потому что панель открыта без бота. Ключ выдаёт создатель при назначении, один раз.</p>

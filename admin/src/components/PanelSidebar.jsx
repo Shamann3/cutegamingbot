@@ -47,6 +47,7 @@ function SettingsControls({
   onMusicVolumeChange,
   lightMode,
   onTogglePerf,
+  onReplayCoach,
 }) {
   return (
     <>
@@ -79,6 +80,12 @@ function SettingsControls({
         />
       </div>
 
+      {typeof onReplayCoach === 'function' && (
+        <button type="button" className="panel-perf-btn" onClick={onReplayCoach}>
+          Показать обучение
+        </button>
+      )}
+
       <button
         type="button"
         className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
@@ -107,6 +114,7 @@ export default function PanelSidebar({
   role = null,
   lightMode = false,
   onTogglePerf,
+  onReplayCoach,
   musicVolume = 0,
   onMusicVolumeChange,
   onToggleMusic,
@@ -239,6 +247,7 @@ export default function PanelSidebar({
     onMusicVolumeChange,
     lightMode,
     onTogglePerf,
+    onReplayCoach,
   }
 
   return (

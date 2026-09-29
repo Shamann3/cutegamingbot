@@ -14,7 +14,7 @@ import {
 } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
-import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
+import FirstRun, { groupSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
 import PhoneDock from '../components/PhoneDock'
@@ -98,6 +98,13 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.group.v4'))
+  const [coachRun, setCoachRun] = useState(0)
+  const replayCoach = useCallback(() => {
+    restartCoach('epsilon.onboard.group.v4')
+    setCoachRun((n) => n + 1)
+    setCoach(true)
+    setRailOpen(false)
+  }, [])
   const [railOpen, setRailOpen] = useState(false)
   const phone = useIsPhone()
   const viewport = useViewportMode()
@@ -432,6 +439,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
       <PanelBackgroundMusic volume={musicVolume} />
       {coach && (
         <FirstRun
+          key={coachRun}
           storageKey="epsilon.onboard.group.v4"
           steps={groupSteps(phone)}
           layoutKey={railOpen ? 1 : 0}
@@ -455,6 +463,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           onToggleMusic={toggleMusicMute}
           accent={accent}
           onAccentChange={(next) => setAccent(persistAccent(next))}
+          onReplayCoach={replayCoach}
           brandName="Панель группы"
           brandTag={chatId ? title : 'Одна группа'}
         />
@@ -734,6 +743,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
                   onMusicVolumeChange={setMusicVolume}
                   onToggleMusic={toggleMusicMute}
                   onChangeDoor={onLeave}
+                  onReplayCoach={replayCoach}
                 />
               )}
             </section>

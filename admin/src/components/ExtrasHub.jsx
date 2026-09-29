@@ -24,6 +24,7 @@ export function PanelPocketTools({
   onChangeDoor,
   onLogout,
   onSessionExpired,
+  onReplayCoach,
 }) {
   const muted = Number(musicVolume) <= 0
   return (
@@ -55,6 +56,12 @@ export function PanelPocketTools({
               aria-label="Громкость музыки"
             />
           </label>
+        )}
+        {typeof onReplayCoach === 'function' && (
+          <button type="button" className="pocket-tools-row" onClick={onReplayCoach}>
+            <strong>Показать обучение</strong>
+            <span>Снова пройти короткие подсказки по панели</span>
+          </button>
         )}
         {typeof onChangeDoor === 'function' && (
           <button type="button" className="pocket-tools-row" data-coach="doors" onClick={onChangeDoor}>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchGroupOpen, submitGroupApplication } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import AccentAura from '../components/AccentAura'
 
 const RIGHT_LABEL = {
   view_members: 'участники',
@@ -85,9 +86,10 @@ export default function GroupApplyPage({ onBack }) {
   }
 
   return (
-    <div className={`gate-root${personal ? ' is-personal' : ''}`}>
+    <div className={`gate-root entry-root${personal ? ' is-personal' : ''}`}>
+      <AccentAura />
       <div className="gate-frame" aria-hidden="true" />
-      <div className="gate-sheet">
+      <div className="gate-sheet entry-card">
         <header className="gate-head">
           <h1 className="gate-title">Заявка в группу</h1>
           <p className="gate-lead">Только официальная группа и должность, на которую открыт набор. Это не делает вас сотрудником проекта.</p>

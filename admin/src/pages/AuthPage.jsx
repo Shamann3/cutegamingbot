@@ -12,8 +12,6 @@ import {
 } from '../lib/adminClient'
 import AuthTabs from '../components/AuthTabs'
 import LoginForm from '../components/LoginForm'
-import PanelBackdrop from '../components/PanelBackdrop'
-import GoldBackdrop from '../components/GoldBackdrop'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
 import EpsilonLogo from '../components/EpsilonLogo'
@@ -261,24 +259,22 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
   }
 
   return (
-    <div className={`auth-screen${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
-      {fortress && <AccentAura />}
-      {fortress && onBack && (
+    <div className={`auth-screen auth-screen-panel${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
+      <AccentAura />
+      {onBack && (
         <button type="button" className="gate-auth-back" onClick={onBack}>
           К выбору панели
         </button>
       )}
-      {!fortress && <GoldBackdrop />}
-      {!fortress && <PanelBackdrop active />}
 
-      <div className="auth-card">
+      <div className="auth-card entry-card">
         <header className="auth-header">
           <div className="auth-logo-wrap">
             <EpsilonLogo className="auth-logo" size="lg" alt="Cute Epsilon" />
           </div>
-          <h1 className="auth-title">{fortress ? 'Панель сотрудника' : 'Panel'}</h1>
+          <h1 className="auth-title">Панель сотрудника</h1>
           <p className="auth-subtitle">
-            {fortress ? 'Сначала ключ входа, затем код из аутентификатора.' : 'Защищённый доступ'}
+            Вход по ключу, регистрация по ключу или заявка в команду
           </p>
         </header>
 

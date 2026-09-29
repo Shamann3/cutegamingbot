@@ -53,6 +53,9 @@ import PayrollBonusesTab from './payroll/BonusesTab'
 import PayrollSettingsTab from './payroll/SettingsTab'
 import PayrollMySalaryTab from './payroll/MySalaryTab'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import RightsSection from './RightsSection'
+import StaffAccessPane from './StaffAccessPane'
+import GroupApplicationsPane from './GroupApplicationsPane'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -243,15 +246,18 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
 function ApplicationsTab() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [active, setActive] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
       const data = await fetchStaffApplications('pending')
       setItems(data.items || [])
-    } catch {
+    } catch (err) {
       setItems([])
+      setError(err?.message || 'Заявки сотрудников не открылись')
     } finally {
       setLoading(false)
     }
@@ -260,7 +266,16 @@ function ApplicationsTab() {
   useEffect(() => { load() }, [load])
 
   return (
-    <div className="sec-tab-body">
+    <div className="sec-tab-body staff-apps staff-apps-staff">
+      <p className="staff-hint">
+        Заявки в команду проекта. Одобрение выдаёт должность панели сотрудника. Это не заявка администратора группы.
+      </p>
+      {error && (
+        <div className="pa-error" role="alert">
+          <p className="sec-error">{error}</p>
+          <button type="button" className="sec-btn sec-btn-sm" onClick={load}>Повторить</button>
+        </div>
+      )}
       <div className="sec-audit-filters">
         <button className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
         <span className="sec-audit-count">{items.length} заявок</span>
@@ -268,20 +283,18 @@ function ApplicationsTab() {
 
       {loading && <p className="sec-loading">Загрузка…</p>}
 
-      <div className="staff-cards">
+      <div className="staff-app-list">
         {items.map((app) => (
-          <button key={app.id} className="staff-card" onClick={() => setActive(app)}>
-            <div className="staff-card-main">
-              <span className="staff-card-name">{nameOf(app)}</span>
-              <span className="staff-card-date">{fmtDate(app.createdAt)}</span>
-            </div>
+          <button key={app.id} type="button" className="staff-app-card staff-app-open" onClick={() => setActive(app)}>
+            <span className="staff-card-name">{nameOf(app)}</span>
+            <span className="staff-card-date">{fmtDate(app.createdAt)}</span>
             <span className="staff-badge staff-badge-pulse" style={{ '--badge-color': '#fbbf24' }}>
               ожидает
             </span>
           </button>
         ))}
-        {!loading && items.length === 0 && (
-          <p className="sec-empty">Новых заявок нет</p>
+        {!loading && items.length === 0 && !error && (
+          <p className="sec-empty">Новых заявок в команду нет</p>
         )}
       </div>
 
@@ -1416,7 +1429,7 @@ function tokenStatus(t) {
   return TOKEN_STATUS.active
 }
 
-function InvitesTab({ isProjectCreator = false }) {
+function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(null)
@@ -1553,10 +1566,12 @@ function InvitesTab({ isProjectCreator = false }) {
   return (
     <div className="sec-tab-body staff-invites-tab">
       <p className="staff-hint">
-        Два разных ключа: сотрудник проекта (вход в админ-панель) и админ официальной группы (вход в оболочку группы).
+        {scope === 'group'
+          ? 'Личный ключ кабинета группы. Его выдаёт создатель вместе с должностью. Показывается один раз.'
+          : 'Ключ входа в панель сотрудника. Человек вводит его на экране регистрации, затем подтверждает код из аутентификатора.'}
       </p>
 
-      <div className="sec-ipban-form staff-invite-block">
+      {scope !== 'group' && <div className="sec-ipban-form staff-invite-block">
         <h3 className="sec-ipban-form-title">Ключ для сотрудника проекта</h3>
         <form className="staff-complaint-form staff-invite-form" onSubmit={handleCreate}>
           <input
@@ -1577,9 +1592,9 @@ function InvitesTab({ isProjectCreator = false }) {
             {busy === 'create' ? '…' : 'Создать'}
           </button>
         </form>
-      </div>
+      </div>}
 
-      <div className="sec-ipban-form staff-group-admin-invite staff-invite-block">
+      {scope !== 'staff' && <div className="sec-ipban-form staff-group-admin-invite staff-invite-block">
         <h3 className="sec-ipban-form-title">Ключ для админа группы</h3>
         {!isProjectCreator ? (
           <p className="staff-hint">
@@ -1642,8 +1657,9 @@ function InvitesTab({ isProjectCreator = false }) {
             )}
           </form>
         )}
-      </div>
+      </div>}
 
+      {scope !== 'group' && <>
       <div className="sec-audit-filters">
         <button type="button" className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
         <span className="sec-audit-count">активных: {activeCount} / всего: {items.length}</span>
@@ -1713,6 +1729,7 @@ function InvitesTab({ isProjectCreator = false }) {
           <p className="sec-empty">Инвайтов пока нет. Создайте первый выше.</p>
         )}
       </div>
+      </>}
     </div>
   )
 }
@@ -1722,15 +1739,14 @@ function InvitesTab({ isProjectCreator = false }) {
 // Main
 // ---------------------------------------------------------------------------
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false }) {
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onPreviewStaff = null, onPreviewGroup = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
+  const canConfigure = isProjectCreator || perms.has('manage_panel_access')
 
-  const tabs = useMemo(() => {
+  const workTabs = useMemo(() => {
     const list = []
-    if (perms.has('review_applications')) list.push({ id: 'applications', label: 'Заявки' })
-    if (perms.has('manage_staff')) list.push({ id: 'members', label: 'Сотрудники' })
-    if (perms.has('assign_roles')) list.push({ id: 'invites', label: 'Инвайты' })
+    if (perms.has('manage_staff')) list.push({ id: 'members', label: 'Люди' })
     if (perms.has('set_salary')) list.push({ id: 'salaries', label: 'Зарплаты' })
     if (perms.has('set_salary')) list.push({ id: 'bonuses', label: 'Премии' })
     if (perms.has('pay_salary')) list.push({ id: 'ledger', label: 'Реестр' })
@@ -1744,49 +1760,124 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     return filterSectionTabs('staff', list, panelTabs)
   }, [perms, role, isOwner, panelTabs])
 
-  const [tab, setTab] = useState(null)
-  const activeTab = tab && tabs.some((t) => t.id === tab) ? tab : tabs[0]?.id
+  const rail = useMemo(() => {
+    const allowed = panelTabs?.staff
+    const open = (id) => !Array.isArray(allowed) || allowed.includes(id)
+    const staff = []
+    const group = []
+    if (canConfigure) staff.push({ id: 'access', label: 'Доступ' })
+    if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
+    if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
+    if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
+    if (isProjectCreator) {
+      group.push({ id: 'posts', label: 'Должности' })
+      group.push({ id: 'apps', label: 'Заявки' })
+      group.push({ id: 'keys', label: 'Ключи' })
+    }
+    return { staff, group }
+  }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator])
+
+  const [place, setPlace] = useState(() => (
+    entry?.office === 'group' ? { office: 'group', id: entry.slice || 'posts' } : { office: 'staff', id: entry?.slice || 'access' }
+  ))
+  const [workTab, setWorkTab] = useState(null)
+
+  useEffect(() => {
+    if (!entry?.office) return
+    setPlace({ office: entry.office, id: entry.slice || (entry.office === 'group' ? 'posts' : 'access') })
+  }, [entry])
+
+  const pool = place.office === 'group' ? rail.group : rail.staff
+  const active = pool.some((item) => item.id === place.id)
+    ? place
+    : (rail.staff[0] ? { office: 'staff', id: rail.staff[0].id } : rail.group[0] ? { office: 'group', id: rail.group[0].id } : null)
+  const activeWork = workTab && workTabs.some((item) => item.id === workTab) ? workTab : workTabs[0]?.id
 
   return (
-    <section className="panel-security">
+    <section className="panel-security staff-desk">
       <header className="sec-header">
         <h2 className="sec-title">Стафф</h2>
         <p className="sec-subtitle">
-          Заявки, сотрудники, зарплаты и выплаты
+          Доступ к панели, должности групп, заявки и ключи входа — в одном месте
         </p>
       </header>
 
-      <nav className="sec-tabs" aria-label="Разделы стаффа">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`sec-tab${activeTab === t.id ? ' sec-tab-active' : ''}`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <div className="staff-desk-layout">
+        <nav className="staff-rail" aria-label="Разделы стаффа">
+          {rail.staff.length > 0 && <p className="staff-rail-group">Сотрудники проекта</p>}
+          {rail.staff.map((item) => (
+            <button
+              key={`staff-${item.id}`}
+              type="button"
+              className={`staff-rail-btn${active?.office === 'staff' && active?.id === item.id ? ' is-on' : ''}`}
+              aria-current={active?.office === 'staff' && active?.id === item.id ? 'page' : undefined}
+              onClick={() => setPlace({ office: 'staff', id: item.id })}
+            >
+              {item.label}
+            </button>
+          ))}
+          {rail.group.length > 0 && <p className="staff-rail-group">Администраторы групп</p>}
+          {rail.group.map((item) => (
+            <button
+              key={`group-${item.id}`}
+              type="button"
+              className={`staff-rail-btn${active?.office === 'group' && active?.id === item.id ? ' is-on' : ''}`}
+              aria-current={active?.office === 'group' && active?.id === item.id ? 'page' : undefined}
+              onClick={() => setPlace({ office: 'group', id: item.id })}
+            >
+              {item.label}
+            </button>
+          ))}
+          {!isProjectCreator && (
+            <p className="staff-rail-note">Должности групп, заявки в кабинет и ключи группы настраивает создатель проекта.</p>
+          )}
+        </nav>
 
-      {/* Каждая вкладка сама рендерит .sec-tab-body — без внешней обёртки,
-          иначе вложенный overflow ломает прокрутку (Зарплаты и др.). */}
-      {activeTab === 'applications' && <ApplicationsTab />}
-      {activeTab === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
-      {activeTab === 'invites' && <InvitesTab isProjectCreator={isProjectCreator} />}
-      {activeTab === 'salaries' && (
-        <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />
-      )}
-      {activeTab === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
-      {activeTab === 'ledger' && <LedgerTab isProjectCreator={isProjectCreator} />}
-      {activeTab === 'payoutsettings' && <PayrollSettingsTab />}
-      {activeTab === 'leaderboard' && <LeaderboardTab />}
-      {activeTab === 'shifts' && <ShiftsTab />}
-      {activeTab === 'complaints' && <ComplaintsTab />}
-      {activeTab === 'questions' && <QuestionsTab isOwner={isOwner} />}
-      {activeTab === 'mysalary' && <PayrollMySalaryTab />}
-      {activeTab === 'mycomplaints' && <MyComplaintsTab />}
-      {!activeTab && <p className="sec-empty sec-tab-body">Нет доступных разделов</p>}
+        <div className="staff-desk-main">
+          {active?.office === 'staff' && active.id === 'access' && (
+            <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onPreviewStaff} />
+          )}
+          {active?.office === 'staff' && active.id === 'apps' && <ApplicationsTab />}
+          {active?.office === 'staff' && active.id === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
+          {active?.office === 'staff' && active.id === 'work' && (
+            <>
+              <nav className="sec-tabs staff-work-tabs" aria-label="Команда">
+                {workTabs.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`sec-tab${activeWork === item.id ? ' sec-tab-active' : ''}`}
+                    onClick={() => setWorkTab(item.id)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+              {activeWork === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
+              {activeWork === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />}
+              {activeWork === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
+              {activeWork === 'ledger' && <LedgerTab isProjectCreator={isProjectCreator} />}
+              {activeWork === 'payoutsettings' && <PayrollSettingsTab />}
+              {activeWork === 'leaderboard' && <LeaderboardTab />}
+              {activeWork === 'shifts' && <ShiftsTab />}
+              {activeWork === 'complaints' && <ComplaintsTab />}
+              {activeWork === 'questions' && <QuestionsTab isOwner={isOwner} />}
+              {activeWork === 'mysalary' && <PayrollMySalaryTab />}
+              {activeWork === 'mycomplaints' && <MyComplaintsTab />}
+            </>
+          )}
+
+          {active?.office === 'group' && active.id === 'posts' && (
+            <div className="staff-posts">
+              <RightsSection embedded office="group" onPreview={onPreviewGroup} />
+            </div>
+          )}
+          {active?.office === 'group' && active.id === 'apps' && <GroupApplicationsPane />}
+          {active?.office === 'group' && active.id === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
+
+          {!active && <p className="sec-empty">Нет доступных разделов</p>}
+        </div>
+      </div>
     </section>
   )
 }

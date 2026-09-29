@@ -31,6 +31,18 @@ export function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
 }
 
+/**
+ * Выше этой прозрачности буквы под окном ещё читаются сквозь его текст.
+ * 35 оставляло светлую строку видимой, поэтому окно останавливается на 18:
+ * страница может быть полным стеклом, окно — нет.
+ */
+export const OVERLAY_VEIL_CAP = 18
+
+export function overlayPlateAlpha(veil) {
+  const v = clamp(Number.isFinite(veil) ? veil : 55, 0, 100)
+  return 1 - Math.min(v, OVERLAY_VEIL_CAP) / 100
+}
+
 export function hexToRgb(hex) {
   const h = String(hex || '').replace('#', '').trim()
   if (h.length !== 6) return { r: 255, g: 255, b: 255 }
@@ -228,6 +240,7 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   // Прозрачность — только плотность панелей. Яркость цвета её не трогает.
   // 0 — нет стекла, сплошная пластина. 100 — полное стекло, фон виден целиком.
   const plateAlpha = 1 - a.veil / 100
+  const overlayAlpha = overlayPlateAlpha(a.veil)
   const soft = 0.22 + glow * 0.42
   const soft2 = 0.34 + glow * 0.48
   const line = 0.55 + glow * 0.4
@@ -245,6 +258,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--e-veil', plateAlpha.toFixed(3))
   root.style.setProperty('--e-plate', `rgba(14, 14, 16, ${plateAlpha.toFixed(3)})`)
   root.style.setProperty('--e-plate-2', `rgba(24, 24, 28, ${plateAlpha.toFixed(3)})`)
+  root.style.setProperty('--e-overlay', `rgba(14, 14, 16, ${overlayAlpha.toFixed(3)})`)
+  root.style.setProperty('--e-overlay-2', `rgba(24, 24, 28, ${overlayAlpha.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft-2', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft2.toFixed(3)})`)
   root.style.setProperty('--e-accent-line', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${line.toFixed(3)})`)
