@@ -141,6 +141,26 @@ export default function EntranceSeal({
   }
 
   useEffect(() => {
+    if (typeof Audio !== 'function') return undefined
+    const audio = new Audio(`${import.meta.env.BASE_URL}track.wav`)
+    audio.preload = 'auto'
+    audio.loop = false
+    let level = 0.7
+    try {
+      const stored = localStorage.getItem('cf_admin_music_volume')
+      if (stored !== null) level = Math.max(0, Math.min(1, Number(stored)))
+    } catch { /* ignore */ }
+    audio.volume = level > 0 ? level * level : 0.49
+    const played = audio.play()
+    if (played && typeof played.catch === 'function') played.catch(() => {})
+    return () => {
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
+    }
+  }, [])
+
+  useEffect(() => {
     const warm = new Image()
     warm.src = vivoEpsilonLogo
     if (warm.decode) warm.decode().catch(() => {})

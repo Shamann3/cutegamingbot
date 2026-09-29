@@ -1766,13 +1766,13 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     const staff = []
     const group = []
     if (canConfigure) staff.push({ id: 'access', label: 'Доступ' })
-    if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
-    if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
+    if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки в команду' })
+    if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи панели' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
       group.push({ id: 'posts', label: 'Должности' })
-      group.push({ id: 'apps', label: 'Заявки' })
-      group.push({ id: 'keys', label: 'Ключи' })
+      group.push({ id: 'apps', label: 'Заявки в группу' })
+      group.push({ id: 'keys', label: 'Ключи кабинета' })
     }
     return { staff, group }
   }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator])
@@ -1802,38 +1802,49 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
         </p>
       </header>
 
-      <div className="staff-desk-layout">
-        <nav className="staff-rail" aria-label="Разделы стаффа">
-          {rail.staff.length > 0 && <p className="staff-rail-group">Сотрудники проекта</p>}
-          {rail.staff.map((item) => (
-            <button
-              key={`staff-${item.id}`}
-              type="button"
-              className={`staff-rail-btn${active?.office === 'staff' && active?.id === item.id ? ' is-on' : ''}`}
-              aria-current={active?.office === 'staff' && active?.id === item.id ? 'page' : undefined}
-              onClick={() => setPlace({ office: 'staff', id: item.id })}
-            >
-              {item.label}
-            </button>
-          ))}
-          {rail.group.length > 0 && <p className="staff-rail-group">Администраторы групп</p>}
-          {rail.group.map((item) => (
-            <button
-              key={`group-${item.id}`}
-              type="button"
-              className={`staff-rail-btn${active?.office === 'group' && active?.id === item.id ? ' is-on' : ''}`}
-              aria-current={active?.office === 'group' && active?.id === item.id ? 'page' : undefined}
-              onClick={() => setPlace({ office: 'group', id: item.id })}
-            >
-              {item.label}
-            </button>
-          ))}
-          {!isProjectCreator && (
-            <p className="staff-rail-note">Должности групп, заявки в кабинет и ключи группы настраивает создатель проекта.</p>
-          )}
-        </nav>
+      <div className="staff-bands">
+        {rail.staff.length > 0 && (
+          <div className="staff-band">
+            <p className="staff-rail-group">Сотрудники проекта</p>
+            <nav className="sec-tabs" aria-label="Сотрудники проекта">
+              {rail.staff.map((item) => (
+                <button
+                  key={`staff-${item.id}`}
+                  type="button"
+                  className={`sec-tab${active?.office === 'staff' && active?.id === item.id ? ' sec-tab-active' : ''}`}
+                  aria-current={active?.office === 'staff' && active?.id === item.id ? 'page' : undefined}
+                  onClick={() => setPlace({ office: 'staff', id: item.id })}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
+        {rail.group.length > 0 && (
+          <div className="staff-band">
+            <p className="staff-rail-group">Администраторы групп</p>
+            <nav className="sec-tabs" aria-label="Администраторы групп">
+              {rail.group.map((item) => (
+                <button
+                  key={`group-${item.id}`}
+                  type="button"
+                  className={`sec-tab${active?.office === 'group' && active?.id === item.id ? ' sec-tab-active' : ''}`}
+                  aria-current={active?.office === 'group' && active?.id === item.id ? 'page' : undefined}
+                  onClick={() => setPlace({ office: 'group', id: item.id })}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        )}
+        {!isProjectCreator && (
+          <p className="staff-rail-note">Должности групп, заявки в кабинет и ключи группы настраивает создатель проекта.</p>
+        )}
+      </div>
 
-        <div className="staff-desk-main">
+      <div className="staff-desk-main">
           {active?.office === 'staff' && active.id === 'access' && (
             <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onPreviewStaff} />
           )}
@@ -1876,7 +1887,6 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           {active?.office === 'group' && active.id === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
 
           {!active && <p className="sec-empty">Нет доступных разделов</p>}
-        </div>
       </div>
     </section>
   )

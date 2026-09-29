@@ -19,20 +19,19 @@ export default function StaffAccessPane({ isProjectCreator = false, onOpenPrevie
         Сначала должность: какие страницы панели она видит и какие наказания может ставить.
         Исключение одному человеку перекрывает должность. Сравнение показывает, у кого доступ разошёлся.
       </p>
-      <div className="staff-mode" role="tablist" aria-label="Как настраивать доступ">
+      <nav className="sec-tabs" aria-label="Как настраивать доступ">
         {MODES.map((item) => (
           <button
             key={item.id}
             type="button"
-            role="tab"
-            aria-selected={mode === item.id}
-            className={`staff-mode-btn${mode === item.id ? ' is-on' : ''}`}
+            className={`sec-tab${mode === item.id ? ' sec-tab-active' : ''}`}
+            aria-current={mode === item.id ? 'page' : undefined}
             onClick={() => setMode(item.id)}
           >
             {item.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {mode === 'role' && (
         <>

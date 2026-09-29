@@ -98,18 +98,18 @@ export default function StaffPunishRole({ role }) {
       {notice && <p className="realm-note" role="status">{notice}</p>}
       {loading && <p className="sec-loading">Сверяем наказания…</p>}
       {!loading && roles.length > 1 && (
-        <div className="staff-mode" role="tablist" aria-label="Должности staff_rules">
+        <nav className="sec-tabs" aria-label="Должности staff_rules">
           {roles.map((item) => (
             <button
               key={item.role}
               type="button"
-              className={`staff-mode-btn${pick === item.role ? ' is-on' : ''}`}
+              className={`sec-tab${pick === item.role ? ' sec-tab-active' : ''}`}
               onClick={() => setPick(item.role)}
             >
               {item.title || item.role}
             </button>
           ))}
-        </div>
+        </nav>
       )}
       {!loading && row && (
         <div className="staff-switch-list">

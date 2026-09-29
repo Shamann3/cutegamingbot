@@ -3072,11 +3072,17 @@ html[data-viewport="phone"] .metric-sheet {
 }
 
 /* Стафф: один раздел, оглавление слева, настройка справа. */
-.staff-desk-layout {
+.staff-bands {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 22px;
-  align-items: start;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+.staff-band {
+  display: grid;
+  gap: 8px;
+}
+.staff-desk-main {
+  min-width: 0;
 }
 .staff-rail {
   display: flex;
@@ -3365,19 +3371,11 @@ html.is-phone .preview-bar {
 .auth-screen.auth-screen-panel .auth-tab-active {
   color: var(--e-accent, #f4f4f4);
 }
-html.is-phone .staff-office,
-html.is-phone .staff-desk-layout {
-  grid-template-columns: 1fr;
-}
-html.is-phone .staff-rail {
-  position: static;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-html.is-phone .staff-rail-group,
-html.is-phone .staff-rail-note {
-  flex: 1 0 100%;
+html.is-phone .staff-bands .sec-tab,
+html[data-viewport="phone"] .staff-bands .sec-tab,
+html.is-phone .staff-desk-main .sec-tab,
+html[data-viewport="phone"] .staff-desk-main .sec-tab {
+  min-height: 44px;
 }
 @media (prefers-reduced-motion: reduce) {
   .staff-office-tab {

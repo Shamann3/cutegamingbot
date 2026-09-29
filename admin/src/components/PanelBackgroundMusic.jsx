@@ -1,22 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { musicGain } from '../lib/musicMode'
 
-const TRACKS = [
-  `${import.meta.env.BASE_URL}track.wav`,
-  `${import.meta.env.BASE_URL}track.mp3`,
-]
-
-function bindTrack(audio) {
-  let index = 0
-  const tryNext = () => {
-    if (index >= TRACKS.length) return
-    audio.src = TRACKS[index]
-    index += 1
-  }
-  audio.addEventListener('error', tryNext)
-  tryNext()
-  return () => audio.removeEventListener('error', tryNext)
-}
+const PANEL_TRACK = `${import.meta.env.BASE_URL}track.mp3`
 
 // Громкость применяется сразу, внутри жеста ползунка.
 // Иначе play() из эффекта после отрисовки браузер молча отклоняет,
@@ -43,11 +28,10 @@ export default function PanelBackgroundMusic({ volume = 0 }) {
     const audio = new Audio()
     audio.loop = true
     audio.preload = 'auto'
+    audio.src = PANEL_TRACK
     audio.volume = musicGain(volumeRef.current)
-    const unbind = bindTrack(audio)
     audioRef.current = audio
     return () => {
-      unbind()
       audio.pause()
       audio.removeAttribute('src')
       audio.load()
