@@ -693,7 +693,7 @@ async def tgdarts(message: Message):
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
-    _ddbg("START", f"user={user_id} chat={chat_id} bet={bet_int} cmd={text}")
+    _ddbg("START", f"user={user_id} chat={chat_id} bet={bet_int} cmd={message.text!r}")
 
     # Инициализация новичка
     try:

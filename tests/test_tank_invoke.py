@@ -1,6 +1,8 @@
 """Одинаковый вызов игр: регистр, пробелы, слитая ставка, чужие слова."""
 from bot.games.invoke import (
     command_filter,
+    format_line,
+    howto_reply,
     looks_like_game_command,
     open_command,
     parse_embedded_stake,
@@ -87,6 +89,43 @@ def test_kube_trade_roulette_keep_their_arguments():
     assert tokens[2] == "черное"
 
 
+def test_menu_howto_replies_with_the_play_line():
+    menu = {
+        "как играть в Башни": "башня 10",
+        "Как играть в Риск": "риск 10",
+        "Как играть в Плиты": "плита 10",
+        "Как играть в Бомбы": "бомбы 10",
+        "Как играть в Трейд": "трейд вверх 10",
+        "Как играть в Шарик": "шарик 10",
+        "Как играть в Провода": "провода 10",
+        "Как играть в слоты": "слоты 10",
+        "Как играть в Баскет": "баскет 10",
+        "Как играть в Футбол": "футбол 10",
+        "Как играть в Боулинг": "боулинг 10",
+        "Как играть в Дартс": "дартс 10",
+        "Как играть в Куб": "куб 10 4",
+    }
+    for phrase, example in menu.items():
+        assert howto_reply(phrase) == format_line(example), phrase
+    roulette = howto_reply("Как играть в Рулетку")
+    assert "рулетка 10 красное" in roulette
+    assert "рулетка 10 7" in roulette
+    assert howto_reply("Шашки 10") is None
+    assert howto_reply("как играть в футболке") is None
+
+
+def test_fortuna_lobby_accepts_the_menu_stake():
+    kind, bet = parse_optional_stake("Фортуна", ("фортуна",))
+    assert kind == "play" and bet == 0
+    kind, bet = parse_optional_stake("Фортуна 10", ("фортуна",))
+    assert kind == "play" and bet == 10
+    kind, bet = parse_optional_stake("фортуна10", ("фортуна",))
+    assert kind == "play" and bet == 10
+    kind, bet = parse_optional_stake("Фортуна 1.000", ("фортуна",))
+    assert kind == "play" and bet == 1000
+    assert parse_optional_stake("Фортуна 10,5", ("фортуна",))[0] == "bad"
+
+
 def test_foreign_words_are_not_games():
     assert parse_required_stake("футболка 10", ("футбол", "фут"))[0] == "ignore"
     assert parse_required_stake("шарф 10", ("шар", "шарик"))[0] == "ignore"
@@ -97,5 +136,6 @@ def test_foreign_words_are_not_games():
     assert parse_embedded_stake("бомбы на 20", ("бомба", "бомбы")) == ("play", 20)
     assert not looks_like_game_command("Руслан")
     assert looks_like_game_command("Башня 10")
+    assert looks_like_game_command("Фортуна 10")
     assert command_filter(("футбол", "фут"))(_Msg("Футбол10"))
     assert not command_filter(("футбол", "фут"))(_Msg("футболка"))

@@ -69,8 +69,22 @@ export default function EliteTopbar({
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [cursor, setCursor] = useState(0)
+  const [bellFresh, setBellFresh] = useState(false)
+  const seenTickets = useRef(null)
   const wrapRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    const next = Number(openTickets) || 0
+    if (seenTickets.current == null) {
+      seenTickets.current = next
+      setBellFresh(next > 0)
+      return
+    }
+    if (next > seenTickets.current) setBellFresh(true)
+    if (next === 0) setBellFresh(false)
+    seenTickets.current = next
+  }, [openTickets])
 
   const greeting = useMemo(() => greetingFor(new Date().getHours()), [])
   const firstName = (displayName || '').trim().split(/\s+/)[0] || 'коллега'
@@ -228,15 +242,22 @@ export default function EliteTopbar({
 
         {showSupport && <button
           type="button"
-          className="elite-icon-btn elite-support-btn"
+          className={`elite-icon-btn elite-support-btn${bellFresh ? ' is-fresh' : ''}`}
           aria-label={openTickets > 0
-            ? `Поддержка, открытых обращений: ${openTickets}`
+            ? `Поддержка, новых обращений: ${openTickets}`
             : 'Поддержка'}
-          title="Поддержка"
-          onClick={onOpenNotifications}
+          title={openTickets > 0 ? `Новых обращений: ${openTickets}` : 'Поддержка'}
+          onClick={() => {
+            setBellFresh(false)
+            onOpenNotifications?.()
+          }}
         >
           <BellIcon />
-          {openTickets > 0 && <span className="elite-bell-dot" aria-hidden="true" />}
+          {openTickets > 0 && (
+            <span className={`elite-bell-count${bellFresh ? ' is-fresh' : ''}`}>
+              {openTickets > 99 ? '99+' : openTickets}
+            </span>
+          )}
         </button>}
 
         {typeof onOpenMenu === 'function' && (

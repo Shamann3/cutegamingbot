@@ -2343,3 +2343,367 @@ html[data-viewport="phone"] .panel-shell .panel-users-search {
   background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
   box-shadow: none !important;
 }
+
+/* Телефон: страница прозрачная, пластины слушаются ползунок.
+   Сплошной #000 и #1c1c1e больше не закрывают матрицу. */
+html.is-phone,
+html[data-viewport="phone"],
+html.is-phone body,
+html[data-viewport="phone"] body,
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell,
+html.is-phone .panel-shell > .panel-shell-main,
+html[data-viewport="phone"] .panel-shell > .panel-shell-main,
+html.is-phone .panel-shell .panel-layout,
+html[data-viewport="phone"] .panel-shell .panel-layout {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.is-phone .panel-shell .dash-bot-hero,
+html[data-viewport="phone"] .panel-shell .dash-bot-hero,
+html.is-phone .panel-shell .dash-cyber-head,
+html[data-viewport="phone"] .panel-shell .dash-cyber-head,
+html.is-phone .panel-shell .dash-cyber-stage,
+html[data-viewport="phone"] .panel-shell .dash-cyber-stage,
+html.is-phone .panel-shell .dash-usage-card,
+html[data-viewport="phone"] .panel-shell .dash-usage-card,
+html.is-phone .panel-shell .dash-home .panel-shelf,
+html[data-viewport="phone"] .panel-shell .dash-home .panel-shelf {
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  box-shadow: none !important;
+}
+
+/* Нижние вкладки телефона — пять равных ячеек, не панель задач компьютера. */
+html.is-phone .panel-shell > .phone-dock,
+html[data-viewport="phone"] .panel-shell > .phone-dock {
+  left: 10px !important;
+  right: 10px !important;
+  bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+  width: auto !important;
+  height: 62px !important;
+  margin: 0 !important;
+  padding: 4px !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28) !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted,
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll {
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  width: 100% !important;
+  height: 100% !important;
+  gap: 0 !important;
+  grid-template-columns: none !important;
+}
+
+html.is-phone .panel-shell > .phone-dock .phone-dock-side,
+html.is-phone .panel-shell > .phone-dock .phone-dock-pivot,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-side,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-pivot {
+  display: contents !important;
+}
+
+html.is-phone .panel-shell > .phone-dock button,
+html[data-viewport="phone"] .panel-shell > .phone-dock button {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 4px 2px !important;
+  border-radius: 16px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .panel-shell > .phone-dock button.is-on,
+html[data-viewport="phone"] .panel-shell > .phone-dock button.is-on,
+html.is-phone.is-personal .panel-shell > .phone-dock button.is-on,
+html[data-viewport="phone"].is-personal .panel-shell > .phone-dock button.is-on {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--e-accent, #fff) !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .panel-shell > .phone-dock button.is-on .phone-dock-label,
+html.is-phone .panel-shell > .phone-dock button.is-on .phone-dock-icon,
+html[data-viewport="phone"] .panel-shell > .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="phone"] .panel-shell > .phone-dock button.is-on .phone-dock-icon {
+  color: var(--e-accent, #fff) !important;
+}
+
+html.is-phone .panel-shell > .phone-dock .phone-dock-mark,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-mark {
+  width: 14px !important;
+  height: 2px !important;
+  margin-top: 2px !important;
+  border-radius: 99px !important;
+  background: transparent !important;
+}
+
+html.is-phone .panel-shell > .phone-dock button.is-on .phone-dock-mark,
+html[data-viewport="phone"] .panel-shell > .phone-dock button.is-on .phone-dock-mark {
+  background: var(--e-accent, #fff) !important;
+}
+
+/* Поиск и колокольчик на телефоне — одна строка сверху. */
+html.is-phone .panel-shell .elite-topbar,
+html[data-viewport="phone"] .panel-shell .elite-topbar,
+html.is-phone .panel-shell .elite-topbar-compact,
+html[data-viewport="phone"] .panel-shell .elite-topbar-compact {
+  display: flex !important;
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  width: 100% !important;
+  min-height: 48px !important;
+  margin: 0 0 8px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.is-phone .panel-shell .elite-brand-slot,
+html.is-phone .panel-shell .elite-greeting,
+html.is-phone .panel-shell .elite-mobile-title,
+html.is-phone .panel-shell .elite-menu-btn,
+html[data-viewport="phone"] .panel-shell .elite-brand-slot,
+html[data-viewport="phone"] .panel-shell .elite-greeting,
+html[data-viewport="phone"] .panel-shell .elite-mobile-title,
+html[data-viewport="phone"] .panel-shell .elite-menu-btn {
+  display: none !important;
+}
+
+html.is-phone .panel-shell .elite-topbar-actions,
+html[data-viewport="phone"] .panel-shell .elite-topbar-actions {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 8px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.is-phone .panel-shell .elite-search-wrap,
+html[data-viewport="phone"] .panel-shell .elite-search-wrap {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+
+html.is-phone .panel-shell .elite-search,
+html[data-viewport="phone"] .panel-shell .elite-search {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 44px !important;
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+}
+
+html.is-phone .panel-shell .elite-support-btn,
+html[data-viewport="phone"] .panel-shell .elite-support-btn {
+  position: relative !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 50% !important;
+  overflow: visible !important;
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  color: #fff !important;
+}
+
+.elite-bell-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--e-accent, #fff);
+  color: var(--e-accent-ink, #111);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px rgba(8, 8, 10, 0.85);
+  pointer-events: none;
+}
+
+.elite-support-btn.is-fresh .elite-bell-count,
+.elite-bell-count.is-fresh {
+  animation: bell-arrive 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes bell-arrive {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* Поддержка на телефоне: ответ остаётся над доком, экран не обрезает поле. */
+html.is-phone .panel-shell:has(.support-layout-thread-open) > .panel-shell-main,
+html[data-viewport="phone"] .panel-shell:has(.support-layout-thread-open) > .panel-shell-main {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .panel-layout-support,
+html[data-viewport="phone"] .panel-layout-support {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .panel-layout-support > .support-section,
+html[data-viewport="phone"] .panel-layout-support > .support-section {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .support-layout-thread-open,
+html[data-viewport="phone"] .support-layout-thread-open {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: hidden !important;
+}
+
+html.is-phone .support-layout-thread-open .support-thread-wrap,
+html[data-viewport="phone"] .support-layout-thread-open .support-thread-wrap {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+}
+
+html.is-phone .support-layout-thread-open .support-thread-header,
+html[data-viewport="phone"] .support-layout-thread-open .support-thread-header {
+  flex: 0 0 auto !important;
+  flex-wrap: wrap !important;
+  height: auto !important;
+  background: transparent !important;
+}
+
+html.is-phone .support-layout-thread-open .support-messages,
+html[data-viewport="phone"] .support-layout-thread-open .support-messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+}
+
+html.is-phone .support-layout-thread-open .support-reply-box,
+html.is-phone .support-layout-thread-open .support-claim-block,
+html[data-viewport="phone"] .support-layout-thread-open .support-reply-box,
+html[data-viewport="phone"] .support-layout-thread-open .support-claim-block {
+  position: relative !important;
+  bottom: auto !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+  padding: 10px 12px 12px !important;
+  background: transparent !important;
+}
+
+html.is-phone .support-reply-input,
+html[data-viewport="phone"] .support-reply-input {
+  min-height: 72px !important;
+  max-height: 140px !important;
+  font-size: 16px !important;
+}
+
+html.is-phone .support-reply-actions,
+html[data-viewport="phone"] .support-reply-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+html.is-phone .support-reply-send-btn,
+html.is-phone .support-claim-btn,
+html[data-viewport="phone"] .support-reply-send-btn,
+html[data-viewport="phone"] .support-claim-btn {
+  width: auto !important;
+  min-width: 8.75rem !important;
+  min-height: 48px !important;
+  margin-left: auto !important;
+}
+
+/* Выбор панели: ползунок прозрачности меняет сами двери и лист. */
+.gate-stage,
+.gate-door,
+.gate-door.is-open,
+.gate-door.is-sealed,
+.gate-hold,
+.gate-palette-pop {
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  box-shadow: none !important;
+}
+
+.gate-door.is-open {
+  border-color: var(--e-accent, #fff) !important;
+}
+
+.gate-door.is-open .gate-door-title,
+.gate-door.is-open .gate-door-detail,
+.gate-door.is-open .gate-door-mark,
+.gate-door.is-sealed .gate-door-title,
+.gate-door.is-sealed .gate-door-detail,
+.gate-door.is-sealed .gate-door-mark {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elite-bell-count,
+  .elite-support-btn.is-fresh .elite-bell-count {
+    animation: none !important;
+  }
+}

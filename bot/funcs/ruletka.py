@@ -512,28 +512,13 @@ async def ruletka(message: Message):
     if not message.text:
         return
 
-    text = message.text.strip()
-    parts = text.split()
-    if not parts:
-        return
+    from bot.games.invoke import format_line, parse_optional_stake
 
-    # Разбор команды: строго только "фортуна" / "фортуна <число>"
-    if parts[0].lower() != "фортуна":
+    kind, bet = parse_optional_stake(message.text or "", ("фортуна",))
+    if kind == "ignore":
         return
-
-    if len(parts) == 1:
-        bet = 0
-    elif len(parts) == 2:
-        bet_s = parts[1]
-        # строго целое число, без мусора
-        if not bet_s.isdigit():
-            return
-        bet = int(bet_s)
-    else:
-        return
-
-    # отрицательные/мусор - игнор
-    if bet < 0:
+    if kind != "play" or bet is None or bet < 0:
+        await message.reply(format_line("фортуна 10"), parse_mode="HTML")
         return
 
     from bot.games.group_only import reject_if_private_game

@@ -426,17 +426,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                           : ' panel-layout-page'
           }`}
         >
-          {!phone && (
-            <EliteTopbar
-              sections={navSections}
-              activeSection={section}
-              onNavigate={handleNavigate}
-              openTickets={openTickets}
-              onOpenNotifications={() => handleNavigate('support')}
-              compact
-              welcome={isDashboard}
-            />
-          )}
+          <EliteTopbar
+            sections={navSections}
+            activeSection={section}
+            onNavigate={handleNavigate}
+            openTickets={openTickets}
+            onOpenNotifications={() => handleNavigate('support')}
+            compact
+            welcome={!phone && isDashboard}
+            hideSearch={phone && isMore}
+          />
 
           {phone && !isMore && (
             <header className="craft-page-head">

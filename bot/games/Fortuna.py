@@ -4,7 +4,7 @@
 """
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
-from bot.games.invoke import command_filter, open_command, stake_token
+from bot.games.invoke import command_filter, open_command, roulette_help_text, stake_token
 from bot.funcs.tech_home_log import safe_send_tech_log
 
 import asyncio
@@ -666,18 +666,7 @@ async def _safe_add_xp(user_id: int) -> None:
         pass
 
 def _roulette_help_text() -> str:
-    return (
-        "💭 <b>Неверный формат команды!</b>\n"
-        "<blockquote><i><b>Примеры:</b>\n"
-        "<code>рулетка 10 красное</code>\n"
-        "<code>рулетка 10 черное</code>\n"
-        "<code>рулетка 10 чет</code>\n"
-        "<code>рулетка 10 нечет</code>\n"
-        "<code>рулетка 10 7</code>\n"
-        "<code>рулетка 10 0</code>\n"
-        "<code>рулетка 10 1 6</code>\n"
-        "<code>рулетка 10 6 12</code></i></blockquote>"
-    )
+    return roulette_help_text()
 
 # ===================== БАЛАНСЫ =====================
 async def _chat_get_balance(chat_id: int) -> int:

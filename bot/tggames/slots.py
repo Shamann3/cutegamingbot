@@ -698,7 +698,7 @@ async def tgslots(message: Message):
     user_id = int(message.from_user.id)
     chat_id = int(message.chat.id)
 
-    _sdbg("START", f"user={user_id} chat={chat_id} cmd={text} bet={bet_int}")
+    _sdbg("START", f"user={user_id} chat={chat_id} cmd={message.text!r} bet={bet_int}")
 
     try:
         if await db.get_newbie_expires_at(user_id) is None:
