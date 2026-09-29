@@ -12,11 +12,12 @@
 .accent-aura-wash {
   position: absolute;
   inset: 0;
+  opacity: 1;
   background:
-    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.78), transparent 54%),
-    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 58%),
-    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.32), transparent 60%),
-    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.22), transparent 62%),
+    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.78 * var(--e-veil, 1))), transparent 54%),
+    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.42 * var(--e-veil, 1))), transparent 58%),
+    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.32 * var(--e-veil, 1))), transparent 60%),
+    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.22 * var(--e-veil, 1))), transparent 62%),
     linear-gradient(165deg, #141018 0%, #07070a 42%, #050505 100%);
 }
 
@@ -846,13 +847,7 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   }
 }
 
-/* Телефон: нижняя полоса как на компьютере, без бокового меню. */
-html.is-phone .panel-shelf-sidebar,
-html[data-viewport="phone"] .panel-shelf-sidebar,
-html.is-phone .panel-mobile-overlay,
-html[data-viewport="phone"] .panel-mobile-overlay {
-  display: none !important;
-}
+/* Сайдбар не выключаем через display: иначе он не может выехать и закрыться. */
 
 html.is-phone .phone-dock,
 html[data-viewport="phone"] .phone-dock {
@@ -998,23 +993,70 @@ html[data-viewport="phone"] .phone-dock-icon svg {
   accent-color: rgb(var(--e-accent-rgb, 200, 175, 255));
 }
 
+.pocket-tools .panel-accent-trigger,
+.pocket-tools .panel-session-timer {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pocket-tools .panel-session-timer {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head button" "hint button";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  margin: 0;
+  padding: 10px 14px !important;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pocket-tools .panel-session-timer-head {
+  grid-area: head;
+  min-width: 0;
+}
+
+.pocket-tools .panel-session-hint {
+  grid-area: hint;
+  margin: 0 !important;
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+.pocket-tools .panel-session-refresh {
+  grid-area: button;
+  min-height: 36px;
+  margin: 0 !important;
+}
+
+.pocket-tools .panel-session-value {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  color: #fff !important;
+}
+
 /* Дождь и цвет должны читаться, а не тонуть в чёрном. */
-.gate-matrix {
-  opacity: 0.92 !important;
+.gate-matrix,
+.accent-aura-rain {
+  opacity: calc(0.92 * var(--e-veil, 1)) !important;
   animation: none !important;
   mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%) !important;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%) !important;
 }
 
-body.perf-light .gate-matrix {
-  opacity: 0.45 !important;
+body.perf-light .gate-matrix,
+body.perf-light .accent-aura-rain {
+  opacity: calc(0.45 * var(--e-veil, 1)) !important;
 }
 
 .gate-veil {
   background:
-    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.55), transparent 58%),
-    radial-gradient(ellipse 55% 42% at 100% 100%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.28), transparent 62%),
-    radial-gradient(ellipse 48% 36% at 0% 88%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 64%) !important;
+    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.55 * var(--e-veil, 1))), transparent 58%),
+    radial-gradient(ellipse 55% 42% at 100% 100%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.28 * var(--e-veil, 1))), transparent 62%),
+    radial-gradient(ellipse 48% 36% at 0% 88%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.22 * var(--e-veil, 1))), transparent 64%) !important;
 }
 
 .gate-door.is-sealed .gate-door-title,
@@ -1114,12 +1156,9 @@ html[data-viewport="desktop"] .panel-sidebar-footer {
   overflow-y: auto !important;
 }
 
-.accent-aura-wash {
-  opacity: var(--e-veil, 1);
-}
-
+.accent-aura-wash,
 .accent-aura-slot {
-  opacity: var(--e-veil, 1);
+  opacity: 1 !important;
 }
 
 .accent-slider input[type="range"] {
@@ -1210,4 +1249,508 @@ html.is-phone .panel-shell .panel-shelf,
 html[data-viewport="desktop"] .panel-shell .panel-shelf,
 html[data-viewport="phone"] .panel-shell .panel-shelf {
   background-color: rgba(16, 16, 18, 0.62) !important;
+}
+
+/* Сайдбар — только инструменты панели. Вкладки живут в нижней полосе. */
+html.is-desktop .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout {
+  grid-template-columns: 280px minmax(0, 1fr) !important;
+  align-items: start !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 2 !important;
+  grid-row: auto !important;
+  width: 100% !important;
+  max-width: min(1120px, 100%) !important;
+  justify-self: center !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  position: sticky !important;
+  top: 8px !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  grid-column: 1 !important;
+  grid-row: 1 / -1 !important;
+  width: auto !important;
+  max-width: none !important;
+  height: calc(100dvh - var(--craft-dock-h-desk, 56px) - 28px) !important;
+  max-height: calc(100dvh - var(--craft-dock-h-desk, 56px) - 28px) !important;
+  align-self: start !important;
+  overflow: hidden !important;
+  z-index: 5 !important;
+  transform: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+html.is-desktop .phone-dock,
+html[data-viewport="desktop"] .phone-dock {
+  padding: 6px 16px !important;
+  justify-content: center !important;
+}
+
+html.is-phone .panel-mobile-overlay.is-shown,
+html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 420 !important;
+  background: rgba(0, 0, 0, 0.46) !important;
+}
+
+html.is-phone .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  display: flex !important;
+  flex-direction: column !important;
+  position: fixed !important;
+  z-index: 430 !important;
+  top: auto !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: min(78dvh, 680px) !important;
+  max-height: min(78dvh, 680px) !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  overflow: hidden !important;
+  border-radius: 24px 24px 0 0 !important;
+  padding: 14px 14px 16px !important;
+  transform: none !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+html.is-phone.panel-nav-open .phone-dock,
+html[data-viewport="phone"].panel-nav-open .phone-dock {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  z-index: 440 !important;
+}
+
+html.is-desktop .panel-shell .panel-shelf-sidebar,
+html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-shell .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  background-color: #101012 !important;
+  background-image:
+    radial-gradient(120% 32% at 50% 0%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 64%) !important;
+  border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
+}
+
+.panel-shelf-sidebar .panel-sidebar-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.panel-shelf-sidebar .panel-sidebar-sheet-head p {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.panel-shelf-sidebar .panel-sidebar-sheet-head .panel-sidebar-close {
+  display: flex !important;
+  position: static !important;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  cursor: pointer;
+}
+
+html.is-desktop .panel-shelf-sidebar .panel-brand,
+html.is-phone .panel-shelf-sidebar .panel-brand,
+html[data-viewport="desktop"] .panel-shelf-sidebar .panel-brand,
+html[data-viewport="phone"] .panel-shelf-sidebar .panel-brand {
+  display: flex !important;
+  flex: 0 0 auto !important;
+}
+
+.panel-shelf-sidebar .panel-sidebar-footer {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  margin-top: 0 !important;
+  gap: 10px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  visibility: visible !important;
+}
+
+html.is-phone .panel-shelf-sidebar .panel-sidebar-settings:not([open]) .panel-sidebar-settings-body,
+html.is-desktop .panel-shelf-sidebar .panel-sidebar-settings:not([open]) .panel-sidebar-settings-body,
+html[data-viewport="phone"] .panel-shelf-sidebar .panel-sidebar-settings:not([open]) .panel-sidebar-settings-body,
+html[data-viewport="desktop"] .panel-shelf-sidebar .panel-sidebar-settings:not([open]) .panel-sidebar-settings-body,
+.panel-shelf-sidebar .panel-sidebar-settings-body {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.panel-shelf-sidebar .panel-accent-trigger,
+.panel-shelf-sidebar .panel-session-timer,
+.panel-shelf-sidebar .panel-music-card,
+.panel-shelf-sidebar .panel-perf-btn,
+.panel-shelf-sidebar .panel-logout-btn {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.panel-shelf-sidebar .panel-session-timer,
+.panel-shelf-sidebar .panel-music-card {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+}
+
+.panel-shelf-sidebar .panel-session-timer {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "head button" "hint button";
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding: 8px 12px !important;
+}
+
+.panel-shelf-sidebar .panel-session-timer-head {
+  grid-area: head;
+  min-width: 0;
+}
+
+.panel-shelf-sidebar .panel-session-hint {
+  grid-area: hint;
+  margin: 0 !important;
+  color: rgba(255, 255, 255, 0.62) !important;
+}
+
+.panel-shelf-sidebar .panel-session-refresh {
+  grid-area: button;
+  min-height: 36px;
+  margin: 0 !important;
+}
+
+.panel-shelf-sidebar .panel-session-value {
+  margin: 0 !important;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0 !important;
+  color: #fff !important;
+}
+
+.panel-shelf-sidebar .panel-logout-hint {
+  white-space: nowrap;
+}
+
+.panel-shelf-sidebar button:focus-visible,
+.accent-reset:focus-visible {
+  outline: 2px solid var(--e-accent, #fff);
+  outline-offset: 2px;
+}
+
+.panel-shelf-sidebar .panel-perf-btn,
+.panel-shelf-sidebar .panel-logout-btn {
+  min-height: 46px;
+  border-radius: 16px !important;
+}
+
+.accent-reset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.accent-reset span {
+  font-size: 12px;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* Узкое окно: кнопка «Настройки» в шапке. Лист выезжает правилами ниже. */
+@media (max-width: 1099px) {
+  html.is-desktop .panel-shell .panel-layout,
+  html[data-viewport="desktop"] .panel-shell .panel-layout,
+  html.is-phone .panel-shell .panel-layout,
+  html[data-viewport="phone"] .panel-shell .panel-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+  html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+    grid-column: 1 / -1 !important;
+    max-width: 100% !important;
+  }
+
+  html.is-desktop .elite-topbar .elite-menu-btn,
+  html[data-viewport="desktop"] .elite-topbar .elite-menu-btn {
+    display: inline-flex !important;
+    position: static !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 40px !important;
+    padding: 0 12px !important;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #fff !important;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  html.is-desktop .elite-menu-label {
+    display: inline;
+  }
+
+  html.is-phone .phone-dock .phone-dock-menu,
+  html[data-viewport="phone"] .phone-dock .phone-dock-menu {
+    display: none !important;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 76px !important;
+    max-width: none !important;
+    height: 44px !important;
+    margin: 0 !important;
+    order: -1;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border-radius: 14px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #fff !important;
+  }
+
+  html.panel-nav-open .phone-dock {
+    z-index: 900 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+}
+
+@media (min-width: 1100px) {
+  html.is-desktop .phone-dock,
+  html[data-viewport="desktop"] .phone-dock {
+    padding-left: 132px !important;
+  }
+}
+
+/* Открытие и закрытие: выезд слева. display не трогаем — иначе кадр обрывается. */
+html.is-desktop .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout,
+html.is-phone .panel-shell .panel-layout,
+html[data-viewport="phone"] .panel-shell .panel-layout {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 1 / -1 !important;
+  max-width: min(1120px, 100%) !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar,
+html.is-phone .panel-shell .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar {
+  display: flex !important;
+  flex-direction: column !important;
+  position: fixed !important;
+  z-index: 800 !important;
+  top: max(8px, env(safe-area-inset-top, 0px)) !important;
+  left: 0 !important;
+  right: auto !important;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  width: min(380px, calc(100vw - 28px)) !important;
+  max-width: calc(100vw - 28px) !important;
+  height: calc(100dvh - 80px - env(safe-area-inset-bottom, 0px)) !important;
+  max-height: calc(100dvh - 80px - env(safe-area-inset-bottom, 0px)) !important;
+  align-self: stretch !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  transform: translateX(calc(-100% - 28px)) !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  border-radius: 0 22px 22px 0 !important;
+  background-color: #121214 !important;
+  background-image:
+    radial-gradient(120% 28% at 0% 0%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 255, 255, 255)), calc(0.36 * var(--e-veil, 1))), transparent 62%) !important;
+  box-shadow: 18px 0 48px rgba(0, 0, 0, 0.45) !important;
+  transition:
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease,
+    visibility 0s linear 0.42s !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  transform: translateX(0) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  box-shadow: 18px 0 48px rgba(0, 0, 0, 0.55) !important;
+  transition:
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.32s ease,
+    visibility 0s !important;
+}
+
+html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
+html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
+html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+.panel-dissolve-canvas {
+  z-index: 960 !important;
+}
+
+html.is-phone .panel-mobile-overlay,
+html.is-desktop .panel-mobile-overlay,
+html[data-viewport="phone"] .panel-mobile-overlay,
+html[data-viewport="desktop"] .panel-mobile-overlay {
+  display: block !important;
+  opacity: 0 !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+html.is-phone .panel-mobile-overlay.is-shown,
+html.is-desktop .panel-mobile-overlay.is-shown,
+html[data-viewport="phone"] .panel-mobile-overlay.is-shown,
+html[data-viewport="desktop"] .panel-mobile-overlay.is-shown {
+  opacity: 1 !important;
+}
+
+html.is-desktop .elite-topbar .elite-menu-btn,
+html[data-viewport="desktop"] .elite-topbar .elite-menu-btn,
+html.is-phone .elite-menu-btn,
+html[data-viewport="phone"] .elite-menu-btn {
+  display: none !important;
+}
+
+html.is-desktop .phone-dock,
+html[data-viewport="desktop"] .phone-dock {
+  padding-left: 132px !important;
+}
+
+html.is-desktop .phone-dock .phone-dock-menu,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu {
+  display: inline-flex !important;
+  position: absolute !important;
+  left: 10px !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translateY(-50%) !important;
+  z-index: 2 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 40px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  order: 0;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #fff !important;
+}
+
+html.is-desktop .phone-dock .phone-dock-menu .phone-dock-label,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu .phone-dock-label {
+  display: inline !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #fff !important;
+}
+
+html.is-desktop .phone-dock .phone-dock-menu.is-on,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
+  color: #fff !important;
+}
+
+html.is-phone .phone-dock .phone-dock-menu,
+html[data-viewport="phone"] .phone-dock .phone-dock-menu,
+html.is-phone .panel-shell .panel-shelf-sidebar,
+html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html.is-phone .panel-mobile-overlay,
+html.is-phone .panel-mobile-overlay.is-shown,
+html[data-viewport="phone"] .panel-mobile-overlay,
+html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: none !important;
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+  html.is-phone .panel-shell .panel-shelf-sidebar,
+  html.is-phone .panel-mobile-overlay,
+  html.is-desktop .panel-mobile-overlay {
+    transition: none !important;
+  }
 }

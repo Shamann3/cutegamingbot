@@ -16,8 +16,8 @@ import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccen
 import { punishmentHours } from '../lib/gateRecovery'
 import FirstRun, { groupSteps, coachClosed } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
-import PhoneDock from '../components/PhoneDock'
 import { PanelPocketTools } from '../components/ExtrasHub'
+import PhoneDock from '../components/PhoneDock'
 import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
@@ -129,8 +129,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const onCoachStep = useCallback((step) => {
+    if (phone) return
     setRailOpen(Boolean(step?.openNav))
-  }, [])
+  }, [phone])
+  useEffect(() => {
+    if (phone) setRailOpen(false)
+  }, [phone])
   useEffect(() => {
     applyAccentToDocument(accent)
   }, [accent])
@@ -435,12 +439,13 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
       {!phone && <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />}
       <main className="panel-shell-main">
       <div className="panel-layout panel-layout-page">
+        {!phone && (
         <PanelSidebar
           sections={navSections}
           activeSection={activeTab}
           onNavigate={pickTab}
           onChangeDoor={onLeave}
-          mobileOpen={phone ? false : railOpen}
+          mobileOpen={railOpen}
           onClose={closeRail}
           lightMode={lightMode}
           onTogglePerf={() => setLightMode(!lightMode)}
@@ -452,13 +457,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           brandName="Панель группы"
           brandTag={chatId ? title : 'Одна группа'}
         />
+        )}
         {!phone && (
           <EliteTopbar
             sections={navSections}
             activeSection={activeTab}
             onNavigate={pickTab}
-            onOpenMenu={() => setRailOpen((open) => !open)}
-            menuOpen={railOpen}
             compact
             showSupport={false}
             where={chatId
@@ -701,7 +705,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
               <h2 className="realm-h">Ещё</h2>
               <ul className="realm-list">
                 <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer" onClick={() => window.alert("Внимание: переход может закрыть панель — потом снова войдите в админку.")}><strong>Правила</strong><span>t.me/CuteRules · панель может закрыться</span></a></li>
-                <li><button type="button" className="realm-row" data-coach="doors" onClick={onLeave}><strong>Сменить панель</strong><span>выбор входа, без выхода из аккаунта</span></button></li>
                 {isCreator && (
                   <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>
                 )}
@@ -727,6 +730,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
                   musicVolume={musicVolume}
                   onMusicVolumeChange={setMusicVolume}
                   onToggleMusic={toggleMusicMute}
+                  onChangeDoor={onLeave}
                 />
               )}
             </section>
@@ -738,7 +742,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
         sections={navSections}
         activeSection={activeTab}
         onNavigate={pickTab}
-        menuOpen={phone ? false : railOpen}
+        menuOpen={!phone && railOpen}
         onOpenMenu={phone ? undefined : () => setRailOpen((open) => !open)}
       />
     </div>

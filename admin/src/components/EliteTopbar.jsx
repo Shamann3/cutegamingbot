@@ -244,11 +244,12 @@ export default function EliteTopbar({
             type="button"
             className={`elite-menu-btn${menuOpen ? ' elite-menu-btn-open' : ''}`}
             data-coach="menu"
-            aria-label={menuOpen ? 'Закрыть меню' : 'Поиск, цвет и выход'}
+            aria-label={menuOpen ? 'Закрыть настройки' : 'Настройки панели'}
             aria-expanded={menuOpen}
             onClick={onOpenMenu}
           >
             <MenuIcon open={menuOpen} />
+            <span className="elite-menu-label">{menuOpen ? 'Закрыть' : 'Настройки'}</span>
           </button>
         )}
       </div>

@@ -159,7 +159,7 @@ export function telegramDissolve(el, opts = {}) {
       width: `${rect.width + pad * 2}px`,
       height: `${rect.height + pad * 2}px`,
       pointerEvents: 'none',
-      zIndex: '430',
+      zIndex: '960',
     })
     document.body.appendChild(layer)
     const ctx = layer.getContext('2d')

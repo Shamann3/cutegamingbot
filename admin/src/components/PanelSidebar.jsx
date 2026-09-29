@@ -85,7 +85,13 @@ function SettingsControls({
         onClick={onTogglePerf}
         title={lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
       >
-        <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {lightMode ? (
+            <path d="M12 3l2.2 5.2L20 10l-5.8 1.8L12 17l-2.2-5.2L4 10l5.8-1.8L12 3z" />
+          ) : (
+            <path d="M8 4h8l4 8-4 8H8l-4-8 4-8z" />
+          )}
+        </svg>
         {lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
       </button>
     </>
@@ -112,7 +118,6 @@ export default function PanelSidebar({
   const isPhone = useIsPhone()
   const { displayName, username, photoUrl } = getAdminProfile()
   const initials = getAdminInitials(displayName)
-  const [navQuery, setNavQuery] = useState('')
   const asideRef = useRef(null)
   const [visuallyOpen, setVisuallyOpen] = useState(mobileOpen)
   const [dissolving, setDissolving] = useState(false)
@@ -134,6 +139,11 @@ export default function PanelSidebar({
     }
     if (!visuallyOpen) return undefined
     if (dissolvingRef.current) return undefined
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (reduce) {
+      setVisuallyOpen(false)
+      return undefined
+    }
     dissolvingRef.current = true
     setDissolving(true)
     let cancelled = false
@@ -148,14 +158,6 @@ export default function PanelSidebar({
       cancelled = true
     }
   }, [mobileOpen, visuallyOpen])
-
-  useEffect(() => {
-    if (!isPhone) return undefined
-    if (!mobileOpen) {
-      setNavQuery('')
-    }
-    return undefined
-  }, [mobileOpen, isPhone])
 
   // Клик вне панели (сотрудники и админы) — закрыть. Overlay тоже закрывает;
   // этот слушатель ловит случаи, когда клик прошёл мимо dimmer.
@@ -187,49 +189,19 @@ export default function PanelSidebar({
   return (
     <aside
       ref={asideRef}
-      className={`panel-shelf panel-shelf-sidebar${visuallyOpen ? ' panel-sidebar-mobile-open' : ''}${dissolving ? ' is-dissolving' : ''}`}
+      className={`panel-shelf panel-shelf-sidebar${mobileOpen || visuallyOpen ? ' panel-sidebar-mobile-open' : ''}${dissolving ? ' is-dissolving' : ''}`}
     >
-      {/* Mobile drawer chrome — на desktop скрыт CSS */}
-      <div className="panel-sidebar-grab">
-        <div className="panel-sidebar-drawer-head">
-          <div>
-            <h2 className="panel-sidebar-drawer-title">{isPhone ? 'Меню' : 'Страницы'}</h2>
-            <p className="panel-sidebar-swipe-hint">
-              {isPhone
-                ? 'Все разделы здесь. Настройки — внизу этого меню.'
-                : 'Нажмите название раздела.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="panel-sidebar-close"
-            aria-label="Закрыть меню"
-            onClick={onClose}
-          >
+      {(isPhone || mobileOpen) && (
+        <div className="panel-sidebar-sheet-head">
+          <p>Настройки</p>
+          <button type="button" className="panel-sidebar-close" aria-label="Закрыть настройки" onClick={onClose}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
         </div>
-        <label className="panel-sidebar-search" data-coach="search">
-          <span className="panel-sidebar-search-icon" aria-hidden="true">⌕</span>
-          <input
-            className="panel-sidebar-search-field"
-            type="text"
-            inputMode="search"
-            value={navQuery}
-            onChange={(e) => setNavQuery(e.target.value)}
-            placeholder="Найти раздел…"
-            aria-label="Поиск раздела в меню"
-            enterKeyHint="search"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </label>
-      </div>
+      )}
 
-      {/* Бренд — только desktop */}
       <div className="panel-brand" aria-label="Epsilon">
         <div className="panel-brand-crest" aria-hidden="true">
           <span className="panel-brand-halo" />
@@ -245,104 +217,33 @@ export default function PanelSidebar({
       </div>
 
       <div className="panel-sidebar-footer">
-        {isPhone ? (
-          <>
-            <div className="panel-sidebar-account">
-              <div className="panel-profile-avatar" aria-hidden="true">
-                {photoUrl ? (
-                  <img className="panel-profile-photo" src={photoUrl} alt="" />
-                ) : (
-                  <span className="panel-profile-initials">{initials}</span>
-                )}
-              </div>
-              <div className="panel-profile-meta">
-                <p className="panel-profile-name">{displayName}</p>
-                <p className="panel-profile-kicker">
-                  {role === 'owner' ? 'Владелец' : username ? <CopyableUsername value={username} /> : 'Cute Epsilon'}
-                </p>
-              </div>
-            </div>
+        <div className="panel-sidebar-account">
+          <div className="panel-profile-avatar" aria-hidden="true">
+            {photoUrl ? (
+              <img className="panel-profile-photo" src={photoUrl} alt="" />
+            ) : (
+              <span className="panel-profile-initials">{initials}</span>
+            )}
+          </div>
+          <div className="panel-profile-meta">
+            <p className="panel-profile-name">{displayName}</p>
+            <p className="panel-profile-kicker">
+              {role === 'owner' ? 'Владелец' : username ? <CopyableUsername value={username} /> : 'Cute Epsilon'}
+            </p>
+          </div>
+        </div>
 
-            <div className="panel-sidebar-settings panel-sidebar-settings-pin">
-              <p className="panel-sidebar-settings-label">Настройки</p>
-              <div className="panel-sidebar-settings-body">
-                <AccentPalette value={accent} onChange={onAccentChange} />
-                <SettingsControls {...settingsProps} />
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* ПК: Подсветка выше профиля */}
-            <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
-              <div className="panel-sidebar-settings-body">
-                <AccentPalette value={accent} onChange={onAccentChange} />
-              </div>
-            </div>
-
-            <div className="panel-sidebar-account">
-              <div className="panel-profile-avatar" aria-hidden="true">
-                {photoUrl ? (
-                  <img className="panel-profile-photo" src={photoUrl} alt="" />
-                ) : (
-                  <span className="panel-profile-initials">{initials}</span>
-                )}
-              </div>
-              <div className="panel-profile-meta">
-                <p className="panel-profile-name">{displayName}</p>
-                <p className="panel-profile-kicker">
-                  {role === 'owner' ? 'Владелец' : username ? <CopyableUsername value={username} /> : 'Cute Epsilon'}
-                </p>
-              </div>
-            </div>
-
-            <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
-              <div className="panel-sidebar-settings-body">
-                <SessionTimer compact onExpired={onSessionExpired} />
-                <div className="panel-music-card">
-                  <div className="panel-music-head">
-                    <button
-                      type="button"
-                      className="panel-music-icon-btn"
-                      onClick={onToggleMusic}
-                      title={musicVolume > 0 ? 'Выключить музыку' : 'Включить музыку'}
-                      aria-pressed={musicVolume > 0}
-                    >
-                      <SpeakerIcon muted={musicVolume <= 0} />
-                    </button>
-                    <span className="panel-music-label">Музыка</span>
-                    <span className="panel-music-pct">{Math.round(musicVolume * 100)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    className="panel-music-slider"
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={Math.round(musicVolume * 100)}
-                    onChange={(e) => onMusicVolumeChange(Number(e.target.value) / 100)}
-                    style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
-                    aria-label="Громкость музыки"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className={`panel-perf-btn${lightMode ? ' panel-perf-btn-active' : ''}`}
-                  onClick={onTogglePerf}
-                  title={lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
-                >
-                  <span aria-hidden="true">{lightMode ? '◈' : '⬡'}</span>
-                  {lightMode ? 'Максимальный интерфейс' : 'Оптимизировать интерфейс'}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+        <div className="panel-sidebar-settings panel-sidebar-settings-desktop">
+          <div className="panel-sidebar-settings-body">
+            <AccentPalette value={accent} onChange={onAccentChange} />
+            <SettingsControls {...settingsProps} />
+          </div>
+        </div>
 
         {onChangeDoor && (
           <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
             Сменить панель
-            <span className="panel-logout-hint">выбор панели, без выхода из аккаунта</span>
+            <span className="panel-logout-hint">без выхода из аккаунта</span>
           </button>
         )}
         {onLogout && (

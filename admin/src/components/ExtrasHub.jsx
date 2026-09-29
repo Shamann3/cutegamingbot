@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { groupSections, SECTION_HINTS } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import AccentPalette from './AccentPalette'
+import SessionTimer from './SessionTimer'
 
 function FallbackIcon() {
   return (
@@ -11,7 +12,7 @@ function FallbackIcon() {
   )
 }
 
-/** Цвет, музыка и выход — на телефоне живут в «Ещё», а не в боковом меню. */
+/** На телефоне настройки сайдбара живут внизу «Ещё», под разделами. */
 export function PanelPocketTools({
   accent,
   onAccentChange,
@@ -22,15 +23,17 @@ export function PanelPocketTools({
   onToggleMusic,
   onChangeDoor,
   onLogout,
+  onSessionExpired,
 }) {
   const muted = Number(musicVolume) <= 0
   return (
     <section className="pocket-tools" aria-label="Настройки панели">
-      <h2 className="extras-hub-group-label">Панель</h2>
+      <h2 className="extras-hub-group-label">Настройки</h2>
       <div className="pocket-tools-card">
         {typeof onAccentChange === 'function' && (
           <AccentPalette value={accent} onChange={onAccentChange} />
         )}
+        <SessionTimer compact onExpired={onSessionExpired} />
         {typeof onTogglePerf === 'function' && (
           <button type="button" className={`pocket-tools-row${lightMode ? ' is-on' : ''}`} onClick={onTogglePerf}>
             <strong>{lightMode ? 'Обычный режим' : 'Оптимизировать'}</strong>

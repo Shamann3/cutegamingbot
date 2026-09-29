@@ -4,6 +4,7 @@ import {
   clamp,
   hexToRgb,
   hsvToHex,
+  MONO_ACCENT,
   normalizeAccent,
   parseHexInput,
   rgbToHsv,
@@ -128,6 +129,8 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   }, [])
 
   const pushAccent = useCallback((next) => {
+    draftRef.current = next
+    hexTextRef.current = next.hex
     setDraft(next)
     setHexText(next.hex)
     setHexOk(true)
@@ -362,6 +365,19 @@ export default function AccentPalette({ value, onChange, inline = false }) {
             />
           </div>
         </div>
+
+        <button
+          type="button"
+          className="accent-reset"
+          onClick={() => {
+            const next = normalizeAccent(MONO_ACCENT)
+            pushAccent(next)
+            closePalette()
+          }}
+        >
+          Сбросить
+          <span>чёрно-белый вид всей панели</span>
+        </button>
         </div>
       </div>
   )

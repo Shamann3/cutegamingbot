@@ -93,8 +93,13 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const onCoachStep = useCallback((step) => {
+    if (phone) return
     setMobileNavOpen(Boolean(step?.openNav))
-  }, [])
+  }, [phone])
+
+  useEffect(() => {
+    if (phone) setMobileNavOpen(false)
+  }, [phone])
   useDrawerSwipe({
     enabled: false,
     open: mobileNavOpen,
@@ -395,6 +400,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                           : ' panel-layout-page'
           }`}
         >
+          {!phone && (
           <PanelSidebar
             sections={navSections}
             activeSection={section}
@@ -402,7 +408,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             onLogout={handleLogout}
             onChangeDoor={onChangeDoor}
             onSessionExpired={handleSessionExpired}
-            mobileOpen={phone ? false : mobileNavOpen}
+            mobileOpen={mobileNavOpen}
             onClose={() => setMobileNavOpen(false)}
             role={role}
             lightMode={lightMode}
@@ -416,6 +422,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             onAccentChange={handleAccentChange}
             recentSectionIds={recentSections}
           />
+          )}
 
           {!phone && (
             <EliteTopbar
@@ -424,8 +431,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               onNavigate={handleNavigate}
               openTickets={openTickets}
               onOpenNotifications={() => handleNavigate('support')}
-              onOpenMenu={() => setMobileNavOpen((v) => !v)}
-              menuOpen={mobileNavOpen}
               compact
               welcome={isDashboard}
             />
@@ -453,6 +458,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                   onToggleMusic={toggleMusicMute}
                   onChangeDoor={onChangeDoor}
                   onLogout={handleLogout}
+                  onSessionExpired={handleSessionExpired}
                 />
               ) : null}
             />
@@ -594,7 +600,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           prGroups: prPending,
           more: moreBadge,
         }}
-        menuOpen={phone ? false : mobileNavOpen}
+        menuOpen={!phone && mobileNavOpen}
         onOpenMenu={phone ? undefined : () => setMobileNavOpen((open) => !open)}
       />
     </div>

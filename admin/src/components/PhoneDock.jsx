@@ -113,10 +113,11 @@ export default function PhoneDock({
           className={`phone-dock-menu${menuOpen ? ' is-on' : ''}`}
           data-coach="menu"
           aria-expanded={menuOpen}
-          aria-label={menuOpen ? 'Закрыть меню' : 'Поиск, цвет и выход'}
+          aria-label={menuOpen ? 'Закрыть настройки' : 'Настройки панели'}
           onClick={onOpenMenu}
         >
-          <SlidersIcon />
+          <span className="phone-dock-icon"><SlidersIcon /></span>
+          <span className="phone-dock-label">Настройки</span>
         </button>
       )}
     </motion.nav>

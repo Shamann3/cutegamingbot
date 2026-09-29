@@ -14,6 +14,18 @@ const STORAGE_KEY = 'epsilon.panel.accent.v2'
 const DEFAULT_GLOW = 55
 const DEFAULT_ACCENT = ACCENT_SWATCHES[0]
 
+/** Чёрный фон и белые детали, без оттенка. */
+export const MONO_ACCENT = {
+  id: 'mono',
+  label: 'Чёрно-белый',
+  hex: '#ffffff',
+  h: 0,
+  s: 0,
+  v: 1,
+  glow: 0,
+  veil: 100,
+}
+
 export function clamp(n, min, max) {
   return Math.min(max, Math.max(min, n))
 }
