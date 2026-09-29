@@ -1748,14 +1748,73 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   opacity: 0 !important;
 }
 
-html.is-phone .panel-shell .panel-shell-main,
-html[data-viewport="phone"] .panel-shell .panel-shell-main {
-  padding-bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 112px) !important;
+/* Док стоит под контентом, а не поверх него. Последняя строка прокручивается выше рамки. */
+html.is-desktop .panel-shell,
+html.is-phone .panel-shell,
+html[data-viewport="desktop"] .panel-shell,
+html[data-viewport="phone"] .panel-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+  overflow: hidden !important;
+  padding-bottom: 0 !important;
 }
 
-html.is-phone .pocket-tools,
-html[data-viewport="phone"] .pocket-tools {
-  margin-bottom: 8px;
+html.is-desktop .panel-shell > .panel-shell-main,
+html.is-phone .panel-shell > .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell > .panel-shell-main,
+html[data-viewport="phone"] .panel-shell > .panel-shell-main {
+  display: block !important;
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding-bottom: 24px !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock,
+html.is-phone .panel-shell > .phone-dock,
+html[data-viewport="desktop"] .panel-shell > .phone-dock,
+html[data-viewport="phone"] .panel-shell > .phone-dock {
+  position: relative !important;
+  flex: 0 0 auto !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  margin: 0 !important;
+  z-index: 5 !important;
+}
+
+html.is-desktop .panel-shell .panel-layout,
+html.is-phone .panel-shell .panel-layout,
+html[data-viewport="desktop"] .panel-shell .panel-layout,
+html[data-viewport="phone"] .panel-shell .panel-layout {
+  align-self: flex-start !important;
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  z-index: 1100 !important;
+  pointer-events: auto !important;
+}
+
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open button,
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open input,
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open label,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open button,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open input,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open label {
+  pointer-events: auto !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

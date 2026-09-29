@@ -183,10 +183,41 @@ export default function PanelSidebar({
     const onPointer = (event) => {
       if (dissolvingRef.current) return
       const target = event.target
+      const aside = asideRef.current
       const root = target?.closest?.('.panel-shelf-sidebar, .panel-dissolve-canvas')
       const toggle = target?.closest?.('.phone-dock-menu')
       const palette = target?.closest?.('.accent-picker-panel, .accent-picker-root, .accent-wheel-wrap, .accent-picker-backdrop')
       if (root || toggle || palette) return
+      const rect = aside?.getBoundingClientRect?.()
+      const overSheet = rect
+        && rect.width > 8
+        && rect.height > 8
+        && event.clientX >= rect.left
+        && event.clientX <= rect.right
+        && event.clientY >= rect.top
+        && event.clientY <= rect.bottom
+      if (overSheet && aside) {
+        const hidden = []
+        aside.style.setProperty('pointer-events', 'auto', 'important')
+        let node = document.elementFromPoint(event.clientX, event.clientY)
+        let guard = 0
+        while (node && !aside.contains(node) && guard < 8) {
+          node.style.setProperty('pointer-events', 'none', 'important')
+          hidden.push(node)
+          node = document.elementFromPoint(event.clientX, event.clientY)
+          guard += 1
+        }
+        hidden.forEach((item) => item.style.removeProperty('pointer-events'))
+        aside.style.removeProperty('pointer-events')
+        const control = node?.closest?.('button, a, input, label, [role="button"]')
+        if (control && aside.contains(control)) {
+          event.preventDefault()
+          event.stopPropagation()
+          armSwallow()
+          control.click()
+        }
+        return
+      }
       const dock = target?.closest?.('.phone-dock')
       onClose()
       if (!dock) armSwallow()
