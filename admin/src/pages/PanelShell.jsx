@@ -345,6 +345,29 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       {!phone && (
         <PanelDrawerOverlay open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} ms={700} />
       )}
+      {!phone && (
+        <PanelSidebar
+          sections={navSections}
+          activeSection={section}
+          onNavigate={handleNavigate}
+          onLogout={handleLogout}
+          onChangeDoor={onChangeDoor}
+          onSessionExpired={handleSessionExpired}
+          mobileOpen={mobileNavOpen}
+          onClose={() => setMobileNavOpen(false)}
+          role={role}
+          lightMode={lightMode}
+          onTogglePerf={() => setLightMode(!lightMode)}
+          musicVolume={musicVolume}
+          onMusicVolumeChange={setMusicVolume}
+          onToggleMusic={toggleMusicMute}
+          onEnterGodMode={() => setGodMode(true)}
+          badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+          accent={accent}
+          onAccentChange={handleAccentChange}
+          recentSectionIds={recentSections}
+        />
+      )}
 
       {isProjectCreator && (
         <NikaCrisisStrip
@@ -400,30 +423,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                                           : ' panel-layout-page'
           }`}
         >
-          {!phone && (
-          <PanelSidebar
-            sections={navSections}
-            activeSection={section}
-            onNavigate={handleNavigate}
-            onLogout={handleLogout}
-            onChangeDoor={onChangeDoor}
-            onSessionExpired={handleSessionExpired}
-            mobileOpen={mobileNavOpen}
-            onClose={() => setMobileNavOpen(false)}
-            role={role}
-            lightMode={lightMode}
-            onTogglePerf={() => setLightMode(!lightMode)}
-            musicVolume={musicVolume}
-            onMusicVolumeChange={setMusicVolume}
-            onToggleMusic={toggleMusicMute}
-            onEnterGodMode={() => setGodMode(true)}
-            badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
-            accent={accent}
-            onAccentChange={handleAccentChange}
-            recentSectionIds={recentSections}
-          />
-          )}
-
           {!phone && (
             <EliteTopbar
               sections={navSections}

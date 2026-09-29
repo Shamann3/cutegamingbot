@@ -5028,7 +5028,7 @@ class AchievementBody(BaseModel):
     title: str = Field(min_length=1, max_length=2000)
     title_html: str | None = Field(default=None, max_length=2800)
     icon_emoji_id: str | None = Field(default=None, max_length=64)
-    icon_fallback: str | None = Field(default=None, max_length=8)
+    icon_fallback: str | None = Field(default=None, max_length=32)
     description: str | None = Field(default=None, max_length=400)
     rarity: int = Field(default=1, ge=1, le=20)
     new_rarity_name: str | None = Field(default=None, max_length=40)

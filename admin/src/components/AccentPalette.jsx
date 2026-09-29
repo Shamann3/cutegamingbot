@@ -294,14 +294,14 @@ export default function AccentPalette({ value, onChange, inline = false }) {
 
         <label className="accent-slider">
           <span>Прозрачность</span>
-          <strong>{Math.round(draft.veil ?? 100)}%</strong>
+          <strong>{Math.round(draft.veil ?? 55)}%</strong>
           <input
             type="range"
             min={0}
             max={100}
-            value={Math.round(draft.veil ?? 100)}
+            value={Math.round(draft.veil ?? 55)}
             onChange={(e) => commitHsv({ veil: Number(e.target.value) })}
-            style={{ '--fill': `${Math.round(draft.veil ?? 100)}%`, '--thumb': draft.hex }}
+            style={{ '--fill': `${Math.round(draft.veil ?? 55)}%`, '--thumb': draft.hex }}
             aria-label="Прозрачность цвета"
           />
         </label>

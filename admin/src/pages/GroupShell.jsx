@@ -437,9 +437,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
         />
       )}
       {!phone && <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />}
-      <main className="panel-shell-main">
-      <div className="panel-layout panel-layout-page">
-        {!phone && (
+      {!phone && (
         <PanelSidebar
           sections={navSections}
           activeSection={activeTab}
@@ -457,7 +455,9 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           brandName="Панель группы"
           brandTag={chatId ? title : 'Одна группа'}
         />
-        )}
+      )}
+      <main className="panel-shell-main">
+      <div className="panel-layout panel-layout-page">
         {!phone && (
           <EliteTopbar
             sections={navSections}

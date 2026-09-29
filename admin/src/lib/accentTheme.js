@@ -11,6 +11,7 @@ export const ACCENT_SWATCHES = [
 ]
 
 const STORAGE_KEY = 'epsilon.panel.accent.v2'
+const VEIL_EPOCH = 'epsilon.panel.veil.base55'
 const DEFAULT_GLOW = 55
 const DEFAULT_ACCENT = ACCENT_SWATCHES[0]
 
@@ -23,7 +24,7 @@ export const MONO_ACCENT = {
   s: 0,
   v: 1,
   glow: 0,
-  veil: 100,
+  veil: 55,
 }
 
 export function clamp(n, min, max) {
@@ -194,7 +195,7 @@ export function normalizeAccent(input) {
   }
 
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
-  const veil = Number.isFinite(input?.veil) ? clamp(input.veil, 0, 100) : 100
+  const veil = Number.isFinite(input?.veil) ? clamp(input.veil, 0, 100) : 55
 
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
@@ -224,8 +225,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const { r, g, b } = hexToRgb(textHex)
   const decor = hexToRgb(decorHex)
   const glow = a.glow / 100
-  // На шкале 0…100. Ноль на экране — это 30% цвета, не пустота.
-  const veil = 0.3 + (a.veil / 100) * 0.7
+  // Шкала 0…100. Ноль оставляет 25% цвета. 55 — обычный вид. 100 — без прозрачности.
+  const veil = 0.25 + (a.veil / 100) * 0.75
   const soft = (0.22 + glow * 0.42) * veil
   const soft2 = (0.34 + glow * 0.48) * veil
   const line = (0.55 + glow * 0.4) * veil
@@ -271,7 +272,23 @@ export function loadStoredAccent() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return normalizeAccent(DEFAULT_ACCENT)
-    return normalizeAccent(JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    let migrated = false
+    try {
+      if (!localStorage.getItem(VEIL_EPOCH)) {
+        const veil = Number(parsed?.veil)
+        if (!Number.isFinite(veil) || veil === 100) {
+          parsed.veil = 55
+          migrated = true
+        }
+        localStorage.setItem(VEIL_EPOCH, '1')
+      }
+    } catch {
+      /* ignore */
+    }
+    const resolved = normalizeAccent(parsed)
+    if (migrated) persistAccent(resolved)
+    return resolved
   } catch {
     return normalizeAccent(DEFAULT_ACCENT)
   }

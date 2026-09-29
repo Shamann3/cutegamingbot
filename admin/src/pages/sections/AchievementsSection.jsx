@@ -281,16 +281,21 @@ export default function AchievementsSection({ onOpenUser } = {}) {
     }
     setSaving(true)
     try {
+      const title = String(draft.title || '').replace(/\r\n/g, '\n').slice(0, 2000)
+      let code = String(draft.code || '').trim().replace(/\s+/g, '_').slice(0, 64)
+      if (!code) {
+        const fromTitle = title.toLowerCase().replace(/\{emoji:\d+\}/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 48)
+        code = fromTitle || `ach_${Date.now().toString(36)}`
+      }
       const payload = {
-        ...draft,
-        id: draft.id || undefined,
-        code: String(draft.code || '').trim(),
-        title: String(draft.title || '').replace(/\r\n/g, '\n'),
+        id: draft.id ? Number(draft.id) : undefined,
+        code,
+        title,
         icon_emoji_id: parseEmojiId(draft.icon_emoji_id) || null,
-        icon_fallback: String(draft.icon_fallback || '⭐').slice(0, 8),
+        icon_fallback: Array.from(String(draft.icon_fallback || '⭐')).slice(0, 32).join('') || '⭐',
         description: String(draft.description || '').slice(0, 400),
-        rarity: Math.max(1, Math.min(rarityMax, Number(draft.rarity) || 1)),
-        sort: Math.max(SORT_MIN, Math.min(SORT_MAX, Number(draft.sort) || 0)),
+        rarity: Math.max(1, Math.min(20, Math.min(rarityMax, Number(draft.rarity) || 1))),
+        sort: Math.max(-10000, Math.min(10000, Number(draft.sort) || 0)),
         enabled: !!draft.enabled,
       }
       const item = await persistItem(payload)

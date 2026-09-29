@@ -1267,7 +1267,7 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sid
   justify-self: center !important;
 }
 
-html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+html.is-desktop .panel-shell > .panel-shelf-sidebar,
 html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar {
   display: flex !important;
   flex-direction: column !important;
@@ -1595,14 +1595,14 @@ html[data-viewport="desktop"] .panel-shell .panel-layout > :not(.panel-shelf-sid
   max-width: min(1120px, 100%) !important;
 }
 
-html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar,
+html.is-desktop .panel-shell > .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar,
 html.is-phone .panel-shell .panel-shelf-sidebar,
 html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar {
   display: flex !important;
   flex-direction: column !important;
   position: fixed !important;
-  z-index: 800 !important;
+  z-index: 940 !important;
   top: max(8px, env(safe-area-inset-top, 0px)) !important;
   left: 0 !important;
   right: auto !important;
@@ -1631,8 +1631,8 @@ html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar {
     visibility 0s linear 0.42s !important;
 }
 
-html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open,
 html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
 html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
   transform: translateX(0) !important;
@@ -1646,8 +1646,8 @@ html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobi
     visibility 0s !important;
 }
 
-html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
-html[data-viewport="desktop"] .panel-shell .panel-layout > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
+html.is-desktop .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
+html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
 html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving,
 html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open.is-dissolving {
   visibility: hidden !important;
@@ -1666,6 +1666,8 @@ html[data-viewport="phone"] .panel-mobile-overlay,
 html[data-viewport="desktop"] .panel-mobile-overlay {
   display: block !important;
   opacity: 0 !important;
+  z-index: 700 !important;
+  pointer-events: none !important;
   background: rgba(0, 0, 0, 0.5) !important;
   transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
@@ -1746,8 +1748,18 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   opacity: 0 !important;
 }
 
+html.is-phone .panel-shell .panel-shell-main,
+html[data-viewport="phone"] .panel-shell .panel-shell-main {
+  padding-bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 112px) !important;
+}
+
+html.is-phone .pocket-tools,
+html[data-viewport="phone"] .pocket-tools {
+  margin-bottom: 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  html.is-desktop .panel-shell .panel-layout > .panel-shelf-sidebar,
+  html.is-desktop .panel-shell > .panel-shelf-sidebar,
   html.is-phone .panel-shell .panel-shelf-sidebar,
   html.is-phone .panel-mobile-overlay,
   html.is-desktop .panel-mobile-overlay {

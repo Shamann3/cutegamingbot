@@ -159,20 +159,44 @@ export default function PanelSidebar({
     }
   }, [mobileOpen, visuallyOpen])
 
-  // Клик вне панели (сотрудники и админы) — закрыть. Overlay тоже закрывает;
-  // этот слушатель ловит случаи, когда клик прошёл мимо dimmer.
+  // Клик мимо панели закрывает её. Клик по панели палитру закрывает сама палитра.
+  // Кнопку «Настройки» не трогаем: она сама переключает панель.
+  // Вкладки дока закрывают панель и сразу открывают раздел.
+  // Остальной клик гасится, чтобы не нажать кнопку под затемнением.
   useEffect(() => {
     if (!mobileOpen || typeof onClose !== 'function') return undefined
+    let swallowTimer = 0
+    const eatClick = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      document.removeEventListener('click', eatClick, true)
+      window.clearTimeout(swallowTimer)
+    }
+    const armSwallow = () => {
+      document.removeEventListener('click', eatClick, true)
+      document.addEventListener('click', eatClick, true)
+      window.clearTimeout(swallowTimer)
+      swallowTimer = window.setTimeout(() => {
+        document.removeEventListener('click', eatClick, true)
+      }, 400)
+    }
     const onPointer = (event) => {
       if (dissolvingRef.current) return
-      const root = event.target?.closest?.('.panel-shelf-sidebar, .panel-dissolve-canvas')
-      const dock = event.target?.closest?.('.phone-dock, .phone-edge, .elite-menu-btn')
-      const palette = event.target?.closest?.('.accent-picker-panel, .accent-picker-root, .accent-wheel-wrap')
-      if (root || dock || palette) return
+      const target = event.target
+      const root = target?.closest?.('.panel-shelf-sidebar, .panel-dissolve-canvas')
+      const toggle = target?.closest?.('.phone-dock-menu')
+      const palette = target?.closest?.('.accent-picker-panel, .accent-picker-root, .accent-wheel-wrap, .accent-picker-backdrop')
+      if (root || toggle || palette) return
+      const dock = target?.closest?.('.phone-dock')
       onClose()
+      if (!dock) armSwallow()
     }
     document.addEventListener('pointerdown', onPointer, true)
-    return () => document.removeEventListener('pointerdown', onPointer, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer, true)
+      document.removeEventListener('click', eatClick, true)
+      window.clearTimeout(swallowTimer)
+    }
   }, [mobileOpen, onClose])
 
   const settingsProps = {
