@@ -219,7 +219,11 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
               <div className="case-date-val">{fmtDate(item.createdAt)}</div>
             </div>
           </div>
-          <button className="case-close-btn" onClick={requestClose}>✕</button>
+          <button type="button" className="case-close-btn" onClick={requestClose} aria-label="Закрыть дело">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
 
         {/* Табы */}
@@ -511,7 +515,16 @@ function ActionCard({ item, onClick }) {
       <div className="arc-card-tags">
         {item.durationMinutes && <span className="arc-card-tag arc-card-tag-dur">⏱ {fmtDuration(item.durationMinutes)}</span>}
         {item.hasProof && <span className="arc-card-tag arc-card-tag-proof">📷 Фото</span>}
-        <span className="arc-card-tag arc-card-tag-open">Открыть →</span>
+        <button
+          type="button"
+          className="arc-open-btn"
+          onClick={(event) => {
+            event.stopPropagation()
+            onClick()
+          }}
+        >
+          Открыть
+        </button>
       </div>
       <div className="arc-card-stripe" style={{ background: meta.color }} />
     </div>
@@ -1137,8 +1150,9 @@ export default function ModerationSection({
         /* Filters */
         .arc-filters { display:flex; flex-direction:column; align-items:stretch; gap:10px; width:100%; min-width:0; }
         .arc-tabs { display:flex; gap:6px; flex-wrap:wrap; }
-        .arc-tab { padding:6px 16px; border-radius:20px; border:1px solid #1e1e2e; background:transparent; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; transition:all 0.2s; }
+        .arc-tab { padding:6px 16px; border-radius:20px; border:1px solid #1e1e2e; background:transparent; color:#6b7280; font-size:12px; font-weight:500; cursor:pointer; transition:border-color 0.2s, color 0.2s, background 0.2s, transform 0.16s; }
         .arc-tab:hover { border-color:#d4a84b60; color:#d4a84b; }
+        .arc-tab:active { transform:scale(0.96); }
         .arc-tab-on { background:#d4a84b18; border-color:#d4a84b; color:#d4a84b; font-weight:700; }
         .arc-search { display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap; width:100%; max-width:100%; min-width:0; }
         .arc-search-stack { flex-direction:column; align-items:stretch; width:100%; max-width:100%; }
@@ -1169,8 +1183,17 @@ export default function ModerationSection({
         .arc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; align-content:start; width:100%; min-width:0; margin-bottom:28px; }
 
         /* Card */
-        .arc-card { position:relative; background:#0b0b14; border:1px solid #1a1a28; border-radius:12px; padding:16px 16px 14px; display:flex; flex-direction:column; gap:11px; cursor:pointer; transition:border-color 0.2s, box-shadow 0.2s, transform 0.18s; overflow:hidden; min-height:170px; }
-        .arc-card:hover { border-color:var(--cc); box-shadow:0 0 20px var(--cg),0 4px 24px #00000060; transform:translateY(-3px); }
+        .arc-card { position:relative; background:#0b0b14; border:1px solid #1a1a28; border-radius:12px; padding:16px 16px 14px; display:flex; flex-direction:column; gap:11px; cursor:pointer; transition:border-color 0.22s, box-shadow 0.22s, transform 0.22s cubic-bezier(0.22,1,0.36,1); overflow:hidden; min-height:170px; animation:arc-rise 0.46s cubic-bezier(0.22,1,0.36,1) both; }
+        .arc-grid .arc-card:nth-child(2) { animation-delay:0.04s; }
+        .arc-grid .arc-card:nth-child(3) { animation-delay:0.08s; }
+        .arc-grid .arc-card:nth-child(4) { animation-delay:0.12s; }
+        .arc-grid .arc-card:nth-child(5) { animation-delay:0.16s; }
+        .arc-grid .arc-card:nth-child(6) { animation-delay:0.2s; }
+        .arc-grid .arc-card:nth-child(7) { animation-delay:0.24s; }
+        .arc-grid .arc-card:nth-child(8) { animation-delay:0.28s; }
+        @keyframes arc-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+        .arc-card:hover { border-color:var(--cc); box-shadow:0 0 20px var(--cg),0 8px 28px #00000055; transform:translateY(-3px); }
+        .arc-card:active { transform:translateY(-1px) scale(0.985); }
         .arc-card-stripe { position:absolute; bottom:0; left:0; right:0; height:3px; opacity:0.7; border-radius:0 0 12px 12px; transition:opacity 0.2s; }
         .arc-card:hover .arc-card-stripe { opacity:1; }
         .arc-card-num { position:absolute; top:10px; right:12px; font-size:10px; color:#2d3748; font-family:monospace; letter-spacing:0.06em; }
@@ -1193,8 +1216,9 @@ export default function ModerationSection({
         .arc-card-tag { font-size:10px; padding:2px 8px; border-radius:10px; border:1px solid; font-weight:600; }
         .arc-card-tag-dur { border-color:#f9731630; color:#f97316; background:#f9731610; }
         .arc-card-tag-proof { border-color:#60a5fa30; color:#60a5fa; background:#60a5fa10; }
-        .arc-card-tag-open { margin-left:auto; border-color:transparent; color:#2d3748; background:transparent; transition:color 0.2s; }
-        .arc-card:hover .arc-card-tag-open { color:var(--cc); }
+        .arc-open-btn { margin-left:auto; border:0; background:transparent; color:#6b7280; font:inherit; font-size:12px; font-weight:750; letter-spacing:0.01em; cursor:pointer; padding:4px 0 4px 8px; transition:color 0.18s, transform 0.18s cubic-bezier(0.22,1,0.36,1); }
+        .arc-card:hover .arc-open-btn, .arc-open-btn:hover { color:var(--cc); transform:translateX(4px); }
+        .arc-open-btn:active { transform:translateX(2px) scale(0.96); }
 
         /* Pagination */
         .arc-pages { display:flex; align-items:center; gap:16px; padding:20px 0; }
@@ -1251,8 +1275,11 @@ export default function ModerationSection({
         .case-cover-right { display:flex; flex-direction:column; gap:3px; flex-shrink:0; padding-top:2px; }
         .case-date-label { font-size:9px; color:#4b5563; text-transform:uppercase; letter-spacing:0.1em; }
         .case-date-val { font-size:12px; color:#9ca3af; font-family:monospace; white-space:nowrap; }
-        .case-close-btn { position:absolute; top:14px; right:16px; background:rgba(0,0,0,0.3); border:1px solid #1e1e2e; color:#6b7280; width:30px; height:30px; border-radius:8px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; z-index:1; }
-        .case-close-btn:hover { background:#1e1e2e; color:#e2e8f0; }
+        .case-close-btn { position:absolute; top:14px; right:16px; background:rgba(0,0,0,0.3); border:1px solid #1e1e2e; color:#9ca3af; width:36px; height:36px; padding:0; margin:0; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:0; transition:background 0.18s, color 0.18s, transform 0.16s; z-index:1; }
+        .case-close-btn svg { display:block; }
+        .case-close-btn:hover { background:#1e1e2e; color:#fff; }
+        .case-close-btn:active { transform:scale(0.94); }
+        .case-tab:active { transform:scale(0.97); }
 
         .case-tabs { display:flex; border-bottom:1px solid #1e1e2e; }
         .case-tab { padding:10px 18px; font-size:13px; font-weight:500; color:#4b5563; background:transparent; border:none; border-bottom:2px solid transparent; cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px; margin-bottom:-1px; }
@@ -1379,6 +1406,9 @@ export default function ModerationSection({
         .apl-send-btn:hover:not(:disabled) { background:#e8c05a; transform:scale(1.05); }
         .apl-send-btn:disabled { background:#2d2d2d; color:#4b5563; cursor:not-allowed; transform:none; }
 
+        @media (prefers-reduced-motion: reduce) {
+          .arc-card, .case-modal, .case-backdrop, .arc-open-btn, .arc-tab, .case-tab, .case-close-btn { animation:none !important; transition:none !important; }
+        }
         @media (max-width:600px) {
           .arc-shell { padding:16px; }
           .arc-grid { grid-template-columns:1fr; }

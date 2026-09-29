@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PANEL_SECTIONS, visibleSections, splitDockSections, dockActiveId } from '../constants/panelNav'
 import PanelSidebar from '../components/PanelSidebar'
 import EliteTopbar from '../components/EliteTopbar'
@@ -51,6 +51,7 @@ import {
 import { loadRecentSections, pushRecentSection } from '../lib/recentSections'
 import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
+import { useTabScroll } from '../lib/useTabScroll'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, coachClosed } from '../components/FirstRun'
 import PhoneDock from '../components/PhoneDock'
@@ -73,6 +74,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   }, [])
 
   const [section, setSection] = useState('dashboard')
+  const mainRef = useRef(null)
+  useTabScroll(mainRef, section)
   const [flashKey, setFlashKey] = useState(0)
   const [usersInitialId, setUsersInitialId] = useState(null)
   const [groupsInitialId, setGroupsInitialId] = useState(null)
@@ -377,7 +380,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         />
       )}
 
-      <main className="panel-shell-main">
+      <main ref={mainRef} className="panel-shell-main">
         <div
           className={`panel-layout${
             isDashboard || isUsers

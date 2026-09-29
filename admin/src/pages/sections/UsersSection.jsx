@@ -2126,8 +2126,16 @@ export default function UsersSection({
           </div>
         )}
 
-        {/* ── Вкладка «Профиль»: только карточка + инвентарь + действия ── */}
-        {(profileTab === 'profile' || !hasProfile) && (
+        {!hasProfile && (
+          <p className="users-await">
+            {loading
+              ? 'Ищем игрока…'
+              : 'Сначала найдите человека. Бан, баланс и остальные действия появятся рядом с его карточкой.'}
+          </p>
+        )}
+
+        {/* Карточка и действия — только после найденного игрока. */}
+        {hasProfile && profileTab === 'profile' && (
         <div className="pu-profile-layout">
         <article className="panel-shelf panel-users-card panel-users-profile-card pu-hero-card">
           <div className="pu-hero-banner">

@@ -1,63 +1,53 @@
 import { useEffect, useRef } from 'react'
+import { musicGain } from '../lib/musicMode'
 
-const TRACK_CANDIDATES = [
+const TRACKS = [
   `${import.meta.env.BASE_URL}track.wav`,
   `${import.meta.env.BASE_URL}track.mp3`,
 ]
-const FADE_MS = 900
 
-function runFade(audio, targetVolume, durationMs, cancelRef) {
-  if (cancelRef.current) cancelRef.current()
-  const startVolume = audio.volume
-  const startTime = performance.now()
-  let rafId = 0
-
-  cancelRef.current = () => cancelAnimationFrame(rafId)
-
-  return new Promise((resolve) => {
-    const tick = (now) => {
-      const progress = Math.min(1, (now - startTime) / durationMs)
-      audio.volume = startVolume + (targetVolume - startVolume) * progress
-      if (progress < 1) {
-        rafId = requestAnimationFrame(tick)
-      } else {
-        cancelRef.current = null
-        resolve()
-      }
-    }
-    rafId = requestAnimationFrame(tick)
-  })
+function bindTrack(audio) {
+  let index = 0
+  const tryNext = () => {
+    if (index >= TRACKS.length) return
+    audio.src = TRACKS[index]
+    index += 1
+  }
+  audio.addEventListener('error', tryNext)
+  tryNext()
+  return () => audio.removeEventListener('error', tryNext)
 }
 
-// Играет с момента входа в панель (после логина/регистрации) и до выхода.
-// volume (0..1) — источник правды из сайдбара (lib/musicMode.js, хранится
-// в localStorage). Переход через 0 плавно гасится/поднимается за FADE_MS,
-// а перетаскивание слайдера при уже играющем треке применяется мгновенно —
-// иначе управление ощущалось бы залипающим.
+// Громкость применяется сразу, внутри жеста ползунка.
+// Иначе play() из эффекта после отрисовки браузер молча отклоняет,
+// а плавное затухание съедало процент, пока палец ещё на шкале.
 export default function PanelBackgroundMusic({ volume = 0 }) {
   const audioRef = useRef(null)
-  const cancelFadeRef = useRef(null)
-  const wasPlayingRef = useRef(false)
   const volumeRef = useRef(volume)
+  volumeRef.current = volume
+
+  const apply = (raw) => {
+    const audio = audioRef.current
+    if (!audio) return
+    const level = musicGain(raw)
+    audio.volume = level
+    if (level <= 0) {
+      audio.pause()
+      return
+    }
+    const played = audio.play()
+    if (played && typeof played.catch === 'function') played.catch(() => {})
+  }
 
   useEffect(() => {
     const audio = new Audio()
     audio.loop = true
     audio.preload = 'auto'
-    audio.volume = 0
-    let idx = 0
-    const tryNext = () => {
-      if (idx >= TRACK_CANDIDATES.length) return
-      audio.src = TRACK_CANDIDATES[idx]
-      idx += 1
-    }
-    audio.addEventListener('error', tryNext)
-    tryNext()
+    audio.volume = musicGain(volumeRef.current)
+    const unbind = bindTrack(audio)
     audioRef.current = audio
-
     return () => {
-      if (cancelFadeRef.current) cancelFadeRef.current()
-      audio.removeEventListener('error', tryNext)
+      unbind()
       audio.pause()
       audio.removeAttribute('src')
       audio.load()
@@ -66,59 +56,19 @@ export default function PanelBackgroundMusic({ volume = 0 }) {
   }, [])
 
   useEffect(() => {
-    volumeRef.current = volume
-    const audio = audioRef.current
-    if (!audio) return undefined
-
-    let cancelled = false
-
-    const stop = async () => {
-      await runFade(audio, 0, FADE_MS, cancelFadeRef)
-      if (!cancelled) audio.pause()
-      wasPlayingRef.current = false
-    }
-
-    const startAndFadeIn = async () => {
-      try {
-        await audio.play()
-      } catch {
-        // Требуется жест пользователя — подхватим на следующем клике.
-        return
-      }
-      if (cancelled) return
-      wasPlayingRef.current = true
-      await runFade(audio, volume, FADE_MS, cancelFadeRef)
-    }
-
-    if (volume <= 0) {
-      if (wasPlayingRef.current) stop()
-    } else if (!wasPlayingRef.current) {
-      startAndFadeIn()
-    } else {
-      // Уже играет — слайдер тянут вживую, применяем без анимации.
-      if (cancelFadeRef.current) cancelFadeRef.current()
-      audio.volume = volume
-    }
-
-    return () => {
-      cancelled = true
-    }
+    apply(volume)
   }, [volume])
 
   useEffect(() => {
+    const onSet = (event) => apply(event.detail)
     const unlock = () => {
-      const audio = audioRef.current
-      if (!audio || volumeRef.current <= 0 || !audio.paused) return
-      audio.play().then(() => {
-        wasPlayingRef.current = true
-        return runFade(audio, volumeRef.current, FADE_MS, cancelFadeRef)
-      }).catch(() => {})
+      if (volumeRef.current > 0) apply(volumeRef.current)
     }
+    window.addEventListener('epsilon-music-set', onSet)
     window.addEventListener('pointerdown', unlock, { passive: true })
-    window.addEventListener('epsilon-music-unlock', unlock)
     return () => {
+      window.removeEventListener('epsilon-music-set', onSet)
       window.removeEventListener('pointerdown', unlock)
-      window.removeEventListener('epsilon-music-unlock', unlock)
     }
   }, [])
 

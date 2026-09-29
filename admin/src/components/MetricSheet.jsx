@@ -80,9 +80,21 @@ function MetricSheetView({ spec, leaving, onClose }) {
     }
   }, [])
 
-  const percents = barPercents((spec.bars || []).map((bar) => bar.value))
+  const bars = spec.bars || []
+  const percents = barPercents(bars.map((bar) => bar.value))
   const delta = metricDelta(spec.current, spec.previous)
   const tone = delta == null ? '' : delta > 0 ? 'is-up' : delta < 0 ? 'is-down' : ''
+  const [focus, setFocus] = useState(0)
+  const safeFocus = bars.length ? Math.min(focus, bars.length - 1) : 0
+  const active = bars[safeFocus] || null
+  const total = bars.reduce((sum, bar) => sum + (Number(bar.value) > 0 ? Number(bar.value) : 0), 0)
+  const share = active && total > 0
+    ? Math.round(((Number(active.value) > 0 ? Number(active.value) : 0) / total) * 100)
+    : 0
+
+  useEffect(() => {
+    setFocus(0)
+  }, [spec.id])
 
   return createPortal(
     <div className={`metric-sheet-root${phone ? ' is-phone' : ' is-desk'}${leaving ? ' is-leaving' : ''}`}>
@@ -99,7 +111,7 @@ function MetricSheetView({ spec, leaving, onClose }) {
         <div className="metric-sheet-top">
           <h2>{spec.title}</h2>
           <button type="button" className="metric-sheet-x" onClick={onClose} aria-label="Закрыть">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </button>
@@ -117,17 +129,33 @@ function MetricSheetView({ spec, leaving, onClose }) {
           </p>
         )}
         {spec.note ? <p className="metric-sheet-note">{spec.note}</p> : null}
-        {spec.bars?.length > 0 && (
-          <div className="metric-bars" aria-hidden="true">
-            {spec.bars.map((bar, index) => (
-              <div className="metric-bar" key={bar.label}>
+        {bars.length > 0 && (
+          <div className="metric-bars" role="listbox" aria-label="Фрагменты аналитики">
+            {bars.map((bar, index) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={index === safeFocus}
+                className={`metric-bar${index === safeFocus ? ' is-on' : ''}`}
+                key={bar.label}
+                onMouseEnter={() => setFocus(index)}
+                onFocus={() => setFocus(index)}
+                onClick={() => setFocus(index)}
+              >
                 <span className="metric-bar-track">
                   <span className="metric-bar-col" style={{ height: `${percents[index]}%` }} />
                 </span>
                 <span className="metric-bar-label">{bar.label}</span>
-              </div>
+              </button>
             ))}
           </div>
+        )}
+        {active && (
+          <p className="metric-bar-readout" aria-live="polite">
+            <strong>{active.label}</strong>
+            <span>{fmt(Number(active.value) || 0)}</span>
+            <em>{total > 0 ? `${share}% от суммы фрагментов` : 'нет значений'}</em>
+          </p>
         )}
         {spec.action && (
           <button

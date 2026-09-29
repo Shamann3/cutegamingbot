@@ -103,6 +103,16 @@ describe('MetricSheet', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
+  it('наведение на столбец показывает этот фрагмент', () => {
+    renderTile()
+    tap(screen.getByRole('button', { name: /цифра/ }))
+    fireEvent.mouseEnter(screen.getByRole('option', { name: 'Неделя' }))
+    const text = screen.getByRole('dialog').textContent.replace(/\u00a0/g, ' ')
+    expect(text).toContain('Неделя')
+    expect(text).toContain('9 000')
+    expect(text).toContain('% от суммы фрагментов')
+  })
+
   it('без данных плитка не кликабельна', () => {
     render(
       <MetricSheetProvider>

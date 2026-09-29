@@ -225,13 +225,14 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const { r, g, b } = hexToRgb(textHex)
   const decor = hexToRgb(decorHex)
   const glow = a.glow / 100
-  // Шкала 0…100. Ноль оставляет 25% цвета. 55 — обычный вид. 100 — без прозрачности.
+  // Прозрачность — только плотность панелей. Яркость цвета её не трогает.
+  // Шкала 0…100. Ноль оставляет 25% плотности. 55 — обычный вид. 100 — сплошные панели.
   const veil = 0.25 + (a.veil / 100) * 0.75
-  const soft = (0.22 + glow * 0.42) * veil
-  const soft2 = (0.34 + glow * 0.48) * veil
-  const line = (0.55 + glow * 0.4) * veil
+  const soft = 0.22 + glow * 0.42
+  const soft2 = 0.34 + glow * 0.48
+  const line = 0.55 + glow * 0.4
   const glowPx = 28 + glow * 72
-  const glowAlpha = (0.22 + glow * 0.48) * veil
+  const glowAlpha = 0.22 + glow * 0.48
   const ink = inkOnAccent(textHex)
   const brightToward = relativeLuminance(textHex) > INK_LUMINANCE ? '#000000' : '#ffffff'
   const brightAmt = relativeLuminance(textHex) > INK_LUMINANCE ? 0.22 : 0.28
@@ -242,6 +243,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--e-accent-decor', decorHex)
   root.style.setProperty('--e-accent-decor-rgb', `${decor.r}, ${decor.g}, ${decor.b}`)
   root.style.setProperty('--e-veil', veil.toFixed(3))
+  root.style.setProperty('--e-plate', `rgba(14, 14, 16, ${veil.toFixed(3)})`)
+  root.style.setProperty('--e-plate-2', `rgba(24, 24, 28, ${veil.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft-2', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft2.toFixed(3)})`)
   root.style.setProperty('--e-accent-line', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${line.toFixed(3)})`)
@@ -250,8 +253,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--e-accent-ink', ink)
   root.style.setProperty('--e-accent-on', ink)
   root.style.setProperty('--e-accent-glow-strength', String(glow))
-  root.style.setProperty('--e-accent-wash', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${((0.14 + glow * 0.28) * veil).toFixed(3)})`)
-  root.style.setProperty('--e-accent-ring', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${((0.45 + glow * 0.35) * veil).toFixed(3)})`)
+  root.style.setProperty('--e-accent-wash', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${(0.14 + glow * 0.28).toFixed(3)})`)
+  root.style.setProperty('--e-accent-ring', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${(0.45 + glow * 0.35).toFixed(3)})`)
   root.style.setProperty('--ent-accent', textHex)
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id

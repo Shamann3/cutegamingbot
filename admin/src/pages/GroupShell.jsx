@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   appointGroupAdmin,
   decideGroupApplication,
@@ -34,6 +34,7 @@ import { repeatCounts } from '../lib/shiftDesk'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
+import { useTabScroll } from '../lib/useTabScroll'
 import { useMusicMode } from '../lib/musicMode'
 import { usePerfMode } from '../lib/perfMode'
 
@@ -125,6 +126,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
   const [peakHours, setPeakHours] = useState([])
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
+  const mainRef = useRef(null)
+  useTabScroll(mainRef, activeTab)
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
 
   const closeRail = useCallback(() => setRailOpen(false), [])
@@ -456,7 +459,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           brandTag={chatId ? title : 'Одна группа'}
         />
       )}
-      <main className="panel-shell-main">
+      <main ref={mainRef} className="panel-shell-main">
       <div className="panel-layout panel-layout-page">
         {!phone && (
           <EliteTopbar

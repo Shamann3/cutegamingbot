@@ -316,12 +316,21 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   flex: 0 0 44px;
   width: 44px;
   height: 44px;
-  margin: -8px -8px 0 0;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.metric-sheet-x svg {
+  display: block;
 }
 
 .metric-sheet-value {
@@ -377,6 +386,46 @@ html[data-viewport="phone"] .dash-usage-card.metric-tile {
   align-items: center;
   gap: 6px;
   height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.metric-bar.is-on .metric-bar-col {
+  background: var(--e-accent, #c8afff);
+  box-shadow: 0 0 16px rgba(var(--e-accent-rgb, 200, 175, 255), 0.45);
+}
+
+.metric-bar.is-on .metric-bar-label {
+  color: #fff;
+}
+
+.metric-bar-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 12px 0 0;
+  min-height: 1.4em;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-bar-readout strong {
+  font-size: 0.95rem;
+}
+
+.metric-bar-readout span {
+  font-weight: 700;
+}
+
+.metric-bar-readout em {
+  margin-left: auto;
+  color: #aeaeb2;
+  font-style: normal;
+  font-size: 0.82rem;
 }
 
 .metric-bar-track {
@@ -1688,14 +1737,14 @@ html[data-viewport="phone"] .elite-menu-btn {
 
 html.is-desktop .phone-dock,
 html[data-viewport="desktop"] .phone-dock {
-  padding-left: 132px !important;
+  padding-left: 112px !important;
 }
 
 html.is-desktop .phone-dock .phone-dock-menu,
 html[data-viewport="desktop"] .phone-dock .phone-dock-menu {
   display: inline-flex !important;
   position: absolute !important;
-  left: 10px !important;
+  left: 14px !important;
   top: 50% !important;
   right: auto !important;
   bottom: auto !important;
@@ -1704,16 +1753,17 @@ html[data-viewport="desktop"] .phone-dock .phone-dock-menu {
   width: auto !important;
   min-width: 0 !important;
   max-width: none !important;
-  height: 40px !important;
+  height: auto !important;
   margin: 0 !important;
-  padding: 0 12px !important;
-  gap: 6px;
+  padding: 0 !important;
+  gap: 0;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   order: 0;
-  border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   color: #fff !important;
 }
 
@@ -1726,9 +1776,13 @@ html[data-viewport="desktop"] .phone-dock .phone-dock-menu .phone-dock-label {
 }
 
 html.is-desktop .phone-dock .phone-dock-menu.is-on,
-html[data-viewport="desktop"] .phone-dock .phone-dock-menu.is-on {
-  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
-  color: #fff !important;
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu.is-on,
+html.is-desktop .phone-dock .phone-dock-menu:hover,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu:hover {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  color: var(--e-accent, #fff) !important;
 }
 
 html.is-phone .phone-dock .phone-dock-menu,
@@ -1748,7 +1802,7 @@ html[data-viewport="phone"] .panel-mobile-overlay.is-shown {
   opacity: 0 !important;
 }
 
-/* Док стоит под контентом, а не поверх него. Последняя строка прокручивается выше рамки. */
+/* На телефоне док прибит к экрану. Отступ списка держит последнюю строку выше него. */
 html.is-desktop .panel-shell,
 html.is-phone .panel-shell,
 html[data-viewport="desktop"] .panel-shell,
@@ -1777,9 +1831,7 @@ html[data-viewport="phone"] .panel-shell > .panel-shell-main {
 }
 
 html.is-desktop .panel-shell > .phone-dock,
-html.is-phone .panel-shell > .phone-dock,
-html[data-viewport="desktop"] .panel-shell > .phone-dock,
-html[data-viewport="phone"] .panel-shell > .phone-dock {
+html[data-viewport="desktop"] .panel-shell > .phone-dock {
   position: relative !important;
   flex: 0 0 auto !important;
   left: auto !important;
@@ -1789,6 +1841,26 @@ html[data-viewport="phone"] .panel-shell > .phone-dock {
   width: 100% !important;
   margin: 0 !important;
   z-index: 5 !important;
+}
+
+html.is-phone .panel-shell > .phone-dock,
+html[data-viewport="phone"] .panel-shell > .phone-dock {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  margin: 0 !important;
+  flex: none !important;
+  z-index: 80 !important;
+  border-radius: 0 !important;
+}
+
+html.is-phone .panel-shell > .panel-shell-main,
+html[data-viewport="phone"] .panel-shell > .panel-shell-main {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 28px) !important;
 }
 
 html.is-desktop .panel-shell .panel-layout,
@@ -1821,7 +1893,141 @@ html[data-viewport="desktop"] .panel-shell > .panel-shelf-sidebar.panel-sidebar-
   html.is-desktop .panel-shell > .panel-shelf-sidebar,
   html.is-phone .panel-shell .panel-shelf-sidebar,
   html.is-phone .panel-mobile-overlay,
-  html.is-desktop .panel-mobile-overlay {
+  html.is-desktop .panel-mobile-overlay,
+  .arc-card,
+  .case-modal,
+  .metric-bar-col {
     transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Рабочее поле прозрачное: за ним видна матрица.
+   Ползунок прозрачности меняет только плотность панелей, не яркость цвета. */
+.panel-shell,
+.panel-shell-main,
+.panel-layout {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.panel-shell .panel-shelf,
+.panel-shell .panel-shelf-sidebar,
+.panel-shell .phone-dock,
+.panel-shell .elite-topbar,
+.panel-shell .metric-sheet,
+.panel-shell .extras-hub-tile,
+.panel-shell .support-section,
+.panel-shell .support-ticket-row,
+.panel-shell .support-thread-wrap,
+.panel-shell .support-empty-state,
+.panel-shell .arc-card,
+.panel-shell .g-arc-card,
+.panel-shell .dash-usage-card,
+.panel-shell .dash-bot-hero,
+.panel-shell .metric-tile,
+.panel-shell .panel-music-card,
+.panel-shell .analytics-section,
+.metric-sheet,
+.case-modal,
+.accent-picker-panel {
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.663)) !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock > .phone-dock-menu,
+html[data-viewport="desktop"] .panel-shell > .phone-dock > .phone-dock-menu {
+  --e-r-btn: 0px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+@keyframes arc-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.arc-card {
+  animation: arc-rise 0.46s cubic-bezier(0.22, 1, 0.36, 1) both !important;
+}
+
+.arc-card:hover {
+  transform: translateY(-3px) !important;
+}
+
+.arc-card:active {
+  transform: translateY(-1px) scale(0.985) !important;
+}
+
+html.is-desktop .elite-support-btn,
+html.is-phone .elite-support-btn,
+html[data-viewport="desktop"] .elite-support-btn,
+html[data-viewport="phone"] .elite-support-btn,
+html.is-desktop .elite-support-btn:hover,
+html.is-phone .elite-support-btn:hover,
+html[data-viewport="desktop"] .elite-support-btn:hover,
+html[data-viewport="phone"] .elite-support-btn:hover,
+html.is-desktop .elite-support-btn:focus-visible,
+html.is-phone .elite-support-btn:focus-visible {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-width: 0 !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.is-desktop .support-layout,
+html[data-viewport="desktop"] .support-layout {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+  align-items: start;
+}
+
+/* Один скролл на вкладку: рабочая область. Внутренние колонки не крутятся отдельно. */
+html.is-desktop .panel-shell,
+html.is-phone .panel-shell,
+html[data-viewport="desktop"] .panel-shell,
+html[data-viewport="phone"] .panel-shell {
+  overflow: hidden !important;
+}
+
+html.is-desktop .panel-shell > .panel-shell-main,
+html.is-phone .panel-shell > .panel-shell-main,
+html[data-viewport="desktop"] .panel-shell > .panel-shell-main,
+html[data-viewport="phone"] .panel-shell > .panel-shell-main {
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+html.is-desktop .panel-shell > .panel-shell-main .panel-layout > *,
+html.is-phone .panel-shell > .panel-shell-main .panel-layout > *,
+html[data-viewport="desktop"] .panel-shell > .panel-shell-main .panel-layout > *,
+html[data-viewport="phone"] .panel-shell > .panel-shell-main .panel-layout > * {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arc-card,
+  .arc-card:hover,
+  .arc-card:active,
+  .arc-open-btn,
+  .case-modal,
+  .case-close-btn,
+  .metric-bar-col {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
   }
 }
