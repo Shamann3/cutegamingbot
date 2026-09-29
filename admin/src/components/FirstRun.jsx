@@ -1,41 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { coachFrame, placeCoachCard } from '../lib/coachPlace'
 
 export function staffSteps(phone) {
   return [
     {
-      title: 'Вкладки',
-      body: phone
-        ? 'Главные разделы внизу. Цвет, сессия, музыка и смена панели — внизу вкладки «Ещё».'
-        : 'Разделы внизу. Кнопка слева внизу открывает цвет, сессию и смену панели.',
+      title: 'Нижние вкладки',
+      body: 'Отсюда открываются главные разделы: игроки, архив и поддержка. Остальное собрано во «Ещё».',
       target: '[data-coach="dock"]',
     },
     {
       title: 'Поиск',
       body: phone
-        ? 'Откройте «Ещё»: там поиск по остальным разделам.'
-        : 'Напишите название страницы и откройте её.',
+        ? 'Во «Ещё» есть поиск по названию. Раздел открывается сразу, без обхода всей сетки.'
+        : 'Поиск открывает раздел по названию — без обхода всего меню.',
       target: phone ? '[data-coach="dock"] [data-section="more"]' : '[data-coach="search"]',
-      openNav: false,
-    },
-    {
-      title: 'Дополнительно',
-      body: 'Сетка разделов с иконками. Нажмите значок — откроется страница.',
-      target: '[data-coach="dock"] [data-section="more"]',
-      openNav: false,
     },
     {
       title: 'Игроки',
-      body: 'Карточки людей. Запрет на весь проект есть только у должности с этим правом.',
+      body: 'Карточка человека: баланс, предметы и история. Запрет на весь проект — только у должности с этим правом.',
       target: '[data-coach="dock"] [data-section="users"]',
-      openNav: false,
+    },
+    {
+      title: 'Поддержка',
+      body: 'Письма игроков. Число на колокольчике — сколько обращений ждут ответа.',
+      target: '[data-coach="bell"], [data-coach="dock"] [data-section="support"]',
     },
     {
       title: 'Сменить панель',
       body: phone
-        ? 'Откройте «Ещё» и пролистайте вниз: смена панели там, под разделами.'
-        : 'Возврат к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
+        ? 'Смена панели лежит внизу «Ещё». Аккаунт при этом не закрывается.'
+        : 'Кнопка слева внизу возвращает к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
       target: phone ? '[data-coach="dock"] [data-section="more"]' : '[data-coach="doors"]',
-      openNav: false,
     },
   ]
 }
@@ -44,29 +39,27 @@ export function groupSteps(phone) {
   return [
     {
       title: 'Эта группа',
-      body: 'Чат и должность. Ниже смена: сегодня против вчера.',
+      body: 'Имя чата и ваша должность. Ниже — что изменилось сегодня относительно вчера.',
       target: '.nika-head h1',
     },
     {
-      title: 'Вкладки',
+      title: 'Страницы группы',
       body: phone
-        ? 'Страницы группы внизу. Цвет, музыка и смена панели — внизу вкладки «Ещё».'
-        : 'Страницы внизу. Кнопка слева внизу открывает цвет, музыку и смену панели.',
+        ? 'Нижняя полоса переключает страницы этой группы. Цвет и смена панели — во «Ещё».'
+        : 'Нижняя полоса переключает страницы. Цвет и смена панели — в кнопке слева внизу.',
       target: '[data-coach="dock"]',
     },
     {
       title: 'Активность',
-      body: 'Здесь сообщения за сегодня, месяц и год. Нажмите клетку дня или месяца, чтобы открыть этот отрезок.',
+      body: 'Сообщения за день, месяц и год. Клетка открывает именно этот отрезок.',
       target: '[data-coach="dock"] [data-section="activity"]',
-      openNav: false,
     },
     {
       title: 'Ещё',
       body: phone
-        ? 'Правила и заявка в команду. Ниже них — цвет, музыка и смена панели.'
-        : 'Правила и заявка в команду. Смена панели — в кнопке слева внизу.',
+        ? 'Правила чата и заявка в команду. Под ними — цвет, музыка и смена панели.'
+        : 'Правила чата и заявка в команду. Смена панели — слева внизу.',
       target: '[data-coach="dock"] [data-section="more"]',
-      openNav: false,
     },
   ]
 }
@@ -110,47 +103,18 @@ function spotFor(node) {
   }
 }
 
-function blocksCard(card, spot) {
-  return !(card.right <= spot.left - 10 || card.left >= spot.right + 10 || card.bottom <= spot.top - 10 || card.top >= spot.bottom + 10)
+function readChromeTop() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--tg-content-top')
+  const value = parseFloat(raw)
+  return Number.isFinite(value) ? value : 0
 }
 
-function placeCard(box) {
-  const cardW = Math.min(320, window.innerWidth - EDGE * 2)
-  const cardH = 200
-  const maxRight = window.innerWidth - EDGE
-  const maxBottom = window.innerHeight - EDGE
-  if (window.innerWidth < 720) {
-    // На телефоне карточка всегда снизу — не уезжает под Telegram chrome
-    return { top: 'auto', bottom: EDGE + 8, left: EDGE, right: EDGE, width: 'auto' }
-  }
-  if (!box) return { top: 'auto', bottom: EDGE, left: EDGE, right: EDGE, width: 'auto' }
-  const obstacles = [{
-    left: box.left,
-    top: box.top,
-    right: box.left + box.width,
-    bottom: box.top + box.height,
-  }]
-  document.querySelectorAll('.realm-top, .realm-search, .elite-topbar, .elite-search-wrap').forEach((node) => {
-    const rect = node.getBoundingClientRect()
-    if (rect.width > 8 && rect.height > 8) obstacles.push(rect)
-  })
-  const tries = [
-    [box.left + box.width + 16, maxBottom - cardH],
-    [box.left + box.width + 16, EDGE],
-    [maxRight - cardW, maxBottom - cardH],
-    [EDGE, maxBottom - cardH],
-  ]
-  for (const [rawLeft, rawTop] of tries) {
-    const left = Math.max(EDGE, Math.min(rawLeft, maxRight - cardW))
-    const top = Math.max(EDGE, Math.min(rawTop, maxBottom - cardH))
-    const card = { left, top, right: left + cardW, bottom: top + cardH }
-    if (card.right > maxRight || card.bottom > maxBottom) continue
-    if (obstacles.some((spot) => blocksCard(card, spot))) continue
-    return { top, left, width: cardW, right: 'auto', bottom: 'auto' }
-  }
-  const left = Math.max(EDGE, Math.min(box.left + box.width + 16, maxRight - cardW))
-  const top = Math.max(EDGE, maxBottom - cardH)
-  return { top, left, width: cardW, right: 'auto', bottom: 'auto' }
+function readDockTop() {
+  const dock = document.querySelector('.panel-shell > .phone-dock, .phone-dock')
+  if (!dock) return null
+  const rect = dock.getBoundingClientRect()
+  if (rect.height < 8 || rect.top > window.innerHeight) return null
+  return rect.top
 }
 
 function onScreen(node) {
@@ -173,9 +137,27 @@ function visibleTarget(selector) {
   return null
 }
 
+function measureCard(card, spot) {
+  const viewport = { width: window.innerWidth, height: window.innerHeight }
+  const frame = coachFrame(viewport, {
+    chromeTop: readChromeTop() + 8,
+    dockTop: readDockTop(),
+  })
+  const width = Math.min(380, frame.right - frame.left)
+  return placeCoachCard({
+    viewport,
+    frame,
+    card: { width, height: card?.offsetHeight || 240 },
+    spot,
+  })
+}
+
 export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey = 0 }) {
   const [index, setIndex] = useState(0)
   const [box, setBox] = useState(null)
+  const [place, setPlace] = useState(null)
+  const cardRef = useRef(null)
+  const nextRef = useRef(null)
   const step = steps[index]
   const last = index >= steps.length - 1
 
@@ -209,6 +191,22 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
   useEffect(() => {
     onStep?.(step)
   }, [step, onStep])
+
+  useEffect(() => {
+    nextRef.current?.focus({ preventScroll: true })
+  }, [index])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        skipOnce()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  })
 
   useEffect(() => {
     document.documentElement.classList.add('is-coaching')
@@ -255,31 +253,49 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
     }
   }, [step, layoutKey])
 
-  const sheetStyle = placeCard(box)
+  useLayoutEffect(() => {
+    const apply = () => setPlace(measureCard(cardRef.current, box))
+    apply()
+    window.addEventListener('resize', apply)
+    return () => window.removeEventListener('resize', apply)
+  }, [box, index, step, layoutKey])
+
+  const sheetStyle = place
+    ? {
+      top: place.top,
+      left: place.left,
+      width: place.width,
+      right: 'auto',
+      bottom: 'auto',
+      maxHeight: place.maxHeight,
+      margin: 0,
+    }
+    : undefined
 
   return (
     <div className={`firstrun${box ? ' has-spot' : ''}`} role="dialog" aria-modal="true" aria-labelledby="firstrun-title">
+      <div className="firstrun-shield" />
       {box && (
         <div
           className="firstrun-spot"
           style={{ top: box.top, left: box.left, width: box.width, height: box.height }}
         />
       )}
-      <div className={`firstrun-sheet${box ? ' is-anchored' : ''}`} style={sheetStyle}>
-        <p className="firstrun-focus">Рамка показывает, куда нажать.</p>
+      <div className="firstrun-sheet is-anchored" style={sheetStyle} ref={cardRef}>
+        <p className="firstrun-progress">{index + 1} из {steps.length}</p>
         <h2 id="firstrun-title" className="firstrun-title">{step.title}</h2>
         <p className="firstrun-body">{step.body}</p>
-        <div className="firstrun-dots" aria-hidden="true">
-          {steps.map((_, i) => (
-            <span key={i} className={i === index ? 'is-on' : ''} />
-          ))}
-        </div>
         <div className="firstrun-actions">
-          <button type="button" className="firstrun-never" onClick={hideForever}>Не показывать больше</button>
-          <button type="button" className="firstrun-skip" onClick={skipOnce}>Пропустить сейчас</button>
-          <button type="button" className="firstrun-next" onClick={last ? finish : () => setIndex((n) => n + 1)}>
+          <button type="button" className="firstrun-skip" onClick={skipOnce}>Пропустить</button>
+          <button
+            type="button"
+            className="firstrun-next"
+            ref={nextRef}
+            onClick={last ? finish : () => setIndex((n) => n + 1)}
+          >
             {last ? 'Понятно' : 'Дальше'}
           </button>
+          <button type="button" className="firstrun-never" onClick={hideForever}>Не показывать больше</button>
         </div>
       </div>
     </div>

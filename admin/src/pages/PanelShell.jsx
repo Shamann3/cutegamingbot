@@ -437,9 +437,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             hideSearch={phone && isMore}
           />
 
-          {phone && !isMore && (
+          {phone && (
             <header className="craft-page-head">
-              <h1>{navSections.find((item) => item.id === section)?.labelRu || 'Панель'}</h1>
+              <h1>{isMore ? 'Ещё' : (navSections.find((item) => item.id === section)?.labelRu || 'Панель')}</h1>
             </header>
           )}
 

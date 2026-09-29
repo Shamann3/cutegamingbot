@@ -242,6 +242,7 @@ export default function EliteTopbar({
 
         {showSupport && <button
           type="button"
+          data-coach="bell"
           className={`elite-icon-btn elite-support-btn${bellFresh ? ' is-fresh' : ''}`}
           aria-label={openTickets > 0
             ? `Поддержка, новых обращений: ${openTickets}`
