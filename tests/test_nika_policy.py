@@ -172,6 +172,26 @@ def test_daily_cap_blocks_topup():
     assert plan.skip == "daily_cap"
 
 
+def test_zero_balance_refills_the_whole_gap_at_once():
+    plan = plan_topup(OFFICIAL, balance=0, events_24h=0, daily_topup_used=10000)
+    assert plan.action == "topup"
+    assert plan.amount == OFFICIAL.target_balance
+    assert plan.cooldown_sec <= 15
+    assert plan.tier.endswith(":empty")
+    slow = GroupPolicy(**{**OFFICIAL.__dict__, "speed_mode": "slow"})
+    assert plan_topup(slow, balance=0).amount == slow.target_balance
+
+
+def test_thin_balance_steps_harder_than_a_healthy_gap():
+    thin = plan_topup(OFFICIAL, balance=400, events_24h=0)
+    healthy = plan_topup(OFFICIAL, balance=3000, events_24h=0)
+    assert thin.action == "topup"
+    assert thin.tier.endswith(":thin")
+    assert thin.amount > healthy.amount
+    assert thin.cooldown_sec <= 30
+    assert healthy.amount < (OFFICIAL.target_balance - 3000)
+
+
 def test_sweep_waits_for_stable_excess():
     delayed = plan_sweep(
         OFFICIAL,

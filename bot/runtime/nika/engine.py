@@ -604,7 +604,9 @@ async def _topup_group(
             )
         if plan.amount <= 0:
             return plan.skip or "none"
-        if skip_cooldown:
+        # Ноль не ждёт прошлый долив: касса уже пустая, следующий тик должен её закрыть.
+        urgent_empty = int(balance) <= 0
+        if skip_cooldown or urgent_empty:
             await store.force_touch_group_action(conn, policy.chat_id, "topup")
         else:
             claimed = await store.claim_group_action(conn, policy.chat_id, "topup", plan.cooldown_sec)
@@ -635,7 +637,7 @@ async def _topup_group(
             activity_tier=plan.tier,
             target_balance=policy.target_balance,
             cooldown_sec=60 if skip_cooldown else plan.cooldown_sec,
-            extra_key=f"force{source}" if skip_cooldown else str(source),
+            extra_key=f"force{source}" if skip_cooldown else (f"empty{source}" if urgent_empty else str(source)),
             dry_run=dry_run,
         )
         if result.ok and result.status in ("done", "dry_run", "already_done"):

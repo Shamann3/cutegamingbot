@@ -14,10 +14,10 @@
   inset: 0;
   opacity: 1;
   background:
-    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.78 * var(--e-veil, 1))), transparent 54%),
-    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.42 * var(--e-veil, 1))), transparent 58%),
-    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.32 * var(--e-veil, 1))), transparent 60%),
-    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), calc(0.22 * var(--e-veil, 1))), transparent 62%),
+    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.78), transparent 54%),
+    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 58%),
+    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.32), transparent 60%),
+    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.22), transparent 62%),
     linear-gradient(165deg, #141018 0%, #07070a 42%, #050505 100%);
 }
 
@@ -1090,7 +1090,7 @@ html[data-viewport="phone"] .phone-dock-icon svg {
 /* Дождь и цвет должны читаться, а не тонуть в чёрном. */
 .gate-matrix,
 .accent-aura-rain {
-  opacity: calc(0.92 * var(--e-veil, 1)) !important;
+  opacity: 0.92 !important;
   animation: none !important;
   mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%) !important;
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%) !important;
@@ -1098,14 +1098,14 @@ html[data-viewport="phone"] .phone-dock-icon svg {
 
 body.perf-light .gate-matrix,
 body.perf-light .accent-aura-rain {
-  opacity: calc(0.45 * var(--e-veil, 1)) !important;
+  opacity: 0.45 !important;
 }
 
 .gate-veil {
   background:
-    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.55 * var(--e-veil, 1))), transparent 58%),
-    radial-gradient(ellipse 55% 42% at 100% 100%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.28 * var(--e-veil, 1))), transparent 62%),
-    radial-gradient(ellipse 48% 36% at 0% 88%, rgba(var(--e-accent-rgb, 200, 175, 255), calc(0.22 * var(--e-veil, 1))), transparent 64%) !important;
+    radial-gradient(ellipse 90% 55% at 50% -8%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.55), transparent 58%),
+    radial-gradient(ellipse 55% 42% at 100% 100%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.28), transparent 62%),
+    radial-gradient(ellipse 48% 36% at 0% 88%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 64%) !important;
 }
 
 .gate-door.is-sealed .gate-door-title,
@@ -1391,7 +1391,7 @@ html.is-desktop .panel-shell .panel-shelf-sidebar,
 html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
 html[data-viewport="desktop"] .panel-shell .panel-shelf-sidebar,
 html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
-  background-color: #101012 !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
   background-image:
     radial-gradient(120% 32% at 50% 0%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 64%) !important;
   border: 1px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.22) !important;
@@ -1670,9 +1670,9 @@ html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   border-radius: 0 22px 22px 0 !important;
-  background-color: #121214 !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
   background-image:
-    radial-gradient(120% 28% at 0% 0%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 255, 255, 255)), calc(0.36 * var(--e-veil, 1))), transparent 62%) !important;
+    radial-gradient(120% 28% at 0% 0%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 255, 255, 255)), 0.36), transparent 62%) !important;
   box-shadow: 18px 0 48px rgba(0, 0, 0, 0.45) !important;
   transition:
     transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
@@ -2152,8 +2152,8 @@ html[data-viewport="phone"] .grp-page.users-page .users-toolbar {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
   background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(calc(18px * var(--e-veil, 0.45)));
+  -webkit-backdrop-filter: blur(calc(18px * var(--e-veil, 0.45)));
   box-sizing: border-box;
 }
 
@@ -2333,4 +2333,13 @@ html[data-viewport="desktop"] .panel-shell textarea,
 html[data-viewport="phone"] .panel-shell textarea {
   background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
   background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+}
+
+html.is-desktop .panel-shell .panel-users-search,
+html.is-phone .panel-shell .panel-users-search,
+html[data-viewport="desktop"] .panel-shell .panel-users-search,
+html[data-viewport="phone"] .panel-shell .panel-users-search {
+  background: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.45)) !important;
+  box-shadow: none !important;
 }

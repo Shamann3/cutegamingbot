@@ -226,8 +226,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const decor = hexToRgb(decorHex)
   const glow = a.glow / 100
   // Прозрачность — только плотность панелей. Яркость цвета её не трогает.
-  // 0 — сплошная пластина. 55 — обычный вид. 100 — почти стекло, матрица видна сквозь панели.
-  const plateAlpha = 1 - (a.veil / 100) * 0.92
+  // 0 — нет стекла, сплошная пластина. 100 — полное стекло, фон виден целиком.
+  const plateAlpha = 1 - a.veil / 100
   const soft = 0.22 + glow * 0.42
   const soft2 = 0.34 + glow * 0.48
   const line = 0.55 + glow * 0.4

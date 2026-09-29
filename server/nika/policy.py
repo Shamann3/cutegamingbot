@@ -80,16 +80,17 @@ _FIXED_MODES: Dict[str, Tuple[float, float, int]] = {
 # ---------------------------------------------------------------------------
 # Автоматический режим: тир активности по числу событий growth_fund_ledger
 # в группе за последние 24 часа. Играют часто — доливаем крупнее и чаще.
-# Тишина больше не останавливает долив: группа всё равно идёт к цели, меньшим шагом.
+# Тишина больше не останавливает долив: группа всё равно идёт к цели.
+# Шаг и пауза короткие, чтобы игроки не успевали выиграть кассу до нуля.
 #
 # (порог событий, имя тира, доля цели, доля недостачи, интервал сек)
 # ---------------------------------------------------------------------------
 _AUTO_TIERS: Tuple[Tuple[int, str, float, float, int], ...] = (
-    (120, "hot", 0.10, 0.60, 300),
-    (40, "busy", 0.08, 0.50, 600),
-    (10, "normal", 0.05, 0.40, 900),
-    (1, "quiet", 0.04, 0.35, 900),
-    (0, "idle", 0.03, 0.35, 1200),
+    (120, "hot", 0.20, 0.85, 45),
+    (40, "busy", 0.16, 0.75, 60),
+    (10, "normal", 0.12, 0.65, 90),
+    (1, "quiet", 0.10, 0.55, 120),
+    (0, "idle", 0.08, 0.50, 180),
 )
 
 # Скорость убывания баланса, которую считаем «нормальной»: 5% цели в час.
@@ -100,6 +101,14 @@ DRAIN_MULT_MAX = 2.0
 
 # Шаг мельче этого не имеет смысла: ползли бы к цели по одному куту.
 MIN_STEP_PCT = 0.005
+
+# Баланс группы 0: закрываем всю недостачу сразу, не ждём обычный шаг и потолки.
+EMPTY_COOLDOWN_SEC = 15
+# Ниже этой доли цели касса уже тонкая: шаг крупнее, пауза короче.
+THIN_BALANCE_PCT = 0.20
+THIN_STEP_PCT = 0.25
+THIN_GAP_SHARE = 0.90
+THIN_COOLDOWN_SEC = 30
 
 # Дефолты, от которых считаются потолки новой группы (см. store.suggest_caps).
 DEFAULT_DEAD_ZONE_PCT = 0.05
@@ -267,7 +276,7 @@ def activity_tier(events_24h: int) -> Tuple[str, float, float, int]:
         if events >= threshold:
             return name, step_pct, gap_share, cooldown
     # _AUTO_TIERS заканчивается порогом 0, до этой строки дойти нельзя.
-    return "idle", 0.03, 0.35, 1200
+    return "idle", 0.08, 0.50, 180
 
 
 def drain_multiplier(drain_per_hour: float, target_balance: int) -> float:
@@ -290,7 +299,7 @@ def _mode_profile(
     tier, step_pct, gap_share, cooldown = activity_tier(events_24h)
     mult = drain_multiplier(drain_per_hour, policy.target_balance)
     # Чем быстрее убывает баланс, тем короче пауза между доливами.
-    cooldown = int(max(60, round(cooldown / max(0.5, mult))))
+    cooldown = int(max(20, round(cooldown / max(0.5, mult))))
     return f"auto:{tier}", step_pct, gap_share, cooldown, mult
 
 
@@ -318,6 +327,28 @@ def plan_topup(
         return Plan("none", 0, cooldown, tier, "цель не задана", skip="no_target", dead_zone=dz, gap=gap)
     if gap <= dz:
         return Plan("none", 0, cooldown, tier, "баланс в пределах мёртвой зоны", skip="dead_zone", dead_zone=dz, gap=gap)
+
+    # Пустая касса: игроки уже всё выиграли. Доливаем всю недостачу сразу,
+    # не режем порцией и суточным потолком. Если в источниках меньше —
+    # engine заберёт что есть и предупредит.
+    if int(balance) <= 0:
+        return Plan(
+            "topup",
+            int(gap),
+            EMPTY_COOLDOWN_SEC,
+            f"{tier}:empty",
+            f"баланс группы 0, моментальный долив до цели {target}, не хватает {gap}",
+            dead_zone=dz,
+            gap=gap,
+            step_raw=int(gap),
+        )
+
+    # Тонкая касса: не ждём, пока её доиграют до нуля.
+    if int(balance) < max(1, int(target * THIN_BALANCE_PCT)):
+        step_pct = max(step_pct, THIN_STEP_PCT)
+        gap_share = max(gap_share, THIN_GAP_SHARE)
+        cooldown = min(int(cooldown), THIN_COOLDOWN_SEC)
+        tier = f"{tier}:thin"
 
     step_raw = int(round(target * step_pct * mult))
     min_step = int(max(1, round(target * MIN_STEP_PCT)))
