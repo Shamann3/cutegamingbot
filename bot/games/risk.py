@@ -19,6 +19,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError, TelegramRetryAfter, TelegramNetworkError
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_embedded_stake
 from main import (
     bot1, dp, db,
     TECH_CHAT_ID, create_user_link,
@@ -783,12 +784,11 @@ def _extract_bet_from_text(text: str) -> Optional[int]:
 # ======================================================================
 @dp.message()
 async def risk(message: Message):
-    text = (message.text or "").strip()
-    if not text:
+    intent, bet_amount = parse_embedded_stake(message.text or "", ("риск",))
+    if intent == "ignore":
         return
-
-    bet_amount = _extract_bet_from_text(text)
-    if bet_amount is None:
+    if intent != "play":
+        await message.reply(format_line("риск 10"), parse_mode="HTML")
         return
 
     if bet_amount < int(RISK_MIN_BET):

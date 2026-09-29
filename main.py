@@ -36605,187 +36605,190 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         # ---- 1. Проверяем, что это команда "завершить" ----
         if target_input.lower() != "завершить":
-            return  # ничего не делаем, это не завершение
+            from bot.games.invoke import looks_like_game_command
+            if not looks_like_game_command(target_input):
+                return  # чужой ввод в сценарии вывода не команда
 
-        print(f"🏁 [WITHDRAW][FINISH] Пользователь завершил ввод. user_id={user_id}")
+        if target_input.lower() == "завершить":
+            print(f"🏁 [WITHDRAW][FINISH] Пользователь завершил ввод. user_id={user_id}")
 
-        # ---- 2. Удаляем промпт и клавиатуру ----
-        try:
-            prompt_id = gift_data.get("prompt_message_id")
-            if prompt_id:
-                await bot1.delete_message(message.chat.id , int(prompt_id))
-                print(f"🧹 [WITHDRAW][FINISH] Удалил prompt message_id={prompt_id}")
-        except Exception as e:
-            print(f"🟨 [WITHDRAW][FINISH] Не смог удалить prompt: {type(e).__name__}: {e}")
-
-        try:
-            await message.answer("✨" , reply_markup=ReplyKeyboardRemove())
-            print("🧼 [WITHDRAW][FINISH] Reply-клавиатура убрана")
-        except Exception as e:
-            print(f"🟨 [WITHDRAW][FINISH] Не смог убрать reply-клаву: {type(e).__name__}: {e}")
-
-        # ---- 3. Получаем актуальное состояние вывода ----
-        try:
-            _min_gift = int(await get_min_gift_price_now(bot1) or 0)
-        except Exception:
-            _min_gift = 0
-        try:
-            state = await db.refresh_withdraw_quota_if_needed(
-                user_id , min_withdraw_amount=int(_min_gift or 0))
-            print(f"🧠 [WITHDRAW][STATE] {state}")
-        except Exception as e:
-            print(f"🟥 [WITHDRAW][FINISH] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e}")
-            state = {"allowed": True , "cooldown_left": 0 , "daily_limit": 0 , "used": 0 , "remaining": 0 ,
-                     "cooldown_seconds": 0 , }
-
-        allowed = state.get("allowed" , True)
-        remaining = int(state.get("remaining" , 0))
-        daily_limit = int(state.get("daily_limit" , 0))  # пока оставляем для fallback
-
-        # ---- 4. Если кулдаун / нет остатка / крошки < мин. подарка — ждём лимит ----
-        crumbs = bool(_min_gift > 0 and remaining > 0 and remaining < _min_gift)
-        if (not allowed) or remaining <= 0 or crumbs:
-            cooldown_left = int(state.get("cooldown_left" , 0))
-            if not cooldown_left:
-                try:
-                    cooldown_left = int(await db.get_user_cooldown_left(user_id) or 0)
-                except Exception as e:
-                    print(f"🟥 [WITHDRAW][FINISH] get_user_cooldown_left: {type(e).__name__}: {e}")
-            reason = str(state.get("reason") or state.get("cause") or "")
+            # ---- 2. Удаляем промпт и клавиатуру ----
+            try:
+                prompt_id = gift_data.get("prompt_message_id")
+                if prompt_id:
+                    await bot1.delete_message(message.chat.id , int(prompt_id))
+                    print(f"🧹 [WITHDRAW][FINISH] Удалил prompt message_id={prompt_id}")
+            except Exception as e:
+                print(f"🟨 [WITHDRAW][FINISH] Не смог удалить prompt: {type(e).__name__}: {e}")
 
             try:
-                await message.answer(
-                    "🧰",
-                    reply_markup=kb_withdraw_blocked(cooldown_left, reason=reason),
-                )
+                await message.answer("✨" , reply_markup=ReplyKeyboardRemove())
+                print("🧼 [WITHDRAW][FINISH] Reply-клавиатура убрана")
+            except Exception as e:
+                print(f"🟨 [WITHDRAW][FINISH] Не смог убрать reply-клаву: {type(e).__name__}: {e}")
+
+            # ---- 3. Получаем актуальное состояние вывода ----
+            try:
+                _min_gift = int(await get_min_gift_price_now(bot1) or 0)
             except Exception:
-                await message.answer("🧰" , reply_markup=_kb_info_back(cooldown_left))
+                _min_gift = 0
+            try:
+                state = await db.refresh_withdraw_quota_if_needed(
+                    user_id , min_withdraw_amount=int(_min_gift or 0))
+                print(f"🧠 [WITHDRAW][STATE] {state}")
+            except Exception as e:
+                print(f"🟥 [WITHDRAW][FINISH] refresh_withdraw_quota_if_needed: {type(e).__name__}: {e}")
+                state = {"allowed": True , "cooldown_left": 0 , "daily_limit": 0 , "used": 0 , "remaining": 0 ,
+                         "cooldown_seconds": 0 , }
 
+            allowed = state.get("allowed" , True)
+            remaining = int(state.get("remaining" , 0))
+            daily_limit = int(state.get("daily_limit" , 0))  # пока оставляем для fallback
+
+            # ---- 4. Если кулдаун / нет остатка / крошки < мин. подарка — ждём лимит ----
+            crumbs = bool(_min_gift > 0 and remaining > 0 and remaining < _min_gift)
+            if (not allowed) or remaining <= 0 or crumbs:
+                cooldown_left = int(state.get("cooldown_left" , 0))
+                if not cooldown_left:
+                    try:
+                        cooldown_left = int(await db.get_user_cooldown_left(user_id) or 0)
+                    except Exception as e:
+                        print(f"🟥 [WITHDRAW][FINISH] get_user_cooldown_left: {type(e).__name__}: {e}")
+                reason = str(state.get("reason") or state.get("cause") or "")
+
+                try:
+                    await message.answer(
+                        "🧰",
+                        reply_markup=kb_withdraw_blocked(cooldown_left, reason=reason),
+                    )
+                except Exception:
+                    await message.answer("🧰" , reply_markup=_kb_info_back(cooldown_left))
+
+                user_gift.pop(user_id , None)
+                print(f"🧹 [WITHDRAW][FINISH] EXIT blocked. left={cooldown_left} crumbs={crumbs}")
+                return
+
+            # ---- 5. Получаем баланс и TON ----
+            try:
+                user_balance = int(await db.get_user_balance(user_id) or 0)
+            except Exception as e:
+                print(f"🟥 [WITHDRAW][FINISH] get_user_balance: {type(e).__name__}: {e}")
+                user_balance = 0
+
+            try:
+                ton_bal = float(await get_balance_ton_fast(SEED_PHRASE) or 0.0)
+                speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"
+                print(f"🏦 [WITHDRAW][FINISH][TON] ton={ton_bal:.9f} -> speed_flag={speed_flag!r}")
+            except Exception as e:
+                ton_bal = 0.0
+                speed_flag = "-"
+                print(f"🟥 [WITHDRAW][FINISH][TON] {type(e).__name__}: {e}")
+
+            # ---- 6. Вычисляем speed_allowed ----
+            try:
+                speed_allowed = await decide_speed_allowed_safe(
+                    seed_phrase=SEED_PHRASE , speed_flag=speed_flag , remaining=remaining , user_balance_int=user_balance ,
+                    ton_bal=ton_bal , )
+            except Exception as e:
+                speed_allowed = False
+                print(f"🟥 [WITHDRAW][FINISH] decide_speed_allowed_safe: {type(e).__name__}: {e}")
+
+            # ---- 7. Формируем back_callback ----
+            back_signal = str(gift_data.get("back_signal" , "-")).strip()
+            owner_id_for_back = int(gift_data.get("owner_id_for_back" , user_id) or user_id)
+            back_callback = None
+            if back_signal == "+":
+                try:
+                    back_callback = cb_pack("balance" , owner_id_for_back)
+                except Exception as e:
+                    print(f"🟥 [WITHDRAW][FINISH] cb_pack(balance): {type(e).__name__}: {e}")
+
+            print(f"↩️ [WITHDRAW][BACK] back_signal={back_signal!r} owner_id_for_back={owner_id_for_back}")
+
+            # ---- 8. Генерируем клавиатуру ----
+            try:
+                kb = await generate_gift_keyboard(
+                    bot1 , remaining=remaining , speed_allowed=speed_allowed , owner_id=owner_id_for_back ,
+                    back_callback=back_callback , )
+                print("🎛️ [WITHDRAW][FINISH] Клавиатура сформирована успешно")
+            except Exception as e:
+                print(f"🟥 [WITHDRAW][FINISH] generate_gift_keyboard: {type(e).__name__}: {e}")
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[ [ InlineKeyboardButton(
+                        text=" " , callback_data="9close_bonus" , style="default" ,
+                        icon_custom_emoji_id="5226660202035554522") ] ])
+
+            # ---- 9. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
+            try:
+                user_limit = remaining#await db.get_user_canwithdrawal(user_id)
+                user_limit = int(user_limit or 0)
+            except Exception as e:
+                print(f"🟥 [WITHDRAW][FINISH] get_user_canwithdrawal: {type(e).__name__}: {e}")
+                user_limit = daily_limit  # fallback
+
+            # ---- 10. Расчёт "красивого" лимита и необходимой покупки ----
+            STEP = MIN_WITHDRAW_STEP
+            BONUS_PERCENT = Decimal('0.03')
+
+            def calculate_purchase_to_target(limit , step , bonus_pct):
+                target = ((limit // step) + 1) * step
+                need_limit = target - limit
+                if need_limit <= 0:
+                    return 0 , int(target) , 0
+                need_purchase = int((Decimal(need_limit) / bonus_pct).quantize(Decimal('0') , rounding=ROUND_CEILING))
+                bonus_actual = (Decimal(need_purchase) * bonus_pct).quantize(Decimal('0.01'))
+                if bonus_actual < need_limit:
+                    need_purchase += 1
+                return int(need_purchase) , int(target) , int(need_limit)
+
+            need_purchase , target , need_limit = calculate_purchase_to_target(
+                limit=user_limit , step=STEP , bonus_pct=BONUS_PERCENT)
+
+            balance_fmt = _fmt_dot_safe(user_balance)
+            remaining_fmt = _fmt_dot_safe(remaining)
+            need_limit_fmt = _fmt_dot_safe(need_limit)
+            target_fmt = _fmt_dot_safe(target)
+            need_purchase_fmt = _fmt_dot_safe(need_purchase)
+
+            # Экранируем все переменные, чтобы избежать конфликтов с HTML
+            balance_esc = escape(balance_fmt)
+            remaining_esc = escape(remaining_fmt)
+            need_limit_esc = escape(need_limit_fmt)
+            target_esc = escape(target_fmt)
+            need_purchase_esc = escape(need_purchase_fmt)
+
+            # Формируем текст с правильной вложенностью тегов
+            full_text = (f"<b>"
+                         f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
+                         f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
+                         f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
+                         f"<blockquote><tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит до {target_esc} кут!</b>\n"
+                         f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут\n"
+                         f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> Чтобы расширить текущий порог на {need_limit_esc} кут</blockquote>\n"
+                         f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
+                         f"</b>")
+
+            # Персональная благодарность для специального пользователя
+            if user_id == SPECIAL_USER_ID:
+                # Если THANK_TEXT содержит HTML, его тоже нужно экранировать (если он не доверенный)
+                full_text += THANK_TEXT  # или escape(THANK_TEXT), если он может содержать опасные символы
+
+            # ---- 13. Отправка ----
+            try:
+                sent = await message.answer(
+                    full_text , reply_markup=kb , parse_mode="HTML" , disable_web_page_preview=True , )
+                print(f"📨 [WITHDRAW][FINISH] Экран отправлен. msg_id={getattr(sent , 'message_id' , None)}")
+                try:
+                    attach_gift_menu_meta(sent , owner_id_for_back , back_callback)
+                    print("🧷 [WITHDRAW][FINISH] Мета gift_menu_owner/gift_menu_back сохранена")
+                except Exception as e:
+                    print(f"🟨 [WITHDRAW][FINISH] Не смог сохранить мету: {type(e).__name__}: {e}")
+            except Exception as e:
+                print(f"🟥 [WITHDRAW][FINISH] Ошибка отправки: {type(e).__name__}: {e}")
+
+            # ---- 14. Чистим состояние ----
             user_gift.pop(user_id , None)
-            print(f"🧹 [WITHDRAW][FINISH] EXIT blocked. left={cooldown_left} crumbs={crumbs}")
-            return
-
-        # ---- 5. Получаем баланс и TON ----
-        try:
-            user_balance = int(await db.get_user_balance(user_id) or 0)
-        except Exception as e:
-            print(f"🟥 [WITHDRAW][FINISH] get_user_balance: {type(e).__name__}: {e}")
-            user_balance = 0
-
-        try:
-            ton_bal = float(await get_balance_ton_fast(SEED_PHRASE) or 0.0)
-            speed_flag = "+" if ton_bal >= TON_INSTANT_MIN else "-"
-            print(f"🏦 [WITHDRAW][FINISH][TON] ton={ton_bal:.9f} -> speed_flag={speed_flag!r}")
-        except Exception as e:
-            ton_bal = 0.0
-            speed_flag = "-"
-            print(f"🟥 [WITHDRAW][FINISH][TON] {type(e).__name__}: {e}")
-
-        # ---- 6. Вычисляем speed_allowed ----
-        try:
-            speed_allowed = await decide_speed_allowed_safe(
-                seed_phrase=SEED_PHRASE , speed_flag=speed_flag , remaining=remaining , user_balance_int=user_balance ,
-                ton_bal=ton_bal , )
-        except Exception as e:
-            speed_allowed = False
-            print(f"🟥 [WITHDRAW][FINISH] decide_speed_allowed_safe: {type(e).__name__}: {e}")
-
-        # ---- 7. Формируем back_callback ----
-        back_signal = str(gift_data.get("back_signal" , "-")).strip()
-        owner_id_for_back = int(gift_data.get("owner_id_for_back" , user_id) or user_id)
-        back_callback = None
-        if back_signal == "+":
-            try:
-                back_callback = cb_pack("balance" , owner_id_for_back)
-            except Exception as e:
-                print(f"🟥 [WITHDRAW][FINISH] cb_pack(balance): {type(e).__name__}: {e}")
-
-        print(f"↩️ [WITHDRAW][BACK] back_signal={back_signal!r} owner_id_for_back={owner_id_for_back}")
-
-        # ---- 8. Генерируем клавиатуру ----
-        try:
-            kb = await generate_gift_keyboard(
-                bot1 , remaining=remaining , speed_allowed=speed_allowed , owner_id=owner_id_for_back ,
-                back_callback=back_callback , )
-            print("🎛️ [WITHDRAW][FINISH] Клавиатура сформирована успешно")
-        except Exception as e:
-            print(f"🟥 [WITHDRAW][FINISH] generate_gift_keyboard: {type(e).__name__}: {e}")
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[ [ InlineKeyboardButton(
-                    text=" " , callback_data="9close_bonus" , style="default" ,
-                    icon_custom_emoji_id="5226660202035554522") ] ])
-
-        # ---- 9. ПОЛУЧАЕМ АКТУАЛЬНЫЙ ЛИМИТ (canwithdrawal) ----
-        try:
-            user_limit = remaining#await db.get_user_canwithdrawal(user_id)
-            user_limit = int(user_limit or 0)
-        except Exception as e:
-            print(f"🟥 [WITHDRAW][FINISH] get_user_canwithdrawal: {type(e).__name__}: {e}")
-            user_limit = daily_limit  # fallback
-
-        # ---- 10. Расчёт "красивого" лимита и необходимой покупки ----
-        STEP = MIN_WITHDRAW_STEP
-        BONUS_PERCENT = Decimal('0.03')
-
-        def calculate_purchase_to_target(limit , step , bonus_pct):
-            target = ((limit // step) + 1) * step
-            need_limit = target - limit
-            if need_limit <= 0:
-                return 0 , int(target) , 0
-            need_purchase = int((Decimal(need_limit) / bonus_pct).quantize(Decimal('0') , rounding=ROUND_CEILING))
-            bonus_actual = (Decimal(need_purchase) * bonus_pct).quantize(Decimal('0.01'))
-            if bonus_actual < need_limit:
-                need_purchase += 1
-            return int(need_purchase) , int(target) , int(need_limit)
-
-        need_purchase , target , need_limit = calculate_purchase_to_target(
-            limit=user_limit , step=STEP , bonus_pct=BONUS_PERCENT)
-
-        balance_fmt = _fmt_dot_safe(user_balance)
-        remaining_fmt = _fmt_dot_safe(remaining)
-        need_limit_fmt = _fmt_dot_safe(need_limit)
-        target_fmt = _fmt_dot_safe(target)
-        need_purchase_fmt = _fmt_dot_safe(need_purchase)
-
-        # Экранируем все переменные, чтобы избежать конфликтов с HTML
-        balance_esc = escape(balance_fmt)
-        remaining_esc = escape(remaining_fmt)
-        need_limit_esc = escape(need_limit_fmt)
-        target_esc = escape(target_fmt)
-        need_purchase_esc = escape(need_purchase_fmt)
-
-        # Формируем текст с правильной вложенностью тегов
-        full_text = (f"<b>"
-                     f"<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji> 1 кут = 1 <tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji>\n"
-                     f"<tg-emoji emoji-id='5294026527850132517'>💰</tg-emoji> Баланс : {balance_esc} кут\n"
-                     f"<tg-emoji emoji-id='5271564922633869989'>🏄</tg-emoji> Доступно для вывода : {remaining_esc}\n"
-                     f"<blockquote><tg-emoji emoji-id='5420542898452077602'>🧘‍♂️</tg-emoji> <b>Повысьте лимит до {target_esc} кут!</b>\n"
-                     f"<tg-emoji emoji-id='6039573425268201570'>📤</tg-emoji> Пополните баланс на {need_purchase_esc} кут\n"
-                     f"<tg-emoji emoji-id='6037175527846975726'>🎁</tg-emoji> Чтобы расширить текущий порог на {need_limit_esc} кут</blockquote>\n"
-                     f"Выберите сумму для вывода <tg-emoji emoji-id='5470177992950946662'>👇</tg-emoji>"
-                     f"</b>")
-
-        # Персональная благодарность для специального пользователя
-        if user_id == SPECIAL_USER_ID:
-            # Если THANK_TEXT содержит HTML, его тоже нужно экранировать (если он не доверенный)
-            full_text += THANK_TEXT  # или escape(THANK_TEXT), если он может содержать опасные символы
-
-        # ---- 13. Отправка ----
-        try:
-            sent = await message.answer(
-                full_text , reply_markup=kb , parse_mode="HTML" , disable_web_page_preview=True , )
-            print(f"📨 [WITHDRAW][FINISH] Экран отправлен. msg_id={getattr(sent , 'message_id' , None)}")
-            try:
-                attach_gift_menu_meta(sent , owner_id_for_back , back_callback)
-                print("🧷 [WITHDRAW][FINISH] Мета gift_menu_owner/gift_menu_back сохранена")
-            except Exception as e:
-                print(f"🟨 [WITHDRAW][FINISH] Не смог сохранить мету: {type(e).__name__}: {e}")
-        except Exception as e:
-            print(f"🟥 [WITHDRAW][FINISH] Ошибка отправки: {type(e).__name__}: {e}")
-
-        # ---- 14. Чистим состояние ----
-        user_gift.pop(user_id , None)
-        print(f"🧹 [WITHDRAW][FINISH] Состояние очищено user_id={user_id}")
+            print(f"🧹 [WITHDRAW][FINISH] Состояние очищено user_id={user_id}")
 
 
 
@@ -38027,7 +38030,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             task1 = asyncio.create_task(measure_time(give(message) , "дать"))
             await task1
 
-        minete123xt = {"провода ", "провод "}
+        minete123xt = {"провода", "провод"}
         if any(text_lower.startswith(keyword) for keyword in minete123xt):
             from bot.games.provoda import provoda
             try:

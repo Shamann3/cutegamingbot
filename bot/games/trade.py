@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from main import *  # noqa
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, open_command, stake_token
 from bot.funcs.tech_home_log import safe_send_tech_log
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from typing import Optional, Tuple, Literal
@@ -198,11 +199,16 @@ async def trade(message: Message):
     if not text:
         return
 
-    parts = text.split()
-    if not parts or parts[0].lower() != "трейд":
+    kind, tokens = open_command(text, ("трейд",))
+    if kind == "ignore":
         return
+    if kind != "ready":
+        await _reply_simple(message, format_line("трейд вверх 10"))
+        return
+    parts = tokens
 
     if len(parts) != 3:
+        await _reply_simple(message, format_line("трейд вверх 10"))
         return
 
     dir_a = _parse_direction(parts[1])
@@ -215,15 +221,17 @@ async def trade(message: Message):
         direction = dir_b
         amount_token = parts[1]
     else:
+        await _reply_simple(message, format_line("трейд вверх 10"))
         return
 
     amount_token = (amount_token or "").strip()
-    if not amount_token.isdigit():
+    bet_amount = stake_token(amount_token)
+    if bet_amount is None:
+        await _reply_simple(message, format_line("трейд вверх 10"))
         return
 
-    bet_amount = int(amount_token)
-
     if bet_amount <= 0:
+        await _reply_simple(message, format_line("трейд вверх 10"))
         return
 
     if bet_amount <= min_amount_trade:

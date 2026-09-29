@@ -23,6 +23,7 @@ from bot.config.config import *
 from bot.funcs.func import *
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import TTT_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
 from main import (
     games_tictactoe,
     _format_hms,
@@ -433,42 +434,13 @@ async def tic_tac_toe(message: Message):
         if not message.text:
             return
 
-        text = message.text.strip()
-        parts = text.split()
-        if not parts:
+        phrase_kind, bet = parse_phrase_stake(message.text or "", TTT_PHRASES)
+        if phrase_kind == "ignore":
+            phrase_kind, bet = parse_optional_stake(message.text or "", ("кн",))
+        if phrase_kind == "ignore":
             return
-
-        bet = 0
-        bet_str = None
-        p0 = parts[0].lower()
-
-        if p0 == "кн":
-            if len(parts) == 1:
-                bet = 0
-            elif len(parts) == 2:
-                bet_s = parts[1]
-                if not bet_s.isdigit():
-                    return
-                bet_str = bet_s
-            else:
-                return
-
-        elif p0 == "крестики":
-            if len(parts) == 2 and parts[1].lower() == "нолики":
-                bet = 0
-            elif len(parts) == 3 and parts[1].lower() == "нолики":
-                bet_s = parts[2]
-                if not bet_s.isdigit():
-                    return
-                bet_str = bet_s
-            else:
-                return
-        else:
-            return
-
-        bet = int(bet_str) if bet_str is not None else 0
-
-        if bet < 0:
+        if phrase_kind != "play":
+            await message.reply(format_line("кн 10"), parse_mode="HTML")
             return
 
         if await reject_if_private_game(message, "tic_tac_toe", bet):

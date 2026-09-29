@@ -24,10 +24,16 @@ export function releaseNestedScrolls(main) {
         && node.scrollHeight > node.clientHeight + 32
         && (style.maxHeight !== 'none' || style.height.endsWith('%') || node.scrollHeight > node.clientHeight + 80)
       if (!scrolls && !clips) continue
+      if (node.classList?.contains('users-toolbar') || node.classList?.contains('nika-seg')) {
+        node.style.setProperty('max-height', 'none', 'important')
+        node.style.setProperty('overflow', 'visible', 'important')
+        continue
+      }
       node.style.setProperty('max-height', 'none', 'important')
       node.style.setProperty('height', 'auto', 'important')
       const wide = node.scrollWidth > node.clientWidth + 8
-      if (wide) {
+      const shortStrip = node.clientHeight > 0 && node.clientHeight <= 72
+      if (wide && shortStrip) {
         node.style.setProperty('overflow-x', 'auto', 'important')
         node.style.setProperty('overflow-y', 'hidden', 'important')
         continue

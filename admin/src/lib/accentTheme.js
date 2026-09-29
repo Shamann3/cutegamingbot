@@ -226,8 +226,8 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   const decor = hexToRgb(decorHex)
   const glow = a.glow / 100
   // Прозрачность — только плотность панелей. Яркость цвета её не трогает.
-  // Шкала 0…100. Ноль оставляет 25% плотности. 55 — обычный вид. 100 — сплошные панели.
-  const veil = 0.25 + (a.veil / 100) * 0.75
+  // 0 — сплошная пластина. 55 — обычный вид. 100 — почти стекло, матрица видна сквозь панели.
+  const plateAlpha = 1 - (a.veil / 100) * 0.92
   const soft = 0.22 + glow * 0.42
   const soft2 = 0.34 + glow * 0.48
   const line = 0.55 + glow * 0.4
@@ -242,9 +242,9 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--e-accent-rgb', `${r}, ${g}, ${b}`)
   root.style.setProperty('--e-accent-decor', decorHex)
   root.style.setProperty('--e-accent-decor-rgb', `${decor.r}, ${decor.g}, ${decor.b}`)
-  root.style.setProperty('--e-veil', veil.toFixed(3))
-  root.style.setProperty('--e-plate', `rgba(14, 14, 16, ${veil.toFixed(3)})`)
-  root.style.setProperty('--e-plate-2', `rgba(24, 24, 28, ${veil.toFixed(3)})`)
+  root.style.setProperty('--e-veil', plateAlpha.toFixed(3))
+  root.style.setProperty('--e-plate', `rgba(14, 14, 16, ${plateAlpha.toFixed(3)})`)
+  root.style.setProperty('--e-plate-2', `rgba(24, 24, 28, ${plateAlpha.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft.toFixed(3)})`)
   root.style.setProperty('--e-accent-soft-2', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft2.toFixed(3)})`)
   root.style.setProperty('--e-accent-line', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${line.toFixed(3)})`)

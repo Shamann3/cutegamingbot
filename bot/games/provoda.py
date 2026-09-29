@@ -13,6 +13,7 @@
 
 from main import *  # noqa
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import command_filter, format_line, parse_required_stake
 import asyncio
 import random
 import time
@@ -717,26 +718,15 @@ async def _session_ttl_watcher(chat_id: int, msg_id: int, owner_id: int, ttl: in
 # ======================================================================
 #                                START
 # ======================================================================
-@dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("провода", "провод"))
+@dp.message(command_filter(("провода", "провод")))
 async def provoda(message: Message):
+    intent, bet_amount = parse_required_stake(message.text or "", ("провода", "провод"))
+    if intent == "ignore":
+        return
+    if intent != "play":
+        await message.reply(format_line("провода 10"), parse_mode="HTML")
+        return
     if await reject_if_private_game(message, "provoda"):
-        return
-    txt = (message.text or "").strip()
-    if not txt:
-        return
-    parts = txt.split()
-    if not parts:
-        return
-    cmd = parts[0].lower()
-    if cmd not in ("провода", "провод"):
-        return
-    if len(parts) != 2:
-        return
-    bet_token = (parts[1] or "").strip()
-    if not bet_token or not bet_token.isdigit():
-        return
-    bet_amount = int(bet_token)
-    if bet_amount <= 0:
         return
     from bot.runtime.game_desk.live import reject_desk
     if await reject_desk(message, "provoda", bet_amount):

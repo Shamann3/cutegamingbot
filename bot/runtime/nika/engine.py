@@ -37,7 +37,6 @@ from bot.runtime.nika.policy import (
     apply_sweep_speed,
     allocate_from_ladder,
     pick_sweep_dest,
-    PLAY_RECENT_SEC,
     normalize_topup_pace,
     plan_drain_sweep,
     plan_instant_topup,
@@ -590,13 +589,12 @@ async def _topup_group(
     pace = normalize_topup_pace((settings or {}).get("topup_pace"))
     async with db.pool.acquire() as conn:
         events = await store.ledger_events_24h(conn, policy.chat_id)
-        recent = await store.ledger_events_anywhere(conn, PLAY_RECENT_SEC)
         drain = await store.drain_per_hour(conn, policy.chat_id)
         daily = await store.daily_done_sum(conn, policy.chat_id, "topup")
-        quiet_wait = False
         if pace == "instant":
             plan = plan_instant_topup(policy, balance=balance)
         else:
+            # Долив идёт к цели сам, без ожидания чужих игр.
             plan = plan_topup(
                 policy,
                 balance=balance,
@@ -604,19 +602,14 @@ async def _topup_group(
                 drain_per_hour=drain,
                 daily_topup_used=daily,
             )
-            # Порция только после чужих игр. Пустые кассы всё равно предупреждают,
-            # даже если сейчас никто не играет.
-            if plan.amount > 0 and recent <= 0 and not skip_cooldown:
-                quiet_wait = True
         if plan.amount <= 0:
             return plan.skip or "none"
-        if not quiet_wait:
-            if skip_cooldown:
-                await store.force_touch_group_action(conn, policy.chat_id, "topup")
-            else:
-                claimed = await store.claim_group_action(conn, policy.chat_id, "topup", plan.cooldown_sec)
-                if not claimed:
-                    return "cooldown"
+        if skip_cooldown:
+            await store.force_touch_group_action(conn, policy.chat_id, "topup")
+        else:
+            claimed = await store.claim_group_action(conn, policy.chat_id, "topup", plan.cooldown_sec)
+            if not claimed:
+                return "cooldown"
 
     ladder_ids = [cid for cid, _ in SOURCE_LADDER if cid != policy.chat_id]
     async with db.pool.acquire() as conn:
@@ -627,8 +620,6 @@ async def _topup_group(
         await _raise_empty_ladder(db, policy.chat_id, plan.amount, snapshot, balance=balance)
         await _alert_empty_ladder(db, bot, settings, policy.chat_id, plan.amount, snapshot)
         return "empty_ladder"
-    if quiet_wait:
-        return "quiet"
 
     moved_total = 0
     for source, take in takes:

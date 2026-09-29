@@ -10,6 +10,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import OREL_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
 from main import (
     gamesorel, button_gamesorel,  # если button_gamesorel нужен тебе где-то ещё - оставляем
     db, bot1, dp,
@@ -150,74 +151,17 @@ async def orel(message: Message):
         if not message.text:
             return
 
-        text = message.text.strip()
-        parts = text.split()
-        if not parts:
+        phrase_kind, phrase_bet = parse_phrase_stake(message.text or "", OREL_PHRASES)
+        if phrase_kind == "ignore":
+            phrase_kind, phrase_bet = parse_optional_stake(message.text or "", ("орел", "орёл", "решка"))
+        if phrase_kind == "ignore":
             return
-
-        # нормализуем один раз
-        p0 = parts[0].lower().replace("ё", "е")
-
-        # допустимые слова
-        _coin_words = ("орел", "решка")
-        _conj_words = ("или", "и")
-
-        bet = 0
-        bet_str = None
-
-        # ✅ Форматы:
-        # 1) "орел" / "решка"
-        # 2) "орел <число>"
-        # 3) "орел или решка"
-        # 4) "орел или решка <число>"
-        if len(parts) == 1:
-            if p0 not in _coin_words:
-                return
-            bet = 0
-
-        elif len(parts) == 2:
-            if p0 not in _coin_words:
-                return
-            # строго число
-            bet_s = parts[1]
-            if not bet_s.isdigit():
-                return
-            bet_str = bet_s
-
-        elif len(parts) == 3:
-            p1 = parts[1].lower().replace("ё", "е")
-            p2 = parts[2].lower().replace("ё", "е")
-            if (p0 in _coin_words) and (p1 in _conj_words) and (p2 in _coin_words):
-                bet = 0
-            else:
-                return
-
-        elif len(parts) == 4:
-            p1 = parts[1].lower().replace("ё", "е")
-            p2 = parts[2].lower().replace("ё", "е")
-            if not ((p0 in _coin_words) and (p1 in _conj_words) and (p2 in _coin_words)):
-                return
-            bet_s = parts[3]
-            if not bet_s.isdigit():
-                return
-            bet_str = bet_s
-
-        else:
+        if phrase_kind != "play":
+            await message.reply(format_line("орел 10"), parse_mode="HTML", disable_web_page_preview=True)
             return
-
-        if bet_str is not None:
-            bet = int(bet_str)
+        bet = phrase_bet
         if await reject_if_private_game(message, "orel", bet):
             return
-        if bet_str is not None:
-            # как у тебя: ставка должна быть > 0, иначе отвечаем
-            if bet <= 0:
-                await message.reply(
-                    "💭 <b>Ставка должна быть больше 0</b>",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True
-                )
-                return
 
         creator_id = message.from_user.id
 

@@ -4,6 +4,7 @@ from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 
 from aiogram.types import ReplyKeyboardRemove, \
     ReplyKeyboardMarkup, KeyboardButton, \
@@ -54,28 +55,16 @@ def create_keyboard_russian_roulette(target_player_name: str):
 
 @dp.message()
 async def bullet(message: Message):
-    parts = message.text.split()
     user_id = message.from_user.id
     chat_id = message.chat.id
-    bet_str = '0'
-
-    if len(parts) == 2 and parts[0].lower() == "пуля34123412":
-        bet_str = parts[1].replace(',', '').replace('.', '')
-    elif len(parts) == 1 and parts[0].lower() == "пуля34123412":
-        bet_str = '0'
-    else:
-        return  # Неправильный формат команды
-
-    if await reject_if_private_game(message, "bullet"):
+    kind, bet = parse_optional_stake(message.text or "", ("пуля34123412",))
+    if kind == "ignore":
+        return
+    if kind != "play":
+        await message.reply(format_line("пуля34123412 10"), parse_mode="HTML", disable_web_page_preview=True)
         return
 
-    try:
-        if bet_str.isdigit():
-            bet = int(bet_str)
-        else:
-            raise ValueError("Некорректная ставка")
-    except ValueError:
-        await message.reply("🛠 <b>Некорректная ставка</b>", parse_mode="HTML", disable_web_page_preview=True)
+    if await reject_if_private_game(message, "bullet"):
         return
 
     current_balance = await db.get_user_balance(user_id)

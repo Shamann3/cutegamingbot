@@ -4123,7 +4123,13 @@ def _message_url(chat_id: int, message_id: int, chat_ref: Optional[str] = None) 
 async def _in_chat(user_id: int, chat_id: int) -> bool:
     try:
         member = await bot1.get_chat_member(chat_id, user_id)
-        return member.status in ("member", "administrator", "creator")
+        status = str(getattr(member, "status", "") or "")
+        if status in ("member", "administrator", "creator"):
+            return True
+        # Ограниченный участник всё равно в чате и может вызвать игру.
+        if status == "restricted":
+            return bool(getattr(member, "is_member", True))
+        return False
     except Exception as e:
         print(f"[ONBOARDING] Проверка членства {user_id} в {chat_id}: {e!r}")
         return False

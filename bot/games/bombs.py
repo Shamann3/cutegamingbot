@@ -28,6 +28,7 @@ from bot.db_create.db import *   # noqa
 from bot.design.buttons import * # noqa
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import command_filter, format_line, parse_embedded_stake
 from bot.funcs.tech_home_log import safe_send_tech_log
 from main import (
     bot1, dp, db,
@@ -598,41 +599,15 @@ async def _session_ttl_watcher(owner_id: int, msg_id: int, chat_id: int):
 
 
 # ========================= СТАРТ ИГРЫ =========================
-@dp.message(lambda m: isinstance(m.text, str) and re.match(r"^\s*(бомбы|бомба)\b", m.text.strip().lower()))
+@dp.message(command_filter(("бомба", "бомбы")))
 async def bombs(message: Message):
+    intent, bet_int = parse_embedded_stake(message.text or "", ("бомба", "бомбы"))
+    if intent == "ignore":
+        return
+    if intent != "play":
+        await message.reply(format_line("бомбы 10"), parse_mode="HTML")
+        return
     if await reject_if_private_game(message, "bombs"):
-        return
-    text_raw = (message.text or "").strip()
-    if not text_raw:
-        return
-
-    parts_raw = text_raw.split()
-    if not parts_raw:
-        return
-
-    cmd = parts_raw[0].lower()
-    if cmd not in ("бомба", "бомбы"):
-        return
-
-    if len(parts_raw) >= 2:
-        bet_token = (parts_raw[1] or "").strip()
-    else:
-        bet_token = ""
-
-    if not bet_token:
-        m = re.search(r"(\d{1,12})", text_raw)
-        if not m:
-            return
-        bet_token = m.group(1)
-
-    if not bet_token.isdigit():
-        m = re.search(r"(\d{1,12})", text_raw)
-        if not m:
-            return
-        bet_token = m.group(1)
-
-    bet_int = int(bet_token)
-    if bet_int <= 0:
         return
 
     from bot.runtime.game_desk.live import reject_desk

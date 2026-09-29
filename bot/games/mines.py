@@ -8,6 +8,7 @@ from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -67,31 +68,13 @@ def create_game_keyboard(board, game_id):
 
 @dp.message()
 async def mines(message: Message):
-
-    parts = message.text.split()
-    bet_str = ''  # Инициализируем переменную
-
-    if len(parts) == 2 and parts [ 0 ].lower() == "мины":
-        bet_str = parts [ 1 ].replace(',' , '').replace('.' , '')
-    elif len(parts) == 1 and parts [ 0 ].lower() == "мины":
-        bet_str = '0'  # Устанавливаем bet_str как строку '0'
-    else:
-        # Неправильный формат команды, выходим
+    kind, bet = parse_optional_stake(message.text or "", ("мины",))
+    if kind == "ignore":
         return
-
-    try:
-        # Проверяем, что bet_str не пустой и является числом
-        if bet_str.isdigit():
-            bet = int(bet_str)
-        else:
-            raise ValueError("Некорректная ставка")
-
-        if await reject_if_private_game(message, "mines", bet):
-            return
-    except ValueError:
-        await message.reply("🛠 <b>Некорректная ставка</b>",
-            parse_mode="HTML",
-            disable_web_page_preview=True)
+    if kind != "play":
+        await message.reply(format_line("мины 10"), parse_mode="HTML", disable_web_page_preview=True)
+        return
+    if await reject_if_private_game(message, "mines", bet):
         return
 
     creator_id = message.from_user.id

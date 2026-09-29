@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { NAV_ICONS } from './NavIcons'
 
@@ -38,20 +38,42 @@ export default function PhoneDock({
   menuOpen = false,
   tabsInMenu = false,
 }) {
-  const barRef = useRef(null)
-  const activeRef = useRef(null)
   const crowded = sections.length > 5
   const reduce = useReducedMotion()
   const current = sections.find((item) => item.id === activeSection)
   const currentLabel = current?.labelRu || current?.label || 'Вкладки'
+  const pivotAt = sections.findIndex((item) => item.id === 'moderation')
+  const leftTabs = pivotAt >= 0 ? sections.slice(0, pivotAt) : sections
+  const pivotTab = pivotAt >= 0 ? sections[pivotAt] : null
+  const rightTabs = pivotAt >= 0 ? sections.slice(pivotAt + 1) : []
 
-  useEffect(() => {
-    const bar = barRef.current
-    const node = activeRef.current
-    if (!bar || !node) return
-    const left = node.offsetLeft - (bar.clientWidth - node.offsetWidth) / 2
-    bar.scrollTo({ left: Math.max(0, left), behavior: reduce ? 'auto' : 'smooth' })
-  }, [activeSection, sections.length, reduce])
+  const renderTab = useCallback((item) => {
+    const Icon = NAV_ICONS[item.id] || FallbackIcon
+    const on = item.id === activeSection
+    const count = Number(badges[item.id] || 0)
+    const mark = shortLabel(item.labelRu || item.label)
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className={on ? 'is-on' : ''}
+        data-section={item.id}
+        aria-label={item.labelRu || item.label}
+        title={item.labelRu || item.label}
+        aria-current={on ? 'page' : undefined}
+        onClick={() => onNavigate(item.id)}
+      >
+        <span className="phone-dock-icon">
+          <Icon />
+          {count > 0 && (
+            <i className="phone-dock-badge">{count > 99 ? '99+' : count}</i>
+          )}
+        </span>
+        {mark && <span className="phone-dock-label">{mark}</span>}
+        <span className="phone-dock-mark" aria-hidden="true" />
+      </button>
+    )
+  }, [activeSection, badges, onNavigate])
 
   if (!sections.length) return null
 
@@ -75,37 +97,20 @@ export default function PhoneDock({
           <span>Вкладки</span>
           <b>{currentLabel}</b>
         </button>
+      ) : pivotTab ? (
+        <div className="phone-dock-scroll is-pivoted">
+          <div className="phone-dock-side is-left">
+            {leftTabs.map((item) => renderTab(item))}
+          </div>
+          <div className="phone-dock-pivot">{renderTab(pivotTab)}</div>
+          <div className="phone-dock-side is-right">
+            {rightTabs.map((item) => renderTab(item))}
+          </div>
+        </div>
       ) : (
-      <div className="phone-dock-scroll" ref={barRef}>
-        {sections.map((item) => {
-          const Icon = NAV_ICONS[item.id] || FallbackIcon
-          const on = item.id === activeSection
-          const count = Number(badges[item.id] || 0)
-          const mark = shortLabel(item.labelRu || item.label)
-          return (
-            <button
-              key={item.id}
-              type="button"
-              ref={on ? activeRef : null}
-              className={on ? 'is-on' : ''}
-              data-section={item.id}
-              aria-label={item.labelRu || item.label}
-              title={item.labelRu || item.label}
-              aria-current={on ? 'page' : undefined}
-              onClick={() => onNavigate(item.id)}
-            >
-              <span className="phone-dock-icon">
-                <Icon />
-                {count > 0 && (
-                  <i className="phone-dock-badge">{count > 99 ? '99+' : count}</i>
-                )}
-              </span>
-              {mark && <span className="phone-dock-label">{mark}</span>}
-              <span className="phone-dock-mark" aria-hidden="true" />
-            </button>
-          )
-        })}
-      </div>
+        <div className="phone-dock-scroll">
+          {sections.map((item) => renderTab(item))}
+        </div>
       )}
       {typeof onOpenMenu === 'function' && !tabsInMenu && (
         <button

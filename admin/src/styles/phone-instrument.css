@@ -1737,7 +1737,8 @@ html[data-viewport="phone"] .elite-menu-btn {
 
 html.is-desktop .phone-dock,
 html[data-viewport="desktop"] .phone-dock {
-  padding-left: 112px !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
 }
 
 html.is-desktop .phone-dock .phone-dock-menu,
@@ -2030,4 +2031,306 @@ html[data-viewport="phone"] .panel-shell > .panel-shell-main .panel-layout > * {
     transition: none !important;
     transform: none !important;
   }
+}
+
+/* 100% прозрачности — стекло. Пластина берётся из ползунка, не из сплошного #1c1c1e. */
+.panel-shell .extras-hub-icon,
+.panel-shell .extras-hub-tile,
+.panel-shell .extras-hub-search,
+.panel-shell .elite-search,
+.panel-shell .elite-topbar,
+.panel-shell .phone-dock,
+.panel-shell .panel-shelf,
+.panel-shell .panel-shelf-sidebar,
+.panel-shell .nika-panel,
+.panel-shell .nika-status,
+.panel-shell .users-toolbar,
+.panel-shell .users-search-panel,
+.panel-shell .pu-hero-card,
+.panel-shell .pu-hero-balance,
+.panel-shell .pu-inv-card,
+.panel-shell .pu-peek-card,
+.panel-shell .pu-action-tile,
+.panel-shell .panel-users-action-block,
+.panel-shell .panel-users-card,
+.panel-shell .arc-card,
+.panel-shell .g-arc-card,
+.panel-shell .dash-usage-card,
+.panel-shell .dash-bot-hero,
+.panel-shell .metric-tile,
+.panel-shell .metric-sheet,
+.panel-shell .panel-music-card,
+.panel-shell .analytics-section,
+.panel-shell .support-section,
+.panel-shell .support-ticket-row,
+.panel-shell .support-thread-wrap,
+.panel-shell .support-empty-state,
+.metric-sheet,
+.case-modal,
+.accent-picker-panel {
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  box-shadow: none !important;
+}
+
+.panel-shell input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+.panel-shell select,
+.panel-shell textarea,
+.panel-shell .users-search-input,
+.panel-shell .nika-input {
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+}
+
+.panel-shell .elite-search input,
+.panel-shell .elite-search .elite-search-field,
+.panel-shell .extras-hub-search input,
+.panel-shell .extras-hub-search .extras-hub-search-field,
+.panel-shell .panel-sidebar-search input,
+.panel-shell .panel-sidebar-search .panel-sidebar-search-field {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+html.is-desktop .phone-dock-scroll.is-pivoted,
+html.is-phone .phone-dock-scroll.is-pivoted,
+html[data-viewport="desktop"] .phone-dock-scroll.is-pivoted,
+html[data-viewport="phone"] .phone-dock-scroll.is-pivoted {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+  flex: 1 1 auto !important;
+  gap: 0 !important;
+  overflow: visible !important;
+}
+
+.phone-dock-side {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 4px;
+}
+
+.phone-dock-side.is-left {
+  justify-content: flex-end;
+}
+
+.phone-dock-side.is-right {
+  justify-content: flex-start;
+}
+
+.phone-dock-pivot {
+  display: flex;
+  justify-content: center;
+  justify-self: center;
+}
+
+html.is-desktop .phone-dock .phone-dock-pivot > button,
+html[data-viewport="desktop"] .phone-dock .phone-dock-pivot > button,
+html.is-phone .phone-dock .phone-dock-pivot > button,
+html[data-viewport="phone"] .phone-dock .phone-dock-pivot > button {
+  flex: 0 0 auto !important;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar,
+html.is-phone .grp-page.users-page .users-toolbar,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar,
+html[data-viewport="phone"] .grp-page.users-page .users-toolbar {
+  position: sticky !important;
+  top: 0;
+  z-index: 12;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-sizing: border-box;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar .nika-seg,
+html.is-phone .grp-page.users-page .users-toolbar .nika-seg,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar .nika-seg,
+html[data-viewport="phone"] .grp-page.users-page .users-toolbar .nika-seg {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  max-width: 100% !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar .nika-seg-btn,
+html.is-phone .grp-page.users-page .users-toolbar .nika-seg-btn,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar .nika-seg-btn,
+html[data-viewport="phone"] .grp-page.users-page .users-toolbar .nika-seg-btn {
+  flex: 0 1 auto !important;
+  height: auto !important;
+  min-height: 36px !important;
+  max-height: none !important;
+  padding: 0.4rem 0.75rem !important;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+html.is-desktop .grp-page.users-page .users-toolbar-extra,
+html.is-phone .grp-page.users-page .users-toolbar-extra,
+html[data-viewport="desktop"] .grp-page.users-page .users-toolbar-extra,
+html[data-viewport="phone"] .grp-page.users-page .users-toolbar-extra {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.panel-users .pu-action-tile,
+.panel-users .panel-users-action-block,
+.panel-users .panel-users-action-grid,
+.panel-users .pu-kut-actions {
+  overflow: visible !important;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.panel-users .pu-kut-actions .panel-users-btn {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.panel-users input[inputmode="numeric"],
+.panel-users input[inputmode="decimal"],
+.panel-users input[type="number"],
+.panel-users .pu-stepper .panel-users-input {
+  text-align: center !important;
+}
+
+.pu-cute-filters {
+  max-width: 100%;
+}
+
+.pu-cute-filters .panel-users-input {
+  flex: 1 1 10.5rem !important;
+  min-width: min(100%, 10.5rem) !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock > .phone-dock-menu,
+html[data-viewport="desktop"] .panel-shell > .phone-dock > .phone-dock-menu {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.is-desktop .panel-shell .phone-dock,
+html.is-phone .panel-shell .phone-dock,
+html[data-viewport="desktop"] .panel-shell .phone-dock,
+html[data-viewport="phone"] .panel-shell .phone-dock,
+html.is-desktop .panel-shell .panel-shelf,
+html.is-phone .panel-shell .panel-shelf,
+html[data-viewport="desktop"] .panel-shell .panel-shelf,
+html[data-viewport="phone"] .panel-shell .panel-shelf,
+html.is-desktop .panel-shell .nika-panel,
+html.is-phone .panel-shell .nika-panel,
+html[data-viewport="desktop"] .panel-shell .nika-panel,
+html[data-viewport="phone"] .panel-shell .nika-panel,
+html.is-desktop .panel-shell .extras-hub-icon,
+html.is-phone .panel-shell .extras-hub-icon,
+html[data-viewport="desktop"] .panel-shell .extras-hub-icon,
+html[data-viewport="phone"] .panel-shell .extras-hub-icon,
+html.is-desktop .panel-shell .extras-hub-tile,
+html.is-phone .panel-shell .extras-hub-tile,
+html[data-viewport="desktop"] .panel-shell .extras-hub-tile,
+html[data-viewport="phone"] .panel-shell .extras-hub-tile,
+html.is-desktop .panel-shell .extras-hub-search,
+html.is-phone .panel-shell .extras-hub-search,
+html[data-viewport="desktop"] .panel-shell .extras-hub-search,
+html[data-viewport="phone"] .panel-shell .extras-hub-search,
+html.is-desktop .panel-shell .elite-search,
+html.is-phone .panel-shell .elite-search,
+html[data-viewport="desktop"] .panel-shell .elite-search,
+html[data-viewport="phone"] .panel-shell .elite-search,
+html.is-desktop .panel-shell .arc-card,
+html.is-phone .panel-shell .arc-card,
+html[data-viewport="desktop"] .panel-shell .arc-card,
+html[data-viewport="phone"] .panel-shell .arc-card,
+html.is-desktop .panel-shell .g-arc-card,
+html.is-phone .panel-shell .g-arc-card,
+html[data-viewport="desktop"] .panel-shell .g-arc-card,
+html[data-viewport="phone"] .panel-shell .g-arc-card,
+html.is-desktop .panel-shell .act-bento > *,
+html.is-phone .panel-shell .act-bento > *,
+html[data-viewport="desktop"] .panel-shell .act-bento > *,
+html[data-viewport="phone"] .panel-shell .act-bento > *,
+html.is-desktop .panel-shell .realm-actions,
+html.is-phone .panel-shell .realm-actions,
+html[data-viewport="desktop"] .panel-shell .realm-actions,
+html[data-viewport="phone"] .panel-shell .realm-actions,
+html.is-desktop .panel-shell .realm-form,
+html.is-phone .panel-shell .realm-form,
+html[data-viewport="desktop"] .panel-shell .realm-form,
+html[data-viewport="phone"] .panel-shell .realm-form,
+html.is-desktop .panel-shell .realm-search,
+html.is-phone .panel-shell .realm-search,
+html[data-viewport="desktop"] .panel-shell .realm-search,
+html[data-viewport="phone"] .panel-shell .realm-search,
+html.is-desktop .panel-shell .dash-cyber-stage,
+html.is-phone .panel-shell .dash-cyber-stage,
+html[data-viewport="desktop"] .panel-shell .dash-cyber-stage,
+html[data-viewport="phone"] .panel-shell .dash-cyber-stage,
+html.is-desktop .panel-shell .dash-usage-card,
+html.is-phone .panel-shell .dash-usage-card,
+html[data-viewport="desktop"] .panel-shell .dash-usage-card,
+html[data-viewport="phone"] .panel-shell .dash-usage-card,
+html.is-desktop .panel-shell .shift-desk,
+html.is-phone .panel-shell .shift-desk,
+html[data-viewport="desktop"] .panel-shell .shift-desk,
+html[data-viewport="phone"] .panel-shell .shift-desk,
+html.is-desktop .panel-shell .panel-pulse-hero,
+html.is-phone .panel-shell .panel-pulse-hero,
+html[data-viewport="desktop"] .panel-shell .panel-pulse-hero,
+html[data-viewport="phone"] .panel-shell .panel-pulse-hero,
+html.is-desktop .panel-shell .pu-action-tile,
+html.is-phone .panel-shell .pu-action-tile,
+html[data-viewport="desktop"] .panel-shell .pu-action-tile,
+html[data-viewport="phone"] .panel-shell .pu-action-tile,
+html.is-desktop .panel-shell .pu-hero-card,
+html.is-phone .panel-shell .pu-hero-card,
+html[data-viewport="desktop"] .panel-shell .pu-hero-card,
+html[data-viewport="phone"] .panel-shell .pu-hero-card,
+html.is-desktop .panel-shell .metric-tile,
+html.is-phone .panel-shell .metric-tile,
+html[data-viewport="desktop"] .panel-shell .metric-tile,
+html[data-viewport="phone"] .panel-shell .metric-tile,
+html.is-desktop .panel-shell .support-section,
+html.is-phone .panel-shell .support-section,
+html[data-viewport="desktop"] .panel-shell .support-section,
+html[data-viewport="phone"] .panel-shell .support-section {
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  box-shadow: none !important;
+}
+
+html.is-desktop .panel-shell input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.extras-hub-search-field):not(.panel-sidebar-search-field),
+html.is-phone .panel-shell input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.extras-hub-search-field):not(.panel-sidebar-search-field),
+html[data-viewport="desktop"] .panel-shell input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.extras-hub-search-field):not(.panel-sidebar-search-field),
+html[data-viewport="phone"] .panel-shell input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]):not(.elite-search-field):not(.extras-hub-search-field):not(.panel-sidebar-search-field),
+html.is-desktop .panel-shell select,
+html.is-phone .panel-shell select,
+html[data-viewport="desktop"] .panel-shell select,
+html[data-viewport="phone"] .panel-shell select,
+html.is-desktop .panel-shell textarea,
+html.is-phone .panel-shell textarea,
+html[data-viewport="desktop"] .panel-shell textarea,
+html[data-viewport="phone"] .panel-shell textarea {
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
 }

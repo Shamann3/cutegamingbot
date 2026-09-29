@@ -14,6 +14,7 @@
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import command_filter, format_line, open_command, stake_token
 
 import asyncio
 import random
@@ -558,11 +559,16 @@ async def _tgkube_free_game(message: Message, user_id: int, chat_id: int, bet_in
 
 
 # ===================== ОСНОВНАЯ ИГРА КУБ =====================
-@dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("куб", "кубик"))
+@dp.message(command_filter(("куб", "кубик")))
 async def tgkube(message: Message):
+    kind, parts = open_command(message.text or "", ("куб", "кубик"))
+    if kind == "ignore":
+        return
+    if kind == "help":
+        await message.reply(format_line("куб 10 4"), parse_mode="HTML", disable_web_page_preview=True)
+        return
     if await reject_if_private_game(message, "kube"):
         return
-    parts = (message.text or "").strip().split()
     if len(parts) == 2:
         await message.reply(
             "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Не хватает числа!</b>\n"
@@ -573,12 +579,11 @@ async def tgkube(message: Message):
         await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Формат: куб (ставка) (число от 1 до 6)</b>",
                             parse_mode="HTML", disable_web_page_preview=True)
         return
-    try:
-        bet_int = _parse_bet_to_int(parts[1])
-        guess = int(parts[2])
-    except Exception:
+    bet_int = stake_token(parts[1])
+    if bet_int is None or not str(parts[2]).isdigit():
         await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка и число должны быть числами.</b>", parse_mode="HTML")
         return
+    guess = int(parts[2])
     if bet_int <= 0:
         await message.reply("<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть больше нуля.</b>", parse_mode="HTML")
         return

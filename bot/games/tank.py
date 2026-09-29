@@ -18,6 +18,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from main import *
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_required_stake
 from bot.config.config import TOKEN, timeoutdonate, donate_bet, ref_coin
 from bot.funcs.func import get_bot_username_by_token
 from bot.funcs.tech_home_log import safe_send_tech_log
@@ -359,12 +360,12 @@ async def _send_invoice_later(msg, uid, stars_amount, delay):
 # ========== СТАРТ ИГРЫ ==========
 @dp.message()
 async def game_filter_tank(message: Message):
-    text = (message.text or "").strip()
-    if not text.startswith("башня "): return
-    parts = text.split()
-    if len(parts) != 2: return
-    if not parts[1].isdigit(): return
-    bet_amount = int(parts[1])
+    intent, bet_amount = parse_required_stake(message.text or "", ("башня", "башни", "башню"))
+    if intent == "ignore":
+        return
+    if intent != "play":
+        await message.reply(format_line("башня 10"), parse_mode="HTML")
+        return
 
     if await reject_if_private_game(message, "tank", bet_amount):
         return

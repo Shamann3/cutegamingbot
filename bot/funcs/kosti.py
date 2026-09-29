@@ -20,6 +20,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 from main import (
     bot1, dp, db,
     gameskosti, button_kosti, temp_kosti_data,
@@ -470,24 +471,13 @@ async def _abort_settle_unlocked(game: dict, game_id: int, reason: str) -> None:
 async def kosti(message: Message):
     if not message.text:
         return
-    text = message.text.strip()
-    parts = text.split()
-    if not parts:
+    kind, bet = parse_optional_stake(message.text or "", ("кости",))
+    if kind == "ignore":
         return
-    if parts[0].lower() != "кости":
+    if kind != "play":
+        await message.reply(format_line("кости 10"), parse_mode="HTML")
         return
     if await reject_if_private_game(message, "kosti"):
-        return
-    if len(parts) == 1:
-        bet = 0
-    elif len(parts) == 2:
-        bet_s = parts[1]
-        if not bet_s.isdigit():
-            return
-        bet = int(bet_s)
-    else:
-        return
-    if bet < 0:
         return
 
     from bot.runtime.game_desk.live import reject_desk

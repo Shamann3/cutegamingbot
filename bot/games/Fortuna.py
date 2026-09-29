@@ -4,6 +4,7 @@
 """
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import command_filter, open_command, stake_token
 from bot.funcs.tech_home_log import safe_send_tech_log
 
 import asyncio
@@ -103,16 +104,16 @@ FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS = 3
 FORTUNA_MIN_NATURAL_SHARE = 0.52
 FORTUNA_MAX_NATURAL_SHARE = 0.90
 
-# Колесо 0..12, не европейское 0..36. Честный 1/13 ≈ 7.7% слишком часто
-# опустошает кассу на ставке «одно число». Держим редкий джекпот ~1/36.
-# Колесо 0..12, не европейское 0..36.
-# Натуральные шансы: 1 число ≈ 7.7%, 2 числа ≈ 15.4%, 3 числа ≈ 23%.
-# Игра должна быть реально трудной, поэтому для маленьких ставок
-# жёстко держим редкий шанс победы (ниже, чем даже "hard"-профиль).
-FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.005   # ~1 из 200 спинов
+# Колесо 0..12. Ставка на одно число — редкий джекпот: около 2 побед на 100 игр.
+# Цвет и чёт режутся отдельно, чтобы долгая игра не уходила в плюс.
+FORTUNA_SINGLE_NUMBER_WIN_CHANCE = 0.02
+FORTUNA_NUMBER_ONE_SHOW_CHANCE = 0.02
+FORTUNA_COLOR_WIN_CHANCE = 0.30
+FORTUNA_PARITY_WIN_CHANCE = 0.30
+FORTUNA_HOUSE_RETURN_CAP = 0.72
 FORTUNA_SMALL_RANGE_WIN_CHANCE: Dict[int, float] = {
-    2: 0.010,   # ~1 из 100 спинов
-    3: 0.020,   # ~1 из 50 спинов
+    2: 0.04,
+    3: 0.06,
 }
 
 # ===================== ХРАНИЛИЩА / БЛОКИРОВКИ =====================
@@ -472,19 +473,44 @@ def _natural_win_probability(parsed: dict) -> float:
 
     return 0.0
 
+def _house_limited(parsed: dict, prob: float) -> float:
+    """Выплата × шанс не выше потолка: долгая сессия остаётся в минусе."""
+    value = _clamp01(prob)
+    try:
+        mult = float(parsed.get("multiplier") or 0.0)
+    except Exception:
+        mult = 0.0
+    cap = _clamp01(_live_fortuna_mult("houseReturnCap", float(FORTUNA_HOUSE_RETURN_CAP)))
+    if cap <= 0:
+        cap = float(FORTUNA_HOUSE_RETURN_CAP)
+    if mult > 1.0:
+        ceiling = cap / mult
+        if value > ceiling:
+            value = ceiling
+    return _clamp01(value)
+
+
 def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
     mode = str(parsed.get("mode") or "")
     natural_prob = _natural_win_probability(parsed)
     if natural_prob <= 0:
         return 0.0
 
+    if mode == "color":
+        rare = _clamp01(_live_fortuna_mult("colorWinChance", float(FORTUNA_COLOR_WIN_CHANCE)))
+        return _house_limited(parsed, rare)
+
+    if mode == "parity":
+        rare = _clamp01(_live_fortuna_mult("parityWinChance", float(FORTUNA_PARITY_WIN_CHANCE)))
+        return _house_limited(parsed, rare)
+
     if mode == "number":
         rare = _clamp01(_live_fortuna_mult("singleNumberWinChance", float(FORTUNA_SINGLE_NUMBER_WIN_CHANCE)))
         if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
             extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
             extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
-            rare = _clamp01(rare + 0.004 * extra_steps)
-        return rare
+            rare = _clamp01(rare + 0.002 * extra_steps)
+        return _house_limited(parsed, rare)
 
     if mode == "range":
         try:
@@ -494,16 +520,20 @@ def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
             start, end = 1, 12
         width = max(0, end - start + 1)
 
+        if width <= 1:
+            rare = _clamp01(_live_fortuna_mult("singleNumberWinChance", float(FORTUNA_SINGLE_NUMBER_WIN_CHANCE)))
+            return _house_limited(parsed, rare)
+
         small_map = FORTUNA_SMALL_RANGE_WIN_CHANCE or {}
         if width in small_map:
-            rare = _clamp01(float(small_map[width]))
+            rare = _clamp01(_live_fortuna_mult(f"range{width}WinChance", float(small_map[width])))
             # Смягчение длинных луз-стриков (как у single number), но всё равно редко.
             if int(lose_streak or 0) >= FORTUNA_LOSE_STREAK_SOFTEN_FROM:
                 extra_steps = int(lose_streak or 0) - int(FORTUNA_LOSE_STREAK_SOFTEN_FROM) + 1
                 extra_steps = max(0, min(extra_steps, int(FORTUNA_LOSE_STREAK_SOFTEN_CAP_STEPS)))
-                rare = _clamp01(rare + 0.005 * extra_steps)
-            return rare
-        # широкие диапазоны (4..11 чисел) — как раньше, по профилю
+                rare = _clamp01(rare + 0.003 * extra_steps)
+            return _house_limited(parsed, rare)
+        # широкие диапазоны (4..11 чисел) — по профилю, но не выше потолка возврата
 
     profile = str(FORTUNA_WIN_PROFILE or "hard").strip().lower()
     profile_map = FORTUNA_WIN_PROB_FACTORS.get(profile) or FORTUNA_WIN_PROB_FACTORS["hard"]
@@ -522,7 +552,7 @@ def _target_win_probability(parsed: dict, lose_streak: int = 0) -> float:
         target_prob = min_prob
     if target_prob > max_prob:
         target_prob = max_prob
-    return _clamp01(target_prob)
+    return _house_limited(parsed, target_prob)
 
 def _spin_roulette_number_for_bet(parsed: dict, lose_streak: int = 0) -> int:
     try:
@@ -541,10 +571,51 @@ def _spin_roulette_number_for_bet(parsed: dict, lose_streak: int = 0) -> int:
             f"natural={_natural_win_probability(parsed):.4f} target={win_prob:.4f} "
             f"roll={roll:.4f} outcome={outcome} -> {num}",
         )
-        return int(num)
+        return _rare_number_one(int(num), parsed)
     except Exception as e:
         _fdbg("SPIN_CTRL", f"fallback to base spin due error: {e}")
         return _spin_roulette_number()
+
+
+def _outcome_same(candidate: int, current: int, parsed: dict) -> bool:
+    mode = str(parsed.get("mode") or "")
+    a = int(candidate)
+    b = int(current)
+    if a == 0 or b == 0:
+        return a == b
+    if mode == "number":
+        selected = int(parsed.get("selected_number") or -1)
+        return (a == selected) == (b == selected)
+    if mode == "color":
+        return resolve_color(a).startswith("крас") == resolve_color(b).startswith("крас")
+    if mode == "parity":
+        return (a % 2 == 0) == (b % 2 == 0)
+    if mode == "range":
+        try:
+            start = int(parsed.get("start_num") or 1)
+            end = int(parsed.get("end_num") or 12)
+        except Exception:
+            return a == b
+        return (start <= a <= end) == (start <= b <= end)
+    return a == b
+
+
+def _rare_number_one(num: int, parsed: dict) -> int:
+    """Цифра 1 выпадает редко и не переворачивает уже выбранный исход ставки."""
+    value = int(num)
+    if value == 0:
+        return 0
+    if str(parsed.get("mode") or "") == "number" and int(parsed.get("selected_number") or -1) == 1:
+        return value
+    target = _clamp01(_live_fortuna_mult("numberOneChance", float(FORTUNA_NUMBER_ONE_SHOW_CHANCE)))
+    if random.random() < target and _outcome_same(1, value, parsed):
+        return 1
+    if value != 1:
+        return value
+    pool = [n for n in range(0, 13) if n != 1 and _outcome_same(n, value, parsed)]
+    if not pool:
+        return value
+    return int(random.choice(pool))
 
 def _force_loss_number(parsed: dict) -> int:
     mode = parsed["mode"]
@@ -2065,7 +2136,7 @@ async def _fortuna_paid_game(
                 _mark_processed_message(message)
 
 # ===================== MAIN HANDLER =====================
-@dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("рул", "рулетка"))
+@dp.message(command_filter(("рул", "рулетка")))
 async def Fortuna(message: Message):
     ensure_cleanup_started()
 
@@ -2076,9 +2147,12 @@ async def Fortuna(message: Message):
         if await reject_if_private_game(message, "fortuna_solo"):
             return
 
-        parts = (message.text or "").strip().split()
+        kind, tokens = open_command(message.text or "", ("рул", "рулетка"))
+        if kind == "ignore":
+            return
+        parts = tokens
 
-        if len(parts) <= 2:
+        if kind == "help" or len(parts) <= 2:
             try:
                 await bot1.send_message(
                     message.chat.id,
@@ -2091,7 +2165,9 @@ async def Fortuna(message: Message):
             _mark_processed_message(message)
             return
 
-        bet_int = _parse_bet_to_int(parts[1])
+        bet_int = stake_token(parts[1])
+        if bet_int is None:
+            bet_int = 0
 
         if bet_int <= 0:
             try:

@@ -8,6 +8,7 @@ from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import KNB_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -42,51 +43,25 @@ async def knb(message: Message):
         if not message.text:
             return
 
-        text = message.text.strip()
-        parts = text.split()
-        if not parts:
-            return
-
         words = ("камень", "ножницы", "бумага")
-
-        bet = 0
-        bet_str = None
-
-        p0 = parts[0].lower()
-
-        # ✅ "кнб" / "кнб <число>"
-        if p0 == "кнб":
-            if len(parts) == 1:
+        phrase_kind, phrase_bet = parse_phrase_stake(message.text or "", KNB_PHRASES)
+        cmd_kind, cmd_bet = parse_optional_stake(message.text or "", ("кнб",))
+        if phrase_kind == "play":
+            bet = phrase_bet
+        elif cmd_kind == "play":
+            bet = cmd_bet
+        elif phrase_kind in ("help", "bad") or cmd_kind in ("help", "bad"):
+            await message.reply(format_line("кнб 10"), parse_mode="HTML")
+            return
+        else:
+            parts = (message.text or "").split()
+            if len(parts) == 1 and parts[0].lower() in words:
                 bet = 0
-            elif len(parts) == 2:
-                bet_s = parts[1]
-                if not bet_s.isdigit():
-                    return
-                bet_str = bet_s
+            elif parts and parts[0].lower() in words:
+                await message.reply(format_line("кнб 10"), parse_mode="HTML")
+                return
             else:
                 return
-
-        # ✅ "<камень|ножницы|бумага>" (1 слово) или 3 слова из списка
-        elif len(parts) in (1, 3) and all(p.lower() in words for p in parts):
-            bet = 0
-
-        # ✅ 4 слова: первые 3 из words + ставка числом
-        elif len(parts) == 4 and all(p.lower() in words for p in parts[:3]):
-            bet_s = parts[3]
-            if not bet_s.isdigit():
-                return
-            bet_str = bet_s
-
-        else:
-            return
-
-        if bet_str is not None:
-            bet = int(bet_str)
-        else:
-            bet = 0
-
-        if bet < 0:
-            return
 
         if await reject_if_private_game(message, "knb", bet):
             return

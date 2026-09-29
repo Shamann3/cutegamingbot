@@ -21,6 +21,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 # ==== твое окружение (как у тебя) ====
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import MEMORY_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
 from main import (
     button_memory, _format_hms, _pair_seconds_left, games_memory, check_bet_and_set_item,
     db, bot1, dp, get_current_time_formatted, timehistorygames, pending_context, send_invoice_to_user
@@ -514,50 +515,15 @@ async def memory(message: Message):
         if not message.text:
             return
 
-        text_raw = message.text.strip()
-        text = text_raw.lower()
-        parts = text.split()
-        if not parts:
+        kind, bet = parse_optional_stake(message.text or "", ("мемори",))
+        if kind == "ignore":
+            kind, bet = parse_phrase_stake(message.text or "", MEMORY_PHRASES)
+        if kind == "ignore":
+            return
+        if kind != "play":
+            await message.reply(format_line("мемори 10"), parse_mode="HTML")
             return
 
-        bet_str: Optional[str] = None
-
-        # ✅ строго:
-        # "мемори"
-        # "мемори <целое число>"
-        if parts[0] == "мемори":
-            if len(parts) == 1:
-                bet_str = "0"
-            elif len(parts) == 2:
-                # строго целое число, никаких "10k", "10.5", "привет"
-                if not parts[1].isdigit():
-                    return
-                bet_str = parts[1]
-            else:
-                return
-
-        # ✅ строго:
-        # "найди пару"
-        # "найди пару <целое число>"
-        # "найти пару"
-        # "найти пару <целое число>"
-        elif parts[0] in ("найди", "найти"):
-            if len(parts) == 2 and parts[1] == "пару":
-                bet_str = "0"
-            elif len(parts) == 3 and parts[1] == "пару":
-                if not parts[2].isdigit():
-                    return
-                bet_str = parts[2]
-            else:
-                return
-        else:
-            return
-
-        # финальная страховка (быстро и без лишних ответов)
-        if bet_str is None or not bet_str.isdigit():
-            return
-
-        bet = int(bet_str)
         if await reject_if_private_game(message, "memory", bet):
             return
         creator_id = message.from_user.id

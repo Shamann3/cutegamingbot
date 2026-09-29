@@ -6,6 +6,7 @@
 
 from main import *  # noqa: F401,F403
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import command_filter, open_command, stake_token
 from bot.funcs.tg_dice import abort_if_unread_dice, is_soccer_goal, read_dice_value
 
 import asyncio
@@ -651,14 +652,15 @@ async def _tgsoccer_free_game(
 
 
 # ===================== ОСНОВНОЙ ХЭНДЛЕР =====================
-@dp.message(lambda message: bool(message.text) and message.text.split()[0].lower() in ("футбол", "фут"))
+@dp.message(command_filter(("футбол", "фут")))
 async def tgsoccer(message: Message):
+    kind, parts = open_command(message.text or "", ("футбол", "фут"))
+    if kind == "ignore":
+        return
     if await reject_if_private_game(message, "soccer"):
         return
-    text = (message.text or "").strip().lower()
-    parts = (message.text or "").strip().split()
 
-    if len(parts) != 2:
+    if kind == "help" or len(parts) != 2:
         await message.reply(
             "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Формат: футбол (ставка)</b>",
             parse_mode="HTML",
@@ -668,11 +670,10 @@ async def tgsoccer(message: Message):
         return
 
 
-    try:
-        bet_int = _parse_bet_to_int(parts[1])
-    except Exception:
+    bet_int = stake_token(parts[1])
+    if bet_int is None:
         await message.reply(
-            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть числом.</b>",
+            "<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Ставка должна быть целым числом.</b>",
             parse_mode="HTML"
         )
         return

@@ -16,6 +16,7 @@ from bot.design.buttons import *
 from bot.db_create.db import *
 from bot.funcs.func import *
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 from main import button_gamessha, gamessha, db, bot1, dp, get_current_time_formatted, timehistorygames, \
     pending_context, send_invoice_to_user, _format_hms, _pair_seconds_left
 
@@ -484,14 +485,12 @@ def get_mode_buttons(game_id: int, game: dict) -> List[List[InlineKeyboardButton
 async def sha(message: Message):
     if not message.text:
         return
-    text = message.text.strip()
-    parts = text.split()
-    if not parts or parts[0].lower() != "шашки":
+    kind, bet = parse_optional_stake(message.text or "", ("шашки", "шахи"))
+    if kind == "ignore":
         return
-    if len(parts) > 2:
+    if kind != "play":
+        await message.reply(format_line("шашки 10"), parse_mode="HTML")
         return
-
-    bet = int(parts[1]) if len(parts) == 2 and parts[1].isdigit() else 0
     if await reject_if_private_game(message, "scah", bet):
         return
     creator_id = message.from_user.id

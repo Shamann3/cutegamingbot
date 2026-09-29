@@ -6,9 +6,11 @@ from bot.games.group_only import reject_if_private_game
 
 @dp.message()
 async def word(message: Message):
+    if not message.text:
+        return
     group_id = message.chat.id
     creator_id = message.from_user.id
-    text_parts = message.text.split(" ")
+    text_parts = message.text.split()
 
     #print(f"[DEBUG] Получено сообщение от пользователя: {message.from_user.first_name} ({creator_id}) в группе: {group_id}")
     #print(f"[DEBUG] Текст сообщения: {message.text}")

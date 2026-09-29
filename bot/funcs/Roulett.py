@@ -7,6 +7,7 @@ from bot.db_create.db import *
 from bot.config.config import *
 from main import bot1, dp
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.enums import ParseMode, ChatType  # Импортируем ParseMode из aiogram.enums
@@ -38,28 +39,11 @@ async def roulett(message: Message):
     if not message.text:
         return
 
-    text = message.text.strip()
-    parts = text.split()
-    if not parts:
+    kind, bet = parse_optional_stake(message.text or "", ("дуэль", "дуель", "дуэли"))
+    if kind == "ignore":
         return
-
-    cmd = parts[0].lower()
-    if cmd not in ("дуель", "дуэль", "дуэли"):
-        return
-
-    # строго только: "<cmd>" / "<cmd> <число>"
-    if len(parts) == 1:
-        bet = 0
-    elif len(parts) == 2:
-        bet_s = parts[1]
-        # строго целое число (без точек/запятых/слов)
-        if not bet_s.isdigit():
-            return
-        bet = int(bet_s)
-    else:
-        return
-
-    if bet < 0:
+    if kind != "play":
+        await message.reply(format_line("дуэль 10"), parse_mode="HTML")
         return
 
     if await reject_if_private_game(message, "duel", bet):

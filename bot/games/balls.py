@@ -21,6 +21,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from main import *
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_required_stake
 from bot.funcs.func import get_bot_username_by_token
 from bot.funcs.tech_home_log import safe_send_tech_log
 
@@ -274,13 +275,12 @@ async def _safe_tech_log_pop(*, bot, loss: int, uid: int = None, user_id: int = 
 # ============================================================
 @dp.message()
 async def balls(message: Message):
-    text_raw = (message.text or "").strip()
-    if not text_raw: return
-    parts = text_raw.split()
-    if not parts or parts[0].lower() not in ("шар", "шарик") or len(parts) != 2: return
-    bet_token = (parts[1] or "").strip()
-    if not bet_token.isdigit(): return
-    bet_amount = int(bet_token)
+    intent, bet_amount = parse_required_stake(message.text or "", ("шар", "шарик"))
+    if intent == "ignore":
+        return
+    if intent != "play":
+        await message.reply(format_line("шарик 10"), parse_mode="HTML")
+        return
     if await reject_if_private_game(message, "balls", bet_amount):
         return
 

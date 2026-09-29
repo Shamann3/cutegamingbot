@@ -21,6 +21,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 # ---- твои объекты/функции/хранилища ----
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_optional_stake
 from main import (
     bot1, dp, db,
     gamesbingo, button_bingo, temp_bingo_data,
@@ -425,26 +426,11 @@ async def bingo(message: Message):
     if not message.text:
         return
 
-    text = message.text.strip()
-    parts = text.split()
-    if not parts:
+    kind, bet = parse_optional_stake(message.text or "", ("бинго",))
+    if kind == "ignore":
         return
-
-    cmd = parts[0].lower()
-    if cmd != "бинго":
-        return
-
-    if len(parts) == 1:
-        bet = 0
-    elif len(parts) == 2:
-        bet_s = parts[1]
-        if not bet_s.isdigit():
-            return
-        bet = int(bet_s)
-    else:
-        return
-
-    if bet < 0:
+    if kind != "play":
+        await message.reply(format_line("бинго 10"), parse_mode="HTML")
         return
 
     if await reject_if_private_game(message, "bingo", bet):

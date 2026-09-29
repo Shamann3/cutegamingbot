@@ -20,6 +20,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 
 from bot.games.group_only import reject_if_private_game
+from bot.games.invoke import format_line, parse_required_stake
 from main import (
     bot1, dp, db,
     TECH_CHAT_ID, create_user_link,
@@ -509,14 +510,12 @@ async def _send_invoice_later(message: Message, user_id: int, stars_amount: str,
 # ======================================================================
 @dp.message()
 async def plate(message: Message):
-    text = (message.text or "").strip()
-    if not text: return
-    parts = text.split()
-    if not parts: return
-    if parts[0].lower() not in ("плита", "плиты"): return
-    if len(parts) != 2: return
-    if not parts[1].isdigit(): return
-    bet_amount = int(parts[1])
+    intent, bet_amount = parse_required_stake(message.text or "", ("плита", "плиты"))
+    if intent == "ignore":
+        return
+    if intent != "play":
+        await message.reply(format_line("плита 10"), parse_mode="HTML")
+        return
     if await reject_if_private_game(message, "plate", bet_amount):
         return
     if bet_amount < PLATE_MIN_BET:
