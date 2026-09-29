@@ -40,7 +40,10 @@ export default function MatrixRain({
     const readAccent = (now) => {
       if (now - accentAt < ACCENT_POLL_MS) return
       accentAt = now
-      const next = getComputedStyle(root).getPropertyValue('--e-accent-rgb').trim()
+      const next = (
+        getComputedStyle(root).getPropertyValue('--e-accent-decor-rgb')
+        || getComputedStyle(root).getPropertyValue('--e-accent-rgb')
+      ).trim()
       if (next) accent = next
     }
 

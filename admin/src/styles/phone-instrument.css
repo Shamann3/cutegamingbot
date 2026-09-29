@@ -13,10 +13,10 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.78), transparent 54%),
-    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.42), transparent 58%),
-    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.32), transparent 60%),
-    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 62%),
+    radial-gradient(130% 72% at 50% -20%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.78), transparent 54%),
+    radial-gradient(78% 58% at 112% 6%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 58%),
+    radial-gradient(70% 52% at -12% 16%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.32), transparent 60%),
+    radial-gradient(90% 42% at 50% 108%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.22), transparent 62%),
     linear-gradient(165deg, #141018 0%, #07070a 42%, #050505 100%);
 }
 
@@ -1062,34 +1062,106 @@ body.perf-light .gate-matrix {
   }
 }
 
-/* Сайдбар на ПК: разделы всегда на экране, настройки не съедают список. */
+/* Сайдбар — только настройки. Список вкладок больше не рисуется. */
+.panel-sidebar-nav,
+.panel-sidebar-grab,
+.panel-nav-recent {
+  display: none !important;
+}
+
+html.is-desktop .panel-layout,
+html.is-desktop .panel-layout-page,
+html.is-desktop .panel-layout-dashboard,
+html.is-desktop .panel-layout-users,
+html.is-desktop .panel-layout-analytics,
+html.is-desktop .panel-layout-market,
+html.is-desktop .panel-layout-support,
+html[data-viewport="desktop"] .panel-layout,
+html[data-viewport="desktop"] .panel-layout-page,
+html[data-viewport="desktop"] .panel-layout-dashboard {
+  grid-template-columns: 272px minmax(0, 1fr) !important;
+}
+
+html.is-desktop .panel-layout > :not(.panel-shelf-sidebar),
+html[data-viewport="desktop"] .panel-layout > :not(.panel-shelf-sidebar) {
+  grid-column: 2 !important;
+}
+
 html.is-desktop .panel-shelf-sidebar,
 html[data-viewport="desktop"] .panel-shelf-sidebar {
   display: flex !important;
   flex-direction: column !important;
+  grid-column: 1 !important;
+  grid-row: 1 / -1 !important;
+  width: 272px !important;
+  max-width: 272px !important;
+  height: 100% !important;
   min-height: 0 !important;
+  position: relative !important;
   overflow: hidden !important;
   background:
-    radial-gradient(120% 36% at 50% -12%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.42), transparent 58%),
+    radial-gradient(120% 36% at 50% -12%, rgba(var(--e-accent-decor-rgb, var(--e-accent-rgb, 200, 175, 255)), 0.42), transparent 58%),
     rgba(10, 10, 12, 0.9) !important;
-}
-
-html.is-desktop .panel-sidebar-nav,
-html[data-viewport="desktop"] .panel-sidebar-nav {
-  flex: 1 1 0 !important;
-  min-height: 200px !important;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
 }
 
 html.is-desktop .panel-sidebar-footer,
 html[data-viewport="desktop"] .panel-sidebar-footer {
-  flex: 0 1 auto !important;
+  flex: 1 1 auto !important;
   min-height: 0 !important;
-  max-height: 42% !important;
+  max-height: none !important;
   margin-top: 0 !important;
   overflow-x: hidden !important;
   overflow-y: auto !important;
+}
+
+.accent-aura-wash {
+  opacity: var(--e-veil, 1);
+}
+
+.accent-aura-slot {
+  opacity: var(--e-veil, 1);
+}
+
+.accent-slider input[type="range"] {
+  height: 10px !important;
+  border-radius: 999px !important;
+  background: linear-gradient(
+    90deg,
+    var(--thumb, var(--e-accent)) var(--fill, 50%),
+    rgba(255, 255, 255, 0.14) var(--fill, 50%)
+  ) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.accent-slider input[type="range"]::-webkit-slider-thumb {
+  width: 22px !important;
+  height: 22px !important;
+  margin-top: -1px;
+  background: #fff !important;
+  border: 3px solid var(--thumb, var(--e-accent)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(var(--e-accent-rgb, 255, 255, 255), 0.18) !important;
+}
+
+.accent-slider span {
+  font-size: 13px !important;
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+
+.accent-slider strong {
+  font-size: 13px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.phone-dock-icon,
+.extras-hub-icon,
+.phone-dock button {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.phone-dock button.is-on,
+.phone-dock button.is-on .phone-dock-icon,
+.extras-hub-icon {
+  color: var(--e-accent) !important;
 }
 
 .auth-screen.auth-screen-fortress {

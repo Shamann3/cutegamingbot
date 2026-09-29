@@ -66,7 +66,7 @@ function pointerToHsv(clientX, clientY, rect, value) {
   return { h: angle, s: sat, v: value }
 }
 
-function accentFromHex(hex, glow) {
+function accentFromHex(hex, glow, veil) {
   const parsed = parseHexInput(hex)
   if (!parsed) return null
   const { r, g, b } = hexToRgb(parsed)
@@ -75,6 +75,7 @@ function accentFromHex(hex, glow) {
     hex: parsed,
     ...hsv,
     glow,
+    veil,
     id: 'custom',
     label: 'Свой',
     hexSource: true,
@@ -139,7 +140,7 @@ export default function AccentPalette({ value, onChange, inline = false }) {
   }, [pushAccent])
 
   const commitHex = useCallback((raw, { silentInvalid = false } = {}) => {
-    const next = accentFromHex(raw, draftRef.current.glow)
+    const next = accentFromHex(raw, draftRef.current.glow, draftRef.current.veil)
     if (!next) {
       setHexOk(false)
       if (!silentInvalid) setHexText(draftRef.current.hex)
@@ -279,11 +280,26 @@ export default function AccentPalette({ value, onChange, inline = false }) {
           <strong>{Math.round(draft.v * 100)}%</strong>
           <input
             type="range"
-            min={12}
+            min={0}
             max={100}
             value={Math.round(draft.v * 100)}
             onChange={(e) => commitHsv({ v: Number(e.target.value) / 100 })}
             style={{ '--fill': `${Math.round(draft.v * 100)}%`, '--thumb': draft.hex }}
+            aria-label="Яркость цвета"
+          />
+        </label>
+
+        <label className="accent-slider">
+          <span>Прозрачность</span>
+          <strong>{Math.round(draft.veil ?? 100)}%</strong>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(draft.veil ?? 100)}
+            onChange={(e) => commitHsv({ veil: Number(e.target.value) })}
+            style={{ '--fill': `${Math.round(draft.veil ?? 100)}%`, '--thumb': draft.hex }}
+            aria-label="Прозрачность цвета"
           />
         </label>
 

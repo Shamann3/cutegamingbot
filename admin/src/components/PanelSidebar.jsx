@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
-import { groupSections, SECTION_HINTS } from '../constants/panelNav'
-import { NAV_ICONS } from './NavIcons'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
@@ -95,9 +93,6 @@ function SettingsControls({
 }
 
 export default function PanelSidebar({
-  sections,
-  activeSection,
-  onNavigate,
   onLogout,
   onChangeDoor,
   onSessionExpired,
@@ -109,10 +104,8 @@ export default function PanelSidebar({
   musicVolume = 0,
   onMusicVolumeChange,
   onToggleMusic,
-  badges = {},
   accent = null,
   onAccentChange,
-  recentSectionIds = [],
   brandName = 'Панель сотрудника',
   brandTag = 'Весь проект',
 }) {
@@ -155,35 +148,6 @@ export default function PanelSidebar({
       cancelled = true
     }
   }, [mobileOpen, visuallyOpen])
-
-  const goTo = (id) => {
-    onNavigate(id)
-  }
-
-  const navGroups = useMemo(() => {
-    const groups = groupSections(sections)
-    const q = navQuery.trim().toLowerCase().replace(/ё/g, 'е')
-    if (!q) return groups
-    return groups
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => {
-          const ru = (item.labelRu || '').toLowerCase().replace(/ё/g, 'е')
-          const en = (item.label || '').toLowerCase()
-          const id = (item.id || '').toLowerCase()
-          return ru.includes(q) || en.includes(q) || id.includes(q)
-        }),
-      }))
-      .filter((group) => group.items.length > 0)
-  }, [sections, navQuery])
-
-  const recentItems = useMemo(() => {
-    const byId = new Map(sections.map((s) => [s.id, s]))
-    return (recentSectionIds || [])
-      .map((id) => byId.get(id))
-      .filter(Boolean)
-      .slice(0, 5)
-  }, [sections, recentSectionIds])
 
   useEffect(() => {
     if (!isPhone) return undefined
@@ -279,79 +243,6 @@ export default function PanelSidebar({
           <p className="panel-brand-tag">{brandTag}</p>
         </div>
       </div>
-
-      <nav className="panel-sidebar-nav" data-coach="nav" aria-label="Навигация панели">
-        {!isPhone && !navQuery.trim() && recentItems.length > 0 && (
-          <div className="panel-nav-group panel-nav-recent">
-            <span className="panel-nav-group-label" aria-hidden="true">
-              Недавно открывали
-            </span>
-            <div className="panel-nav-recent-row">
-              {recentItems.map((item) => {
-                const Icon = NAV_ICONS[item.id]
-                const active = item.id === activeSection
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="panel-nav-recent-chip"
-                    aria-current={active ? 'page' : undefined}
-                    onClick={() => goTo(item.id)}
-                  >
-                    {Icon && <Icon />}
-                    {item.labelRu}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {navGroups.map((group) => (
-          <div className="panel-nav-group" key={group.id}>
-            {group.label && (
-              <span className="panel-nav-group-label" aria-hidden="true">
-                {group.label}
-              </span>
-            )}
-            {group.items.map((item) => {
-              const active = item.id === activeSection
-              const NavIcon = NAV_ICONS[item.id]
-              const count = badges[item.id]
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`panel-nav-item${active ? ' panel-nav-item-active' : ''}`}
-                  data-section={item.id}
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => goTo(item.id)}
-                >
-                  {NavIcon && (
-                    <span className="panel-nav-icon">
-                      <NavIcon />
-                    </span>
-                  )}
-                  <span className="panel-nav-text">
-                    <span className="panel-nav-label">{item.labelRu}</span>
-                    {SECTION_HINTS[item.id] && (
-                      <span className="panel-nav-sublabel">{SECTION_HINTS[item.id]}</span>
-                    )}
-                  </span>
-                  {count > 0 && (
-                    <span className="panel-nav-badge" aria-label={`${count} новых`}>
-                      {count > 99 ? '99+' : count}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        ))}
-        {navQuery.trim() && navGroups.length === 0 && (
-          <p className="panel-sidebar-search-empty">Ничего не найдено</p>
-        )}
-      </nav>
 
       <div className="panel-sidebar-footer">
         {isPhone ? (

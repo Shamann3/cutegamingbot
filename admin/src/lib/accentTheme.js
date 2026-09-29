@@ -182,6 +182,7 @@ export function normalizeAccent(input) {
   }
 
   const glow = Number.isFinite(input?.glow) ? clamp(input.glow, 0, 100) : DEFAULT_GLOW
+  const veil = Number.isFinite(input?.veil) ? clamp(input.veil, 0, 100) : 100
 
   const known = ACCENT_SWATCHES.find((sw) => sw.hex.toLowerCase() === finalHex.toLowerCase())
   return {
@@ -192,6 +193,7 @@ export function normalizeAccent(input) {
     s,
     v,
     glow,
+    veil,
   }
 }
 
@@ -203,31 +205,41 @@ export function resolveAccent(idOrHex) {
 export function applyAccentToDocument(accent, { flash = false } = {}) {
   if (typeof document === 'undefined') return
   const a = normalizeAccent(accent)
-  const { r, g, b } = hexToRgb(a.hex)
+  // Текст и иконки не гаснут ниже половины яркости.
+  // Подсветка, обводки и фон слушаются ползунок до нуля.
+  const textHex = hsvToHex(a.h, a.s, Math.max(a.v, 0.5))
+  const decorHex = hsvToHex(a.h, a.s, a.v)
+  const { r, g, b } = hexToRgb(textHex)
+  const decor = hexToRgb(decorHex)
   const glow = a.glow / 100
-  const soft = 0.22 + glow * 0.42
-  const soft2 = 0.34 + glow * 0.48
-  const line = 0.55 + glow * 0.4
+  // На шкале 0…100. Ноль на экране — это 30% цвета, не пустота.
+  const veil = 0.3 + (a.veil / 100) * 0.7
+  const soft = (0.22 + glow * 0.42) * veil
+  const soft2 = (0.34 + glow * 0.48) * veil
+  const line = (0.55 + glow * 0.4) * veil
   const glowPx = 28 + glow * 72
-  const glowAlpha = 0.22 + glow * 0.48
-  const ink = inkOnAccent(a.hex)
-  const brightToward = relativeLuminance(a.hex) > INK_LUMINANCE ? '#000000' : '#ffffff'
-  const brightAmt = relativeLuminance(a.hex) > INK_LUMINANCE ? 0.22 : 0.28
+  const glowAlpha = (0.22 + glow * 0.48) * veil
+  const ink = inkOnAccent(textHex)
+  const brightToward = relativeLuminance(textHex) > INK_LUMINANCE ? '#000000' : '#ffffff'
+  const brightAmt = relativeLuminance(textHex) > INK_LUMINANCE ? 0.22 : 0.28
 
   const root = document.documentElement
-  root.style.setProperty('--e-accent', a.hex)
+  root.style.setProperty('--e-accent', textHex)
   root.style.setProperty('--e-accent-rgb', `${r}, ${g}, ${b}`)
-  root.style.setProperty('--e-accent-soft', `rgba(${r}, ${g}, ${b}, ${soft.toFixed(3)})`)
-  root.style.setProperty('--e-accent-soft-2', `rgba(${r}, ${g}, ${b}, ${soft2.toFixed(3)})`)
-  root.style.setProperty('--e-accent-line', `rgba(${r}, ${g}, ${b}, ${line.toFixed(3)})`)
-  root.style.setProperty('--e-accent-glow', `0 0 ${glowPx.toFixed(0)}px rgba(${r}, ${g}, ${b}, ${glowAlpha.toFixed(3)})`)
-  root.style.setProperty('--e-accent-bright', mixToward(a.hex, brightToward, brightAmt))
+  root.style.setProperty('--e-accent-decor', decorHex)
+  root.style.setProperty('--e-accent-decor-rgb', `${decor.r}, ${decor.g}, ${decor.b}`)
+  root.style.setProperty('--e-veil', veil.toFixed(3))
+  root.style.setProperty('--e-accent-soft', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft.toFixed(3)})`)
+  root.style.setProperty('--e-accent-soft-2', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${soft2.toFixed(3)})`)
+  root.style.setProperty('--e-accent-line', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${line.toFixed(3)})`)
+  root.style.setProperty('--e-accent-glow', `0 0 ${glowPx.toFixed(0)}px rgba(${decor.r}, ${decor.g}, ${decor.b}, ${glowAlpha.toFixed(3)})`)
+  root.style.setProperty('--e-accent-bright', mixToward(textHex, brightToward, brightAmt))
   root.style.setProperty('--e-accent-ink', ink)
   root.style.setProperty('--e-accent-on', ink)
   root.style.setProperty('--e-accent-glow-strength', String(glow))
-  root.style.setProperty('--e-accent-wash', `rgba(${r}, ${g}, ${b}, ${(0.14 + glow * 0.28).toFixed(3)})`)
-  root.style.setProperty('--e-accent-ring', `rgba(${r}, ${g}, ${b}, ${(0.45 + glow * 0.35).toFixed(3)})`)
-  root.style.setProperty('--ent-accent', a.hex)
+  root.style.setProperty('--e-accent-wash', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${((0.14 + glow * 0.28) * veil).toFixed(3)})`)
+  root.style.setProperty('--e-accent-ring', `rgba(${decor.r}, ${decor.g}, ${decor.b}, ${((0.45 + glow * 0.35) * veil).toFixed(3)})`)
+  root.style.setProperty('--ent-accent', textHex)
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
@@ -277,6 +289,7 @@ export function persistAccent(accent) {
         s: resolved.s,
         v: resolved.v,
         glow: resolved.glow,
+        veil: resolved.veil,
         label: resolved.label,
       }),
     )
