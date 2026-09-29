@@ -165,13 +165,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         {error && (
           <div className="gate-recover" role="alert">
             <p className="gate-status gate-status-error">{error}</p>
-            <p className="gate-lead">Сверка не прошла — двери всё равно доступны. Можно повторить или войти вручную.</p>
-            <div className="gate-recover-actions">
-              <button type="button" className="firstrun-next" onClick={load}>Повторить сверку</button>
-              <button type="button" className="gate-text" onClick={onStaffEnter}>Панель сотрудника</button>
-              <button type="button" className="gate-text" onClick={onStaffApply}>Заявка в команду</button>
-              <button type="button" className="gate-text" onClick={onGroupApply}>Заявка в группу</button>
-            </div>
+            <p className="gate-lead">Сверка не ответила. Вход — дверями ниже, по ключу.</p>
+            <button type="button" className="gate-text" onClick={load}>Повторить сверку</button>
           </div>
         )}
 
@@ -185,9 +180,9 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <div className="gate-doors" aria-busy={checking || undefined}>
             <Door
               title="Панель сотрудника"
-              detail={staffDetail}
-              open={portrait.staffCanEnter}
-              onClick={pressStaff}
+              detail={error ? 'Сверка не ответила. Нажатие откроет вход по ключу.' : staffDetail}
+              open={portrait.staffCanEnter || Boolean(error)}
+              onClick={error ? onStaffEnter : pressStaff}
               order={5}
             />
             <Door

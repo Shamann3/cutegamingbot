@@ -17,6 +17,7 @@ import GoldBackdrop from '../components/GoldBackdrop'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
 import EpsilonLogo from '../components/EpsilonLogo'
+import AccentAura from '../components/AccentAura'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 
 function slideClassForMode(nextMode) {
@@ -261,8 +262,9 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
 
   return (
     <div className={`auth-screen${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
+      {fortress && <AccentAura />}
       {fortress && onBack && (
-        <button type="button" className="gate-auth-back firstrun-next" onClick={onBack}>
+        <button type="button" className="gate-auth-back" onClick={onBack}>
           К выбору панели
         </button>
       )}

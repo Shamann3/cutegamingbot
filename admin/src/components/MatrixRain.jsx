@@ -76,9 +76,13 @@ export default function MatrixRain({
     }
 
     const step = () => {
-      // Мягкий шлейф: старые глифы гаснут, а не стираются рывком.
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.085)'
+      // Гасим старые глифы, не закрашивая холст чёрным.
+      // Иначе дождь через пару секунд становится глухой чёрной плашкой
+      // и прячет градиент под собой.
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.16)'
       ctx.fillRect(0, 0, width, height)
+      ctx.globalCompositeOperation = 'source-over'
 
       for (let i = 0; i < columns.length; i += 1) {
         const col = columns[i]
