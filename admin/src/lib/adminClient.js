@@ -2477,7 +2477,7 @@ export async function saveStatValue(body) {
 }
 
 export async function copyStatSeason(body) {
-  return adminFetch('/stat-board/season', { method: 'POST', body })
+  return adminFetch('/stat-board/season', { method: 'POST', body, timeoutMs: 60000 })
 }
 
 export async function clearStatSeason(body) {

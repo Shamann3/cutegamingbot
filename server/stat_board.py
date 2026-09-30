@@ -108,6 +108,13 @@ def _today() -> date:
     return datetime.now(_MSK).date()
 
 
+def _clock(moment) -> str:
+    if not moment:
+        return ""
+    local = moment.astimezone(_MSK) if getattr(moment, "tzinfo", None) else moment.replace(tzinfo=_MSK)
+    return local.strftime("%d.%m.%Y %H:%M")
+
+
 def _require_creator(user_id: int) -> None:
     if not is_project_creator(user_id):
         raise HTTPException(status_code=403, detail="Только создатель проекта")
@@ -258,9 +265,12 @@ def _season_payload(row, today: date, metric: str = "") -> dict | None:
         return None
     stage = phase(today, row["zero_from"], row["zero_until"])
     if metric == "players":
+        when = _clock(row["copied_at"])
+        stamp = f"Копия снята {when}. " if when else "Копия снята. "
         note = (
-            "Копия уже снята. В чате «статистика игр» за всё время видны только игры после копии. "
-            "День, неделя, месяц и год считаются как обычно."
+            f"{stamp}Новая копия заменяет старую. "
+            "В чате «статистика игр» за всё время остаются только игры после этой минуты. "
+            "День, неделя, месяц и год не меняются."
         )
         notes = {"before": note, "zero": note, "after": note}
     else:
@@ -274,6 +284,7 @@ def _season_payload(row, today: date, metric: str = "") -> dict | None:
         "zeroFrom": row["zero_from"].isoformat(),
         "zeroUntil": row["zero_until"].isoformat(),
         "copiedAt": row["copied_at"].isoformat() if row["copied_at"] else "",
+        "copiedLabel": _clock(row["copied_at"]),
         "note": notes.get(stage, ""),
     }
 
@@ -1015,28 +1026,53 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
         end = _parse_day(body.zero_until)
         if end < start:
             raise HTTPException(status_code=400, detail="Дата конца раньше даты начала")
-    async with db.pool.acquire() as connection:
-        async with connection.transaction():
-            await connection.execute(
-                "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
-                f"{spec['season']}%",
-                scope,
-            )
-            await _copy_snapshot(connection, spec, scope)
-            await connection.execute(
+    try:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
+                    f"{spec['season']}%",
+                    scope,
+                )
+                await _copy_snapshot(connection, spec, scope)
+                await connection.execute(
+                    """
+                    INSERT INTO epsilon_stat_season (metric, chat_id, zero_from, zero_until, copied_at)
+                    VALUES ($1, $2, $3, $4, NOW())
+                    ON CONFLICT (metric, chat_id) DO UPDATE
+                    SET zero_from = EXCLUDED.zero_from,
+                        zero_until = EXCLUDED.zero_until,
+                        copied_at = NOW()
+                    """,
+                    spec["season"],
+                    scope,
+                    start,
+                    end,
+                )
+    except Exception as exc:
+        print(f"[stat_board] копия {spec['id']}: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="Новую копию снять не удалось. Прежняя копия, если она была, осталась.",
+        ) from exc
+    fresh = None
+    frozen_users = 0
+    frozen_games = 0
+    try:
+        fresh = await _season_row(spec["season"], scope)
+        if spec["id"] == "players":
+            counted = await db.pool.fetchrow(
                 """
-                INSERT INTO epsilon_stat_season (metric, chat_id, zero_from, zero_until, copied_at)
-                VALUES ($1, $2, $3, $4, NOW())
-                ON CONFLICT (metric, chat_id) DO UPDATE
-                SET zero_from = EXCLUDED.zero_from,
-                    zero_until = EXCLUDED.zero_until,
-                    copied_at = NOW()
-                """,
-                spec["season"],
-                scope,
-                start,
-                end,
+                SELECT COUNT(DISTINCT user_id)::int AS people,
+                       COALESCE(SUM(value), 0)::bigint AS games
+                FROM epsilon_stat_snapshot
+                WHERE chat_id = 0 AND metric IN ('players_wins', 'players_losses')
+                """
             )
+            frozen_users = int(counted["people"] or 0) if counted else 0
+            frozen_games = int(counted["games"] or 0) if counted else 0
+    except Exception as exc:
+        print(f"[stat_board] ответ копии {spec['id']}: {exc}")
     await log_admin_action(
         int(user_id),
         "stat_copy",
@@ -1044,7 +1080,13 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
         target_id=spec["id"],
         details={"chatId": scope, "zeroFrom": start.isoformat(), "zeroUntil": end.isoformat()},
     )
-    return {"ok": True}
+    return {
+        "ok": True,
+        "copiedAt": fresh["copied_at"].isoformat() if fresh and fresh["copied_at"] else "",
+        "copiedLabel": _clock(fresh["copied_at"]) if fresh else "",
+        "frozenUsers": frozen_users,
+        "frozenGames": frozen_games,
+    }
 
 
 async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:

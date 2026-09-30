@@ -52,7 +52,7 @@ function boardSig(data) {
   const rows = (data.rows || []).map((row) => (
     [row.userId, row.place, row.seen, row.raw, row.wins, row.losses, row.name].join(':')
   )).join(';')
-  const season = data.season ? `${data.season.phase}:${data.season.zeroUntil}` : ''
+  const season = data.season ? `${data.season.phase}:${data.season.zeroUntil}:${data.season.copiedAt || ''}` : ''
   return [data.metric, data.period, data.periodLabel, data.total, data.rowUnit, season, rows].join('#')
 }
 
@@ -176,6 +176,8 @@ export default function StatDesk() {
   const [loadingGroups, setLoadingGroups] = useState(false)
   const [saving, setSaving] = useState(false)
   const [seasonBusy, setSeasonBusy] = useState('')
+  const [copyFlash, setCopyFlash] = useState('')
+  const [copyError, setCopyError] = useState('')
   const dirtyRef = useRef(false)
   const savingRef = useRef(false)
   const seasonBusyRef = useRef(false)
@@ -409,6 +411,8 @@ export default function StatDesk() {
     setRowError('')
     setError('')
     setNotice('')
+    setCopyFlash('')
+    setCopyError('')
   }
 
   const pickPeriod = (id) => {
@@ -557,19 +561,31 @@ export default function StatDesk() {
     setSeasonBusy('copy')
     setNotice('')
     setError('')
+    setCopyError('')
+    setCopyFlash('')
     try {
-      await copyStatSeason({
+      const result = await copyStatSeason({
         metric: metric.id,
         chat_id: chat?.chatId || 0,
         zero_from: metric.id === 'players' ? '' : zeroFrom,
         zero_until: metric.id === 'players' ? '' : zeroUntil,
       })
-      setNotice(metric.id === 'players'
-        ? 'Копия снята. В чате «статистика игр» за всё время теперь только игры после этой копии.'
-        : 'Копия снята. В указанные даты люди видят нули, потом копия складывается с тем, что прибавилось.')
-      await refreshBoard()
+      if (metric.id === 'players') {
+        const when = result?.copiedLabel
+        const games = fmt(result?.frozenGames || 0)
+        setCopyFlash(when
+          ? `Новая копия снята ${when}. Заморожено ${games} игр. Топ «за всё время» начинается заново: в нём и в чате останутся только игры после этой минуты.`
+          : 'Новая копия снята. Топ «за всё время» начинается заново: в нём и в чате останутся только игры после этой минуты.')
+        if (period !== 'all') setPeriod('all')
+        else await refreshBoard()
+      } else {
+        setNotice('Копия снята. В указанные даты люди видят нули, потом копия складывается с тем, что прибавилось.')
+        await refreshBoard()
+      }
     } catch (err) {
-      setError(err.message || 'Скопировать не удалось')
+      const message = err.message || 'Скопировать не удалось'
+      if (metric.id === 'players') setCopyError(message)
+      else setError(message)
     } finally {
       seasonBusyRef.current = false
       setSeasonBusy('')
@@ -586,12 +602,20 @@ export default function StatDesk() {
     seasonBusyRef.current = true
     setSeasonBusy('clear')
     setError('')
+    setCopyError('')
+    setCopyFlash('')
     try {
       await clearStatSeason({ metric: metric.id, chat_id: chat?.chatId || 0 })
-      setNotice('Копия убрана. Топ снова показывает базу.')
+      if (metric.id === 'players') {
+        setCopyFlash('Копия убрана. Топ «за всё время» снова показывает все игры из базы.')
+      } else {
+        setNotice('Копия убрана. Топ снова показывает базу.')
+      }
       await refreshBoard()
     } catch (err) {
-      setError(err.message || 'Убрать копию не удалось')
+      const message = err.message || 'Убрать копию не удалось'
+      if (metric.id === 'players') setCopyError(message)
+      else setError(message)
     } finally {
       seasonBusyRef.current = false
       setSeasonBusy('')
@@ -738,7 +762,11 @@ export default function StatDesk() {
           )}
           {loadingBoard && !boardReady && <p className="stat-loading">Считаю этот топ…</p>}
           {boardReady && rows.length === 0 && (
-            <p className="realm-copy">В этом топе пока никого. Ниже можно найти человека и задать число.</p>
+            <p className="realm-copy">
+              {metric?.id === 'players' && period === 'all' && season
+                ? 'После копии новых игр ещё нет. Как только кто-то сыграет, он появится здесь и в чате «статистика игр» за всё время.'
+                : 'В этом топе пока никого. Ниже можно найти человека и задать число.'}
+            </p>
           )}
           <ol className="stat-rows">
             {rows.map((row) => {
@@ -786,12 +814,14 @@ export default function StatDesk() {
         <details className="stat-season">
           <summary>Копия игр</summary>
           <p className="realm-copy">
-            Копия запоминает текущие победы и проигрыши. В чате команда «статистика игр» за всё время сразу показывает только игры после этой копии. День, неделя, месяц и год остаются как были.
+            Кнопка снимает новый снимок с текущих побед и проигрышей и заменяет прошлую копию. Топ «за всё время» после этого начинается с нуля. День, неделя, месяц и год остаются как были.
           </p>
           {season && <p className="realm-note">{season.note}</p>}
+          {copyFlash && <p className="realm-note" role="status">{copyFlash}</p>}
+          {copyError && <p className="sec-error" role="alert">{copyError}</p>}
           <div className="stat-season-actions">
             <button type="button" className="sec-btn" disabled={seasonBusy === 'copy'} onClick={copySeason}>
-              {seasonBusy === 'copy' ? 'Копирую…' : 'Скопировать'}
+              {seasonBusy === 'copy' ? 'Снимаю копию…' : (season ? 'Снять новую копию' : 'Скопировать')}
             </button>
             {season && (
               <button type="button" className="sec-btn sec-btn-ghost" disabled={seasonBusy === 'clear'} onClick={clearSeason}>

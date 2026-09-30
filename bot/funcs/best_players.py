@@ -168,6 +168,7 @@ def render_best_players_text(
     names: dict,
     period: str = "all",
     empty_line: str | None = None,
+    lead: str | None = None,
 ) -> str:
     place_text = format_place(place)
     text = (
@@ -176,6 +177,8 @@ def render_best_players_text(
         f"<tg-emoji emoji-id='{BEST_PLAYERS_PLACE_EMOJI_ID}'>🌱</tg-emoji> "
         f"Ваше место в топе : <i>{place_text}</i></b>\n\n"
     )
+    if lead:
+        text += f"{lead}\n\n"
     if not rows:
         text += empty_line or _EMPTY_BY_PERIOD.get(period, _EMPTY_BY_PERIOD["all"])
         return text
@@ -246,8 +249,11 @@ async def build_best_players_view(db, viewer_id: int, period: str = "all", sourc
     rows = list(board.get("rows") or [])
     names = await db.get_names_bulk(uid for uid, _ in rows)
     empty_line = None
-    if board.get("sinceCopy") and kind == "all" and not rows:
-        empty_line = "После копии новых игр пока нет. Старые в этот топ не входят."
-    text = render_best_players_text(board.get("place"), rows, names or {}, kind, empty_line)
+    lead = None
+    if board.get("sinceCopy") and kind == "all":
+        lead = "Считаются только игры после последней копии."
+        if not rows:
+            empty_line = "После копии новых игр пока нет. Старые в этот топ не входят."
+    text = render_best_players_text(board.get("place"), rows, names or {}, kind, empty_line, lead)
     keyboard = best_players_keyboard(kind, origin)
     return text, keyboard
