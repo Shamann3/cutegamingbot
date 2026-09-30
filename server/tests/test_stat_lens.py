@@ -1,6 +1,14 @@
 from datetime import date
 
-from stat_lens import anchor_day, gained, period_bounds, phase, plan_period_total, seen_number
+from stat_lens import (
+    anchor_day,
+    gained,
+    games_people_see,
+    period_bounds,
+    phase,
+    plan_period_total,
+    seen_number,
+)
 
 
 def test_period_bounds_follow_moscow_calendar():
@@ -24,6 +32,13 @@ def test_people_see_zero_inside_the_window_and_the_sum_after():
     assert seen_number(1040, 1000, "after") == 1040
     assert gained(1040, 1000) == 40
     assert seen_number(5, None, "after") == 5
+
+
+def test_game_copy_keeps_only_games_after_the_snapshot():
+    assert games_people_see(1040, None) == 1040
+    assert games_people_see(1040, 1000) == 40
+    assert games_people_see(1000, 1000) == 0
+    assert games_people_see(10, 40) == 0
 
 
 def test_period_total_lands_on_the_anchor_without_going_negative():

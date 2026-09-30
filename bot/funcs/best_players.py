@@ -167,6 +167,7 @@ def render_best_players_text(
     rows: Sequence[Tuple[int, int]],
     names: dict,
     period: str = "all",
+    empty_line: str | None = None,
 ) -> str:
     place_text = format_place(place)
     text = (
@@ -176,7 +177,7 @@ def render_best_players_text(
         f"Ваше место в топе : <i>{place_text}</i></b>\n\n"
     )
     if not rows:
-        text += _EMPTY_BY_PERIOD.get(period, _EMPTY_BY_PERIOD["all"])
+        text += empty_line or _EMPTY_BY_PERIOD.get(period, _EMPTY_BY_PERIOD["all"])
         return text
     for rank, (user_id, games) in enumerate(rows, start=1):
         first_name, username = names.get(int(user_id), (None, None))
@@ -244,6 +245,9 @@ async def build_best_players_view(db, viewer_id: int, period: str = "all", sourc
     )
     rows = list(board.get("rows") or [])
     names = await db.get_names_bulk(uid for uid, _ in rows)
-    text = render_best_players_text(board.get("place"), rows, names or {}, kind)
+    empty_line = None
+    if board.get("sinceCopy") and kind == "all" and not rows:
+        empty_line = "После копии новых игр пока нет. Старые в этот топ не входят."
+    text = render_best_players_text(board.get("place"), rows, names or {}, kind, empty_line)
     keyboard = best_players_keyboard(kind, origin)
     return text, keyboard

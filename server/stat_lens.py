@@ -66,6 +66,15 @@ def gained(raw: int, copied: int | None) -> int:
     return int(raw or 0) - int(copied or 0)
 
 
+def games_people_see(raw: int, copied: int | None) -> int:
+    """В топе игр после копии видно только то, что сыграли позже копии."""
+    number = int(raw or 0)
+    if copied is None:
+        return number
+    left = number - int(copied or 0)
+    return left if left > 0 else 0
+
+
 def plan_period_total(days: list[tuple[date, int]], anchor: date, target: int) -> list[tuple[date, int]]:
     """Новые значения по дням, чтобы сумма срока стала target. Не уходит ниже нуля."""
     if target < 0:

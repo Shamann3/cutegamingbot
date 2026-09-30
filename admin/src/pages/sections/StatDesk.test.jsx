@@ -152,6 +152,63 @@ describe('StatDesk', () => {
     expect(await screen.findByText('Сохранено. В этом топе теперь 40.')).toBeTruthy()
   })
 
+  it('explains a game copy without a date window that hides the top', async () => {
+    vi.mocked(fetchStatCatalog).mockResolvedValue({
+      metrics: [
+        ...CATALOG.metrics,
+        {
+          id: 'players',
+          title: 'Лучшие игроки',
+          blurb: 'Игры.',
+          needsGroup: false,
+          periods: [
+            { id: 'day', label: 'За день' },
+            { id: 'all', label: 'За всё время' },
+          ],
+          fields: [
+            { key: 'wins', label: 'Победы' },
+            { key: 'losses', label: 'Проигрыши' },
+          ],
+          rowUnit: 'сыгранных игр',
+          topLimit: 10,
+        },
+      ],
+    })
+    vi.mocked(fetchStatBoard).mockImplementation(async ({ metric, period }) => ({
+      metric,
+      period,
+      periodLabel: period === 'all' ? 'За всё время' : '30.09.2026',
+      rowUnit: metric === 'players' ? 'сыгранных игр' : 'кут',
+      total: null,
+      rows: [{
+        place: 1,
+        userId: 3,
+        name: 'Аня',
+        username: 'anya',
+        seen: 4,
+        raw: 40,
+        wins: 30,
+        losses: 10,
+        games: 4,
+      }],
+      season: {
+        phase: 'zero',
+        zeroFrom: '2026-09-30',
+        zeroUntil: '2026-10-02',
+        note: 'Копия уже снята.',
+      },
+    }))
+    render(<StatDesk />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Лучшие игроки' }))
+    expect(await screen.findByText('4 сыгранных игр')).toBeTruthy()
+    expect(screen.queryByText(/люди видят нули/)).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: 'За всё время' }))
+    expect(await screen.findByText(/только игры после копии/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Копия игр'))
+    expect(screen.getByRole('button', { name: 'Скопировать' })).toBeTruthy()
+    expect(screen.queryByText('С какого числа')).toBeNull()
+  })
+
   it('refreshes the open top every second without wiping a number being typed', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {

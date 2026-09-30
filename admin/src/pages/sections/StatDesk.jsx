@@ -101,7 +101,7 @@ function StatEditor({
   saving,
   error,
 }) {
-  const hidden = person?.season?.phase === 'zero'
+  const hidden = person?.season?.phase === 'zero' && metric.id !== 'players'
   return (
     <form className="stat-row-edit" onSubmit={onSubmit}>
       {person && (person.fields || []).filter((field) => field.key !== 'games').map((field) => (
@@ -132,6 +132,9 @@ function StatEditor({
       )}
       {metric.id === 'players' && period === 'all' && (
         <p className="realm-copy">Это победы и проигрыши за всё время. День, неделя, месяц и год останутся как были.</p>
+      )}
+      {metric.id === 'players' && period === 'all' && person?.season && (
+        <p className="realm-note">В чате «статистика игр» за всё время видно число «сейчас в топе». В базе остаётся полное.</p>
       )}
       {metric.id === 'players' && period !== 'all' && (
         <p className="realm-copy">В топе за этот срок будет сумма этих двух чисел.</p>
@@ -490,7 +493,8 @@ export default function StatDesk() {
     metric.fields.forEach((field) => {
       values[field.key] = Number(digits(draft[field.key]))
     })
-    const hiding = board?.season?.phase === 'zero'
+    const hiding = board?.season?.phase === 'zero' && metric.id !== 'players'
+    const playersCopy = metric.id === 'players' && period === 'all' && board?.season
     const shown = metric.id === 'players'
       ? Number(values.wins || 0) + Number(values.losses || 0)
       : Number(values[metric.fields[0].key] || 0)
@@ -518,9 +522,11 @@ export default function StatDesk() {
           )),
         }
       })
-      setNotice(hiding
-        ? `В базе теперь ${fmt(shown)}. Люди видят 0 до ${board?.season?.zeroUntil || 'конца окна'}.`
-        : `Сохранено. В этом топе теперь ${fmt(shown)}.`)
+      setNotice(playersCopy
+        ? 'Сохранено. В чате «статистика игр» за всё время видно только то, что сыграли после копии.'
+        : hiding
+          ? `В базе теперь ${fmt(shown)}. Люди видят 0 до ${board?.season?.zeroUntil || 'конца окна'}.`
+          : `Сохранено. В этом топе теперь ${fmt(shown)}.`)
       dirtyRef.current = false
       try {
         await refreshBoard()
@@ -555,10 +561,12 @@ export default function StatDesk() {
       await copyStatSeason({
         metric: metric.id,
         chat_id: chat?.chatId || 0,
-        zero_from: zeroFrom,
-        zero_until: zeroUntil,
+        zero_from: metric.id === 'players' ? '' : zeroFrom,
+        zero_until: metric.id === 'players' ? '' : zeroUntil,
       })
-      setNotice('Копия снята. В указанные даты люди видят нули, потом копия складывается с тем, что прибавилось.')
+      setNotice(metric.id === 'players'
+        ? 'Копия снята. В чате «статистика игр» за всё время теперь только игры после этой копии.'
+        : 'Копия снята. В указанные даты люди видят нули, потом копия складывается с тем, что прибавилось.')
       await refreshBoard()
     } catch (err) {
       setError(err.message || 'Скопировать не удалось')
@@ -570,7 +578,10 @@ export default function StatDesk() {
 
   const clearSeason = async () => {
     if (!metric) return
-    if (!window.confirm('Убрать копию? Люди сразу снова увидят числа из базы.')) return
+    const ask = metric.id === 'players'
+      ? 'Убрать копию? В чате «статистика игр» за всё время снова будут все игры из базы.'
+      : 'Убрать копию? Люди сразу снова увидят числа из базы.'
+    if (!window.confirm(ask)) return
     epoch.current += 1
     seasonBusyRef.current = true
     setSeasonBusy('clear')
@@ -645,7 +656,7 @@ export default function StatDesk() {
         <p className="realm-copy">День, неделя, месяц, год и всё время считаются отдельно. Сейчас на экране только выбранный срок.</p>
       )}
       {metric?.id === 'players' && (
-        <p className="realm-copy">За всё время топ складывает победы и проигрыши. День, неделя, месяц и год считают только свои игры.</p>
+        <p className="realm-copy">За всё время топ складывает победы и проигрыши. После копии в чате остаются только игры после неё. День, неделя, месяц и год считают только свои игры.</p>
       )}
 
       {metric?.needsGroup && !chat && (
@@ -716,8 +727,11 @@ export default function StatDesk() {
           <h3 className="realm-h">
             {metric.title}{boardReady && board.periodLabel ? ` · ${board.periodLabel}` : ''}
           </h3>
-          {season?.phase === 'zero' && (
+          {season?.phase === 'zero' && metric?.id !== 'players' && (
             <p className="realm-note">До {season.zeroUntil} люди видят нули. Рядом с нулём написано число в базе.</p>
+          )}
+          {season && metric?.id === 'players' && period === 'all' && (
+            <p className="realm-note">В чате «статистика игр» за всё время видны только игры после копии. Рядом написано полное число в базе.</p>
           )}
           {boardReady && board.total != null && (
             <p className="realm-copy">Всего за этот срок: {fmt(board.total)}</p>
@@ -768,7 +782,26 @@ export default function StatDesk() {
         </section>
       )}
 
-      {showPeople && (
+      {showPeople && metric?.id === 'players' && (
+        <details className="stat-season">
+          <summary>Копия игр</summary>
+          <p className="realm-copy">
+            Копия запоминает текущие победы и проигрыши. В чате команда «статистика игр» за всё время сразу показывает только игры после этой копии. День, неделя, месяц и год остаются как были.
+          </p>
+          {season && <p className="realm-note">{season.note}</p>}
+          <div className="stat-season-actions">
+            <button type="button" className="sec-btn" disabled={seasonBusy === 'copy'} onClick={copySeason}>
+              {seasonBusy === 'copy' ? 'Копирую…' : 'Скопировать'}
+            </button>
+            {season && (
+              <button type="button" className="sec-btn sec-btn-ghost" disabled={seasonBusy === 'clear'} onClick={clearSeason}>
+                Убрать копию
+              </button>
+            )}
+          </div>
+        </details>
+      )}
+      {showPeople && metric?.id !== 'players' && (
         <details className="stat-season">
           <summary>Копия на даты</summary>
           <p className="realm-copy">

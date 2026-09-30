@@ -8503,7 +8503,7 @@ class Database:
 
         try:
             from bot.funcs.stat_veil import veil_pairs
-            return await veil_pairs(self.pool, "players", loose_data)
+            return await veil_pairs(self.pool, "players_losses", loose_data)
         except Exception:
             return loose_data
 
@@ -8516,7 +8516,7 @@ class Database:
 
         try:
             from bot.funcs.stat_veil import veil_pairs
-            return await veil_pairs(self.pool, "players", wins_data)
+            return await veil_pairs(self.pool, "players_wins", wins_data)
         except Exception:
             return wins_data
 
@@ -8575,7 +8575,7 @@ class Database:
     ) -> dict:
         """Топ по числу игр и место зрителя.
 
-        period='all' — COALESCE(wins,0)+COALESCE(loose,0).
+        period='all' — победы плюс проигрыши. Если есть копия, из них вычитается снимок.
         Иначе сумма user_games_day за [start, end].
         Место совпадает с порядком games DESC, user_id ASC.
         """
@@ -8594,44 +8594,139 @@ class Database:
                 return empty
 
         viewer = int(viewer_id)
+        since_copy = False
         try:
             async with self.pool.acquire() as connection:
                 if str(period or "all") == "all" or start is None or end is None:
-                    rows = await connection.fetch(
-                        """
-                        SELECT user_id,
-                               (COALESCE(wins, 0) + COALESCE(loose, 0))::bigint AS games
-                        FROM users
-                        WHERE (COALESCE(wins, 0) + COALESCE(loose, 0)) > 0
-                        ORDER BY games DESC, user_id ASC
-                        LIMIT $1
-                        """,
-                        cap,
-                    )
-                    own = await connection.fetchrow(
-                        """
-                        SELECT (COALESCE(wins, 0) + COALESCE(loose, 0))::bigint AS games
-                        FROM users
-                        WHERE user_id = $1
-                        """,
-                        viewer,
-                    )
-                    viewer_games = int(own["games"] or 0) if own else 0
-                    ahead = 0
-                    if viewer_games > 0:
-                        ahead = int(await connection.fetchval(
+                    copy_ready = False
+                    try:
+                        copy_ready = bool(await connection.fetchval(
                             """
-                            SELECT COUNT(*)::int
+                            SELECT 1 FROM epsilon_stat_season
+                            WHERE metric = 'players' AND chat_id = 0
+                            """
+                        ))
+                    except Exception as e:
+                        print(f"[user_games_day] копия игр: {e}")
+                    if copy_ready:
+                        try:
+                            rows = await connection.fetch(
+                                """
+                                SELECT u.user_id,
+                                       GREATEST(
+                                         COALESCE(u.wins, 0)::bigint
+                                         + COALESCE(u.loose, 0)::bigint
+                                         - COALESCE(c.copied, 0)::bigint,
+                                         0
+                                       ) AS games
+                                FROM users u
+                                LEFT JOIN (
+                                    SELECT user_id, SUM(value)::bigint AS copied
+                                    FROM epsilon_stat_snapshot
+                                    WHERE chat_id = 0
+                                      AND metric IN ('players_wins', 'players_losses')
+                                    GROUP BY user_id
+                                ) c ON c.user_id = u.user_id
+                                WHERE COALESCE(u.wins, 0)::bigint
+                                      + COALESCE(u.loose, 0)::bigint
+                                      - COALESCE(c.copied, 0)::bigint > 0
+                                ORDER BY games DESC, u.user_id ASC
+                                LIMIT $1
+                                """,
+                                cap,
+                            )
+                            own = await connection.fetchrow(
+                                """
+                                SELECT GREATEST(
+                                         COALESCE(u.wins, 0)::bigint
+                                         + COALESCE(u.loose, 0)::bigint
+                                         - COALESCE(c.copied, 0)::bigint,
+                                         0
+                                       ) AS games
+                                FROM users u
+                                LEFT JOIN (
+                                    SELECT user_id, SUM(value)::bigint AS copied
+                                    FROM epsilon_stat_snapshot
+                                    WHERE chat_id = 0
+                                      AND metric IN ('players_wins', 'players_losses')
+                                    GROUP BY user_id
+                                ) c ON c.user_id = u.user_id
+                                WHERE u.user_id = $1
+                                """,
+                                viewer,
+                            )
+                            viewer_games = int(own["games"] or 0) if own else 0
+                            ahead = 0
+                            if viewer_games > 0:
+                                ahead = int(await connection.fetchval(
+                                    """
+                                    SELECT COUNT(*)::int
+                                    FROM users u
+                                    LEFT JOIN (
+                                        SELECT user_id, SUM(value)::bigint AS copied
+                                        FROM epsilon_stat_snapshot
+                                        WHERE chat_id = 0
+                                          AND metric IN ('players_wins', 'players_losses')
+                                        GROUP BY user_id
+                                    ) c ON c.user_id = u.user_id
+                                    WHERE GREATEST(
+                                            COALESCE(u.wins, 0)::bigint
+                                            + COALESCE(u.loose, 0)::bigint
+                                            - COALESCE(c.copied, 0)::bigint,
+                                            0
+                                          ) > $1
+                                       OR (
+                                            GREATEST(
+                                              COALESCE(u.wins, 0)::bigint
+                                              + COALESCE(u.loose, 0)::bigint
+                                              - COALESCE(c.copied, 0)::bigint,
+                                              0
+                                            ) = $1
+                                            AND u.user_id < $2
+                                       )
+                                    """,
+                                    viewer_games,
+                                    viewer,
+                                ) or 0)
+                            since_copy = True
+                        except Exception as e:
+                            print(f"[user_games_day] топ после копии: {e}")
+                    if not since_copy:
+                        rows = await connection.fetch(
+                            """
+                            SELECT user_id,
+                                   (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
                             FROM users
-                            WHERE (COALESCE(wins, 0) + COALESCE(loose, 0)) > $1
-                               OR (
-                                    (COALESCE(wins, 0) + COALESCE(loose, 0)) = $1
-                                    AND user_id < $2
-                               )
+                            WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > 0
+                            ORDER BY games DESC, user_id ASC
+                            LIMIT $1
                             """,
-                            viewer_games,
+                            cap,
+                        )
+                        own = await connection.fetchrow(
+                            """
+                            SELECT (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                            FROM users
+                            WHERE user_id = $1
+                            """,
                             viewer,
-                        ) or 0)
+                        )
+                        viewer_games = int(own["games"] or 0) if own else 0
+                        ahead = 0
+                        if viewer_games > 0:
+                            ahead = int(await connection.fetchval(
+                                """
+                                SELECT COUNT(*)::int
+                                FROM users
+                                WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > $1
+                                   OR (
+                                        (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) = $1
+                                        AND user_id < $2
+                                   )
+                                """,
+                                viewer_games,
+                                viewer,
+                            ) or 0)
                 else:
                     rows = await connection.fetch(
                         """
@@ -8682,16 +8777,12 @@ class Database:
             print(f"[user_games_day] топ лучших игроков: {e}")
             return empty
 
-        board = {
+        return {
             "rows": [(int(row["user_id"]), int(row["games"] or 0)) for row in rows],
             "place": (ahead + 1) if viewer_games > 0 else None,
             "viewer_games": viewer_games,
+            "sinceCopy": since_copy,
         }
-        try:
-            from bot.funcs.stat_veil import veil_best_players
-            return await veil_best_players(self.pool, board)
-        except Exception:
-            return board
 
     async def get_user_winamount(self, user_id):
         """

@@ -21,6 +21,7 @@ from stat_lens import (
     PERIODS,
     anchor_day,
     gained,
+    games_people_see,
     period_bounds,
     phase,
     plan_period_total,
@@ -252,15 +253,22 @@ async def _copied_map(snapshot_metric: str, chat_id: int) -> dict[int, int]:
     return {int(row["user_id"]): int(row["value"] or 0) for row in rows}
 
 
-def _season_payload(row, today: date) -> dict | None:
+def _season_payload(row, today: date, metric: str = "") -> dict | None:
     if not row:
         return None
     stage = phase(today, row["zero_from"], row["zero_until"])
-    notes = {
-        "before": "Копия уже снята. До начала окна люди видят обычные числа.",
-        "zero": "Сейчас люди видят нули. После конечной даты копия сложится с тем, что прибавилось.",
-        "after": "Окно кончилось. Людям показывается копия плюс всё, что прибавилось с момента копии.",
-    }
+    if metric == "players":
+        note = (
+            "Копия уже снята. В чате «статистика игр» за всё время видны только игры после копии. "
+            "День, неделя, месяц и год считаются как обычно."
+        )
+        notes = {"before": note, "zero": note, "after": note}
+    else:
+        notes = {
+            "before": "Копия уже снята. До начала окна люди видят обычные числа.",
+            "zero": "Сейчас люди видят нули. После конечной даты копия сложится с тем, что прибавилось.",
+            "after": "Окно кончилось. Людям показывается копия плюс всё, что прибавилось с момента копии.",
+        }
     return {
         "phase": stage,
         "zeroFrom": row["zero_from"].isoformat(),
@@ -394,16 +402,46 @@ async def _message_rows(chat_id: int, period: str, today: date, limit: int):
     return rows, total, label
 
 
-async def _player_rows(period: str, today: date, limit: int):
+async def _player_rows(period: str, today: date, limit: int, since_copy: bool = False):
+    if period == "all" and since_copy:
+        rows = await db.pool.fetch(
+            """
+            SELECT u.user_id,
+                   COALESCE(u.wins, 0)::bigint AS wins,
+                   COALESCE(u.loose, 0)::bigint AS losses,
+                   GREATEST(
+                     COALESCE(u.wins, 0)::bigint
+                     + COALESCE(u.loose, 0)::bigint
+                     - COALESCE(c.copied, 0)::bigint,
+                     0
+                   ) AS games,
+                   (COALESCE(u.wins, 0)::bigint + COALESCE(u.loose, 0)::bigint) AS raw_games
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, SUM(value)::bigint AS copied
+                FROM epsilon_stat_snapshot
+                WHERE chat_id = 0
+                  AND metric IN ('players_wins', 'players_losses')
+                GROUP BY user_id
+            ) c ON c.user_id = u.user_id
+            WHERE COALESCE(u.wins, 0)::bigint
+                  + COALESCE(u.loose, 0)::bigint
+                  - COALESCE(c.copied, 0)::bigint > 0
+            ORDER BY games DESC, u.user_id ASC
+            LIMIT $1
+            """,
+            limit,
+        )
+        return rows, "За всё время"
     if period == "all":
         rows = await db.pool.fetch(
             """
             SELECT user_id,
                    COALESCE(wins, 0)::bigint AS wins,
                    COALESCE(loose, 0)::bigint AS losses,
-                   (COALESCE(wins, 0) + COALESCE(loose, 0))::bigint AS games
+                   (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
             FROM users
-            WHERE (COALESCE(wins, 0) + COALESCE(loose, 0)) > 0
+            WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > 0
             ORDER BY games DESC, user_id ASC
             LIMIT $1
             """,
@@ -570,18 +608,23 @@ async def stat_board(
             seen = seen_number(raw, copied.get(uid), stage if name == "all" else _period_stage(stage))
             rows_out.append({"place": index, "userId": uid, "raw": raw, "seen": seen, "messages": raw})
     elif spec["id"] == "players":
-        raw_rows, period_label = await _player_rows(name, today, limit)
+        since_copy = bool(season) and name == "all"
+        raw_rows, period_label = await _player_rows(name, today, limit, since_copy=since_copy)
         for index, row in enumerate(raw_rows, start=1):
             uid = int(row["user_id"])
             games = int(row["games"] or 0)
             wins = int(row["wins"] or 0)
             losses = int(row["losses"] or 0)
-            public = games
-            seen = 0 if _period_stage(stage) == "zero" else public
+            if since_copy:
+                raw = int(row["raw_games"] or 0)
+                seen = games
+            else:
+                raw = games
+                seen = games
             rows_out.append({
                 "place": index,
                 "userId": uid,
-                "raw": public,
+                "raw": raw,
                 "seen": seen,
                 "wins": wins,
                 "losses": losses,
@@ -621,7 +664,7 @@ async def stat_board(
         "total": total,
         "rowUnit": spec["rowUnit"],
         "rows": rows_out,
-        "season": _season_payload(season, today),
+        "season": _season_payload(season, today, spec["id"]),
     }
 
 
@@ -659,22 +702,21 @@ async def stat_person(
         fields.append({"key": "messages", "label": "Сообщений", **_apply_seen(raw, copied, view_stage)})
     elif spec["id"] == "players":
         wins, losses, games = await _player_raw(int(user_id), name, today)
-        if name == "all":
-            win_copy = await _one_copy("players_wins", 0, int(user_id)) if season else None
-            loss_copy = await _one_copy("players_losses", 0, int(user_id)) if season else None
-            fields.append({"key": "wins", "label": "Победы", **_apply_seen(wins, win_copy, stage)})
-            fields.append({"key": "losses", "label": "Проигрыши", **_apply_seen(losses, loss_copy, stage)})
-        else:
-            view_stage = _period_stage(stage)
-            fields.append({"key": "wins", "label": "Победы", **_apply_seen(wins, None, view_stage)})
-            fields.append({"key": "losses", "label": "Проигрыши", **_apply_seen(losses, None, view_stage)})
+        win_copy = None
+        loss_copy = None
+        if name == "all" and season:
+            win_copy = await _one_copy("players_wins", 0, int(user_id))
+            loss_copy = await _one_copy("players_losses", 0, int(user_id))
+        fields.append(_public_count("wins", "Победы", wins, win_copy))
+        fields.append(_public_count("losses", "Проигрыши", losses, loss_copy))
+        copied_games = None if win_copy is None else int(win_copy) + int(loss_copy or 0)
         fields.append({
             "key": "games",
             "label": "В топе сыграно",
             "raw": games,
-            "copied": None,
-            "gained": 0,
-            "seen": 0 if view_stage_of(stage, name) == "zero" else games,
+            "copied": copied_games,
+            "gained": gained(games, copied_games) if copied_games is not None else 0,
+            "seen": games_people_see(games, copied_games),
         })
     else:
         column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]
@@ -693,14 +735,19 @@ async def stat_person(
         "metric": spec["id"],
         "period": name,
         "fields": fields,
-        "season": _season_payload(season, today),
+        "season": _season_payload(season, today, spec["id"]),
     }
 
 
-def view_stage_of(stage: str, period: str) -> str:
-    if period == "all":
-        return stage
-    return _period_stage(stage)
+def _public_count(key: str, label: str, raw: int, copied: int | None) -> dict:
+    return {
+        "key": key,
+        "label": label,
+        "raw": int(raw or 0),
+        "copied": None if copied is None else int(copied),
+        "gained": gained(raw, copied) if copied is not None else 0,
+        "seen": games_people_see(raw, copied),
+    }
 
 
 async def _one_copy(metric: str, chat_id: int, user_id: int) -> int:
@@ -961,10 +1008,13 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
     scope = _scope_chat(spec, body.chat_id)
     if spec["needsGroup"]:
         await _require_chat(scope)
-    start = _parse_day(body.zero_from)
-    end = _parse_day(body.zero_until)
-    if end < start:
-        raise HTTPException(status_code=400, detail="Дата конца раньше даты начала")
+    if spec["id"] == "players" and not str(body.zero_from or "").strip():
+        start = end = _today()
+    else:
+        start = _parse_day(body.zero_from)
+        end = _parse_day(body.zero_until)
+        if end < start:
+            raise HTTPException(status_code=400, detail="Дата конца раньше даты начала")
     async with db.pool.acquire() as connection:
         async with connection.transaction():
             await connection.execute(
