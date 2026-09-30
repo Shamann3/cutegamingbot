@@ -2445,8 +2445,11 @@ export async function fetchStatCatalog() {
   return adminFetch('/stat-board/catalog')
 }
 
-export async function fetchStatGroups(query) {
-  return adminFetch(`/stat-board/groups?q=${encodeURIComponent(query || '')}`)
+export async function fetchStatGroups(query, period = 'day') {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (period) params.set('period', period)
+  return adminFetch(`/stat-board/groups?${params}`)
 }
 
 export async function fetchStatBoard(params) {

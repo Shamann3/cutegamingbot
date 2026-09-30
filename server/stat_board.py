@@ -37,7 +37,7 @@ METRICS: dict[str, dict[str, Any]] = {
     "messages": {
         "id": "messages",
         "title": "Топ сообщений",
-        "blurb": "Как команда статистики в группе. Сначала группа, потом срок.",
+        "blurb": "Сообщения одной группы за выбранный срок.",
         "needsGroup": True,
         "periods": ["day", "week", "month", "year", "all"],
         "fields": [{"key": "messages", "label": "Сообщений"}],
@@ -48,7 +48,7 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "В чате топ складывает победы и проигрыши. Здесь правятся оба числа.",
+        "blurb": "Победы и проигрыши. За день, неделю, месяц и год — только игры этого срока.",
         "needsGroup": False,
         "periods": ["day", "week", "month", "year", "all"],
         "fields": [
@@ -124,6 +124,19 @@ def _period(metric: dict[str, Any], period: str) -> str:
     if name not in metric["periods"] or name not in PERIODS:
         raise HTTPException(status_code=400, detail="Для этой статистики такого срока нет")
     return name
+
+
+def _count_expr(alias: str) -> str:
+    """Число из text, даже если в колонке встретится не цифра."""
+    return (
+        f"CASE WHEN {alias}.text::text ~ '^[0-9]+$' "
+        f"THEN {alias}.text::text::bigint ELSE 0 END"
+    )
+
+
+def _wrote(result: Any) -> bool:
+    parts = str(result or "").split()
+    return len(parts) >= 2 and parts[0] == "UPDATE" and parts[1] != "0"
 
 
 def _amount(value: Any) -> int:
@@ -331,32 +344,35 @@ def _scope_chat(metric: dict[str, Any], chat_id: int) -> int:
 
 
 async def _message_rows(chat_id: int, period: str, today: date, limit: int):
+    counted = _count_expr("c")
     if period == "all":
         rows = await db.pool.fetch(
-            """
-            SELECT user_id, COALESCE(text, 0)::bigint AS amount
-            FROM chatall
-            WHERE chat_id = $1::bigint AND COALESCE(text, 0) > 0
-            ORDER BY amount DESC, user_id ASC
+            f"""
+            SELECT c.user_id, COALESCE(SUM({counted}), 0)::bigint AS amount
+            FROM chatall c
+            WHERE c.chat_id = $1::bigint
+            GROUP BY c.user_id
+            HAVING COALESCE(SUM({counted}), 0) > 0
+            ORDER BY amount DESC, c.user_id ASC
             LIMIT $2
             """,
             int(chat_id),
             limit,
         )
         total = int(await db.pool.fetchval(
-            "SELECT COALESCE(SUM(text), 0)::bigint FROM chatall WHERE chat_id = $1::bigint",
+            f"SELECT COALESCE(SUM({counted}), 0)::bigint FROM chatall c WHERE c.chat_id = $1::bigint",
             int(chat_id),
         ) or 0)
         return rows, total, "За всё время"
     start, end = period_bounds(period, today)
     rows = await db.pool.fetch(
-        """
-        SELECT user_id, COALESCE(SUM(text), 0)::bigint AS amount
-        FROM chatchange
-        WHERE chat_id = $1::bigint AND date >= $2 AND date <= $3
-        GROUP BY user_id
-        HAVING COALESCE(SUM(text), 0) > 0
-        ORDER BY amount DESC, user_id ASC
+        f"""
+        SELECT c.user_id, COALESCE(SUM({counted}), 0)::bigint AS amount
+        FROM chatchange c
+        WHERE c.chat_id = $1::bigint AND c.date::date >= $2 AND c.date::date <= $3
+        GROUP BY c.user_id
+        HAVING COALESCE(SUM({counted}), 0) > 0
+        ORDER BY amount DESC, c.user_id ASC
         LIMIT $4
         """,
         int(chat_id),
@@ -365,10 +381,10 @@ async def _message_rows(chat_id: int, period: str, today: date, limit: int):
         limit,
     )
     total = int(await db.pool.fetchval(
-        """
-        SELECT COALESCE(SUM(text), 0)::bigint
-        FROM chatchange
-        WHERE chat_id = $1::bigint AND date >= $2 AND date <= $3
+        f"""
+        SELECT COALESCE(SUM({counted}), 0)::bigint
+        FROM chatchange c
+        WHERE c.chat_id = $1::bigint AND c.date::date >= $2 AND c.date::date <= $3
         """,
         int(chat_id),
         start,
@@ -429,42 +445,100 @@ async def stat_catalog(user_id: int = Depends(get_any_telegram_user_id)):
     return _catalog()
 
 
-@router.get("/groups")
-async def stat_groups(q: str = "", user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
-    query = (q or "").strip().lstrip("@")
-    if len(query) < 1:
-        return {"items": []}
-    like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+def _period_title(period: str, today: date) -> str:
+    if period == "all":
+        return "За всё время"
+    start, end = period_bounds(period, today)
+    return _range_label(period, start, end)
+
+
+def _group_item(row) -> dict:
+    return {
+        "chatId": int(row["chat_id"]),
+        "title": row["title"] or str(row["chat_id"]),
+        "username": row["username"] or "",
+        "amount": int(row["amount"] or 0),
+    }
+
+
+async def _message_groups(period: str, today: date, query: str) -> list:
+    counted = _count_expr("c")
+    text = (query or "").strip().lstrip("@")
+    if period == "all":
+        source = "chatall"
+        where_dates = ""
+        args: list[Any] = []
+    else:
+        start, end = period_bounds(period, today)
+        source = "chatchange"
+        where_dates = "WHERE c.date::date >= $1 AND c.date::date <= $2"
+        args = [start, end]
+    if not text:
+        rows = await db.pool.fetch(
+            f"""
+            SELECT c.chat_id,
+                   COALESCE(MAX(ch.namechat), c.chat_id::text) AS title,
+                   COALESCE(MAX(ch.usernamechat), '') AS username,
+                   COALESCE(SUM({counted}), 0)::bigint AS amount
+            FROM {source} c
+            LEFT JOIN chat ch ON ch.chat_id = c.chat_id
+            {where_dates}
+            GROUP BY c.chat_id
+            HAVING COALESCE(SUM({counted}), 0) > 0
+            ORDER BY amount DESC, c.chat_id
+            LIMIT 24
+            """,
+            *args,
+        )
+        return [_group_item(row) for row in rows]
+    like = "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     chat_id = None
-    if query.lstrip("-").isdigit():
+    if text.lstrip("-").isdigit():
         try:
-            chat_id = int(query)
+            chat_id = int(text)
         except ValueError:
             chat_id = None
+    id_slot = len(args) + 1
+    like_slot = len(args) + 2
     rows = await db.pool.fetch(
-        """
-        SELECT chat_id, namechat, usernamechat
-        FROM chat
-        WHERE ($1::bigint IS NOT NULL AND chat_id = $1::bigint)
-           OR namechat ILIKE $2 ESCAPE '\\'
-           OR usernamechat ILIKE $2 ESCAPE '\\'
-        ORDER BY namechat NULLS LAST, chat_id
+        f"""
+        SELECT ch.chat_id,
+               COALESCE(ch.namechat, ch.chat_id::text) AS title,
+               COALESCE(ch.usernamechat, '') AS username,
+               COALESCE(s.amount, 0)::bigint AS amount
+        FROM chat ch
+        LEFT JOIN (
+            SELECT c.chat_id, COALESCE(SUM({counted}), 0)::bigint AS amount
+            FROM {source} c
+            {where_dates}
+            GROUP BY c.chat_id
+        ) s ON s.chat_id = ch.chat_id
+        WHERE (${id_slot}::bigint IS NOT NULL AND ch.chat_id = ${id_slot}::bigint)
+           OR ch.namechat ILIKE ${like_slot} ESCAPE '\\'
+           OR ch.usernamechat ILIKE ${like_slot} ESCAPE '\\'
+        ORDER BY amount DESC, title
         LIMIT 12
         """,
+        *args,
         chat_id,
         like,
     )
-    return {
-        "items": [
-            {
-                "chatId": int(row["chat_id"]),
-                "title": row["namechat"] or str(row["chat_id"]),
-                "username": row["usernamechat"] or "",
-            }
-            for row in rows
-        ]
-    }
+    return [_group_item(row) for row in rows]
+
+
+@router.get("/groups")
+async def stat_groups(
+    q: str = "",
+    period: str = "day",
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    _require_creator(user_id)
+    name = str(period or "day").strip().lower()
+    if name not in PERIODS:
+        raise HTTPException(status_code=400, detail="Для этой статистики такого срока нет")
+    today = _today()
+    items = await _message_groups(name, today, q)
+    return {"period": name, "periodLabel": _period_title(name, today), "items": items}
 
 
 @router.get("/board")
@@ -643,21 +717,23 @@ async def _one_copy(metric: str, chat_id: int, user_id: int) -> int:
 
 
 async def _message_raw(chat_id: int, user_id: int, period: str, today: date) -> int:
+    counted = _count_expr("c")
     if period == "all":
         return int(await db.pool.fetchval(
-            """
-            SELECT COALESCE(text, 0)::bigint FROM chatall
-            WHERE chat_id = $1::bigint AND user_id = $2::bigint
+            f"""
+            SELECT COALESCE(SUM({counted}), 0)::bigint FROM chatall c
+            WHERE c.chat_id = $1::bigint AND c.user_id = $2::bigint
             """,
             int(chat_id),
             int(user_id),
         ) or 0)
     start, end = period_bounds(period, today)
     return int(await db.pool.fetchval(
-        """
-        SELECT COALESCE(SUM(text), 0)::bigint
-        FROM chatchange
-        WHERE chat_id = $1::bigint AND user_id = $2::bigint AND date >= $3 AND date <= $4
+        f"""
+        SELECT COALESCE(SUM({counted}), 0)::bigint
+        FROM chatchange c
+        WHERE c.chat_id = $1::bigint AND c.user_id = $2::bigint
+          AND c.date::date >= $3 AND c.date::date <= $4
         """,
         int(chat_id),
         int(user_id),
@@ -741,39 +817,38 @@ async def _set_column(column: str, user_id: int, value: int) -> None:
         int(user_id),
         int(value),
     )
-    if str(result).endswith("0"):
+    if not _wrote(result):
         raise HTTPException(status_code=404, detail="Такого пользователя нет")
 
 
 async def _set_messages(chat_id: int, user_id: int, period: str, today: date, target: int) -> None:
     if period == "all":
-        updated = await db.pool.execute(
-            """
-            UPDATE chatall SET text = $3::bigint
-            WHERE chat_id = $1::bigint AND user_id = $2::bigint
-            """,
-            int(chat_id),
-            int(user_id),
-            int(target),
-        )
-        if str(updated).endswith("0"):
-            await db.pool.execute(
-                """
-                INSERT INTO chatall (chat_id, user_id, text)
-                VALUES ($1::bigint, $2::bigint, $3::bigint)
-                """,
-                int(chat_id),
-                int(user_id),
-                int(target),
-            )
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    "DELETE FROM chatall WHERE chat_id = $1::bigint AND user_id = $2::bigint",
+                    int(chat_id),
+                    int(user_id),
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO chatall (chat_id, user_id, text)
+                    VALUES ($1::bigint, $2::bigint, $3::bigint)
+                    """,
+                    int(chat_id),
+                    int(user_id),
+                    int(target),
+                )
         return
     start, end = period_bounds(period, today)
+    counted = _count_expr("c")
     rows = await db.pool.fetch(
-        """
-        SELECT date, COALESCE(SUM(text), 0)::bigint AS amount
-        FROM chatchange
-        WHERE chat_id = $1::bigint AND user_id = $2::bigint AND date >= $3 AND date <= $4
-        GROUP BY date
+        f"""
+        SELECT c.date::date AS date, COALESCE(SUM({counted}), 0)::bigint AS amount
+        FROM chatchange c
+        WHERE c.chat_id = $1::bigint AND c.user_id = $2::bigint
+          AND c.date::date >= $3 AND c.date::date <= $4
+        GROUP BY c.date::date
         """,
         int(chat_id),
         int(user_id),
@@ -801,7 +876,7 @@ async def _write_message_day(connection, chat_id: int, user_id: int, day: date, 
         """
         SELECT ctid::text AS id
         FROM chatchange
-        WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date = $3
+        WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date::date = $3
         """,
         int(user_id),
         int(chat_id),
@@ -829,7 +904,7 @@ async def _write_message_day(connection, chat_id: int, user_id: int, day: date, 
         await connection.execute(
             """
             UPDATE chatchange SET text = 0
-            WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date = $3 AND ctid <> $4::tid
+            WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date::date = $3 AND ctid <> $4::tid
             """,
             int(user_id),
             int(chat_id),
@@ -920,12 +995,15 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
 
 async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:
     if spec["id"] == "messages":
+        counted = _count_expr("c")
         await connection.execute(
-            """
+            f"""
             INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)
-            SELECT 'messages', chat_id, user_id, COALESCE(text, 0)::bigint
-            FROM chatall
-            WHERE chat_id = $1::bigint AND COALESCE(text, 0) <> 0
+            SELECT 'messages', c.chat_id, c.user_id, COALESCE(SUM({counted}), 0)::bigint
+            FROM chatall c
+            WHERE c.chat_id = $1::bigint
+            GROUP BY c.chat_id, c.user_id
+            HAVING COALESCE(SUM({counted}), 0) <> 0
             """,
             int(chat_id),
         )

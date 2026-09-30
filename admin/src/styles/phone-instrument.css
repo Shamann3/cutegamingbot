@@ -3970,7 +3970,8 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   color: var(--e-accent-ink, #111);
 }
 .stat-picks button.is-on,
-.stat-rows button:hover {
+.stat-picks button:hover,
+.stat-row.is-open {
   border-color: rgba(var(--e-accent-rgb, 255, 255, 255), 0.45);
   background: var(--e-plate-2, var(--e-surface-2));
 }
@@ -3984,7 +3985,7 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   gap: 6px;
 }
 .stat-picks button,
-.stat-rows button {
+.stat-row > button {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -3999,11 +4000,99 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   text-align: left;
   cursor: pointer;
 }
+.stat-row {
+  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  background: var(--e-plate, var(--e-surface-2));
+  overflow: hidden;
+}
+.stat-row > button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.stat-row > button:hover {
+  background: transparent;
+}
+.stat-row-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.stat-row-edit .sec-btn,
+.stat-chosen .sec-btn,
+.stat-season-actions .sec-btn {
+  width: auto;
+  min-height: 44px;
+  align-self: flex-start;
+}
+.stat-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.stat-fields .sec-input {
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+}
+.stat-chosen,
+.stat-outside {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stat-chosen > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.stat-chosen .sec-btn {
+  flex: 0 0 auto;
+}
+.stat-chosen strong,
+.stat-row > button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-chosen i,
+.stat-loading {
+  color: var(--e-text-3, var(--gate-muted, #8e8e93));
+  font-style: normal;
+}
+.stat-loading,
+.stat-now-line {
+  margin: 0;
+}
+.stat-outside {
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 12px;
+}
+.stat-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stat-season summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+}
+.stat-season summary::-webkit-details-marker {
+  display: none;
+}
 .stat-rows b {
   flex: 0 0 28px;
   font-variant-numeric: tabular-nums;
 }
-.stat-rows span,
+.stat-row > button > span,
 .stat-picks span {
   display: flex;
   flex-direction: column;

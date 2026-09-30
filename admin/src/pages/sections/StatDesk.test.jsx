@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import StatDesk from './StatDesk'
-import { fetchStatBoard, fetchStatCatalog, fetchStatPerson } from '../../lib/adminClient'
+import { fetchStatBoard, fetchStatCatalog, fetchStatGroups, fetchStatPerson, saveStatValue } from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', () => ({
   fetchStatCatalog: vi.fn(),
@@ -15,7 +15,10 @@ vi.mock('../../lib/adminClient', () => ({
 
 vi.mock('../../components/UserLookupPreview', () => ({
   default: ({ onResolved }) => (
-    <button type="button" onClick={() => onResolved({ userId: 7, username: 'ivan' })}>выбрать Ивана</button>
+    <>
+      <button type="button" onClick={() => onResolved(null)}>сбросить</button>
+      <button type="button" onClick={() => onResolved({ userId: 7, username: 'ivan' })}>выбрать Ивана</button>
+    </>
   ),
 }))
 
@@ -49,42 +52,103 @@ const CATALOG = {
 
 beforeEach(() => {
   vi.mocked(fetchStatCatalog).mockResolvedValue(CATALOG)
-  vi.mocked(fetchStatBoard).mockResolvedValue({
-    periodLabel: 'За всё время',
-    rowUnit: 'кут',
-    total: null,
-    rows: [{ place: 1, userId: 7, name: 'Иван', username: 'ivan', seen: 40, raw: 40 }],
-    season: null,
+  vi.mocked(fetchStatGroups).mockResolvedValue({
+    period: 'day',
+    periodLabel: '30.09.2026',
+    items: [{ chatId: -100, title: 'Альфа', username: 'alpha', amount: 12 }],
+  })
+  vi.mocked(fetchStatBoard).mockImplementation(async ({ metric, period }) => {
+    if (metric === 'messages' && period === 'all') {
+      return {
+        metric: 'messages',
+        period: 'all',
+        periodLabel: 'За всё время',
+        rowUnit: 'сообщений',
+        total: 9,
+        rows: [{ place: 1, userId: 3, name: 'Год', username: '', seen: 9, raw: 9 }],
+        season: null,
+      }
+    }
+    if (metric === 'messages') {
+      return {
+        metric: 'messages',
+        period: 'day',
+        periodLabel: '30.09.2026',
+        rowUnit: 'сообщений',
+        total: 5,
+        rows: [{ place: 1, userId: 2, name: 'День', username: '', seen: 5, raw: 5 }],
+        season: null,
+      }
+    }
+    return {
+      metric: 'donors',
+      period: 'all',
+      periodLabel: 'За всё время',
+      rowUnit: 'кут',
+      total: null,
+      rows: [{ place: 1, userId: 7, name: 'Иван', username: 'ivan', seen: 40, raw: 40 }],
+      season: null,
+    }
   })
   vi.mocked(fetchStatPerson).mockResolvedValue({
     userId: 7,
     name: 'Иван',
     username: 'ivan',
     fields: [{ key: 'donate', label: 'Донат', raw: 40, seen: 40, copied: null, gained: 0 }],
+    season: null,
   })
+  vi.mocked(saveStatValue).mockResolvedValue({ ok: true })
 })
 
 afterEach(() => cleanup())
 
 describe('StatDesk', () => {
-  it('asks for a group on message stats and not on donors', async () => {
+  it('shows groups for the selected period and a single board after a group is chosen', async () => {
     render(<StatDesk />)
-    expect(await screen.findByRole('tab', { name: 'Топ сообщений' })).toBeTruthy()
-    expect(screen.getByPlaceholderText('ID, @username или имя группы')).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: /Изменить число/ })).toBeNull()
+    expect(await screen.findByRole('button', { name: /Альфа/ })).toBeTruthy()
+    expect(screen.getByText('12 сообщений')).toBeTruthy()
+    expect(fetchStatBoard).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Сохранить в этот топ' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Донатеры' }))
-    expect(screen.queryByPlaceholderText('ID, @username или имя группы')).toBeNull()
-    expect(await screen.findByText('Иван')).toBeTruthy()
-    expect(screen.getByText('40 кут')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Альфа/ }))
+    expect(await screen.findByRole('button', { name: /День/ })).toBeTruthy()
+    expect(screen.getByText('5 сообщений')).toBeTruthy()
+    expect(screen.queryByText('Год')).toBeNull()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'За всё время' }))
+    expect(await screen.findByRole('button', { name: /Год/ })).toBeTruthy()
+    expect(screen.queryByText('День')).toBeNull()
+    expect(screen.getByText('9 сообщений')).toBeTruthy()
+    expect(fetchStatBoard).toHaveBeenLastCalledWith(expect.objectContaining({
+      metric: 'messages',
+      period: 'all',
+      chat_id: -100,
+    }))
   })
 
-  it('shows the current number before a save', async () => {
+  it('opens donors without a group and saves the person from the row', async () => {
     render(<StatDesk />)
     fireEvent.click(await screen.findByRole('tab', { name: 'Донатеры' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'выбрать Ивана' }))
-    expect(await screen.findByText('в базе 40')).toBeTruthy()
-    expect(screen.getByText('люди видят 40')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Сохранить' })).toBeTruthy()
+    expect(screen.queryByPlaceholderText('ID, @username или имя группы')).toBeNull()
+    expect(screen.queryByText('Альфа')).toBeNull()
+    expect(await screen.findByText('40 кут')).toBeTruthy()
+    expect(fetchStatBoard).toHaveBeenCalledWith(expect.objectContaining({
+      metric: 'donors',
+      period: 'all',
+    }))
+
+    fireEvent.click(screen.getByRole('button', { name: /40 кут/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'сбросить' }))
+    expect(await screen.findByDisplayValue('40')).toBeTruthy()
+    expect(await screen.findByText('40 сейчас в топе')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в этот топ' }))
+
+    expect(saveStatValue).toHaveBeenCalledWith(expect.objectContaining({
+      metric: 'donors',
+      period: 'all',
+      user_id: 7,
+      values: { donate: 40 },
+    }))
+    expect(await screen.findByText('Сохранено. В этом топе теперь 40.')).toBeTruthy()
   })
 })
