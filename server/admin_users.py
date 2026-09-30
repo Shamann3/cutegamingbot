@@ -55,8 +55,11 @@ async def search_users(query: str, *, limit: int = 20) -> list[dict]:
     q = raw.lstrip("@")
 
     if q.isdigit():
-        user_id = int(q)
-        if user_id <= 0:
+        try:
+            user_id = int(q)
+        except ValueError:
+            return []
+        if user_id <= 0 or user_id > 9223372036854775807:
             return []
         row = await db.pool.fetchrow(
             """
@@ -71,9 +74,9 @@ async def search_users(query: str, *, limit: int = 20) -> list[dict]:
                 ORDER BY registered_at DESC NULLS LAST
                 LIMIT 1
             ) aa ON TRUE
-            WHERE u.user_id = $1
-            """,
-            user_id,
+            WHERE u.user_id = $1::bigint
+        """,
+        user_id,
         )
         return [_user_search_row(row)] if row else []
 

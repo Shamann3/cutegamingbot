@@ -1,26 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { searchAdminUsers } from '../lib/adminClient'
 import PositionEditor from './PositionEditor'
 
-vi.mock('./UserLookupPreview', () => ({
-  default: function Lookup({ onResolved, onChange, value, label }) {
-    return (
-      <label>
-        {label}
-        <input
-          aria-label={label}
-          value={value}
-          onChange={(event) => {
-            const next = event.target.value
-            onChange?.(next)
-            const id = Number(next)
-            onResolved?.(Number.isFinite(id) && id > 0 ? { userId: id } : null)
-          }}
-        />
-      </label>
-    )
-  },
-}))
+vi.mock('../lib/adminClient', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    searchAdminUsers: vi.fn(async () => ({ results: [] })),
+  }
+})
 
 const positions = [
   { id: 2, title: 'Модератор', rank: 2, kind: 'post', prefix: 'мод', rights: ['view_members'] },
@@ -93,7 +82,9 @@ describe('PositionEditor', () => {
       />,
     )
     open('Модератор')
-    fireEvent.change(screen.getByLabelText('Человек'), { target: { value: '42' } })
+    const field = screen.getByLabelText('Кому')
+    fireEvent.change(field, { target: { value: '42' } })
+    expect(field.value).toBe('42')
     fireEvent.click(screen.getByRole('button', { name: 'Назначить эту должность' }))
     await waitFor(() => expect(onAppoint).toHaveBeenCalled())
     expect(onAppoint.mock.calls[0][1]).toMatchObject({ userId: 42, prefix: 'мод' })
@@ -113,9 +104,35 @@ describe('PositionEditor', () => {
       />,
     )
     open('Спам-блок')
-    fireEvent.change(screen.getByLabelText('Человек'), { target: { value: '42' } })
+    fireEvent.change(screen.getByLabelText('Кому'), { target: { value: '42' } })
     fireEvent.click(screen.getByRole('button', { name: 'Назначить эту должность' }))
     expect((await screen.findByRole('alert')).textContent).toContain('по какое число')
     expect(onAppoint).not.toHaveBeenCalled()
+  })
+
+  it('keeps a typed username visible and appoints that person', async () => {
+    vi.mocked(searchAdminUsers).mockResolvedValue({
+      results: [{ userId: 99, username: 'anya', displayName: 'Аня' }],
+    })
+    const onAppoint = vi.fn(async () => ({ entryKey: 'key-2' }))
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        chatId={-100}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+        onAppoint={onAppoint}
+      />,
+    )
+    open('Модератор')
+    const field = screen.getByLabelText('Кому')
+    fireEvent.change(field, { target: { value: '@anya' } })
+    expect(field.value).toBe('@anya')
+    expect(await screen.findByText(/Выбран Аня/)).toBeTruthy()
+    expect(field.value).toBe('@anya')
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить эту должность' }))
+    await waitFor(() => expect(onAppoint).toHaveBeenCalled())
+    expect(onAppoint.mock.calls[0][1].userId).toBe(99)
   })
 })

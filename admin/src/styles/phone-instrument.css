@@ -833,9 +833,172 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0 0 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.focus-sheet .role-sheet-foot label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+}
+
+.focus-sheet .role-sheet-foot input,
+.focus-sheet .role-person input {
+  box-sizing: border-box !important;
+  display: block !important;
+  width: 100% !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 14px !important;
+  background: #2c2c2e !important;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  caret-color: #fff !important;
+  opacity: 1 !important;
+  font-family: inherit !important;
+  font-size: 16px !important;
+  font-weight: 550 !important;
+  line-height: normal !important;
+  letter-spacing: 0 !important;
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+}
+
+.focus-sheet .role-sheet-foot input::placeholder,
+.focus-sheet .role-person input::placeholder {
+  color: rgba(255, 255, 255, 0.42) !important;
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.42) !important;
+  opacity: 1 !important;
+}
+
+.focus-sheet .role-person input:focus,
+.focus-sheet .role-sheet-foot input:focus {
+  outline: none !important;
+  border-color: rgba(255, 255, 255, 0.55) !important;
+}
+
+.role-person {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-person-box {
+  position: relative;
+}
+
+.focus-sheet .role-sheet-foot .role-person input {
+  padding-right: 96px !important;
+}
+
+.focus-sheet .role-person-clear {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: auto !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  padding: 0 12px !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+  font: inherit;
+  font-size: 13px !important;
+  line-height: 36px !important;
+  cursor: pointer;
+}
+
+.role-person-status,
+.role-person-chosen {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.role-person-status {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.role-person-chosen {
+  color: #fff;
+}
+
+.role-person-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow: auto;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.role-person-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-person-list button.is-on,
+.role-person-list button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.role-person-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+}
+
+.role-person-list strong,
+.role-person-list em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-person-list strong {
+  font-weight: 650;
+}
+
+.role-person-list em {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
 }
 
 .role-sheet-dates {

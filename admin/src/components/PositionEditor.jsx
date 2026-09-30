@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { searchAdminUsers } from '../lib/adminClient'
 import { PAGE_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
 import FocusWindow from './FocusWindow'
 import RightSwitch from './RightSwitch'
-import UserLookupPreview from './UserLookupPreview'
 
 function RightList({ items, rights, locked, onToggle, compareSet }) {
   return (
@@ -129,6 +129,157 @@ export default function PositionEditor({
   )
 }
 
+function personBits(person) {
+  if (!person) return null
+  const id = Number(person.userId ?? person.user_id)
+  if (!Number.isFinite(id) || id <= 0) return null
+  const username = person.username ? `@${String(person.username).replace(/^@/, '')}` : ''
+  const name = person.displayName || person.firstName || person.first_name || person.name || (username || String(id))
+  return { id, name, username }
+}
+
+function typedId(value) {
+  const bare = String(value || '').trim().replace(/^@/, '')
+  if (!/^\d{1,15}$/.test(bare)) return null
+  const id = Number(bare)
+  return id > 0 ? id : null
+}
+
+function RolePersonField({ text, onText, userId, onUserId }) {
+  const [hits, setHits] = useState([])
+  const [phase, setPhase] = useState('idle')
+  const [picked, setPicked] = useState(null)
+  const onUserIdRef = useRef(onUserId)
+  onUserIdRef.current = onUserId
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    const query = String(text || '').trim()
+    const bare = query.replace(/^@/, '')
+    if (bare.length < 2) {
+      setHits([])
+      setPicked(null)
+      setPhase('idle')
+      return undefined
+    }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      setPhase('loading')
+      try {
+        const data = await searchAdminUsers(query)
+        if (cancelled) return
+        const items = (Array.isArray(data?.results) ? data.results : Array.isArray(data?.items) ? data.items : []).slice(0, 6)
+        setHits(items)
+        const exact = items
+          .map((item) => ({ item, bits: personBits(item) }))
+          .find(({ bits }) => bits && (String(bits.id) === bare || bits.username.replace(/^@/, '').toLowerCase() === bare.toLowerCase()))
+        if (exact?.bits) {
+          setPicked(exact.item)
+          onUserIdRef.current(exact.bits.id)
+          setPhase('ready')
+        } else {
+          setPicked(null)
+          setPhase(items.length ? 'ready' : 'empty')
+        }
+      } catch {
+        if (cancelled) return
+        setHits([])
+        setPicked(null)
+        setPhase('error')
+      }
+    }, 180)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [text])
+
+  const type = (value) => {
+    onText(value)
+    onUserId(typedId(value))
+    setPicked(null)
+  }
+
+  const choose = (person) => {
+    const bits = personBits(person)
+    if (!bits) return
+    setPicked(person)
+    onUserId(bits.id)
+    onText(bits.username || bits.name)
+    inputRef.current?.focus()
+  }
+
+  const chosen = personBits(picked)
+  const shownId = chosen?.id || userId
+
+  return (
+    <div className="role-person">
+      <label htmlFor="role-person-input">Кому</label>
+      <div className="role-person-box">
+        <input
+          id="role-person-input"
+          ref={inputRef}
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
+          placeholder="@username, имя или id"
+          value={text}
+          onChange={(event) => type(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            if (hits.length === 1) choose(hits[0])
+          }}
+        />
+        {text ? (
+          <button type="button" className="role-person-clear" onClick={() => type('')}>
+            Стереть
+          </button>
+        ) : null}
+      </div>
+      {phase === 'loading' && <p className="role-person-status">Ищем…</p>}
+      {phase === 'empty' && !typedId(text) && <p className="role-person-status">Такого человека нет. Проверьте @username или впишите id.</p>}
+      {phase === 'error' && <p className="role-person-status">Поиск не ответил. Id можно вписать цифрами — должность уйдёт на него.</p>}
+      {chosen && (
+        <p className="role-person-chosen" role="status">
+          Выбран {chosen.name}{chosen.username ? ` · ${chosen.username}` : ''} · {chosen.id}
+        </p>
+      )}
+      {!chosen && shownId && <p className="role-person-chosen" role="status">Назначение по id {shownId}</p>}
+      {hits.length > 0 && (
+        <ul className="role-person-list" role="listbox" aria-label="Люди">
+          {hits.map((person) => {
+            const bits = personBits(person)
+            if (!bits) return null
+            const on = bits.id === shownId
+            return (
+              <li key={bits.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  className={on ? 'is-on' : ''}
+                  onClick={() => choose(person)}
+                >
+                  <span className="role-person-mark" aria-hidden="true">{(bits.name || '?').slice(0, 1).toUpperCase()}</span>
+                  <span>
+                    <strong>{bits.name}</strong>
+                    <em>{bits.username || 'без username'} · {bits.id}</em>
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function defaultPrefix(row) {
   if (!row || row.kind === 'member') return ''
   if (row.kind === 'spamblock') return row.prefix || 'спам блок'
@@ -190,7 +341,7 @@ function PositionSheet({
   const appoint = async () => {
     if (!onAppoint) return
     if (!userId) {
-      setFootError('Выберите человека из списка')
+      setFootError('Впишите @username, имя или id и выберите человека')
       return
     }
     if (spam && !termEnd) {
@@ -270,6 +421,55 @@ function PositionSheet({
       onClose={onClose}
       footer={foot}
     >
+      {canManage && onAppoint && (
+        <div className="role-sheet-foot">
+          <h3 className="realm-h">Назначить эту должность</h3>
+          <p className="realm-copy">
+            Впишите @username, имя или id. Человек сразу получает должность в этой группе
+            {row.kind === 'member' ? ', без префикса в чате.' : ', с префиксом в чате.'}
+          </p>
+          <RolePersonField
+            text={personText}
+            onText={setPersonText}
+            userId={userId}
+            onUserId={setUserId}
+          />
+          {row.kind !== 'member' && (
+            <label>Префикс в чате
+              <input value={prefix} maxLength={16} onChange={(event) => setPrefix(event.target.value)} />
+            </label>
+          )}
+          {spam && (
+            <div className="role-sheet-dates">
+              <label>С какого числа
+                <input type="date" value={termStart} onChange={(event) => setTermStart(event.target.value)} />
+              </label>
+              <label>По какое число
+                <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} />
+              </label>
+            </div>
+          )}
+          <label>Для чего
+            <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Можно оставить пустым" />
+          </label>
+          {(seats || []).length > 0 && (
+            <>
+              <p className="realm-copy">Сейчас её держат</p>
+              <ul className="role-holders">
+                {seats.map((person) => (
+                  <li key={person.userId}>
+                    <strong>{person.name || person.userId}</strong>
+                    <span>{person.username ? `@${String(person.username).replace(/^@/, '')}` : person.userId}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <button type="button" className="realm-back" disabled={busy === 'appoint' || !chatId} onClick={appoint}>
+            {busy === 'appoint' ? 'Назначаю…' : 'Назначить эту должность'}
+          </button>
+        </div>
+      )}
       <form
         className="realm-form role-sheet-form"
         onSubmit={(event) => {
@@ -320,63 +520,6 @@ function PositionSheet({
           {savingId === row.id ? 'Запись…' : 'Сохранить должность'}
         </button>
       </form>
-      {canManage && onAppoint && (
-        <div className="role-sheet-foot realm-form">
-          <h3 className="realm-h">Назначить эту должность</h3>
-          <p className="realm-copy">
-            Человек сразу получает её в этой группе
-            {row.kind === 'member' ? ', без префикса в чате.' : ', с префиксом в чате.'}
-          </p>
-          <UserLookupPreview
-            value={personText}
-            onChange={(value) => {
-              setPersonText(value)
-              setUserId(null)
-            }}
-            onResolved={(user) => {
-              const id = Number(user?.userId ?? user?.user_id)
-              if (!Number.isFinite(id) || id <= 0) return
-              setUserId(id)
-            }}
-            placeholder="ID, @username или имя"
-            label="Человек"
-          />
-          {row.kind !== 'member' && (
-            <label>Префикс в чате
-              <input value={prefix} maxLength={16} onChange={(event) => setPrefix(event.target.value)} />
-            </label>
-          )}
-          {spam && (
-            <div className="role-sheet-dates">
-              <label>С какого числа
-                <input type="date" value={termStart} onChange={(event) => setTermStart(event.target.value)} />
-              </label>
-              <label>По какое число
-                <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} />
-              </label>
-            </div>
-          )}
-          <label>Для чего
-            <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Можно оставить пустым" />
-          </label>
-          {(seats || []).length > 0 && (
-            <>
-              <p className="realm-copy">Сейчас её держат</p>
-              <ul className="role-holders">
-                {seats.map((person) => (
-                  <li key={person.userId}>
-                    <strong>{person.name || person.userId}</strong>
-                    <span>{person.username ? `@${String(person.username).replace(/^@/, '')}` : person.userId}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <button type="button" className="realm-back" disabled={busy === 'appoint' || !chatId} onClick={appoint}>
-            {busy === 'appoint' ? 'Назначаю…' : 'Назначить эту должность'}
-          </button>
-        </div>
-      )}
     </FocusWindow>
   )
 }
