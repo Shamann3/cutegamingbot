@@ -78,11 +78,21 @@ async def _players_copy_on(pool) -> bool:
             """
             SELECT 1 FROM epsilon_stat_season
             WHERE metric = 'players' AND chat_id = 0
+              AND COALESCE(count_from, copied_at) <= NOW()
             """
         ))
     except Exception as exc:
         print(f"[stat_veil] копия игр: {exc}")
-        return False
+        try:
+            return bool(await pool.fetchval(
+                """
+                SELECT 1 FROM epsilon_stat_season
+                WHERE metric = 'players' AND chat_id = 0
+                """
+            ))
+        except Exception as inner:
+            print(f"[stat_veil] копия игр без времени: {inner}")
+            return False
 
 
 async def veil_pairs(pool, metric: str, rows):

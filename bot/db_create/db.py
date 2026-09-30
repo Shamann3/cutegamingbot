@@ -8604,10 +8604,20 @@ class Database:
                             """
                             SELECT 1 FROM epsilon_stat_season
                             WHERE metric = 'players' AND chat_id = 0
+                              AND COALESCE(count_from, copied_at) <= NOW()
                             """
                         ))
                     except Exception as e:
                         print(f"[user_games_day] копия игр: {e}")
+                        try:
+                            copy_ready = bool(await connection.fetchval(
+                                """
+                                SELECT 1 FROM epsilon_stat_season
+                                WHERE metric = 'players' AND chat_id = 0
+                                """
+                            ))
+                        except Exception as inner:
+                            print(f"[user_games_day] копия игр без времени: {inner}")
                     if copy_ready:
                         try:
                             rows = await connection.fetch(

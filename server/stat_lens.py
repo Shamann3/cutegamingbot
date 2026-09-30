@@ -75,6 +75,30 @@ def games_people_see(raw: int, copied: int | None) -> int:
     return left if left > 0 else 0
 
 
+def hide_pair(wins: int, losses: int, played_since: int | None) -> tuple[int, int]:
+    """Сколько побед и проигрышей остаётся в копии и не входит в топ за всё время.
+
+    played_since is None — срез на сейчас, прячется весь текущий итог.
+    Иначе played_since — игры с выбранного дня, они остаются в топе.
+    """
+    wins_n = int(wins or 0)
+    losses_n = int(losses or 0)
+    if wins_n < 0:
+        wins_n = 0
+    if losses_n < 0:
+        losses_n = 0
+    if played_since is None:
+        return wins_n, losses_n
+    since = int(played_since or 0)
+    if since < 0:
+        since = 0
+    hide = wins_n + losses_n - since
+    if hide < 0:
+        hide = 0
+    hide_wins = wins_n if hide > wins_n else hide
+    return hide_wins, hide - hide_wins
+
+
 def plan_period_total(days: list[tuple[date, int]], anchor: date, target: int) -> list[tuple[date, int]]:
     """Новые значения по дням, чтобы сумма срока стала target. Не уходит ниже нуля."""
     if target < 0:

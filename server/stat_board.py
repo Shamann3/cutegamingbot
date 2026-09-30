@@ -49,9 +49,9 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "Победы и проигрыши. За день, неделю, месяц и год — только игры этого срока.",
+        "blurb": "Вся статистика побед и проигрышей за всё время. Копия задаёт момент, с которого этот топ считается заново.",
         "needsGroup": False,
-        "periods": ["day", "week", "month", "year", "all"],
+        "periods": ["all"],
         "fields": [
             {"key": "wins", "label": "Победы"},
             {"key": "losses", "label": "Проигрыши"},
@@ -115,6 +115,48 @@ def _clock(moment) -> str:
     return local.strftime("%d.%m.%Y %H:%M")
 
 
+def _parse_moment(raw: str) -> datetime:
+    text = str(raw or "").strip().replace(" ", "T")
+    if len(text) == 16:
+        text += ":00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Время пишется как ГГГГ-ММ-ДД ЧЧ:ММ") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_MSK)
+    else:
+        parsed = parsed.astimezone(_MSK)
+    now = datetime.now(_MSK)
+    if parsed - now > timedelta(minutes=1):
+        raise HTTPException(
+            status_code=400,
+            detail="Это время ещё не наступило. Поставьте текущее или прошлое.",
+        )
+    return parsed
+
+
+def _as_moscow(moment):
+    if not moment:
+        return None
+    if getattr(moment, "tzinfo", None) is None:
+        return moment.replace(tzinfo=_MSK)
+    return moment.astimezone(_MSK)
+
+
+def _players_copy_live(row, now: datetime | None = None) -> bool:
+    if not row:
+        return False
+    moment = row["count_from"] if "count_from" in row.keys() else None
+    if moment is None:
+        moment = row["copied_at"]
+    moment = _as_moscow(moment)
+    if moment is None:
+        return True
+    current = now or datetime.now(_MSK)
+    return moment <= current
+
+
 def _require_creator(user_id: int) -> None:
     if not is_project_creator(user_id):
         raise HTTPException(status_code=403, detail="Только создатель проекта")
@@ -176,6 +218,7 @@ class SeasonBody(BaseModel):
     chat_id: int = 0
     zero_from: str = ""
     zero_until: str = ""
+    count_from: str = ""
     model_config = {"extra": "forbid"}
 
 
@@ -191,8 +234,19 @@ async def ensure_tables() -> None:
             zero_from DATE NOT NULL,
             zero_until DATE NOT NULL,
             copied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            count_from TIMESTAMPTZ,
             PRIMARY KEY (metric, chat_id)
         )
+        """
+    )
+    await db.pool.execute(
+        "ALTER TABLE epsilon_stat_season ADD COLUMN IF NOT EXISTS count_from TIMESTAMPTZ"
+    )
+    await db.pool.execute(
+        """
+        UPDATE epsilon_stat_season
+        SET count_from = copied_at
+        WHERE metric = 'players' AND count_from IS NULL
         """
     )
     await db.pool.execute(
@@ -238,7 +292,7 @@ def _catalog() -> dict:
 async def _season_row(metric: str, chat_id: int):
     return await db.pool.fetchrow(
         """
-        SELECT metric, chat_id, zero_from, zero_until, copied_at
+        SELECT metric, chat_id, zero_from, zero_until, copied_at, count_from
         FROM epsilon_stat_season
         WHERE metric = $1 AND chat_id = $2
         """,
@@ -265,13 +319,19 @@ def _season_payload(row, today: date, metric: str = "") -> dict | None:
         return None
     stage = phase(today, row["zero_from"], row["zero_until"])
     if metric == "players":
-        when = _clock(row["copied_at"])
-        stamp = f"Копия снята {when}. " if when else "Копия снята. "
-        note = (
-            f"{stamp}Новая копия заменяет старую. "
-            "В чате «статистика игр» за всё время остаются только игры после этой минуты. "
-            "День, неделя, месяц и год не меняются."
-        )
+        moment = row["count_from"] or row["copied_at"]
+        when = _clock(moment)
+        if _players_copy_live(row):
+            note = (
+                f"Топ за всё время считается с {when}. "
+                "В чате «статистика игр» за всё время видны только игры после этого момента. "
+                "День, неделя, месяц и год в чате считаются отдельно и эта копия их не обнуляет."
+            )
+        else:
+            note = (
+                f"С {when} топ за всё время начнётся заново. "
+                "До этого момента люди видят полные числа."
+            )
         notes = {"before": note, "zero": note, "after": note}
     else:
         notes = {
@@ -285,6 +345,8 @@ def _season_payload(row, today: date, metric: str = "") -> dict | None:
         "zeroUntil": row["zero_until"].isoformat(),
         "copiedAt": row["copied_at"].isoformat() if row["copied_at"] else "",
         "copiedLabel": _clock(row["copied_at"]),
+        "countFrom": _as_moscow(row["count_from"]).strftime("%Y-%m-%dT%H:%M") if row["count_from"] else "",
+        "countLabel": _clock(row["count_from"] or row["copied_at"]),
         "note": notes.get(stage, ""),
     }
 
@@ -619,7 +681,7 @@ async def stat_board(
             seen = seen_number(raw, copied.get(uid), stage if name == "all" else _period_stage(stage))
             rows_out.append({"place": index, "userId": uid, "raw": raw, "seen": seen, "messages": raw})
     elif spec["id"] == "players":
-        since_copy = bool(season) and name == "all"
+        since_copy = name == "all" and _players_copy_live(season)
         raw_rows, period_label = await _player_rows(name, today, limit, since_copy=since_copy)
         for index, row in enumerate(raw_rows, start=1):
             uid = int(row["user_id"])
@@ -715,7 +777,7 @@ async def stat_person(
         wins, losses, games = await _player_raw(int(user_id), name, today)
         win_copy = None
         loss_copy = None
-        if name == "all" and season:
+        if name == "all" and _players_copy_live(season):
             win_copy = await _one_copy("players_wins", 0, int(user_id))
             loss_copy = await _one_copy("players_losses", 0, int(user_id))
         fields.append(_public_count("wins", "Победы", wins, win_copy))
@@ -1019,8 +1081,13 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
     scope = _scope_chat(spec, body.chat_id)
     if spec["needsGroup"]:
         await _require_chat(scope)
-    if spec["id"] == "players" and not str(body.zero_from or "").strip():
-        start = end = _today()
+    moment = None
+    cut = "now"
+    if spec["id"] == "players":
+        moment = _parse_moment(body.count_from) if str(body.count_from or "").strip() else datetime.now(_MSK)
+        start = moment.date()
+        end = date(2099, 12, 31)
+        cut = "past" if start < _today() else "now"
     else:
         start = _parse_day(body.zero_from)
         end = _parse_day(body.zero_until)
@@ -1034,20 +1101,23 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
                     f"{spec['season']}%",
                     scope,
                 )
-                await _copy_snapshot(connection, spec, scope)
+                await _copy_snapshot(connection, spec, scope, moment if cut == "past" else None)
                 await connection.execute(
                     """
-                    INSERT INTO epsilon_stat_season (metric, chat_id, zero_from, zero_until, copied_at)
-                    VALUES ($1, $2, $3, $4, NOW())
+                    INSERT INTO epsilon_stat_season
+                        (metric, chat_id, zero_from, zero_until, copied_at, count_from)
+                    VALUES ($1, $2, $3, $4, NOW(), $5)
                     ON CONFLICT (metric, chat_id) DO UPDATE
                     SET zero_from = EXCLUDED.zero_from,
                         zero_until = EXCLUDED.zero_until,
-                        copied_at = NOW()
+                        copied_at = NOW(),
+                        count_from = EXCLUDED.count_from
                     """,
                     spec["season"],
                     scope,
                     start,
                     end,
+                    moment,
                 )
     except Exception as exc:
         print(f"[stat_board] копия {spec['id']}: {exc}")
@@ -1084,12 +1154,14 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
         "ok": True,
         "copiedAt": fresh["copied_at"].isoformat() if fresh and fresh["copied_at"] else "",
         "copiedLabel": _clock(fresh["copied_at"]) if fresh else "",
+        "countLabel": _clock(moment) if moment else (_clock(fresh["copied_at"]) if fresh else ""),
+        "cut": cut,
         "frozenUsers": frozen_users,
         "frozenGames": frozen_games,
     }
 
 
-async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:
+async def _copy_snapshot(connection, spec: dict, chat_id: int, played_since_day: datetime | None = None) -> None:
     if spec["id"] == "messages":
         counted = _count_expr("c")
         await connection.execute(
@@ -1105,6 +1177,41 @@ async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:
         )
         return
     if spec["id"] == "players":
+        if played_since_day is not None:
+            await connection.execute(
+                """
+                INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)
+                SELECT v.metric, 0, s.user_id, v.value
+                FROM (
+                    SELECT u.user_id,
+                           COALESCE(u.wins, 0)::bigint AS wins,
+                           COALESCE(u.loose, 0)::bigint AS losses,
+                           COALESCE(d.since, 0)::bigint AS since
+                    FROM users u
+                    LEFT JOIN (
+                        SELECT user_id, COALESCE(SUM(games), 0)::bigint AS since
+                        FROM user_games_day
+                        WHERE day >= $1
+                        GROUP BY user_id
+                    ) d ON d.user_id = u.user_id
+                    WHERE COALESCE(u.wins, 0) <> 0
+                       OR COALESCE(u.loose, 0) <> 0
+                       OR COALESCE(d.since, 0) <> 0
+                ) s
+                CROSS JOIN LATERAL (
+                    SELECT LEAST(s.wins, GREATEST(s.wins + s.losses - s.since, 0)) AS hide_wins
+                ) w
+                CROSS JOIN LATERAL (
+                    SELECT GREATEST(s.wins + s.losses - s.since, 0) - w.hide_wins AS hide_losses
+                ) l
+                CROSS JOIN LATERAL (
+                    VALUES ('players_wins', w.hide_wins), ('players_losses', l.hide_losses)
+                ) v(metric, value)
+                WHERE v.value <> 0
+                """,
+                played_since_day.date() if isinstance(played_since_day, datetime) else played_since_day,
+            )
+            return
         await connection.execute(
             """
             INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)

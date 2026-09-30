@@ -4,6 +4,7 @@ from stat_lens import (
     anchor_day,
     gained,
     games_people_see,
+    hide_pair,
     period_bounds,
     phase,
     plan_period_total,
@@ -32,6 +33,13 @@ def test_people_see_zero_inside_the_window_and_the_sum_after():
     assert seen_number(1040, 1000, "after") == 1040
     assert gained(1040, 1000) == 40
     assert seen_number(5, None, "after") == 5
+
+
+def test_past_day_keeps_games_since_that_day_in_the_lifetime_top():
+    assert hide_pair(100, 40, None) == (100, 40)
+    assert hide_pair(100, 40, 25) == (100, 15)
+    assert hide_pair(10, 4, 100) == (0, 0)
+    assert hide_pair(3, 0, 1) == (2, 0)
 
 
 def test_game_copy_keeps_only_games_after_the_snapshot():

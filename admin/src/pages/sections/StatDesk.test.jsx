@@ -205,6 +205,7 @@ describe('StatDesk', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'За всё время' }))
     expect(await screen.findByText(/только игры после копии/)).toBeTruthy()
     fireEvent.click(screen.getByText('Копия игр'))
+    expect(screen.getByLabelText('С этого момента')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Снять новую копию' })).toBeTruthy()
     expect(screen.queryByText('С какого числа')).toBeNull()
   })

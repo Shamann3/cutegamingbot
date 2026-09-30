@@ -20,6 +20,20 @@ function digits(value) {
   return String(value || '').replace(/[^\d]/g, '').slice(0, 15)
 }
 
+function moscowLocalInput(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now)
+  const pick = (type) => parts.find((part) => part.type === type)?.value || ''
+  return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`
+}
+
 function periodOf(metric, current) {
   const ids = (metric?.periods || []).map((item) => item.id)
   if (ids.includes(current)) return current
@@ -169,6 +183,7 @@ export default function StatDesk() {
   const [draft, setDraft] = useState({})
   const [zeroFrom, setZeroFrom] = useState('')
   const [zeroUntil, setZeroUntil] = useState('')
+  const [countFrom, setCountFrom] = useState(moscowLocalInput)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [rowError, setRowError] = useState('')
@@ -556,6 +571,10 @@ export default function StatDesk() {
 
   const copySeason = async () => {
     if (!metric) return
+    if (metric.id === 'players' && !countFrom) {
+      setCopyError('Поставьте дату и время, с которых считать топ за всё время')
+      return
+    }
     epoch.current += 1
     seasonBusyRef.current = true
     setSeasonBusy('copy')
@@ -569,13 +588,14 @@ export default function StatDesk() {
         chat_id: chat?.chatId || 0,
         zero_from: metric.id === 'players' ? '' : zeroFrom,
         zero_until: metric.id === 'players' ? '' : zeroUntil,
+        count_from: metric.id === 'players' ? countFrom : '',
       })
       if (metric.id === 'players') {
-        const when = result?.copiedLabel
+        const when = result?.countLabel || result?.copiedLabel
         const games = fmt(result?.frozenGames || 0)
-        setCopyFlash(when
-          ? `Новая копия снята ${when}. Заморожено ${games} игр. Топ «за всё время» начинается заново: в нём и в чате останутся только игры после этой минуты.`
-          : 'Новая копия снята. Топ «за всё время» начинается заново: в нём и в чате останутся только игры после этой минуты.')
+        setCopyFlash(result?.cut === 'past'
+          ? `Топ за всё время считается с ${when}. В него вошли игры, записанные по дням с этой даты. Более ранние заморожены: ${games}.`
+          : `Топ за всё время считается с ${when}. До этой минуты заморожено ${games} игр. Дальше в топ попадают только новые.`)
         if (period !== 'all') setPeriod('all')
         else await refreshBoard()
       } else {
@@ -639,7 +659,9 @@ export default function StatDesk() {
   return (
     <div className="sec-tab-body stat-desk">
       <p className="realm-copy">
-        Один срок — один топ, такой же, как в чате. Число правится в строке и сразу записывается в этот топ.
+        {metric?.id === 'players'
+          ? 'Лучшие игроки — это вся статистика за всё время: победы и проигрыши одним числом. Момент ниже задаёт, с какого времени этот топ считается заново.'
+          : 'Один срок — один топ, такой же, как в чате. Число правится в строке и сразу записывается в этот топ.'}
       </p>
       {metric && <p className="stat-live">Числа обновляются сами, каждую секунду. Пока вы вписываете своё, поле не перебивается.</p>}
       <div className="stat-metrics" role="tablist" aria-label="Какая статистика">
@@ -680,7 +702,7 @@ export default function StatDesk() {
         <p className="realm-copy">День, неделя, месяц, год и всё время считаются отдельно. Сейчас на экране только выбранный срок.</p>
       )}
       {metric?.id === 'players' && (
-        <p className="realm-copy">За всё время топ складывает победы и проигрыши. После копии в чате остаются только игры после неё. День, неделя, месяц и год считают только свои игры.</p>
+        <p className="realm-copy">На экране только топ за всё время. День, неделя, месяц и год в чате остаются своими и эта копия их не обнуляет.</p>
       )}
 
       {metric?.needsGroup && !chat && (
@@ -754,8 +776,11 @@ export default function StatDesk() {
           {season?.phase === 'zero' && metric?.id !== 'players' && (
             <p className="realm-note">До {season.zeroUntil} люди видят нули. Рядом с нулём написано число в базе.</p>
           )}
-          {season && metric?.id === 'players' && period === 'all' && (
-            <p className="realm-note">В чате «статистика игр» за всё время видны только игры после копии. Рядом написано полное число в базе.</p>
+          {season && metric?.id === 'players' && (
+            <p className="realm-note">
+              {season.countLabel ? `С ${season.countLabel}. ` : ''}
+              В чате «статистика игр» за всё время видны только игры после копии. Рядом написано полное число в базе.
+            </p>
           )}
           {boardReady && board.total != null && (
             <p className="realm-copy">Всего за этот срок: {fmt(board.total)}</p>
@@ -814,13 +839,22 @@ export default function StatDesk() {
         <details className="stat-season">
           <summary>Копия игр</summary>
           <p className="realm-copy">
-            Кнопка снимает новый снимок с текущих побед и проигрышей и заменяет прошлую копию. Топ «за всё время» после этого начинается с нуля. День, неделя, месяц и год остаются как были.
+            Поставьте момент. Топ за всё время оставит игры после него и заменит прошлую копию. Сегодняшний момент начинает топ с нуля. Прошлый день оставляет игры, записанные с этой даты.
           </p>
+          <label className="staff-ga-field">С этого момента
+            <input
+              className="sec-input"
+              type="datetime-local"
+              value={countFrom}
+              onChange={(event) => setCountFrom(event.target.value)}
+            />
+          </label>
+          <p className="realm-copy">Время московское. Это вся статистика за всё время, не один день.</p>
           {season && <p className="realm-note">{season.note}</p>}
           {copyFlash && <p className="realm-note" role="status">{copyFlash}</p>}
           {copyError && <p className="sec-error" role="alert">{copyError}</p>}
           <div className="stat-season-actions">
-            <button type="button" className="sec-btn" disabled={seasonBusy === 'copy'} onClick={copySeason}>
+            <button type="button" className="sec-btn" disabled={!countFrom || seasonBusy === 'copy'} onClick={copySeason}>
               {seasonBusy === 'copy' ? 'Снимаю копию…' : (season ? 'Снять новую копию' : 'Скопировать')}
             </button>
             {season && (
