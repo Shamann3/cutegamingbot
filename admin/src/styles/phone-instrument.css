@@ -3945,6 +3945,12 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   color: var(--e-text, inherit);
   color-scheme: dark;
 }
+.stat-live {
+  margin: 0;
+  color: var(--e-text-3, var(--gate-muted, #8e8e93));
+  font-size: 13px;
+  line-height: 1.4;
+}
 .stat-metrics,
 .stat-periods,
 .stat-season-actions {

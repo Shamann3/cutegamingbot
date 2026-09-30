@@ -45,6 +45,29 @@ function draftFrom(metric, source) {
   return next
 }
 
+const LIVE_MS = 1000
+
+function boardSig(data) {
+  if (!data) return ''
+  const rows = (data.rows || []).map((row) => (
+    [row.userId, row.place, row.seen, row.raw, row.wins, row.losses, row.name].join(':')
+  )).join(';')
+  const season = data.season ? `${data.season.phase}:${data.season.zeroUntil}` : ''
+  return [data.metric, data.period, data.periodLabel, data.total, data.rowUnit, season, rows].join('#')
+}
+
+function groupSig(pack) {
+  if (!pack) return ''
+  const items = (pack.items || []).map((item) => `${item.chatId}:${item.amount}:${item.title}`).join(';')
+  return `${pack.period}#${items}`
+}
+
+function personSig(data) {
+  if (!data) return ''
+  const fields = (data.fields || []).map((field) => `${field.key}:${field.raw}:${field.seen}`).join(';')
+  return `${data.userId}#${fields}`
+}
+
 function unclassifiedGames(person) {
   const read = (key) => Number((person?.fields || []).find((field) => field.key === key)?.raw || 0)
   const gap = read('games') - read('wins') - read('losses')
@@ -151,10 +174,27 @@ export default function StatDesk() {
   const [saving, setSaving] = useState(false)
   const [seasonBusy, setSeasonBusy] = useState('')
   const dirtyRef = useRef(false)
+  const savingRef = useRef(false)
+  const seasonBusyRef = useRef(false)
+  const epoch = useRef(0)
+  const boardSigRef = useRef('')
+  const groupSigRef = useRef('')
+  const personSigRef = useRef('')
+  const liveRef = useRef(async () => {})
   const boardToken = useRef(0)
   const groupToken = useRef(0)
 
+  const dropLive = () => {
+    epoch.current += 1
+    boardSigRef.current = ''
+    groupSigRef.current = ''
+    personSigRef.current = ''
+  }
+
   const metric = (catalog?.metrics || []).find((item) => item.id === metricId) || null
+  const metricKey = metric?.id || ''
+  const needsGroup = Boolean(metric?.needsGroup)
+  const chatKey = chat?.chatId || 0
   const periodOk = Boolean(metric?.periods?.some((item) => item.id === period))
   const showPeople = Boolean(metric) && periodOk && (!metric.needsGroup || chat)
   const boardReady = Boolean(board) && board.metric === metric?.id && board.period === period
@@ -179,7 +219,7 @@ export default function StatDesk() {
   }, [metric, period, periodOk])
 
   useEffect(() => {
-    if (!metric?.needsGroup || chat || !periodOk) return undefined
+    if (!needsGroup || chatKey || !periodOk) return undefined
     const token = ++groupToken.current
     const wanted = period
     const query = groupQuery.trim()
@@ -189,7 +229,9 @@ export default function StatDesk() {
         .then((data) => {
           if (token !== groupToken.current) return
           if (data?.period && data.period !== wanted) return
-          setGroupPack({ ...(data || {}), period: data?.period || wanted, items: data?.items || [] })
+          const next = { ...(data || {}), period: data?.period || wanted, items: data?.items || [] }
+          groupSigRef.current = groupSig(next)
+          setGroupPack(next)
         })
         .catch((err) => {
           if (token !== groupToken.current) return
@@ -201,39 +243,42 @@ export default function StatDesk() {
         })
     }, query ? 200 : 0)
     return () => window.clearTimeout(timer)
-  }, [metric, period, periodOk, groupQuery, chat])
+  }, [needsGroup, period, periodOk, groupQuery, chatKey])
 
   const refreshBoard = useCallback(async () => {
-    if (!metric || !metric.periods.some((item) => item.id === period)) return null
-    if (metric.needsGroup && !chat) {
+    if (!metricKey || !periodOk) return null
+    if (needsGroup && !chatKey) {
+      boardSigRef.current = ''
       setBoard(null)
       setLoadingBoard(false)
       return null
     }
     const token = ++boardToken.current
     const wantedPeriod = period
-    const wantedMetric = metric.id
+    const wantedMetric = metricKey
     setLoadingBoard(true)
     try {
       const data = await fetchStatBoard({
         metric: wantedMetric,
         period: wantedPeriod,
-        chat_id: chat?.chatId || 0,
+        chat_id: chatKey,
       })
       if (token !== boardToken.current) return null
       if (data.period !== wantedPeriod || data.metric !== wantedMetric) return null
+      boardSigRef.current = boardSig(data)
       setBoard(data)
       setError('')
       return data
     } catch (err) {
       if (token !== boardToken.current) return null
+      boardSigRef.current = ''
       setBoard(null)
       setError(err.message || 'Топ не открылся')
       throw err
     } finally {
       if (token === boardToken.current) setLoadingBoard(false)
     }
-  }, [metric, period, chat])
+  }, [metricKey, needsGroup, periodOk, period, chatKey])
 
   useEffect(() => {
     refreshBoard().catch(() => {})
@@ -241,16 +286,17 @@ export default function StatDesk() {
 
   useEffect(() => {
     if (!metric || !userId || !periodOk) return undefined
-    if (metric.needsGroup && !chat) return undefined
+    if (needsGroup && !chatKey) return undefined
     let stop = false
     fetchStatPerson({
-      metric: metric.id,
+      metric: metricKey,
       user_id: userId,
       period,
-      chat_id: chat?.chatId || 0,
+      chat_id: chatKey,
     })
       .then((data) => {
         if (stop) return
+        personSigRef.current = personSig(data)
         setPerson(data)
         if (!dirtyRef.current) setDraft(draftFrom(metric, data))
       })
@@ -258,11 +304,94 @@ export default function StatDesk() {
         if (!stop) setRowError(err.message || 'Человек не открылся')
       })
     return () => { stop = true }
-  }, [metric, userId, period, periodOk, chat])
+  }, [metric, metricKey, needsGroup, userId, period, periodOk, chatKey])
+
+  const quietRefresh = useCallback(async () => {
+    if (savingRef.current || seasonBusyRef.current) return
+    const stamp = epoch.current
+    const wantedPeriod = period
+    const wantedMetric = metricKey
+    if (needsGroup && !chatKey && periodOk) {
+      try {
+        const data = await fetchStatGroups(groupQuery.trim(), wantedPeriod)
+        if (stamp !== epoch.current) return
+        if (data?.period && data.period !== wantedPeriod) return
+        const next = { ...(data || {}), period: data?.period || wantedPeriod, items: data?.items || [] }
+        const sig = groupSig(next)
+        if (sig !== groupSigRef.current) {
+          groupSigRef.current = sig
+          setGroupPack(next)
+        }
+      } catch {
+        // Список групп остаётся прежним, пока сеть снова ответит.
+      }
+    }
+    if (!wantedMetric || !periodOk || (needsGroup && !chatKey)) return
+    try {
+      const data = await fetchStatBoard({
+        metric: wantedMetric,
+        period: wantedPeriod,
+        chat_id: chatKey,
+      })
+      if (stamp !== epoch.current) return
+      if (data.period !== wantedPeriod || data.metric !== wantedMetric) return
+      const sig = boardSig(data)
+      if (sig !== boardSigRef.current) {
+        boardSigRef.current = sig
+        setBoard(data)
+      }
+    } catch {
+      // Живой тик не стирает уже открытый топ.
+    }
+    if (!userId || stamp !== epoch.current) return
+    try {
+      const data = await fetchStatPerson({
+        metric: wantedMetric,
+        user_id: userId,
+        period: wantedPeriod,
+        chat_id: chatKey,
+      })
+      if (stamp !== epoch.current) return
+      const sig = personSig(data)
+      if (sig === personSigRef.current) return
+      personSigRef.current = sig
+      setPerson(data)
+      if (!dirtyRef.current) setDraft(draftFrom(metric, data))
+    } catch {
+      // Число в строке уже есть, карточку не закрываем.
+    }
+  }, [metric, metricKey, needsGroup, periodOk, period, chatKey, groupQuery, userId])
+
+  useEffect(() => {
+    liveRef.current = quietRefresh
+  }, [quietRefresh])
+
+  useEffect(() => {
+    let cancelled = false
+    let timer = 0
+    const tick = async () => {
+      if (cancelled) return
+      if (!document.hidden) {
+        try { await liveRef.current() } catch { /* тихий тик */ }
+      }
+      if (!cancelled) timer = window.setTimeout(tick, LIVE_MS)
+    }
+    timer = window.setTimeout(tick, LIVE_MS)
+    const onVisible = () => {
+      if (!document.hidden) liveRef.current().catch(() => {})
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
 
   const pickMetric = (id) => {
     const item = (catalog?.metrics || []).find((entry) => entry.id === id)
     if (!item || item.id === metricId) return
+    dropLive()
     boardToken.current += 1
     groupToken.current += 1
     setMetricId(id)
@@ -281,6 +410,7 @@ export default function StatDesk() {
 
   const pickPeriod = (id) => {
     if (id === period) return
+    dropLive()
     boardToken.current += 1
     groupToken.current += 1
     setPeriod(id)
@@ -324,6 +454,7 @@ export default function StatDesk() {
   }
 
   const leaveGroup = () => {
+    dropLive()
     boardToken.current += 1
     setChat(null)
     setBoard(null)
@@ -363,6 +494,10 @@ export default function StatDesk() {
     const shown = metric.id === 'players'
       ? Number(values.wins || 0) + Number(values.losses || 0)
       : Number(values[metric.fields[0].key] || 0)
+    epoch.current += 1
+    savingRef.current = true
+    boardSigRef.current = ''
+    personSigRef.current = ''
     setSaving(true)
     setRowError('')
     setNotice('')
@@ -395,6 +530,7 @@ export default function StatDesk() {
           period,
           chat_id: chat?.chatId || 0,
         })
+        personSigRef.current = personSig(fresh)
         setPerson(fresh)
         setDraft(draftFrom(metric, fresh))
       } catch {
@@ -403,12 +539,15 @@ export default function StatDesk() {
     } catch (err) {
       setRowError(err.message || 'Сохранить не удалось')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
 
   const copySeason = async () => {
     if (!metric) return
+    epoch.current += 1
+    seasonBusyRef.current = true
     setSeasonBusy('copy')
     setNotice('')
     setError('')
@@ -424,6 +563,7 @@ export default function StatDesk() {
     } catch (err) {
       setError(err.message || 'Скопировать не удалось')
     } finally {
+      seasonBusyRef.current = false
       setSeasonBusy('')
     }
   }
@@ -431,6 +571,8 @@ export default function StatDesk() {
   const clearSeason = async () => {
     if (!metric) return
     if (!window.confirm('Убрать копию? Люди сразу снова увидят числа из базы.')) return
+    epoch.current += 1
+    seasonBusyRef.current = true
     setSeasonBusy('clear')
     setError('')
     try {
@@ -440,6 +582,7 @@ export default function StatDesk() {
     } catch (err) {
       setError(err.message || 'Убрать копию не удалось')
     } finally {
+      seasonBusyRef.current = false
       setSeasonBusy('')
     }
   }
@@ -463,6 +606,7 @@ export default function StatDesk() {
       <p className="realm-copy">
         Один срок — один топ, такой же, как в чате. Число правится в строке и сразу записывается в этот топ.
       </p>
+      {metric && <p className="stat-live">Числа обновляются сами, каждую секунду. Пока вы вписываете своё, поле не перебивается.</p>}
       <div className="stat-metrics" role="tablist" aria-label="Какая статистика">
         {(catalog?.metrics || []).map((item) => (
           <button
@@ -512,7 +656,10 @@ export default function StatDesk() {
               value={groupQuery}
               placeholder="ID, @username или имя группы"
               autoComplete="off"
-              onChange={(event) => setGroupQuery(event.target.value)}
+              onChange={(event) => {
+                epoch.current += 1
+                setGroupQuery(event.target.value)
+              }}
             />
           </label>
           {loadingGroups && !groupsReady && <p className="stat-loading">Считаю группы…</p>}
@@ -530,6 +677,7 @@ export default function StatDesk() {
                   <button
                     type="button"
                     onClick={() => {
+                      dropLive()
                       boardToken.current += 1
                       setChat(item)
                       setBoard(null)

@@ -872,45 +872,49 @@ async def _set_messages(chat_id: int, user_id: int, period: str, today: date, ta
 
 
 async def _write_message_day(connection, chat_id: int, user_id: int, day: date, total: int) -> None:
-    rows = await connection.fetch(
+    """Сумма сообщений за сутки становится total.
+
+    ctid сравнивается только внутри SQL. asyncpg не принимает его строкой
+    вида '(4393,168)': для типа tid нужна пара чисел, и сохранение падало с 500.
+    """
+    updated = await connection.execute(
         """
-        SELECT ctid::text AS id
-        FROM chatchange
-        WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date::date = $3
+        WITH keeper AS (
+            SELECT ctid AS tid
+            FROM chatchange
+            WHERE user_id = $1::bigint
+              AND chat_id = $2::bigint
+              AND date::date = $3::date
+            ORDER BY ctid
+            LIMIT 1
+        )
+        UPDATE chatchange AS row
+        SET text = CASE
+            WHEN row.ctid = keeper.tid THEN $4::bigint
+            ELSE 0::bigint
+        END
+        FROM keeper
+        WHERE row.user_id = $1::bigint
+          AND row.chat_id = $2::bigint
+          AND row.date::date = $3::date
         """,
         int(user_id),
         int(chat_id),
         day,
-    )
-    if not rows:
-        await connection.execute(
-            """
-            INSERT INTO chatchange (user_id, chat_id, date, text)
-            VALUES ($1::bigint, $2::bigint, $3, $4::bigint)
-            """,
-            int(user_id),
-            int(chat_id),
-            day,
-            int(total),
-        )
-        return
-    first = rows[0]["id"]
-    await connection.execute(
-        "UPDATE chatchange SET text = $2::bigint WHERE ctid = $1::tid",
-        first,
         int(total),
     )
-    if len(rows) > 1:
-        await connection.execute(
-            """
-            UPDATE chatchange SET text = 0
-            WHERE user_id = $1::bigint AND chat_id = $2::bigint AND date::date = $3 AND ctid <> $4::tid
-            """,
-            int(user_id),
-            int(chat_id),
-            day,
-            first,
-        )
+    if _wrote(updated):
+        return
+    await connection.execute(
+        """
+        INSERT INTO chatchange (user_id, chat_id, date, text)
+        VALUES ($1::bigint, $2::bigint, $3::date, $4::bigint)
+        """,
+        int(user_id),
+        int(chat_id),
+        day,
+        int(total),
+    )
 
 
 async def _set_players(user_id: int, period: str, today: date, wins: int, losses: int) -> None:

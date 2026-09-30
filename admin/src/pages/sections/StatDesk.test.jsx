@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import StatDesk from './StatDesk'
 import { fetchStatBoard, fetchStatCatalog, fetchStatGroups, fetchStatPerson, saveStatValue } from '../../lib/adminClient'
@@ -150,5 +150,40 @@ describe('StatDesk', () => {
       values: { donate: 40 },
     }))
     expect(await screen.findByText('Сохранено. В этом топе теперь 40.')).toBeTruthy()
+  })
+
+  it('refreshes the open top every second without wiping a number being typed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      render(<StatDesk />)
+      fireEvent.click(await screen.findByRole('tab', { name: 'Донатеры' }))
+      expect(await screen.findByText('40 кут')).toBeTruthy()
+      fireEvent.click(screen.getByRole('button', { name: /40 кут/ }))
+      const input = await screen.findByDisplayValue('40')
+      fireEvent.change(input, { target: { value: '77' } })
+      vi.mocked(fetchStatBoard).mockResolvedValue({
+        metric: 'donors',
+        period: 'all',
+        periodLabel: 'За всё время',
+        rowUnit: 'кут',
+        total: null,
+        rows: [{ place: 1, userId: 7, name: 'Иван', username: 'ivan', seen: 55, raw: 55 }],
+        season: null,
+      })
+      vi.mocked(fetchStatPerson).mockResolvedValue({
+        userId: 7,
+        name: 'Иван',
+        username: 'ivan',
+        fields: [{ key: 'donate', label: 'Донат', raw: 55, seen: 55, copied: null, gained: 0 }],
+        season: null,
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(await screen.findByText('55 кут')).toBeTruthy()
+      expect(screen.getByDisplayValue('77')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
