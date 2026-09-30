@@ -505,6 +505,13 @@ def is_bot_command_message(message: Any) -> bool:
         except Exception:
             pass
 
+        try:
+            from bot.funcs.best_players import is_best_players_command
+            if is_best_players_command(normalized):
+                return True
+        except Exception:
+            pass
+
         return False
     except Exception:
         return False

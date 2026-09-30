@@ -195,6 +195,25 @@ def get_random_top_calendar_emoji() -> str:
         top_debug_print(f"🛟 [ТОП] Будет использован fallback: {DEFAULT_TOP_EMOJI}")
         return DEFAULT_TOP_EMOJI
 
+async def _reply_best_players(message):
+    from bot.funcs.best_players import build_best_players_view
+    try:
+        if not message.from_user:
+            return
+        user_id = message.from_user.id
+        text, keyboard = await build_best_players_view(db, user_id, "all", "text")
+        sent = await message.reply(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        user_top[user_id] = sent.message_id
+        _top_save_store(user_top, "user_top")
+    except Exception as e:
+        print(f"Произошла ошибка при топе лучших игроков: {e}")
+
+
 def _top_save_store(store , store_name: str):
     try:
         if hasattr(store , "save") and callable(store.save):
@@ -286,6 +305,11 @@ async def top(message: Message):
 
         top_debug_print("🏁 [ТОП] Обработка команды завершена")
         top_debug_print("════════════════════════════════════")
+        return
+
+    from bot.funcs.best_players import is_best_players_command
+    if is_best_players_command(message.text):
+        await _reply_best_players(message)
         return
 
 
@@ -1901,6 +1925,36 @@ async def callasdqiqjback_top(call: types.CallbackQuery):
 
     except Exception as e:
         print(f"Произошла ошибка при обработке запроса13: {e}")
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and (c.data == "bestplayers" or c.data.startswith("bestplay:")))
+async def callback_best_players(call: types.CallbackQuery):
+    from bot.funcs.best_players import build_best_players_view, parse_best_players_callback
+
+    parsed = parse_best_players_callback(getattr(call, "data", None))
+    if parsed is None:
+        return
+    period, source = parsed
+    try:
+        if not call.from_user or not call.message:
+            return
+        user_id = call.from_user.id
+        message_id = call.message.message_id
+        if user_id not in user_top or user_top[user_id] != message_id:
+            await call.answer(random.choice(randommessagehelp))
+            return
+        await call.answer()
+        text, keyboard = await build_best_players_view(db, user_id, period, source)
+        await call.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        if "message is not modified" in str(e).lower():
+            return
+        print(f"Произошла ошибка при топе лучших игроков: {e}")
 
 
 @dp.callback_query(lambda c: c.data.startswith('cutessss'))

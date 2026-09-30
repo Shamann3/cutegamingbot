@@ -427,6 +427,8 @@ btn_help_inline = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
 
 btn_topcutes = InlineKeyboardButton(text="Богачи" , callback_data="cutessss", style="default" ,
                 icon_custom_emoji_id="5321499578216769477")
+btn_topplayers = InlineKeyboardButton(text="Лучшие игроки" , callback_data="bestplayers", style="default" ,
+                icon_custom_emoji_id="5469967260380612012")
 btn_topstate = InlineKeyboardButton(text="Статистика" , callback_data="state123", style="default" ,
                 icon_custom_emoji_id="5307577823978882332")
 btn_wins = InlineKeyboardButton(text="Wins" , callback_data="userwinstop", style="default" ,
@@ -446,6 +448,7 @@ btn_close = InlineKeyboardButton(text="Скрыть" , callback_data="help_delet
 
 # Создание inline_keyboard
 inline_keyboard = [ [ btn_topcutes ] ,
+                    [ btn_topplayers ] ,
                     [ btn_wins , btn_loose ] ,
                     [ btn_balancegroup ],
                     [ btn_donaters ] ,

@@ -35,13 +35,8 @@ function isDesktopTelegram(tg) {
 }
 
 function mobileChromeFallback(tg, computedTop) {
-  // На ПК не раздуваем верхний inset — панель должна быть «в ноль»
+  // Только реальный отступ Telegram. Выдуманные 72–96px рисовали чёрную полосу сверху.
   if (!isPhoneTelegram(tg)) return computedTop
-  if (computedTop >= 56) return computedTop
-  const platform = String(tg?.platform || '').toLowerCase()
-  if (platform === 'ios') return Math.max(computedTop, 96)
-  if (platform === 'android') return Math.max(computedTop, 72)
-  if (window.innerWidth < 820) return Math.max(computedTop, 88)
   return computedTop
 }
 
@@ -159,8 +154,13 @@ export function initAdminTelegram() {
   syncAdminLayoutMode()
 
   try {
-    tg.setHeaderColor?.('#050508')
-    tg.setBackgroundColor?.('#050508')
+    if (desktop) {
+      tg.setHeaderColor?.('#050508')
+      tg.setBackgroundColor?.('#050508')
+    } else {
+      tg.setHeaderColor?.('bg_color')
+      tg.setBackgroundColor?.('bg_color')
+    }
   } catch {
     /* ignore */
   }

@@ -8508,6 +8508,173 @@ class Database:
 
         return wins_data  # Возвращаем список словарей с user_id и wins
 
+    async def ensure_user_games_day_schema(self) -> None:
+        """Дневной счётчик сыгранных игр. Победа и проигрыш — одна игра."""
+        if getattr(self, "_user_games_day_ready", False):
+            return
+        if not await self.ensure_pool():
+            return
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_games_day (
+                    user_id BIGINT NOT NULL,
+                    day DATE NOT NULL,
+                    games BIGINT NOT NULL DEFAULT 0,
+                    PRIMARY KEY (user_id, day)
+                )
+                """
+            )
+            await connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS user_games_day_day_idx
+                ON user_games_day (day)
+                """
+            )
+        self._user_games_day_ready = True
+
+    async def _note_games_played(self, connection, user_id: int, increment) -> None:
+        """Плюс к дневному счётчику. Ошибка здесь не должна ломать саму игру."""
+        try:
+            games = int(increment)
+        except (TypeError, ValueError):
+            return
+        if games <= 0:
+            return
+        sql = """
+            INSERT INTO user_games_day (user_id, day, games)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, day)
+            DO UPDATE SET games = user_games_day.games + EXCLUDED.games
+        """
+        try:
+            await connection.execute(sql, int(user_id), _msk_today(), games)
+        except Exception as e:
+            print(f"[user_games_day] не записал игру user_id={user_id}: {e}")
+
+    async def get_best_players_board(
+        self,
+        *,
+        period: str,
+        viewer_id: int,
+        start=None,
+        end=None,
+        limit: int = 10,
+    ) -> dict:
+        """Топ по числу игр и место зрителя.
+
+        period='all' — COALESCE(wins,0)+COALESCE(loose,0).
+        Иначе сумма user_games_day за [start, end].
+        Место совпадает с порядком games DESC, user_id ASC.
+        """
+        empty = {"rows": [], "place": None, "viewer_games": 0}
+        try:
+            cap = min(max(int(limit or 10), 1), 50)
+        except (TypeError, ValueError):
+            cap = 10
+        if not await self.ensure_pool():
+            return empty
+        try:
+            await self.ensure_user_games_day_schema()
+        except Exception as e:
+            print(f"[user_games_day] схема: {e}")
+            if str(period or "") != "all":
+                return empty
+
+        viewer = int(viewer_id)
+        try:
+            async with self.pool.acquire() as connection:
+                if str(period or "all") == "all" or start is None or end is None:
+                    rows = await connection.fetch(
+                        """
+                        SELECT user_id,
+                               (COALESCE(wins, 0) + COALESCE(loose, 0))::bigint AS games
+                        FROM users
+                        WHERE (COALESCE(wins, 0) + COALESCE(loose, 0)) > 0
+                        ORDER BY games DESC, user_id ASC
+                        LIMIT $1
+                        """,
+                        cap,
+                    )
+                    own = await connection.fetchrow(
+                        """
+                        SELECT (COALESCE(wins, 0) + COALESCE(loose, 0))::bigint AS games
+                        FROM users
+                        WHERE user_id = $1
+                        """,
+                        viewer,
+                    )
+                    viewer_games = int(own["games"] or 0) if own else 0
+                    ahead = 0
+                    if viewer_games > 0:
+                        ahead = int(await connection.fetchval(
+                            """
+                            SELECT COUNT(*)::int
+                            FROM users
+                            WHERE (COALESCE(wins, 0) + COALESCE(loose, 0)) > $1
+                               OR (
+                                    (COALESCE(wins, 0) + COALESCE(loose, 0)) = $1
+                                    AND user_id < $2
+                               )
+                            """,
+                            viewer_games,
+                            viewer,
+                        ) or 0)
+                else:
+                    rows = await connection.fetch(
+                        """
+                        SELECT user_id, SUM(games)::bigint AS games
+                        FROM user_games_day
+                        WHERE day >= $1 AND day <= $2
+                        GROUP BY user_id
+                        HAVING SUM(games) > 0
+                        ORDER BY games DESC, user_id ASC
+                        LIMIT $3
+                        """,
+                        start,
+                        end,
+                        cap,
+                    )
+                    viewer_games = int(await connection.fetchval(
+                        """
+                        SELECT COALESCE(SUM(games), 0)::bigint
+                        FROM user_games_day
+                        WHERE user_id = $1 AND day >= $2 AND day <= $3
+                        """,
+                        viewer,
+                        start,
+                        end,
+                    ) or 0)
+                    ahead = 0
+                    if viewer_games > 0:
+                        ahead = int(await connection.fetchval(
+                            """
+                            WITH totals AS (
+                                SELECT user_id, SUM(games)::bigint AS games
+                                FROM user_games_day
+                                WHERE day >= $2 AND day <= $3
+                                GROUP BY user_id
+                                HAVING SUM(games) > 0
+                            )
+                            SELECT COUNT(*)::int
+                            FROM totals
+                            WHERE games > $1
+                               OR (games = $1 AND user_id < $4)
+                            """,
+                            viewer_games,
+                            start,
+                            end,
+                            viewer,
+                        ) or 0)
+        except Exception as e:
+            print(f"[user_games_day] топ лучших игроков: {e}")
+            return empty
+
+        return {
+            "rows": [(int(row["user_id"]), int(row["games"] or 0)) for row in rows],
+            "place": (ahead + 1) if viewer_games > 0 else None,
+            "viewer_games": viewer_games,
+        }
 
     async def get_user_winamount(self, user_id):
         """
@@ -8606,6 +8773,7 @@ class Database:
                 new_wins = (result [ 'wins' ] or 0) + increment
                 print(f"[update_user_wins] ✏️ Обновляю wins: {result [ 'wins' ]} -> {new_wins}")
                 await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
+                await self._note_games_played(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_wins] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")
@@ -8822,6 +8990,7 @@ class Database:
                 new_loose = (result [ 'loose' ] or 0) + increment
                 print(f"[update_user_loose] ✏️ Обновляю loose: {result [ 'loose' ]} -> {new_loose}")
                 await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
+                await self._note_games_played(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_loose] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")

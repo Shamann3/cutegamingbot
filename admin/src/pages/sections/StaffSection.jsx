@@ -40,9 +40,12 @@ import {
   takeStaffComplaint,
   unsuspendStaffMember,
   appointGroupAdmin,
+  checkRealmMember,
+  dismissGroupAdmin,
   fetchRightsBoard,
 } from '../../lib/adminClient'
 import AdminSelect from '../../components/AdminSelect'
+import DarkPick from '../../components/DarkPick'
 import CountUp from '../../components/CountUp'
 import { showToast } from '../../components/ToastHost'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
@@ -124,7 +127,7 @@ function nameOf(item) {
 // Review modal
 // ---------------------------------------------------------------------------
 
-function ReviewModal({ application, onClose, onApproved, onRejected }) {
+function ReviewModal({ application, onClose, onApproved, onRejected, onOpenUser = null }) {
   const [role, setRole] = useState('moderator')
   const [reason, setReason] = useState('')
   const [showReject, setShowReject] = useState(false)
@@ -202,6 +205,16 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
               <AdminSelect value={role} onChange={setRole} options={ASSIGN_ROLE_OPTIONS} />
             </label>
             <div className="admin-modal-actions">
+              {onOpenUser && (
+                <button
+                  type="button"
+                  className="panel-users-btn"
+                  disabled={loading}
+                  onClick={() => { onOpenUser(application.userId); onClose() }}
+                >
+                  Открыть в Игроках
+                </button>
+              )}
               <button type="button" className="panel-users-btn" data-modal-cancel disabled={loading} onClick={onClose}>
                 Закрыть
               </button>
@@ -245,7 +258,7 @@ function ReviewModal({ application, onClose, onApproved, onRejected }) {
 // Tab: Applications
 // ---------------------------------------------------------------------------
 
-function ApplicationsTab() {
+function ApplicationsTab({ onOpenUser = null }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -287,13 +300,20 @@ function ApplicationsTab() {
 
       <div className="staff-app-list">
         {items.map((app) => (
-          <button key={app.id} type="button" className="staff-app-card staff-app-open" onClick={() => setActive(app)}>
-            <span className="staff-card-name">{nameOf(app)}</span>
-            <span className="staff-card-date">{fmtDate(app.createdAt)}</span>
-            <span className="staff-badge staff-badge-pulse" style={{ '--badge-color': '#fbbf24' }}>
-              ожидает
-            </span>
-          </button>
+          <div key={app.id} className="staff-app-card">
+            <button type="button" className="staff-app-open" onClick={() => setActive(app)}>
+              <span className="staff-card-name">{nameOf(app)}</span>
+              <span className="staff-card-date">{fmtDate(app.createdAt)}</span>
+              <span className="staff-badge staff-badge-pulse" style={{ '--badge-color': '#fbbf24' }}>
+                ожидает
+              </span>
+            </button>
+            {onOpenUser && (
+              <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => onOpenUser(app.userId)}>
+                Открыть в Игроках
+              </button>
+            )}
+          </div>
         ))}
         {!loading && items.length === 0 && !error && (
           <p className="sec-empty">Новых заявок в команду нет</p>
@@ -303,6 +323,7 @@ function ApplicationsTab() {
       {active && (
         <ReviewModal
           application={active}
+          onOpenUser={onOpenUser}
           onClose={() => setActive(null)}
           onApproved={() => { setActive(null); load() }}
           onRejected={() => { setActive(null); load() }}
@@ -1431,6 +1452,21 @@ function tokenStatus(t) {
   return TOKEN_STATUS.active
 }
 
+function positionPrefix(position) {
+  if (!position) return ''
+  const stored = String(position.prefix || '').trim()
+  if (stored) return stored.slice(0, 16)
+  if (position.kind === 'spamblock') return 'спам блок'
+  if (position.kind === 'member') return ''
+  return String(position.title || '').trim().slice(0, 16)
+}
+
+function positionHint(position) {
+  if (position.kind === 'spamblock') return 'без прав, нужен срок'
+  if (position.kind === 'member' || Number(position.rank) <= 0) return 'ранг 0, как участник'
+  return `ранг ${position.rank}`
+}
+
 function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
@@ -1448,6 +1484,10 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
   const [gaReason, setGaReason] = useState('')
   const [gaKey, setGaKey] = useState('')
   const [gaError, setGaError] = useState('')
+  const [gaNote, setGaNote] = useState('')
+  const [gaStart, setGaStart] = useState('')
+  const [gaEnd, setGaEnd] = useState('')
+  const [gaCheck, setGaCheck] = useState('')
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
@@ -1480,10 +1520,13 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isProjectCreator])
 
+  const gaGroup = groups.find((x) => String(x.chatId) === String(gaChatId)) || null
   const gaPositions = useMemo(() => {
-    const g = groups.find((x) => String(x.chatId) === String(gaChatId))
-    return (g?.positions || []).filter((p) => Number(p.rank) < 5)
-  }, [groups, gaChatId])
+    return (gaGroup?.positions || []).filter((p) => Number(p.rank) < 5)
+  }, [gaGroup])
+  const gaPost = gaPositions.find((p) => String(p.id) === String(gaPosId)) || null
+  const gaSpam = gaPost?.kind === 'spamblock'
+  const gaPrefix = positionPrefix(gaPost)
 
   const handleCreate = async (e) => {
     e?.preventDefault?.()
@@ -1503,11 +1546,16 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
     e?.preventDefault?.()
     setGaError('')
     setGaKey('')
+    setGaNote('')
     const uid = Number(gaUserId || String(gaUser).replace(/\D/g, ''))
     const chatId = Number(gaChatId)
     const positionId = Number(gaPosId)
     if (!uid || !chatId || !positionId) {
       setGaError('Выберите человека, группу и должность')
+      return
+    }
+    if (gaSpam && !gaEnd) {
+      setGaError('Для спам-блока укажите, по какое число держать должность')
       return
     }
     setBusy('ga')
@@ -1516,17 +1564,60 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
         chat_id: chatId,
         user_id: uid,
         position_id: positionId,
-        reason: gaReason.trim() || 'Инвайт из Стафф',
+        reason: gaReason.trim() || 'Назначение из панели',
+        prefix: gaPrefix,
+        term_start: gaSpam ? gaStart : '',
+        term_end: gaSpam ? gaEnd : '',
       })
       setGaKey(res?.entryKey || '')
+      setGaNote(res?.telegram || (gaPrefix ? `В группе стоит префикс «${gaPrefix}».` : 'Должность назначена.'))
       setGaUser('')
       setGaUserId(null)
       setGaReason('')
       setGaPosId('')
+      setGaStart('')
+      setGaEnd('')
+      setGaCheck('')
+      const data = await fetchRightsBoard()
+      setGroups(data.groups || [])
     } catch (err) {
       setGaError(err?.message || 'Не удалось выдать ключ админа группы')
     } finally {
       setBusy(null)
+    }
+  }
+
+  const handleDismiss = async (person) => {
+    const name = person.name || person.userId
+    if (!window.confirm(`Снять должность «${person.position}» с ${name}? Человек останется в группе обычным участником, префикс в чате снимется.`)) return
+    setGaError('')
+    setGaNote('')
+    setBusy(`off-${person.userId}`)
+    try {
+      const res = await dismissGroupAdmin({ chat_id: Number(gaChatId), user_id: person.userId })
+      setGaNote(res?.telegram || 'Должность снята, префикс в группе убран.')
+      const data = await fetchRightsBoard()
+      setGroups(data.groups || [])
+    } catch (err) {
+      setGaError(err?.message || 'Снять должность не удалось')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const handleSpamCheck = async () => {
+    const uid = Number(gaUserId || String(gaUser).replace(/\D/g, ''))
+    if (!gaChatId || !uid) {
+      setGaCheck('Сначала выберите человека и группу')
+      return
+    }
+    setGaCheck('Смотрим ответ Telegram…')
+    try {
+      const data = await checkRealmMember(gaChatId, uid)
+      setGaCheck(data.note || 'Telegram ничего не добавил')
+      if (data.until) setGaEnd(data.until)
+    } catch (err) {
+      setGaCheck(err.message || 'Проверка не ответила')
     }
   }
 
@@ -1611,32 +1702,48 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
               placeholder="ID, @username или имя"
               label="Человек"
             />
-            <label className="staff-ga-field">
-              <span>Группа</span>
-              <select
-                className="sec-input"
-                value={gaChatId}
-                onChange={(e) => { setGaChatId(e.target.value); setGaPosId('') }}
-              >
-                <option value="">Выберите группу</option>
-                {groups.map((g) => (
-                  <option key={g.chatId} value={g.chatId}>{g.title || g.chatId}</option>
-                ))}
-              </select>
-            </label>
-            <label className="staff-ga-field">
-              <span>Должность</span>
-              <select
-                className="sec-input"
-                value={gaPosId}
-                onChange={(e) => setGaPosId(e.target.value)}
-              >
-                <option value="">Выберите</option>
-                {gaPositions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title} (ранг {p.rank})</option>
-                ))}
-              </select>
-            </label>
+            <DarkPick
+              label="Группа"
+              value={gaChatId}
+              placeholder="Выберите группу"
+              options={groups.map((g) => ({
+                value: String(g.chatId),
+                label: g.title || String(g.chatId),
+                hint: `${g.seats?.length || 0} на должностях`,
+              }))}
+              onChange={(next) => { setGaChatId(next); setGaPosId('') }}
+            />
+            <DarkPick
+              label="Должность"
+              value={gaPosId}
+              placeholder="Выберите должность"
+              options={gaPositions.map((p) => ({
+                value: String(p.id),
+                label: p.title,
+                hint: positionHint(p),
+              }))}
+              onChange={setGaPosId}
+            />
+            {gaPost && (
+              <p className="realm-copy">
+                {gaPrefix
+                  ? `В группе автоматически встанет префикс «${gaPrefix}».`
+                  : 'Это обычный участник: префикс в группе не ставится.'}
+              </p>
+            )}
+            {gaSpam && (
+              <div className="staff-ga-term">
+                <p className="realm-copy">Спам-блок не даёт наказаний. Укажите срок: с какого числа по какое должность держится. Когда срок выйдет, должность и префикс снимутся сами.</p>
+                <label className="staff-ga-field">С какого числа
+                  <input className="sec-input" type="date" value={gaStart} onChange={(e) => setGaStart(e.target.value)} />
+                </label>
+                <label className="staff-ga-field">По какое число
+                  <input className="sec-input" type="date" value={gaEnd} onChange={(e) => setGaEnd(e.target.value)} />
+                </label>
+                <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={handleSpamCheck}>Проверить ответ Telegram</button>
+                {gaCheck && <p className="realm-note" role="status">{gaCheck}</p>}
+              </div>
+            )}
             <label className="staff-ga-field">
               <span>Для чего?</span>
               <input
@@ -1652,10 +1759,34 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
               {busy === 'ga' ? '…' : 'Назначить и выдать ключ'}
             </button>
             {gaError && <p className="sec-error">{gaError}</p>}
+            {gaNote && <p className="realm-note" role="status">{gaNote}</p>}
             {gaKey && (
               <p className="realm-alert staff-ga-key" data-copyable="1">
                 Личный ключ (один показ): <code>{gaKey}</code>
               </p>
+            )}
+            {gaGroup && (
+            <div className="staff-ga-seats">
+              <h4 className="realm-h">Сейчас на должностях</h4>
+              <p className="realm-copy">Снятие убирает должность и префикс в группе. Из чата человека не исключает.</p>
+              {(gaGroup.seats || []).length === 0 && <p className="realm-copy">В этой группе должностей ни у кого нет.</p>}
+              <ul className="realm-list">
+                {(gaGroup?.seats || []).map((person) => (
+                  <li key={person.userId} className="realm-row staff-ga-person">
+                    <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
+                    <span>{person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}</span>
+                    <button
+                      type="button"
+                      className="sec-btn sec-btn-ghost sec-btn-sm"
+                      disabled={busy === `off-${person.userId}`}
+                      onClick={() => handleDismiss(person)}
+                    >
+                      {busy === `off-${person.userId}` ? '…' : 'Снять должность'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
             )}
           </form>
         )}
@@ -1746,7 +1877,7 @@ const OFFICES = [
   { id: 'group', title: 'Администраторы', detail: 'Кабинет официальных групп' },
 ]
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onOpenPreview = null }) {
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onOpenPreview = null, onOpenUser = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
   const canConfigure = isProjectCreator || perms.has('manage_panel_access')
@@ -1859,7 +1990,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
             <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onOpenPreview} />
           )}
           {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
-          {onStaff && activeId === 'apps' && <ApplicationsTab />}
+          {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
           {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
           {onStaff && activeId === 'work' && (
             <>
@@ -1895,7 +2026,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
             </div>
           )}
           {onGroup && activeId === 'view' && <GroupPreviewPane onOpen={onOpenPreview} />}
-          {onGroup && activeId === 'apps' && <GroupApplicationsPane />}
+          {onGroup && activeId === 'apps' && <GroupApplicationsPane onOpenUser={onOpenUser} />}
           {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
 
           {!activeId && <p className="sec-empty">Нет доступных разделов</p>}

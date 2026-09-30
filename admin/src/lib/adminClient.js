@@ -2340,6 +2340,10 @@ export async function appointGroupAdmin(body) {
   return adminFetch('/group-realm/appoint', { method: 'POST', body })
 }
 
+export async function dismissGroupAdmin(body) {
+  return adminFetch('/group-realm/dismiss', { method: 'POST', body })
+}
+
 export async function fetchRealmLogs(chatId) {
   return adminFetch(`/group-realm/logs?chat_id=${encodeURIComponent(chatId)}`)
 }

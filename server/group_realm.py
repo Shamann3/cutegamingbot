@@ -278,6 +278,25 @@ def clean_prefix(value: str) -> tuple[str, str | None]:
     return text, None
 
 
+def chat_title(kind: str, title: str, stored: str, requested: str) -> tuple[str, str | None]:
+    """Префикс в группе: то, что вписали, иначе префикс должности, иначе её название."""
+    if kind == KIND_MEMBER:
+        return "", None
+    asked, error = clean_prefix(requested)
+    if error:
+        return "", error
+    if asked:
+        return asked, None
+    saved, saved_error = clean_prefix(stored)
+    if saved_error:
+        saved = " ".join((stored or "").split())[:16]
+    if saved:
+        return saved, None
+    if kind == KIND_SPAMBLOCK:
+        return SPAMBLOCK_PREFIX, None
+    return " ".join((title or "").split())[:16], None
+
+
 def may_punish_rank(actor_rank: int, target_rank: int, *, same_person: bool) -> str | None:
     """Наказать можно только того, кто строго младше в этой группе.
 
@@ -438,7 +457,7 @@ async def sweep_expired_spamblocks() -> int:
             int(row["user_id"]),
             int(row["chat_id"]),
         )
-        note = await _apply_chat_title(int(row["chat_id"]), int(row["user_id"]), "", keep_admin=False)
+        note = await _apply_chat_title(int(row["chat_id"]), int(row["user_id"]), "", rights=None)
         end = row["term_end"]
         end_label = end.date().isoformat() if end else ""
         await _realm_log(
@@ -452,10 +471,14 @@ async def sweep_expired_spamblocks() -> int:
     return removed
 
 
-def _promote_body(chat_id: int, user_id: int, *, keep_admin: bool) -> dict:
+def _promote_body(chat_id: int, user_id: int, rights: list[str] | None) -> dict:
+    """None снимает админку. Пустой список оставляет администратора без наказаний — так ставится префикс."""
     body = {"chat_id": int(chat_id), "user_id": int(user_id), "is_anonymous": False}
+    granted = set(rights or [])
     for flag in _TG_ADMIN_FLAGS:
-        body[flag] = bool(keep_admin and flag == "can_manage_chat")
+        body[flag] = flag in granted
+    if rights is not None and not any(body[flag] for flag in _TG_ADMIN_FLAGS):
+        body["can_manage_chat"] = True
     return body
 
 
@@ -486,23 +509,31 @@ async def _telegram_call(method: str, payload: dict) -> tuple[bool, str, dict]:
     return False, description or "Telegram отказал", data if isinstance(data, dict) else {}
 
 
-async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, keep_admin: bool) -> str:
-    """Ставит или снимает админку чата. Токен в ответ не попадает."""
-    ok, err, _data = await _telegram_call("promoteChatMember", _promote_body(chat_id, user_id, keep_admin=keep_admin))
+async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: list[str] | None) -> str:
+    """Ставит или снимает админку и префикс в группе. Токен в ответ не попадает.
+
+    rights=None снимает админку: человек остаётся в чате обычным участником.
+    """
+    ok, err, _data = await _telegram_call(
+        "promoteChatMember",
+        _promote_body(chat_id, user_id, rights),
+    )
     if not ok:
-        if keep_admin:
-            return f"Место в панели есть. Telegram не назначил администратора: {err}"
-        return f"Из панели снято. В чате админка могла остаться: {err}"
-    if not keep_admin:
-        return "Админка в чате снята."
-    text = title.strip() or SPAMBLOCK_PREFIX
+        if rights is None:
+            return f"Должность в панели снята. В группе админка могла остаться: {err}"
+        return f"Место в панели есть. Префикс в группе не встал: {err}"
+    if rights is None:
+        return "В группе админка и префикс сняты. Человек остаётся обычным участником."
+    text = " ".join((title or "").split())[:16]
+    if not text:
+        return "Админка в группе обновлена."
     titled, title_err, _title_data = await _telegram_call(
         "setChatAdministratorCustomTitle",
-        {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": text[:16]},
+        {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": text},
     )
     if not titled:
-        return f"Администратор без наказаний назначен. Префикс в чате не встал: {title_err}"
-    return "В чате стоит префикс, наказаний нет."
+        return f"Админка в группе есть. Префикс «{text}» не встал: {title_err}"
+    return f"В группе стоит префикс «{text}»."
 
 
 async def _telegram_member(chat_id: int, user_id: int) -> dict:
@@ -931,7 +962,7 @@ async def _seated_people() -> dict[int, list[dict]]:
     try:
         rows = await db.pool.fetch(
             """
-            SELECT s.chat_id, s.user_id, s.position_id,
+            SELECT s.chat_id, s.user_id, s.position_id, s.prefix, s.term_end,
                    u.username, u.display_name, u.first_name,
                    aa.role AS staff_role, aa.status AS staff_status
             FROM epsilon_seats s
@@ -954,11 +985,14 @@ async def _seated_people() -> dict[int, list[dict]]:
         staff = _is_creator(uid) or (
             r["staff_status"] == "active" and r["staff_role"] in STAFF_PANEL_ROLES
         )
+        end = r["term_end"]
         out.setdefault(int(r["chat_id"]), []).append({
             "userId": uid,
             "name": r["display_name"] or r["first_name"] or str(uid),
             "username": r["username"] or "",
             "positionId": int(r["position_id"]),
+            "seatPrefix": r["prefix"] or "",
+            "termEnd": end.date().isoformat() if end else "",
             "staff": bool(staff),
         })
     return out
@@ -993,6 +1027,9 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
                 **person,
                 "position": post["title"],
                 "rank": post["rank"],
+                "kind": post["kind"],
+                "prefix": person.get("seatPrefix") or post["prefix"],
+                "termEnd": person.get("termEnd") or "",
                 "rights": post["rights"],
             })
         payload.append({**group, "positions": positions, "seats": seats})
@@ -1127,7 +1164,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     await sweep_expired_spamblocks()
     pos = await db.pool.fetchrow(
         """
-        SELECT p.id, p.kind, p.prefix, p.title, p.rank
+        SELECT p.id, p.kind, p.prefix, p.title, p.rank, p.rights
         FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
         WHERE p.id = $1 AND p.chat_id = $2 AND p.rank < 5
@@ -1138,19 +1175,18 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     if not pos:
         raise HTTPException(status_code=400, detail="Должность не найдена в официальной группе")
     kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
-    prefix, prefix_error = clean_prefix(body.prefix)
+    prefix, prefix_error = chat_title(kind, pos["title"] or "", pos["prefix"] or "", body.prefix)
     if prefix_error:
         raise HTTPException(status_code=400, detail=prefix_error)
-    if not prefix:
-        prefix = (pos["prefix"] or "").strip()
     term_start = None
     term_end = None
     if kind == KIND_SPAMBLOCK:
-        if not prefix:
-            prefix = SPAMBLOCK_PREFIX
         term_start, term_end, term_error = term_bounds(body.term_start, body.term_end)
         if term_error:
             raise HTTPException(status_code=400, detail=term_error)
+    held_rights = None if kind == KIND_MEMBER else rights_for_kind(
+        kind, int(pos["rank"]), _rights(pos["rights"]), creator=True,
+    )
     await db.pool.execute(
         """
         INSERT INTO epsilon_seats (
@@ -1175,14 +1211,12 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         term_start,
         term_end,
     )
-    telegram_note = ""
-    if prefix or kind == KIND_SPAMBLOCK:
-        telegram_note = await _apply_chat_title(
-            int(body.chat_id),
-            int(body.user_id),
-            prefix or SPAMBLOCK_PREFIX,
-            keep_admin=kind == KIND_SPAMBLOCK,
-        )
+    telegram_note = await _apply_chat_title(
+        int(body.chat_id),
+        int(body.user_id),
+        prefix,
+        rights=held_rights,
+    )
     detail = f"«{pos['title']}»"
     if kind == KIND_SPAMBLOCK and term_end:
         detail += f", до {term_end.date().isoformat()}"
@@ -1195,6 +1229,45 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     return {"ok": True, "entryKey": entry_key, "telegram": telegram_note, "prefix": prefix}
 
 
+class DismissBody(BaseModel):
+    chat_id: int
+    user_id: int = Field(ge=1)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/dismiss")
+async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Снимает должность. Человек остаётся в группе, префикс и админка чата уходят."""
+    _require_creator(user_id)
+    await ensure_tables()
+    seat = await db.pool.fetchrow(
+        """
+        SELECT s.user_id, p.title
+        FROM epsilon_seats s
+        JOIN epsilon_positions p ON p.id = s.position_id
+        WHERE s.user_id = $1 AND s.chat_id = $2
+        """,
+        int(body.user_id),
+        int(body.chat_id),
+    )
+    if not seat:
+        raise HTTPException(status_code=404, detail="У этого человека нет должности в группе")
+    await db.pool.execute(
+        "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
+        int(body.user_id),
+        int(body.chat_id),
+    )
+    note = await _apply_chat_title(int(body.chat_id), int(body.user_id), "", rights=None)
+    await _realm_log(
+        int(body.chat_id),
+        int(body.user_id),
+        "position_removed",
+        f"Должность «{seat['title']}» снята. {note}",
+        int(user_id),
+    )
+    return {"ok": True, "telegram": note}
+
+
 @router.post("/prefix")
 async def group_prefix(body: PrefixBody, user_id: int = Depends(get_any_telegram_user_id)):
     """Префикс в чате. Создатель проекта. Для спам-блока пустое поле возвращает «спам блок»."""
@@ -1205,7 +1278,7 @@ async def group_prefix(body: PrefixBody, user_id: int = Depends(get_any_telegram
         raise HTTPException(status_code=400, detail=prefix_error)
     seat = await db.pool.fetchrow(
         """
-        SELECT s.user_id, p.kind
+        SELECT s.user_id, p.kind, p.rank, p.rights, p.title, p.prefix
         FROM epsilon_seats s
         JOIN epsilon_positions p ON p.id = s.position_id
         WHERE s.user_id = $1 AND s.chat_id = $2
@@ -1216,21 +1289,26 @@ async def group_prefix(body: PrefixBody, user_id: int = Depends(get_any_telegram
     if not seat:
         raise HTTPException(status_code=404, detail="У этого человека нет должности в группе")
     kind = seat["kind"] if seat["kind"] in KINDS else KIND_POST
-    if kind == KIND_SPAMBLOCK and not prefix:
-        prefix = SPAMBLOCK_PREFIX
+    if not prefix:
+        prefix, prefix_error = chat_title(kind, seat["title"] or "", seat["prefix"] or "", "")
+        if prefix_error:
+            raise HTTPException(status_code=400, detail=prefix_error)
     await db.pool.execute(
         "UPDATE epsilon_seats SET prefix = $3 WHERE user_id = $1 AND chat_id = $2",
         int(body.user_id),
         int(body.chat_id),
         prefix,
     )
+    held = None if kind == KIND_MEMBER else rights_for_kind(
+        kind, int(seat["rank"]), _rights(seat["rights"]), creator=True,
+    )
     note = ""
-    if prefix:
+    if prefix or kind == KIND_MEMBER:
         note = await _apply_chat_title(
             int(body.chat_id),
             int(body.user_id),
             prefix,
-            keep_admin=kind == KIND_SPAMBLOCK,
+            rights=held,
         )
     await _realm_log(
         int(body.chat_id),
@@ -1294,10 +1372,12 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
     rows = await db.pool.fetch(
         """
         SELECT a.id, a.user_id, a.chat_id, a.position_id, a.body, a.status, a.review_note, a.created_at,
-               g.title AS group_title, p.title AS position, p.rank
+               g.title AS group_title, p.title AS position, p.rank,
+               u.username, u.display_name, u.first_name
         FROM epsilon_group_applications a
         JOIN epsilon_official_groups g ON g.chat_id = a.chat_id
         JOIN epsilon_positions p ON p.id = a.position_id
+        LEFT JOIN users u ON u.user_id = a.user_id
         WHERE a.status = 'pending'
         ORDER BY a.created_at
         LIMIT 50
@@ -1313,6 +1393,8 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
                 "group": r["group_title"] or str(r["chat_id"]),
                 "position": r["position"],
                 "rank": int(r["rank"]),
+                "name": (r["display_name"] or r["first_name"] or "").strip(),
+                "username": (r["username"] or "").strip(),
                 "body": r["body"],
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
             }

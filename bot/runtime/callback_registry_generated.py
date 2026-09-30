@@ -79,7 +79,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.tggames.soccer',
 )
 
-# prefix -> (module, handler): 385
+# prefix -> (module, handler): 386
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'prg:': ('bot.handlers.pr_groups', 'dispatch_pr_callback'),
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
@@ -369,6 +369,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'startroul_': ('bot.funcs.Roulett', 'Roullet_process_start'),
     'style3412_': ('bot.funcs.profile', 'send_styles'),
     'user_page_': ('bot.buisnesses.clan_filter', 'process_pagination'),
+    'bestplay:': ('bot.funcs.top', 'callback_best_players'),
     'btnstars_': ('main', 'btnstars_callback'),
     'ept_join_': ('bot.buisnesses.clan_filter', 'process_accept_join'),
     'gbl_more:': ('bot.handlers.chatbalance', 'gbl_more_handler'),
@@ -469,7 +470,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'gc:': ('bot.funcs.balance', 'gc_info_callback'),
 }
 
-# exact callback_data -> (module, handler): 178
+# exact callback_data -> (module, handler): 179
 EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1st6': ('bot.funcs.BlackGack', 'range_callback'),
     '1to9': ('bot.funcs.BlackGack', 'range_callback'),
@@ -489,6 +490,7 @@ EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     'balanceashudjwqkdq': ('main', '_send_or_edit_wait_notice'),
     'ball_end_stub': ('bot.games.balls', 'ball_end_stub'),
     'ball_paid_stub': ('bot.games.balls', 'ball_paid_stub'),
+    'bestplayers': ('bot.funcs.top', 'callback_best_players'),
     'bio_help': ('main', 'bio_help_cb'),
     'black': ('bot.funcs.BlackGack', 'range_callback'),
     'blackmarket_info': ('main', 'blackmarket_info_handler'),

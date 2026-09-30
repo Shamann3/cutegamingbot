@@ -4450,7 +4450,7 @@ class ButtonRegistry:
         from bot.funcs.Shep import asdasdview_message
         from bot.games.provoda import provoda_callback,wires_paid_stub,wires_end_stub
         from bot.games.balls import process_callback_ball,ball_end_stub,ball_paid_stub
-        from bot.funcs.top import cb_stats_today,cb_stats_all,callbiahsdofhasodfhoasack_top, callasfasfawqfqwback_top, casdasdqwqdqwallback_top, callasdqiqjback_top, callbrgtrgegrewrack_top, calsadqwdqwqdqwcqlback_top, callbaasdqsdqwcqck_top, callasqsvevqwqqeback_top, caasqscwqscqllback_top, calskqdkqodkqowlback_top, callcqdqkiwqback_top, callqjiqwjdiqjqback_top, sasadqqwdqwcallback_top, calljiqwjicqjqback_top, handle_marry_pagination, handle_marry_pagination, handle_marryxp_pagination, handle_marryxp_pagination
+        from bot.funcs.top import cb_stats_today,cb_stats_all,callbiahsdofhasodfhoasack_top, callasfasfawqfqwback_top, casdasdqwqdqwallback_top, callasdqiqjback_top, callbrgtrgegrewrack_top, calsadqwdqwqdqwcqlback_top, callbaasdqsdqwcqck_top, callasqsvevqwqqeback_top, caasqscwqscqllback_top, calskqdkqodkqowlback_top, callcqdqkiwqback_top, callqjiqwjdiqjqback_top, sasadqqwdqwcallback_top, calljiqwjicqjqback_top, callback_best_players, handle_marry_pagination, handle_marry_pagination, handle_marryxp_pagination, handle_marryxp_pagination
         handlers = {'joinorel:': join_game_callback ,
                     'startorel:': start_game_callback ,
                     'rollorel:': roll_callback ,
@@ -7231,6 +7231,12 @@ def _matches_custom_command(text: str) -> bool:
         cmd_norm = _normalize_command_text(cmd)
         if tl == cmd_norm or tl.startswith(cmd_norm):
             return True
+    try:
+        from bot.funcs.best_players import is_best_players_command
+        if is_best_players_command(tl):
+            return True
+    except Exception:
+        pass
     return False
 
 
@@ -38005,7 +38011,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
         _top_cmd_norm = _normalize_command_text(text_lower)
         print(f"🧪 [TOP MAIN] text_lower={text_lower!r} | norm={_top_cmd_norm!r}" , flush=True)
 
-        if _top_cmd_norm in toptext:
+        from bot.funcs.best_players import is_best_players_command
+        if _top_cmd_norm in toptext or is_best_players_command(_top_cmd_norm):
             print("✅ [TOP MAIN] text_lower найден в toptext" , flush=True)
 
             from bot.funcs.top import top
@@ -40643,6 +40650,12 @@ async def botmain():
             await db.ensure_king_stats_schema()
     except Exception as e:
         print(f"[KING][WARN] ensure schema: {type(e).__name__}: {e}")
+
+    try:
+        if hasattr(db, "ensure_user_games_day_schema"):
+            await db.ensure_user_games_day_schema()
+    except Exception as e:
+        print(f"[GAMES][WARN] ensure schema: {type(e).__name__}: {e}")
 
     try:
         if hasattr(db, "ensure_profile_achievements_schema"):

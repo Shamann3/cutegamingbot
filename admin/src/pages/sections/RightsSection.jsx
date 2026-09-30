@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createGroupPosition, createStaffPost, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import DarkPick from '../../components/DarkPick'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
@@ -323,13 +324,16 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             <label>Название
               <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Например, Хелпер" />
             </label>
-            <label>Тип
-              <select value={newKind} onChange={(event) => setNewKind(event.target.value)}>
-                <option value="post">Обычная должность</option>
-                <option value="member">Обычный пользователь, ранг 0</option>
-                <option value="spamblock">Спам-блок, без прав</option>
-              </select>
-            </label>
+            <DarkPick
+              label="Тип"
+              value={newKind}
+              options={[
+                { value: 'post', label: 'Обычная должность', hint: 'права настраиваются отдельно' },
+                { value: 'member', label: 'Обычный пользователь', hint: 'ранг 0, только писать' },
+                { value: 'spamblock', label: 'Спам-блок', hint: 'ранг 0, без прав, со сроком' },
+              ]}
+              onChange={setNewKind}
+            />
             {newKind === 'post' && (
               <label>Ранг, 0 как участник, 4 старше
                 <input value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} inputMode="numeric" />

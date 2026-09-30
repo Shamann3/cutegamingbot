@@ -233,6 +233,13 @@ def _is_bot_related_or_game_trigger(message: Any) -> bool:
         except Exception:
             pass
 
+        try:
+            from bot.funcs.best_players import is_best_players_command
+            if is_best_players_command(normalized):
+                return True
+        except Exception:
+            pass
+
         if any(normalized.startswith(prefix) for prefix in _GAME_TRIGGER_PREFIXES):
             return True
 

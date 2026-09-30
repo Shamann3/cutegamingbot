@@ -76,13 +76,21 @@ def test_rank_zero_and_spamblock_carry_no_punishments():
     assert missing
     _start, _end, backwards = term_bounds("2026-10-02", "2026-10-01")
     assert backwards
-    present = _promote_body(-100, 5, keep_admin=True)
+    present = _promote_body(-100, 5, [])
     assert present["can_manage_chat"] is True
     assert present["can_restrict_members"] is False
     assert present["can_delete_messages"] is False
     assert present["can_promote_members"] is False
-    gone = _promote_body(-100, 5, keep_admin=False)
+    titled = _promote_body(-100, 5, ["can_delete_messages", "punish_mute"])
+    assert titled["can_delete_messages"] is True
+    assert titled["can_restrict_members"] is False
+    gone = _promote_body(-100, 5, None)
     assert all(value is False for key, value in gone.items() if key.startswith("can_"))
+    from group_realm import chat_title
+    assert chat_title("post", "Модератор", "", "") == ("Модератор", None)
+    assert chat_title("spamblock", "Спам блок", "", "") == ("спам блок", None)
+    assert chat_title("member", "Обычный пользователь", "участник", "хелпер") == ("", None)
+    assert chat_title("post", "Модератор", "мод", "") == ("мод", None)
 
 
 def test_staff_post_key_stays_on_the_same_title():

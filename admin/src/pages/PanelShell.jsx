@@ -689,6 +689,10 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               isProjectCreator={showCreator}
               entry={staffEntry}
               onOpenPreview={openPreview}
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
             />
           )}
           {isSupport && <SupportSection />}

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { decideGroupApplication, fetchGroupApplications } from '../../lib/adminClient'
+import { applicationPerson } from '../../lib/applicationPerson'
+import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
 function when(iso) {
   if (!iso) return ''
@@ -12,7 +14,7 @@ function when(iso) {
   }
 }
 
-export default function GroupApplicationsPane() {
+export default function GroupApplicationsPane({ onOpenUser = null }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -89,7 +91,7 @@ export default function GroupApplicationsPane() {
   return (
     <div className="sec-tab-body staff-apps staff-apps-group">
       <p className="staff-hint">
-        Это заявки в кабинет официальной группы. Они не делают человека сотрудником проекта и не открывают панель сотрудника.
+        Это заявки в кабинет официальной группы. Сверху — имя человека, как оно записано у игроков. «Открыть в Игроках» показывает его карточку: баланс, предметы и историю. Заявка не делает его сотрудником проекта.
       </p>
       {error && <p className="sec-error" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
@@ -106,15 +108,26 @@ export default function GroupApplicationsPane() {
         <p className="sec-empty">Заявок на администратора группы нет.</p>
       )}
       <ul className="staff-app-list">
-        {items.map((item) => (
+        {items.map((item) => {
+          const person = applicationPerson(item)
+          return (
           <li key={item.id} className="staff-app-card">
             <div className="staff-app-head">
-              <strong>{item.position}</strong>
+              <strong>{person.title}</strong>
               <span>{item.group}</span>
             </div>
-            <p className="staff-app-meta">ID {item.userId}{item.at ? ` · ${when(item.at)}` : ''} · ранг {item.rank}</p>
+            <p className="staff-app-meta">
+              {person.username ? <><CopyableUsername value={person.username} />{' · '}</> : null}
+              {item.position} · ранг {item.rank}{item.at ? ` · ${when(item.at)}` : ''}
+            </p>
+            <p className="staff-app-meta"><CopyableId value={item.userId} label="id игрока" /></p>
             <p className="staff-app-body">{item.body}</p>
             <div className="staff-app-actions">
+              {onOpenUser && (
+                <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => onOpenUser(item.userId)}>
+                  Открыть в Игроках
+                </button>
+              )}
               <button type="button" className="sec-btn sec-btn-sm" disabled={busyId === item.id} onClick={() => approve(item)}>
                 {busyId === item.id ? '…' : 'Одобрить'}
               </button>
@@ -139,7 +152,8 @@ export default function GroupApplicationsPane() {
               </form>
             )}
           </li>
-        ))}
+          )
+        })}
       </ul>
     </div>
   )

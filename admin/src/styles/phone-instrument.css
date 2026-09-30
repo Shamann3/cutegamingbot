@@ -3390,6 +3390,10 @@ html[data-viewport="phone"] .panel-shell .panel-security .sec-tabs {
   color: inherit;
   font: inherit;
   cursor: pointer;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 .staff-app-open .staff-card-date {
   grid-column: 1;
@@ -3621,12 +3625,21 @@ html[data-viewport="phone"] .preview-bar-exit {
   color: rgba(244, 244, 244, 0.78);
   line-height: 1.4;
 }
+.staff-app-head strong {
+  overflow-wrap: anywhere;
+}
 .staff-app-actions,
 .staff-app-reject {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+.staff-app-actions .sec-btn {
+  min-height: 44px;
+}
+.staff-app-card .staff-app-open + .sec-btn {
+  margin-top: 10px;
 }
 .staff-app-reject {
   display: grid;
@@ -3784,4 +3797,143 @@ html[data-viewport="phone"] .panel-shell .extras-hub-search,
 html[data-viewport="phone"] .panel-shell .metric-tile {
   background: var(--e-plate) !important;
   background-image: none !important;
+}
+
+/* Список должностей внутри панели. Системное меню select на Windows и Android белое. */
+.dark-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.dark-pick-label {
+  color: var(--gate-muted, #8e8e93);
+  font-size: 13px;
+}
+.dark-pick-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: var(--e-overlay, rgba(24, 24, 28, 0.92));
+  color: var(--gate-ink, #f4f4f4);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dark-pick-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dark-pick-btn i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  opacity: 0.7;
+}
+.dark-pick.is-open .dark-pick-btn {
+  border-color: rgba(255, 255, 255, 0.42);
+}
+.dark-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: var(--e-overlay, rgba(24, 24, 28, 0.94));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+.dark-pick-list button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dark-pick-list button strong {
+  font-weight: 600;
+}
+.dark-pick-list button span {
+  color: var(--gate-muted, #8e8e93);
+  font-size: 12px;
+}
+.dark-pick-list button.is-on,
+.dark-pick-list button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.dark-pick-empty {
+  padding: 12px;
+  color: var(--gate-muted, #8e8e93);
+  font-size: 13px;
+}
+.staff-ga-form,
+.grp-appoint-form,
+.staff-new-post,
+.realm-form {
+  color-scheme: dark;
+}
+.staff-ga-term {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.staff-ga-seats {
+  margin-top: 8px;
+}
+.staff-ga-seats .realm-list {
+  margin-top: 8px;
+}
+.staff-ga-person {
+  flex-wrap: wrap;
+  align-items: center;
+  cursor: default;
+}
+.staff-ga-person .sec-btn {
+  width: auto;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 8px 12px;
+  border-bottom: 0;
+}
+
+/* На телефоне верх панели не красится чёрным. Реальный отступ Telegram остаётся прозрачным. */
+html.is-phone .panel-shell,
+html[data-viewport="phone"] .panel-shell {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+html.is-phone .panel-tg-chrome,
+html[data-viewport="phone"] .panel-tg-chrome {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+html.is-phone:not(.tg-webapp) .panel-tg-chrome,
+html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
 }
