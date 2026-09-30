@@ -13,6 +13,7 @@ import {
   groupRealmAct,
   markGroupOfficial,
   createGroupPosition,
+  deleteGroupPosition,
   saveGroupPosition,
   searchGroupsStudio,
 } from '../lib/adminClient'
@@ -292,11 +293,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   }, [])
 
   useEffect(() => {
-    if (chapter && isCreator && chatId) {
-      loadLogs(chatId)
-      loadHolders(chatId)
-    }
-  }, [chapter, isCreator, chatId, loadLogs, loadHolders])
+    if (!isCreator || !chatId) return undefined
+    if (chapter) loadLogs(chatId)
+    if (chapter || activeTab === 'rights') loadHolders(chatId)
+    return undefined
+  }, [chapter, activeTab, isCreator, chatId, loadLogs, loadHolders])
 
   const openCreator = async () => {
     setChapter(true)
@@ -464,6 +465,39 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     } finally {
       setSavingId(null)
     }
+  }
+
+  const removePosition = async (row) => {
+    const data = await deleteGroupPosition(row.id)
+    const tail = data?.telegram ? ` ${data.telegram}` : ' Люди остаются в группе.'
+    setEntryKey('')
+    setNotice(`Должность «${row.title}» удалена.${tail}`)
+    try {
+      await loadPositions(chatId)
+      await loadHolders(chatId)
+    } catch {
+      /* должность уже снята */
+    }
+  }
+
+  const appointHere = async (row, fields) => {
+    const data = await appointGroupAdmin({
+      chat_id: Number(chatId),
+      user_id: fields.userId,
+      position_id: row.id,
+      reason: fields.reason || '',
+      prefix: fields.prefix || '',
+      term_start: fields.termStart || '',
+      term_end: fields.termEnd || '',
+    })
+    if (data?.entryKey) setEntryKey(data.entryKey)
+    setNotice(data?.telegram || `Должность «${row.title}» назначена`)
+    try {
+      await loadHolders(chatId)
+    } catch {
+      /* назначение уже записано */
+    }
+    return data
   }
 
   const pickTab = (id) => {
@@ -872,7 +906,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               <PositionEditor
                 positions={positions.filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
                 creator={isCreator}
+                chatId={chatId}
+                seats={holders}
                 onSave={savePosition}
+                onDelete={isCreator ? removePosition : null}
+                onAppoint={isCreator ? appointHere : null}
                 savingId={savingId}
               />
             </section>

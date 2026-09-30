@@ -1136,6 +1136,89 @@ async def edit_position(
     return {"ok": True, "id": int(position_id), "title": title, "rights": rights}
 
 
+@router.delete("/positions/{position_id}")
+async def delete_position(position_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    """Удаляет должность администратора. Создателя группы не трогает.
+
+    Кто её держал, остаётся в чате обычным участником: место и префикс снимаются.
+    """
+    _require_creator(user_id)
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        """
+        SELECT id, chat_id, title, rank
+        FROM epsilon_positions
+        WHERE id = $1
+        """,
+        int(position_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Такой должности нет")
+    if int(row["rank"]) >= 5:
+        raise HTTPException(status_code=400, detail="Должность создателя группы удалить нельзя")
+    holders = await db.pool.fetch(
+        """
+        SELECT user_id
+        FROM epsilon_seats
+        WHERE position_id = $1 AND chat_id = $2
+        """,
+        int(position_id),
+        int(row["chat_id"]),
+    )
+
+    async def _erase(drop_applications: bool) -> None:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    "DELETE FROM epsilon_seats WHERE position_id = $1 AND chat_id = $2",
+                    int(position_id),
+                    int(row["chat_id"]),
+                )
+                if drop_applications:
+                    await connection.execute(
+                        "DELETE FROM epsilon_group_applications WHERE position_id = $1",
+                        int(position_id),
+                    )
+                else:
+                    await connection.execute(
+                        """
+                        UPDATE epsilon_group_applications
+                        SET status = 'rejected',
+                            review_note = 'Должность удалена',
+                            decided_at = NOW()
+                        WHERE position_id = $1 AND status = 'pending'
+                        """,
+                        int(position_id),
+                    )
+                await connection.execute(
+                    "DELETE FROM epsilon_positions WHERE id = $1",
+                    int(position_id),
+                )
+
+    try:
+        await _erase(False)
+    except Exception as exc:
+        if "foreign key" not in str(exc).lower():
+            raise
+        await _erase(True)
+    notes = []
+    for holder in holders:
+        note = await _apply_chat_title(int(row["chat_id"]), int(holder["user_id"]), "", rights=None)
+        if note:
+            notes.append(note)
+    detail = f"Должность «{row['title']}» удалена"
+    if holders:
+        detail += f". Снята у {len(holders)}"
+    if notes:
+        detail += f". {notes[0]}"
+    await _realm_log(int(row["chat_id"]), None, "position_deleted", detail[:500], int(user_id))
+    return {
+        "ok": True,
+        "removed": len(holders),
+        "telegram": notes[0] if notes else "",
+    }
+
+
 async def drop_group_access(user_id: int) -> dict:
     """Снимает места и личный ключ. Следующий вход потребует новый ключ."""
     await ensure_tables()

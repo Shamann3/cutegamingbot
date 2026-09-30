@@ -829,6 +829,88 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   font-weight: 700;
 }
 
+.role-sheet-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.role-sheet-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.role-sheet-foot input[type="date"] {
+  color-scheme: dark;
+}
+
+.role-holders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-holders li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--e-plate, rgba(255, 255, 255, 0.06));
+}
+
+.role-holders span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.85rem;
+}
+
+.role-delete-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.focus-sheet .role-delete,
+html.is-desktop .panel-shell .role-delete,
+html.is-phone .panel-shell .role-delete,
+html[data-viewport] .panel-shell .role-delete {
+  width: 100%;
+  min-height: 48px;
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: #c23832 !important;
+  color: #fff !important;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.focus-sheet .role-delete:hover:not(:disabled),
+html.is-desktop .panel-shell .role-delete:hover:not(:disabled),
+html.is-phone .panel-shell .role-delete:hover:not(:disabled) {
+  background: #d44640 !important;
+}
+
+.focus-sheet .role-delete:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+@media (max-width: 640px) {
+  .role-sheet-dates {
+    grid-template-columns: 1fr;
+  }
+}
+
 .focus-dim {
   position: fixed;
   inset: 0;
@@ -897,6 +979,17 @@ html[data-viewport="phone"] .panel-sidebar-settings-pin {
   overflow-y: auto;
   padding: 4px 16px max(24px, env(safe-area-inset-bottom));
   min-height: 0;
+}
+
+.focus-sheet:has(.focus-sheet-foot) .focus-sheet-body {
+  padding-bottom: 16px;
+}
+
+.focus-sheet-foot {
+  flex-shrink: 0;
+  padding: 8px 16px max(16px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #111113;
 }
 
 .focus-sheet .g-arc-proof {

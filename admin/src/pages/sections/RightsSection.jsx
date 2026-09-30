@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createGroupPosition, createStaffPost, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPosition, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import DarkPick from '../../components/DarkPick'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
@@ -254,6 +254,36 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
     }
   }
 
+  const removePosition = async (row) => {
+    const data = await deleteGroupPosition(row.id)
+    const tail = data?.telegram ? ` ${data.telegram}` : ' Люди остаются в группе.'
+    setNotice(`Должность «${row.title}» удалена.${tail}`)
+    try {
+      await load()
+    } catch {
+      /* должность уже снята, список обновится при следующем открытии */
+    }
+  }
+
+  const appointHere = async (row, fields) => {
+    const data = await appointGroupAdmin({
+      chat_id: Number(chatId),
+      user_id: fields.userId,
+      position_id: row.id,
+      reason: fields.reason || '',
+      prefix: fields.prefix || '',
+      term_start: fields.termStart || '',
+      term_end: fields.termEnd || '',
+    })
+    setNotice(data?.telegram || `Должность «${row.title}» назначена`)
+    try {
+      await load()
+    } catch {
+      /* назначение уже записано */
+    }
+    return data
+  }
+
   const purge = async (event) => {
     event.preventDefault()
     const id = Number(purgeId)
@@ -344,7 +374,11 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
           <PositionEditor
             positions={(current.positions || []).filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
             creator
+            chatId={current.chatId}
+            seats={current.seats || []}
             onSave={save}
+            onDelete={removePosition}
+            onAppoint={appointHere}
             savingId={savingId}
             onPreview={onPreview ? (row) => onPreview(groupPositionPreview(current, row)) : null}
           />

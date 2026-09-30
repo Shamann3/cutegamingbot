@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
 /** Окно поверх панели: снизу на телефоне, по центру на компьютере. */
-export default function FocusWindow({ title, subtitle, onClose, children }) {
+export default function FocusWindow({ title, subtitle, onClose, children, footer = null }) {
   useEffect(() => {
     const onKey = (event) => {
       if (event.key === 'Escape') onClose?.()
@@ -37,6 +37,7 @@ export default function FocusWindow({ title, subtitle, onClose, children }) {
           </button>
         </header>
         <div className="focus-sheet-body">{children}</div>
+        {footer ? <div className="focus-sheet-foot">{footer}</div> : null}
       </div>
     </div>,
     document.body,

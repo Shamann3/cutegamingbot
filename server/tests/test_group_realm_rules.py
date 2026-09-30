@@ -143,3 +143,19 @@ def test_only_creator_can_purge_and_not_himself():
     assert purge_allowed(actor_is_creator=True, target_is_creator=False) is None
     assert purge_allowed(actor_is_creator=False, target_is_creator=False)
     assert purge_allowed(actor_is_creator=True, target_is_creator=True)
+
+
+def test_delete_position_unseats_before_drop_and_keeps_creator():
+    import inspect
+
+    from group_realm import delete_position
+
+    source = inspect.getsource(delete_position)
+    assert ">= 5" in source
+    assert "Должность создателя группы удалить нельзя" in source
+    seats = source.index("DELETE FROM epsilon_seats")
+    applications = source.index("epsilon_group_applications")
+    drop = source.index("DELETE FROM epsilon_positions")
+    assert seats < applications < drop
+    assert "_apply_chat_title" in source
+    assert "rights=None" in source
