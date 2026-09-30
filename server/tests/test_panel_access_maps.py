@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from admin_permissions import ROLE_JUNIOR, ROLE_MODERATOR, ROLE_OWNER
 from panel_access import (
+    access_for_maps,
     effective_sections_from_maps,
     effective_tabs_from_maps,
     permissions_for_sections,
@@ -61,3 +62,22 @@ def test_closed_players_page_drops_player_permission():
 def test_panel_pages_never_grant_project_ban():
     perms = permissions_for_sections(ROLE_JUNIOR, ["users", "moderation", "economy"])
     assert "banfull" not in perms
+
+
+def test_preview_matches_login_for_the_role():
+    defaults = {ROLE_JUNIOR: {"users": True, "staff": True, "staff.salaries": False}}
+    access = access_for_maps(ROLE_JUNIOR, defaults, {})
+    sections = effective_sections_from_maps(ROLE_JUNIOR, defaults, {})
+    assert access["sections"] == sections
+    assert access["tabs"] == effective_tabs_from_maps(ROLE_JUNIOR, defaults, {}, sections)
+    assert access["permissions"] == permissions_for_sections(ROLE_JUNIOR, sections)
+    assert "salaries" not in access["tabs"]["staff"]
+
+
+def test_personal_override_changes_preview_permissions():
+    defaults = {ROLE_MODERATOR: {"users": True}}
+    role_view = access_for_maps(ROLE_MODERATOR, defaults, {})
+    person_view = access_for_maps(ROLE_MODERATOR, defaults, {"users": False})
+    assert "view_players" in role_view["permissions"]
+    assert "users" not in person_view["sections"]
+    assert "view_players" not in person_view["permissions"]

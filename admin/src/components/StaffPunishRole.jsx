@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchStaffPunishRights, saveStaffPunishRights } from '../lib/adminClient'
+import { STAFF_PUNISH_LABELS } from '../lib/panelPreview'
 import RightSwitch from './RightSwitch'
-
-const COL_LABELS = {
-  mute: 'Мут',
-  muteall: 'Муталл',
-  unmute: 'Размут',
-  kick: 'Кик',
-  kickall: 'Кикалл',
-  warn: 'Варн',
-  warnall: 'Варналл',
-  warnfull: 'Варнфулл',
-  ban: 'Бан',
-  banall: 'Баналл',
-  banfull: 'Банфулл',
-}
 
 const COL_HINTS = {
   mute: 'Заткнуть в одном чате',
@@ -116,7 +103,7 @@ export default function StaffPunishRole({ role }) {
           {columns.map((col) => (
             <RightSwitch
               key={col}
-              title={COL_LABELS[col] || col}
+              title={STAFF_PUNISH_LABELS[col] || col}
               hint={COL_HINTS[col] || ''}
               on={!!row.permissions?.[col]}
               disabled={busy === `${row.role}:${col}` || !!row.locked}

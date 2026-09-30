@@ -14,6 +14,7 @@ import {
 } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
+import { groupCabinetTabs } from '../lib/panelPreview'
 import FirstRun, { groupSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
@@ -64,19 +65,6 @@ function roleTone(title, isCreator) {
   return 'seat'
 }
 
-function tabsFor(rights, isCreator) {
-  const has = (key) => isCreator || rights.has(key)
-  const items = [{ id: 'overview', label: 'Обзор' }]
-  if (has('view_members') || has('view_analytics') || [...rights].some((item) => item.startsWith('punish_'))) {
-    items.push({ id: 'activity', label: 'Активность' })
-  }
-  if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
-  if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
-  if (isCreator) items.push({ id: 'switches', label: 'Переключатели' })
-  items.push({ id: 'more', label: 'Ещё' })
-  return items
-}
-
 export default function GroupShell(props) {
   return (
     <MetricSheetProvider>
@@ -85,7 +73,7 @@ export default function GroupShell(props) {
   )
 }
 
-function GroupShellView({ portrait, onLeave, onStaffApply }) {
+function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, banner = null }) {
   const personal = accentIsPersonal(loadStoredAccent())
   const metric = useMetricSheet()
   const isCreator = Boolean(portrait?.isOwner)
@@ -93,11 +81,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
   const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
-  const tabs = useMemo(() => tabsFor(rights, isCreator), [rights, isCreator])
+  const tabs = useMemo(() => groupCabinetTabs(rights, isCreator), [rights, isCreator])
   const [tab, setTab] = useState('overview')
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.group.v4'))
+  const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
   const [coachRun, setCoachRun] = useState(0)
   const replayCoach = useCallback(() => {
     restartCoach('epsilon.onboard.group.v4')
@@ -436,7 +424,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
   return (
     <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
       <AccentAura />
-      <PanelBackgroundMusic volume={musicVolume} />
+      {banner}
+      {!preview && <PanelBackgroundMusic volume={musicVolume} />}
       {coach && (
         <FirstRun
           key={coachRun}
@@ -453,7 +442,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
           sections={navSections}
           activeSection={activeTab}
           onNavigate={pickTab}
-          onChangeDoor={onLeave}
+          onChangeDoor={preview ? undefined : onLeave}
+          onExitPreview={preview ? onLeave : undefined}
           mobileOpen={railOpen}
           onClose={closeRail}
           lightMode={lightMode}
@@ -742,7 +732,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply }) {
                   musicVolume={musicVolume}
                   onMusicVolumeChange={setMusicVolume}
                   onToggleMusic={toggleMusicMute}
-                  onChangeDoor={onLeave}
+                  onChangeDoor={preview ? undefined : onLeave}
+                  onExitPreview={preview ? onLeave : undefined}
                   onReplayCoach={replayCoach}
                 />
               )}

@@ -7,6 +7,7 @@ import {
 } from '../../lib/adminClient'
 import { sectionBlurb } from '../../constants/panelNav'
 import { parseAccessKey } from '../../constants/panelAccessTree'
+import { staffRolePreview } from '../../lib/panelPreview'
 import PanelAccessWizard from './PanelAccessWizard'
 import RightsSection from './RightsSection'
 import StaffPunishMatrix from '../../components/StaffPunishMatrix'
@@ -556,6 +557,20 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
+
+  const openRolePreview = useCallback(async () => {
+    if (typeof onOpenPreview !== 'function') return
+    setPreviewBusy(true)
+    try {
+      const fresh = await fetchPanelAccess()
+      onOpenPreview(staffRolePreview(fresh, roleTab))
+    } catch (err) {
+      setError(err?.message || 'Копия панели не открылась')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }, [onOpenPreview, roleTab])
   const [expanded, setExpanded] = useState(() => new Set(['staff']))
   const pendingSeq = useRef(new Map())
 
@@ -1119,12 +1134,10 @@ export default function PanelAccessSection({ isProjectCreator = false, initialTa
               <button
                 type="button"
                 className="sec-btn preview-open"
-                onClick={() => {
-                  const label = (data.roles || []).find((item) => item.id === roleTab)?.label || roleTab
-                  onOpenPreview(roleTab, label, data.roleDefaults || {})
-                }}
+                onClick={openRolePreview}
+                disabled={previewBusy}
               >
-                Открыть панель как эту должность
+                {previewBusy ? 'Собираем копию…' : 'Открыть копию панели этой должности'}
               </button>
             )}
             <p className="pa-hint">

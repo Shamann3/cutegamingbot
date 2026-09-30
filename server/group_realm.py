@@ -609,11 +609,53 @@ async def _can_edit_positions(user_id: int, chat_id: int) -> dict | None:
     return {"rank": int(access["rank"]), "creator": False}
 
 
+STAFF_PANEL_ROLES = ("owner", "senior_admin", "junior_admin", "moderator")
+
+
+async def _seated_people() -> dict[int, list[dict]]:
+    """Кто сидит на должностях: chat_id → люди. Нужен копии кабинета «от лица»."""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT s.chat_id, s.user_id, s.position_id,
+                   u.username, u.display_name, u.first_name,
+                   aa.role AS staff_role, aa.status AS staff_status
+            FROM epsilon_seats s
+            LEFT JOIN users u ON u.user_id = s.user_id
+            LEFT JOIN LATERAL (
+                SELECT role, status
+                FROM admin_accounts
+                WHERE user_id = s.user_id
+                ORDER BY registered_at DESC NULLS LAST
+                LIMIT 1
+            ) aa ON TRUE
+            ORDER BY s.created_at, s.user_id
+            """
+        )
+    except Exception:
+        return {}
+    out: dict[int, list[dict]] = {}
+    for r in rows:
+        uid = int(r["user_id"])
+        staff = _is_creator(uid) or (
+            r["staff_status"] == "active" and r["staff_role"] in STAFF_PANEL_ROLES
+        )
+        out.setdefault(int(r["chat_id"]), []).append({
+            "userId": uid,
+            "name": r["display_name"] or r["first_name"] or str(uid),
+            "username": r["username"] or "",
+            "positionId": int(r["position_id"]),
+            "staff": bool(staff),
+        })
+    return out
+
+
 @router.get("/board")
 async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_tables()
     groups = await seats_for(user_id)
+    seated = await _seated_people()
     payload = []
     for group in groups:
         rows = await db.pool.fetch(
@@ -625,19 +667,29 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
             """,
             int(group["chatId"]),
         )
-        payload.append({
-            **group,
-            "positions": [
-                {
-                    "id": int(r["id"]),
-                    "title": r["title"],
-                    "rank": int(r["rank"]),
-                    "rights": _rights(r["rights"]),
-                    "accepting": bool(r["accepting"]),
-                }
-                for r in rows
-            ],
-        })
+        positions = [
+            {
+                "id": int(r["id"]),
+                "title": r["title"],
+                "rank": int(r["rank"]),
+                "rights": _rights(r["rights"]),
+                "accepting": bool(r["accepting"]),
+            }
+            for r in rows
+        ]
+        by_id = {p["id"]: p for p in positions}
+        seats = []
+        for person in seated.get(int(group["chatId"]), []):
+            post = by_id.get(person["positionId"])
+            if not post:
+                continue
+            seats.append({
+                **person,
+                "position": post["title"],
+                "rank": post["rank"],
+                "rights": post["rights"],
+            })
+        payload.append({**group, "positions": positions, "seats": seats})
     return {"groups": payload}
 
 

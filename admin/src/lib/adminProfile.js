@@ -1,7 +1,18 @@
 import { getAdminDisplayName } from './displayName'
 import { getTelegramUser } from './telegram'
 
+let standIn = null
+
+/** Копия панели «от лица» человека: меню и приветствие показывают его, а не создателя. */
+export function setProfileStandIn(person) {
+  const name = String(person?.displayName || '').trim()
+  standIn = name
+    ? { displayName: name, username: person.username || null, photoUrl: null, userId: person.userId ?? null }
+    : null
+}
+
 export function getAdminProfile() {
+  if (standIn) return { ...standIn }
   const user = getTelegramUser()
   const displayName = getAdminDisplayName()
 

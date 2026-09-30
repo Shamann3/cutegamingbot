@@ -4,6 +4,7 @@ import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import { groupPositionPreview } from '../../lib/panelPreview'
 
 const STAFF_GROUP_LABELS = {
   overview: 'С чего начать',
@@ -294,13 +295,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             creator
             onSave={save}
             savingId={savingId}
-            onPreview={onPreview ? (row) => onPreview({
-              title: row.title,
-              rights: row.rights || [],
-              rank: row.rank,
-              chatId: current.chatId,
-              chatTitle: current.title,
-            }) : null}
+            onPreview={onPreview ? (row) => onPreview(groupPositionPreview(current, row)) : null}
           />
         </>
       )}

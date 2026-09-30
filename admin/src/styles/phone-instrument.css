@@ -3042,6 +3042,19 @@ body:not(.perf-light) .accent-picker-panel {
   backdrop-filter: blur(22px);
 }
 
+/* Открытые «Настройки» всплывают поверх страницы на ПК и шторкой на телефоне. */
+html.is-desktop .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html.is-phone .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="desktop"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  background: var(--e-overlay, rgba(14, 14, 16, 0.82)) !important;
+  background-color: var(--e-overlay, rgba(14, 14, 16, 0.82)) !important;
+}
+body:not(.perf-light) .panel-shell .panel-shelf-sidebar.panel-sidebar-mobile-open {
+  -webkit-backdrop-filter: blur(22px) !important;
+  backdrop-filter: blur(22px) !important;
+}
+
 html.is-phone .metric-sheet,
 html[data-viewport="phone"] .metric-sheet {
   touch-action: pan-y;
@@ -3071,82 +3084,108 @@ html[data-viewport="phone"] .metric-sheet {
   }
 }
 
-/* Стафф: один раздел, оглавление слева, настройка справа. */
-.staff-bands {
+/* «Стафф» и «Безопасность» слушаются ползунок прозрачности, как остальные вкладки.
+   Вложенные блоки берут --e-surface-1/2, поэтому внутри страницы они становятся пластинами.
+   Модальные окна рисуются внутри страницы и возвращают себе плотный фон. */
+.panel-shell {
+  --e-solid-1: var(--e-surface-1);
+  --e-solid-2: var(--e-surface-2);
+}
+html.is-desktop .panel-shell .panel-security,
+html.is-phone .panel-shell .panel-security,
+html[data-viewport="desktop"] .panel-shell .panel-security,
+html[data-viewport="phone"] .panel-shell .panel-security {
+  --e-surface-1: var(--e-plate-2, rgba(24, 24, 28, 0.494));
+  --e-surface-2: var(--e-plate-2, rgba(24, 24, 28, 0.494));
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  box-shadow: none !important;
+}
+html.is-desktop .panel-shell .panel-security .elite-block,
+html.is-phone .panel-shell .panel-security .elite-block,
+html[data-viewport="desktop"] .panel-shell .panel-security .elite-block,
+html[data-viewport="phone"] .panel-shell .panel-security .elite-block,
+html.is-desktop .panel-shell .panel-security .sec-card,
+html.is-phone .panel-shell .panel-security .sec-card,
+html[data-viewport="desktop"] .panel-shell .panel-security .sec-card,
+html[data-viewport="phone"] .panel-shell .panel-security .sec-card,
+html.is-desktop .panel-shell .panel-security .sec-tabs,
+html.is-phone .panel-shell .panel-security .sec-tabs,
+html[data-viewport="desktop"] .panel-shell .panel-security .sec-tabs,
+html[data-viewport="phone"] .panel-shell .panel-security .sec-tabs {
+  background: var(--e-plate-2, rgba(24, 24, 28, 0.494)) !important;
+  background-color: var(--e-plate-2, rgba(24, 24, 28, 0.494)) !important;
+  box-shadow: none !important;
+}
+.panel-shell .panel-security .admin-modal-backdrop {
+  --e-surface-1: var(--e-solid-1, #141414);
+  --e-surface-2: var(--e-solid-2, #1a1a1a);
+}
+.panel-shell .panel-security .pa-section-row {
+  background: var(--e-plate-2, rgba(24, 24, 28, 0.494));
+}
+
+/* Стафф: две большие кнопки выбирают, чью панель настраиваем. */
+.staff-offices {
   display: grid;
-  gap: 14px;
-  margin: 0 0 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
 }
-.staff-band {
-  display: grid;
-  gap: 8px;
-}
-.staff-desk-main {
-  min-width: 0;
-}
-.staff-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  position: sticky;
-  top: 12px;
-}
-.staff-rail-group {
-  margin: 16px 0 6px;
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-.staff-rail-group:first-child {
-  margin-top: 0;
-}
-.staff-rail-btn {
+.staff-office-btn {
   appearance: none;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  border-radius: 12px;
-  min-height: 40px;
-  padding: 8px 12px;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--e-line-strong, rgba(255, 255, 255, 0.12));
+  background: var(--e-surface-1);
+  color: var(--e-text, #f5f5f5);
   font: inherit;
+  text-align: left;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    border-color 160ms var(--e-ease, ease),
+    background-color 160ms var(--e-ease, ease),
+    transform 160ms var(--e-ease, ease);
 }
-.staff-rail-btn.is-on {
-  background: var(--e-overlay, rgba(14, 14, 16, 0.82));
+.staff-office-btn strong {
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+.staff-office-btn span {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--e-text-3, #8a8a92);
+}
+.staff-office-btn:hover:not(.is-on) {
+  border-color: rgba(var(--e-accent-rgb, 255, 255, 255), 0.45);
+}
+.staff-office-btn:active {
+  transform: scale(0.985);
+}
+.staff-office-btn.is-on {
+  border-color: var(--e-accent, #f4f4f4);
+  background: rgba(var(--e-accent-rgb, 255, 255, 255), 0.14);
   box-shadow: inset 0 0 0 1px var(--e-accent, #f4f4f4);
 }
-.staff-rail-btn:focus-visible {
+.staff-office-btn.is-on span {
+  color: var(--e-text-2, #c4c4c8);
+}
+.staff-office-btn:focus-visible {
   outline: 2px solid var(--e-accent, #f4f4f4);
   outline-offset: 2px;
 }
-.staff-rail-note {
-  margin: 14px 0 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: rgba(244, 244, 244, 0.72);
+.staff-office-tabs {
+  margin: 0 0 16px;
 }
-.staff-mode {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 14px;
-}
-.staff-mode-btn {
-  appearance: none;
-  border: 1px solid rgba(244, 244, 244, 0.16);
-  background: transparent;
-  color: inherit;
-  border-radius: 999px;
-  min-height: 36px;
-  padding: 6px 14px;
-  font: inherit;
-  cursor: pointer;
-}
-.staff-mode-btn.is-on {
-  background: var(--e-accent, #f4f4f4);
-  color: var(--e-accent-ink, #111113);
-  border-color: transparent;
+.staff-desk-main {
+  min-width: 0;
 }
 .staff-switch-list {
   display: grid;
@@ -3180,90 +3219,197 @@ html[data-viewport="phone"] .metric-sheet {
 .preview-open {
   margin: 10px 0 4px;
 }
-.preview-bar {
-  position: fixed;
-  z-index: 900;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: calc(var(--tg-content-top, 0px) + 8px) 16px 10px;
-  background: #111113;
-  color: #f4f4f4;
-  border-bottom: 1px solid rgba(244, 244, 244, 0.14);
-}
-.preview-bar p {
-  margin: 0;
+
+/* Копия панели: карточки должностей и людей, вход одной кнопкой. */
+.preview-desk {
+  display: grid;
+  gap: 14px;
   min-width: 0;
 }
-.preview-bar strong {
-  display: block;
-  font-size: 15px;
+.preview-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
 }
-.preview-bar span {
-  display: block;
-  margin-top: 2px;
+.preview-toolbar .sec-tabs {
+  margin: 0;
+}
+@media (max-width: 420px) {
+  .preview-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .preview-toolbar > .sec-btn {
+    justify-self: end;
+  }
+}
+.preview-groups {
+  margin: 0;
+}
+.preview-search {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  box-sizing: border-box;
+}
+.preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+  gap: 12px;
+}
+.preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.07));
+  background: var(--e-surface-1);
+}
+.preview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.preview-card-head strong {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 660;
+  letter-spacing: -0.015em;
+  color: var(--e-text, #f5f5f5);
+  overflow-wrap: anywhere;
+}
+.preview-card-head span {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--e-text-3, #8a8a92);
+  font-variant-numeric: tabular-nums;
+}
+.preview-card-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--e-text-2, #c4c4c8);
+  overflow-wrap: anywhere;
+}
+.preview-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.preview-chips li {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--e-line-strong, rgba(255, 255, 255, 0.12));
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--e-text-2, #c4c4c8);
+}
+.preview-go {
+  appearance: none;
+  margin-top: auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--e-accent, #f4f4f4);
+  color: var(--e-accent-ink, #111113);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 160ms var(--e-ease, ease), filter 160ms var(--e-ease, ease);
+}
+.preview-go:hover {
+  filter: brightness(1.06);
+}
+.preview-go:active {
+  transform: scale(0.98);
+}
+.preview-go:focus-visible {
+  outline: 2px solid var(--e-accent, #f4f4f4);
+  outline-offset: 3px;
+}
+
+/* Полоса копии стоит в колонке панели над содержимым и не прокручивается с ним. */
+.preview-bar {
+  position: relative;
+  z-index: 60;
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 16px;
+  background: var(--e-overlay, rgba(14, 14, 16, 0.82));
+  border-bottom: 2px solid var(--e-accent, #f4f4f4);
+  color: #f4f4f4;
+}
+.preview-bar-copy {
+  flex: 1 1 180px;
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  gap: 2px;
+}
+.preview-bar-copy strong {
+  font-size: 15px;
+  font-weight: 660;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.preview-bar-copy span {
   font-size: 13px;
   line-height: 1.35;
   color: rgba(244, 244, 244, 0.78);
 }
+.preview-bar.is-blocked .preview-bar-copy span {
+  color: var(--e-accent, #f4f4f4);
+}
 .preview-bar-exit {
   appearance: none;
   flex: 0 0 auto;
-  border: 0;
-  border-radius: 999px;
   min-height: 40px;
   padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
   background: var(--e-accent, #f4f4f4);
   color: var(--e-accent-ink, #111113);
   font: inherit;
   font-weight: 650;
   cursor: pointer;
 }
-body.is-preview .panel-shell {
-  padding-top: calc(var(--tg-content-top, 0px) + 64px);
+.preview-bar-exit:focus-visible {
+  outline: 2px solid #f4f4f4;
+  outline-offset: 2px;
 }
-html.is-phone .preview-bar {
-  align-items: flex-start;
-  flex-wrap: wrap;
+html.is-phone .preview-bar,
+html[data-viewport="phone"] .preview-bar {
+  padding: 8px 14px 10px;
 }
-.staff-office {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 0 0 16px;
+html.is-phone .preview-bar-copy strong,
+html[data-viewport="phone"] .preview-bar-copy strong {
+  font-size: 14px;
 }
-.staff-office-tab {
-  appearance: none;
-  text-align: left;
-  min-height: 108px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  border: 1px solid rgba(244, 244, 244, 0.14);
-  background: var(--e-overlay, rgba(14, 14, 16, 0.82));
-  color: #f4f4f4;
-  cursor: pointer;
+html.is-phone .preview-bar-copy span,
+html[data-viewport="phone"] .preview-bar-copy span {
+  font-size: 12px;
 }
-.staff-office-tab strong {
-  display: block;
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+html.is-phone .preview-bar-exit,
+html[data-viewport="phone"] .preview-bar-exit {
+  min-height: 44px;
+  padding: 8px 14px;
 }
-.staff-office-tab span {
-  display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.35;
-  color: rgba(244, 244, 244, 0.72);
-}
-.staff-office-tab.is-on {
-  border-color: var(--e-accent, #f4f4f4);
-  box-shadow: inset 0 0 0 1px var(--e-accent, #f4f4f4);
-}
+
 .staff-app-list {
   list-style: none;
   margin: 14px 0 0;
@@ -3274,8 +3420,8 @@ html.is-phone .preview-bar {
 .staff-app-card {
   padding: 14px 16px;
   border-radius: 16px;
-  background: var(--e-overlay, rgba(14, 14, 16, 0.82));
-  border: 1px solid rgba(244, 244, 244, 0.12);
+  background: var(--e-surface-1);
+  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.07));
 }
 .staff-app-head {
   display: flex;
@@ -3308,10 +3454,14 @@ html.is-phone .preview-bar {
   min-height: 44px;
   border-radius: 12px;
   border: 1px solid rgba(244, 244, 244, 0.16);
-  background: #0c0c0e;
   color: #f4f4f4;
   padding: 10px 12px;
   font: inherit;
+}
+.entry-card input,
+.entry-card select,
+.entry-card textarea {
+  background: #0c0c0e;
 }
 .staff-new-post {
   margin: 12px 0 16px;
@@ -3371,14 +3521,39 @@ html.is-phone .preview-bar {
 .auth-screen.auth-screen-panel .auth-tab-active {
   color: var(--e-accent, #f4f4f4);
 }
-html.is-phone .staff-bands .sec-tab,
-html[data-viewport="phone"] .staff-bands .sec-tab,
+html.is-phone .staff-office-tabs .sec-tab,
+html[data-viewport="phone"] .staff-office-tabs .sec-tab,
 html.is-phone .staff-desk-main .sec-tab,
 html[data-viewport="phone"] .staff-desk-main .sec-tab {
   min-height: 44px;
 }
+html.is-phone .staff-offices,
+html[data-viewport="phone"] .staff-offices {
+  gap: 8px;
+  margin-bottom: 12px;
+}
+html.is-phone .staff-office-btn,
+html[data-viewport="phone"] .staff-office-btn {
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: 16px;
+}
+html.is-phone .staff-office-btn strong,
+html[data-viewport="phone"] .staff-office-btn strong {
+  font-size: 16px;
+}
+html.is-phone .staff-office-btn span,
+html[data-viewport="phone"] .staff-office-btn span {
+  font-size: 12px;
+}
+html.is-phone .preview-card,
+html[data-viewport="phone"] .preview-card {
+  padding: 14px;
+  border-radius: 16px;
+}
 @media (prefers-reduced-motion: reduce) {
-  .staff-office-tab {
+  .staff-office-btn,
+  .preview-go {
     transition: none;
   }
 }

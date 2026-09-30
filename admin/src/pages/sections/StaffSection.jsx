@@ -55,7 +55,9 @@ import PayrollMySalaryTab from './payroll/MySalaryTab'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import RightsSection from './RightsSection'
 import StaffAccessPane from './StaffAccessPane'
+import StaffPreviewPane from './StaffPreviewPane'
 import GroupApplicationsPane from './GroupApplicationsPane'
+import GroupPreviewPane from './GroupPreviewPane'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1739,7 +1741,12 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
 // Main
 // ---------------------------------------------------------------------------
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onPreviewStaff = null, onPreviewGroup = null }) {
+const OFFICES = [
+  { id: 'staff', title: 'Сотрудники', detail: 'Панель сотрудника проекта' },
+  { id: 'group', title: 'Администраторы', detail: 'Кабинет официальных групп' },
+]
+
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onOpenPreview = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
   const canConfigure = isProjectCreator || perms.has('manage_panel_access')
@@ -1760,97 +1767,101 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     return filterSectionTabs('staff', list, panelTabs)
   }, [perms, role, isOwner, panelTabs])
 
-  const rail = useMemo(() => {
+  const offices = useMemo(() => {
     const allowed = panelTabs?.staff
     const open = (id) => !Array.isArray(allowed) || allowed.includes(id)
+    const canPreview = isProjectCreator && typeof onOpenPreview === 'function'
     const staff = []
     const group = []
     if (canConfigure) staff.push({ id: 'access', label: 'Доступ' })
-    if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки в команду' })
-    if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи панели' })
+    if (canPreview) staff.push({ id: 'view', label: 'Копия панели' })
+    if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
+    if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
       group.push({ id: 'posts', label: 'Должности' })
-      group.push({ id: 'apps', label: 'Заявки в группу' })
-      group.push({ id: 'keys', label: 'Ключи кабинета' })
+      if (canPreview) group.push({ id: 'view', label: 'Копия кабинета' })
+      group.push({ id: 'apps', label: 'Заявки' })
+      group.push({ id: 'keys', label: 'Ключи' })
     }
     return { staff, group }
-  }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator])
+  }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator, onOpenPreview])
 
-  const [place, setPlace] = useState(() => (
-    entry?.office === 'group' ? { office: 'group', id: entry.slice || 'posts' } : { office: 'staff', id: entry?.slice || 'access' }
-  ))
+  const [office, setOffice] = useState(() => (entry?.office === 'group' ? 'group' : 'staff'))
+  const [picked, setPicked] = useState(() => ({
+    staff: entry?.office === 'staff' ? entry.slice || null : null,
+    group: entry?.office === 'group' ? entry.slice || null : null,
+  }))
   const [workTab, setWorkTab] = useState(null)
 
   useEffect(() => {
     if (!entry?.office) return
-    setPlace({ office: entry.office, id: entry.slice || (entry.office === 'group' ? 'posts' : 'access') })
+    setOffice(entry.office)
+    setPicked((prev) => ({ ...prev, [entry.office]: entry.slice || null }))
   }, [entry])
 
-  const pool = place.office === 'group' ? rail.group : rail.staff
-  const active = pool.some((item) => item.id === place.id)
-    ? place
-    : (rail.staff[0] ? { office: 'staff', id: rail.staff[0].id } : rail.group[0] ? { office: 'group', id: rail.group[0].id } : null)
+  const both = offices.staff.length > 0 && offices.group.length > 0
+  const activeOffice = offices[office]?.length ? office : (offices.staff.length ? 'staff' : 'group')
+  const pool = offices[activeOffice] || []
+  const activeId = pool.some((item) => item.id === picked[activeOffice]) ? picked[activeOffice] : pool[0]?.id
   const activeWork = workTab && workTabs.some((item) => item.id === workTab) ? workTab : workTabs[0]?.id
+  const pick = (id) => setPicked((prev) => ({ ...prev, [activeOffice]: id }))
+  const onStaff = activeOffice === 'staff'
+  const onGroup = activeOffice === 'group'
 
   return (
     <section className="panel-security staff-desk">
       <header className="sec-header">
         <h2 className="sec-title">Стафф</h2>
         <p className="sec-subtitle">
-          Доступ к панели, должности групп, заявки и ключи входа — в одном месте
+          {both
+            ? 'Выберите, чью панель настраиваете: сотрудников проекта или администраторов групп'
+            : 'Доступ, заявки, ключи, люди и выплаты команды проекта'}
         </p>
       </header>
 
-      <div className="staff-bands">
-        {rail.staff.length > 0 && (
-          <div className="staff-band">
-            <p className="staff-rail-group">Сотрудники проекта</p>
-            <nav className="sec-tabs" aria-label="Сотрудники проекта">
-              {rail.staff.map((item) => (
-                <button
-                  key={`staff-${item.id}`}
-                  type="button"
-                  className={`sec-tab${active?.office === 'staff' && active?.id === item.id ? ' sec-tab-active' : ''}`}
-                  aria-current={active?.office === 'staff' && active?.id === item.id ? 'page' : undefined}
-                  onClick={() => setPlace({ office: 'staff', id: item.id })}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-        )}
-        {rail.group.length > 0 && (
-          <div className="staff-band">
-            <p className="staff-rail-group">Администраторы групп</p>
-            <nav className="sec-tabs" aria-label="Администраторы групп">
-              {rail.group.map((item) => (
-                <button
-                  key={`group-${item.id}`}
-                  type="button"
-                  className={`sec-tab${active?.office === 'group' && active?.id === item.id ? ' sec-tab-active' : ''}`}
-                  aria-current={active?.office === 'group' && active?.id === item.id ? 'page' : undefined}
-                  onClick={() => setPlace({ office: 'group', id: item.id })}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-        )}
-        {!isProjectCreator && (
-          <p className="staff-rail-note">Должности групп, заявки в кабинет и ключи группы настраивает создатель проекта.</p>
-        )}
-      </div>
+      {both && (
+        <div className="staff-offices" role="tablist" aria-label="Чью панель настраиваем">
+          {OFFICES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={activeOffice === item.id}
+              className={`staff-office-btn${activeOffice === item.id ? ' is-on' : ''}`}
+              onClick={() => setOffice(item.id)}
+            >
+              <strong>{item.title}</strong>
+              <span>{item.detail}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pool.length > 0 && (
+        <nav className="sec-tabs staff-office-tabs" aria-label={onGroup ? 'Администраторы' : 'Сотрудники'}>
+          {pool.map((item) => (
+            <button
+              key={`${activeOffice}-${item.id}`}
+              type="button"
+              className={`sec-tab${activeId === item.id ? ' sec-tab-active' : ''}`}
+              aria-current={activeId === item.id ? 'page' : undefined}
+              onClick={() => pick(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="staff-desk-main">
-          {active?.office === 'staff' && active.id === 'access' && (
-            <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onPreviewStaff} />
+          {onStaff && activeId === 'access' && (
+            <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onOpenPreview} />
           )}
-          {active?.office === 'staff' && active.id === 'apps' && <ApplicationsTab />}
-          {active?.office === 'staff' && active.id === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
-          {active?.office === 'staff' && active.id === 'work' && (
+          {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
+          {onStaff && activeId === 'apps' && <ApplicationsTab />}
+          {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
+          {onStaff && activeId === 'work' && (
             <>
               <nav className="sec-tabs staff-work-tabs" aria-label="Команда">
                 {workTabs.map((item) => (
@@ -1878,15 +1889,16 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
             </>
           )}
 
-          {active?.office === 'group' && active.id === 'posts' && (
+          {onGroup && activeId === 'posts' && (
             <div className="staff-posts">
-              <RightsSection embedded office="group" onPreview={onPreviewGroup} />
+              <RightsSection embedded office="group" onPreview={onOpenPreview} />
             </div>
           )}
-          {active?.office === 'group' && active.id === 'apps' && <GroupApplicationsPane />}
-          {active?.office === 'group' && active.id === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
+          {onGroup && activeId === 'view' && <GroupPreviewPane onOpen={onOpenPreview} />}
+          {onGroup && activeId === 'apps' && <GroupApplicationsPane />}
+          {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
 
-          {!active && <p className="sec-empty">Нет доступных разделов</p>}
+          {!activeId && <p className="sec-empty">Нет доступных разделов</p>}
       </div>
     </section>
   )

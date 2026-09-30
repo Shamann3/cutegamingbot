@@ -499,6 +499,21 @@ def permissions_for_sections(role: str, section_ids: list[str]) -> list[str]:
     return sorted(result)
 
 
+def access_for_maps(
+    role: str,
+    role_defaults: dict[str, dict[str, bool]],
+    overrides: dict[str, bool],
+) -> dict:
+    """Разделы, вкладки и права API — как их получит сотрудник при входе."""
+    sections = effective_sections_from_maps(role, role_defaults, overrides)
+    tabs = effective_tabs_from_maps(role, role_defaults, overrides, sections)
+    return {
+        "sections": sections,
+        "tabs": tabs,
+        "permissions": permissions_for_sections(role, sections),
+    }
+
+
 async def resolve_account_access(
     role: str, user_id: int, status: str,
 ) -> tuple[list[str], list[str], dict[str, list[str]]]:
@@ -524,10 +539,8 @@ async def resolve_account_access(
         return sorted(ALL_PERMISSIONS), sections, tabs
     defaults = await get_role_defaults_map()
     overrides = await get_user_overrides(user_id)
-    sections = effective_sections_from_maps(role, defaults, overrides)
-    tabs = effective_tabs_from_maps(role, defaults, overrides, sections)
-    perms = permissions_for_sections(role, sections)
-    return perms, sections, tabs
+    access = access_for_maps(role, defaults, overrides)
+    return access["permissions"], access["sections"], access["tabs"]
 
 
 async def set_role_default(role: str, section_id: str, enabled: bool, updated_by: int) -> None:
@@ -672,8 +685,7 @@ async def list_panel_access_overview() -> dict:
         uid = int(m["user_id"])
         role = m["role"]
         ov = overrides_by_user.get(uid, {})
-        sections = effective_sections_from_maps(role, defaults, ov)
-        tabs = effective_tabs_from_maps(role, defaults, ov, sections)
+        access = access_for_maps(role, defaults, ov)
         items.append(
             {
                 "userId": uid,
@@ -682,8 +694,9 @@ async def list_panel_access_overview() -> dict:
                 "role": role,
                 "roleLabel": ROLE_LABELS.get(role, role),
                 "overrides": ov,
-                "effectiveSections": sections,
-                "effectiveTabs": tabs,
+                "effectiveSections": access["sections"],
+                "effectiveTabs": access["tabs"],
+                "permissions": access["permissions"],
             }
         )
 
@@ -729,5 +742,6 @@ async def list_panel_access_overview() -> dict:
             {"id": r, "label": ROLE_LABELS.get(r, r)} for r in CONFIGURABLE_ROLES
         ],
         "roleDefaults": defaults,
+        "rolePreview": {r: access_for_maps(r, defaults, {}) for r in CONFIGURABLE_ROLES},
         "members": items,
     }

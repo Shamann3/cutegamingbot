@@ -26,6 +26,39 @@ export function takeSessionEndedReason() {
   return reason
 }
 
+// Копия панели для создателя: читать можно, менять ничего нельзя.
+// Эти POST ничего не записывают: продление своей сессии и предпросмотры.
+const PREVIEW_READ_POSTS = new Set([
+  '/auth/refresh',
+  '/staff/contract-templates/render',
+  '/broadcast/preview',
+])
+export const PREVIEW_BLOCKED_MESSAGE = 'Тестовый режим: в копии панели изменения не сохраняются'
+let _previewMode = false
+
+export function setPanelPreviewMode(on) {
+  _previewMode = Boolean(on)
+}
+
+export function isPanelPreviewMode() {
+  return _previewMode
+}
+
+function guardPreviewWrite(method, path) {
+  if (!_previewMode) return
+  const verb = String(method || 'GET').toUpperCase()
+  if (verb === 'GET' || verb === 'HEAD') return
+  const bare = String(path || '').split('?')[0]
+  if (verb === 'POST' && PREVIEW_READ_POSTS.has(bare)) return
+  try {
+    window.dispatchEvent(new CustomEvent('epsilon-preview-blocked', { detail: { method: verb, path: bare } }))
+  } catch { /* событие только для подсказки на полосе копии */ }
+  const blocked = new Error(PREVIEW_BLOCKED_MESSAGE)
+  blocked.status = 0
+  blocked.preview = true
+  throw blocked
+}
+
 
 
 function adminHeaders() {
@@ -179,6 +212,8 @@ async function readJsonResponse(response, path) {
 
 
 async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+
+  guardPreviewWrite(method, path)
 
   const controller = new AbortController()
 
@@ -1977,6 +2012,7 @@ function _uploadHeaders() {
 }
 
 async function _uploadFile(path, file, text = '') {
+  guardPreviewWrite('POST', path)
   const form = new FormData()
   form.append('file', file)
   if (text) form.append('text', text)
@@ -1987,6 +2023,7 @@ async function _uploadFile(path, file, text = '') {
 }
 
 async function _uploadForm(path, method, fields) {
+  guardPreviewWrite(method, path)
   const form = new FormData()
   for (const [key, value] of Object.entries(fields)) {
     if (value === undefined || value === null) continue

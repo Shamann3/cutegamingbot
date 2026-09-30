@@ -22,6 +22,7 @@ export function PanelPocketTools({
   onMusicVolumeChange,
   onToggleMusic,
   onChangeDoor,
+  onExitPreview,
   onLogout,
   onSessionExpired,
   onReplayCoach,
@@ -61,6 +62,12 @@ export function PanelPocketTools({
           <button type="button" className="pocket-tools-row" onClick={onReplayCoach}>
             <strong>Показать обучение</strong>
             <span>Снова пройти короткие подсказки по панели</span>
+          </button>
+        )}
+        {typeof onExitPreview === 'function' && (
+          <button type="button" className="pocket-tools-row is-leave" onClick={onExitPreview}>
+            <strong>Выйти из копии</strong>
+            <span>Вернуться в «Стафф»</span>
           </button>
         )}
         {typeof onChangeDoor === 'function' && (

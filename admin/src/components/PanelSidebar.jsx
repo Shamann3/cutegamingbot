@@ -108,6 +108,7 @@ function SettingsControls({
 export default function PanelSidebar({
   onLogout,
   onChangeDoor,
+  onExitPreview,
   onSessionExpired,
   mobileOpen = false,
   onClose,
@@ -304,6 +305,12 @@ export default function PanelSidebar({
           </div>
         </div>
 
+        {onExitPreview && (
+          <button type="button" className="panel-logout-btn" onClick={onExitPreview}>
+            Выйти из копии
+            <span className="panel-logout-hint">вернуться в «Стафф»</span>
+          </button>
+        )}
         {onChangeDoor && (
           <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
             Сменить панель

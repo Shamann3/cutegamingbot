@@ -170,7 +170,7 @@ function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch,
             className="realm-back"
             onClick={() => onPreview(row)}
           >
-            Открыть кабинет как эту должность
+            Открыть копию кабинета
           </button>
         )}
         <button type="submit" className="realm-back" disabled={savingId === row.id || row.title.trim().length < 2}>
