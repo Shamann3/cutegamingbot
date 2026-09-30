@@ -36,6 +36,12 @@ function lowerRankPeer(positions, rank) {
   return juniors[0] || null
 }
 
+function rankCaption(row) {
+  if (row.kind === 'spamblock') return 'Спам-блок · ранг 0 · без наказаний'
+  if (row.kind === 'member' || Number(row.rank) <= 0) return 'Ранг 0 · как обычный участник'
+  return `Ранг ${row.rank}`
+}
+
 function toneOf(title, rank) {
   if (Number(rank) >= 5) return 'creator'
   const text = String(title || '').toLowerCase()
@@ -85,7 +91,7 @@ export default function PositionEditor({ positions, creator, onSave, savingId, o
             className={`role-card is-${toneOf(row.title, row.rank)}`}
             onClick={() => setOpenId(row.id)}
           >
-            <span className="role-card-rank">Ранг {row.rank}</span>
+            <span className="role-card-rank">{rankCaption(row)}</span>
             <strong>{row.title}</strong>
             <span>{rights.size} прав · нажать, чтобы настроить</span>
           </button>
@@ -109,7 +115,8 @@ export default function PositionEditor({ positions, creator, onSave, savingId, o
 }
 
 function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch, onSave, onPreview }) {
-  const locked = row.rank >= 5
+  const frozen = row.kind === 'spamblock' || row.kind === 'member' || Number(row.rank) <= 0
+  const locked = row.rank >= 5 || frozen
   const rights = new Set(row.rights || [])
   const pages = PAGE_RIGHTS.filter((item) => creator || item.id !== 'manage_positions')
   const peer = lowerRankPeer(drafts, row.rank)
@@ -124,7 +131,15 @@ function PositionSheet({ row, drafts, byId, creator, savingId, onClose, onPatch,
   return (
     <FocusWindow
       title={row.title || 'Должность'}
-      subtitle={locked ? 'Создатель группы. Права полные, снять их нельзя.' : `Ранг ${row.rank}. Наказать можно только младшего.`}
+      subtitle={
+        row.rank >= 5
+          ? 'Создатель группы. Права полные, снять их нельзя.'
+          : row.kind === 'spamblock'
+            ? 'Спам-блок. Наказаний нет и включить их нельзя. Срок задаётся при назначении.'
+            : frozen
+              ? 'Ранг 0. Только то, что и так может обычный участник: писать. Наказаний нет.'
+              : `Ранг ${row.rank}. Наказать можно только того, кто младше. Каждый переключатель ниже говорит, что именно откроется.`
+      }
       onClose={onClose}
     >
       <form

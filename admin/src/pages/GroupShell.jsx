@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   appointGroupAdmin,
+  checkRealmMember,
   decideGroupApplication,
   fetchGroupApplications,
+  fetchRealmLogs,
   fetchGroupActivity,
   fetchGroupPositions,
   fetchGroupSummary,
@@ -24,6 +26,7 @@ import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import AccentAura from '../components/AccentAura'
 import { MetricSheetProvider, useMetricSheet } from '../components/MetricSheet'
+import FocusWindow from '../components/FocusWindow'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
@@ -114,10 +117,17 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [appointUserId, setAppointUserId] = useState(null)
   const [appointPos, setAppointPos] = useState('')
   const [appointReason, setAppointReason] = useState('')
+  const [appointPrefix, setAppointPrefix] = useState('')
+  const [termStart, setTermStart] = useState('')
+  const [termEnd, setTermEnd] = useState('')
+  const [termOpen, setTermOpen] = useState(false)
+  const [memberNote, setMemberNote] = useState('')
+  const [realmLogs, setRealmLogs] = useState([])
   const [savingId, setSavingId] = useState(null)
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [newRank, setNewRank] = useState('1')
+  const [newKind, setNewKind] = useState('post')
   const [peakHours, setPeakHours] = useState([])
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
@@ -249,6 +259,23 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     if ((activeTab === 'rights' || chapter) && chatId) loadPositions(chatId)
   }, [activeTab, chapter, chatId, loadPositions])
 
+  const chosenPost = positions.find((item) => String(item.id) === String(appointPos)) || null
+  const spamPick = chosenPost?.kind === 'spamblock'
+
+  const loadLogs = useCallback(async (id) => {
+    if (!id) return
+    try {
+      const data = await fetchRealmLogs(id)
+      setRealmLogs(data.items || [])
+    } catch {
+      setRealmLogs([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (chapter && isCreator && chatId) loadLogs(chatId)
+  }, [chapter, isCreator, chatId, loadLogs])
+
   const openCreator = async () => {
     setChapter(true)
     setError('')
@@ -302,6 +329,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
       setError('Нужны человек и должность')
       return
     }
+    if (spamPick && !termEnd) {
+      setTermOpen(true)
+      setError('Для спам-блока укажите, по какое число он действует')
+      return
+    }
     setError('')
     try {
       const data = await appointGroupAdmin({
@@ -309,14 +341,39 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         user_id: uid,
         position_id: Number(appointPos),
         reason: appointReason.trim(),
+        prefix: appointPrefix.trim(),
+        term_start: spamPick ? termStart : '',
+        term_end: spamPick ? termEnd : '',
       })
       if (data.entryKey) setEntryKey(data.entryKey)
-      setNotice('Должность назначена. Ключ показан один раз.')
+      setNotice(data.telegram ? `Должность назначена. ${data.telegram}` : 'Должность назначена. Ключ показан один раз.')
       setAppointUser('')
       setAppointUserId(null)
       setAppointReason('')
+      setAppointPrefix('')
+      setTermStart('')
+      setTermEnd('')
+      setTermOpen(false)
+      setMemberNote('')
+      await loadLogs(chatId)
     } catch (err) {
       setError(err.message || 'Назначить не удалось')
+    }
+  }
+
+  const lookUpMember = async () => {
+    const uid = Number(appointUserId || String(appointUser).replace(/\D/g, ''))
+    if (!chatId || !uid) {
+      setMemberNote('Сначала выберите человека')
+      return
+    }
+    setMemberNote('Смотрим ответ Telegram…')
+    try {
+      const data = await checkRealmMember(chatId, uid)
+      setMemberNote(data.note || 'Telegram ничего не добавил')
+      if (data.until) setTermEnd(data.until)
+    } catch (err) {
+      setMemberNote(err.message || 'Проверка не ответила')
     }
   }
 
@@ -346,8 +403,9 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
       await createGroupPosition({
         chat_id: Number(chatId),
         title: newTitle.trim(),
-        rank: Number(newRank),
-        rights: ['view_members'],
+        rank: newKind === 'post' ? Number(newRank) : 0,
+        kind: newKind,
+        rights: newKind === 'spamblock' ? [] : ['view_members'],
       })
       setNewTitle('')
       setNotice('Должность создана. Отметьте права наказаний и сохраните.')
@@ -514,16 +572,83 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                 />
                 <label className="grp-appoint-pos">
                   Должность
-                  <select value={appointPos} onChange={(event) => setAppointPos(event.target.value)}>
+                  <select
+                    value={appointPos}
+                    onChange={(event) => {
+                      const next = event.target.value
+                      setAppointPos(next)
+                      const post = positions.find((item) => String(item.id) === next)
+                      if (post?.kind === 'spamblock') {
+                        setAppointPrefix(post.prefix || 'спам блок')
+                        setTermOpen(true)
+                      }
+                    }}
+                  >
                     <option value="">Выберите</option>
                     {positions.filter((item) => item.rank < 5).map((item) => (
-                      <option key={item.id} value={item.id}>{item.title}</option>
+                      <option key={item.id} value={item.id}>
+                        {item.title}{item.kind === 'spamblock' ? ' · без прав' : ''}{item.kind === 'member' ? ' · ранг 0' : ''}
+                      </option>
                     ))}
                   </select>
                 </label>
+                <label>Префикс в чате
+                  <input
+                    value={appointPrefix}
+                    maxLength={16}
+                    placeholder={spamPick ? 'спам блок' : 'до 16 символов, можно пусто'}
+                    onChange={(event) => setAppointPrefix(event.target.value)}
+                  />
+                </label>
+                {spamPick && (
+                  <p className="realm-copy">
+                    Спам-блок не даёт наказаний. В чате человек числится администратором без бана и удаления — иначе Telegram не пускает писать. Срок задаётся в окне, по окончании должность снимается сама.
+                  </p>
+                )}
                 <label>для чего?<input value={appointReason} onChange={(event) => setAppointReason(event.target.value)} /></label>
+                {spamPick && (
+                  <button type="button" className="realm-back" onClick={() => setTermOpen(true)}>
+                    {termEnd ? `Срок до ${termEnd}` : 'Задать срок спам-блока'}
+                  </button>
+                )}
                 <button type="submit" className="realm-back">Назначить</button>
               </form>
+              {termOpen && spamPick && (
+                <FocusWindow
+                  title="Срок спам-блока"
+                  subtitle="Прав на наказания нет. Пока срок идёт, человек может писать в чат. Когда дата конца пройдёт, должность снимется сама, запись попадёт в журнал ниже."
+                  onClose={() => setTermOpen(false)}
+                >
+                  <div className="realm-form">
+                    <p className="realm-copy">Telegram не сообщает дату глобального спам-блока. Кнопка ниже показывает только ограничение этого чата, если оно есть. Дату конца подтверждаете вы.</p>
+                    <label>С какого числа
+                      <input type="date" value={termStart} onChange={(event) => setTermStart(event.target.value)} />
+                    </label>
+                    <label>По какое число
+                      <input type="date" value={termEnd} onChange={(event) => setTermEnd(event.target.value)} />
+                    </label>
+                    <label>Префикс
+                      <input value={appointPrefix} maxLength={16} onChange={(event) => setAppointPrefix(event.target.value)} />
+                    </label>
+                    <button type="button" className="realm-back" onClick={lookUpMember}>Проверить ответ Telegram</button>
+                    {memberNote && <p className="realm-note" role="status">{memberNote}</p>}
+                    <button type="button" className="realm-back" disabled={!termEnd} onClick={() => setTermOpen(false)}>
+                      {termEnd ? 'Срок записан в форму' : 'Нужна дата конца'}
+                    </button>
+                  </div>
+                </FocusWindow>
+              )}
+              <h3 className="realm-h">Журнал должностей</h3>
+              <p className="realm-copy">Сюда само пишется снятие спам-блока, когда срок вышел. Назначение и смена префикса тоже остаются здесь.</p>
+              {realmLogs.length === 0 && <p className="realm-copy">Записей пока нет.</p>}
+              <ul className="realm-list">
+                {realmLogs.map((item) => (
+                  <li key={item.id} className="realm-row">
+                    <strong>{item.action === 'spamblock_expired' ? 'Спам-блок снят' : item.action === 'prefix' ? 'Префикс' : item.action === 'position_created' ? 'Новая должность' : 'Назначение'}</strong>
+                    <span>{item.detail}{item.userId ? ` · ${item.userId}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
               <ul className="realm-list">
                 {apps.map((item) => (
                   <li key={item.id} className="realm-row">
@@ -654,13 +779,26 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               <label className="realm-field">Найти должность
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
+              {isCreator && (
               <form className="realm-form" onSubmit={createPosition}>
-                <label>Новая должность<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
-                <label>Ранг, от 1 до {isCreator ? 4 : Math.max(1, Number(current?.rank || 1) - 1)}
-                  <input inputMode="numeric" value={newRank} onChange={(event) => setNewRank(event.target.value)} />
+                <h3 className="realm-h">Новая должность</h3>
+                <p className="realm-copy">Создаёт только создатель проекта. Обычный пользователь и спам-блок встают на ранг 0 и не получают наказаний.</p>
+                <label>Название<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
+                <label>Тип
+                  <select value={newKind} onChange={(event) => setNewKind(event.target.value)}>
+                    <option value="post">Обычная должность — права настраиваются отдельно</option>
+                    <option value="member">Обычный пользователь — ранг 0, только писать</option>
+                    <option value="spamblock">Спам-блок — ранг 0, без прав, со сроком</option>
+                  </select>
                 </label>
+                {newKind === 'post' && (
+                  <label>Ранг, от 0 до 4. Ноль — как участник.
+                    <input inputMode="numeric" value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} />
+                  </label>
+                )}
                 <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
               </form>
+              )}
               <PositionEditor
                 positions={positions.filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
                 creator={isCreator}

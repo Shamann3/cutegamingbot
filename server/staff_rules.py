@@ -245,6 +245,38 @@ async def load(pool, *, fresh: bool = False) -> tuple[dict[str, StaffRule], Rule
     return rules, schema
 
 
+async def ensure_blank_role(pool, role: str, title: str) -> None:
+    """Новая должность сотрудника: все наказания выключены, пока создатель их не включит."""
+    rules, schema = await load(pool, fresh=True)
+    key = role.strip().lower()
+    if schema.problem or not key or key in rules:
+        return
+    sample = await pool.fetchrow("SELECT * FROM staff_rules LIMIT 1")
+    if not sample:
+        return
+    data = dict(sample)
+    data.pop("id", None)
+    data[schema.role_column] = key
+    if schema.description_column:
+        data[schema.description_column] = title
+    for col in schema.permission_columns:
+        udt = str(schema.udt.get(col) or "").lower()
+        if udt in {"bool", "boolean"}:
+            data[col] = False
+        elif udt in {"int2", "int4", "int8", "numeric", "float4", "float8"}:
+            data[col] = 0
+        else:
+            data[col] = "0"
+    cols = [name for name in data if name != "id"]
+    names = ", ".join(_ident(name) for name in cols)
+    slots = ", ".join(f"${index}" for index in range(1, len(cols) + 1))
+    await pool.execute(
+        f"INSERT INTO staff_rules ({names}) VALUES ({slots})",
+        *[data[name] for name in cols],
+    )
+    invalidate()
+
+
 async def fetch_account(pool, user_id: int) -> Optional[StaffAccount]:
     row = await pool.fetchrow(
         """

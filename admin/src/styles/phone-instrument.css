@@ -671,6 +671,47 @@ html[data-viewport="phone"] .panel-shell .panel-shell-main {
   box-shadow: none;
 }
 
+/* Телефон при прозрачности 100: карточки стеклянные, залитого фона нет. */
+html.is-phone .panel-shell .panel-shelf,
+html.is-phone .panel-shell .dash-usage-card,
+html.is-phone .panel-shell .dash-usage-active,
+html.is-phone .panel-shell .dash-home .panel-shelf,
+html.is-phone .panel-shell .dash-cyber-stage,
+html.is-phone .panel-shell .nika-panel,
+html.is-phone .panel-shell .g-arc-card,
+html.is-phone .panel-shell .arc-card,
+html.is-phone .panel-shell .panel-pulse-hero,
+html.is-phone .panel-shell .realm-main > section,
+html.is-phone .panel-shell .act-figures > *,
+html.is-phone .panel-shell .act-bento > *,
+html.is-phone .panel-shell .shift-desk,
+html.is-phone .panel-shell .realm-form,
+html.is-phone .panel-shell .realm-search,
+html.is-phone .panel-shell .realm-actions,
+html.is-phone .panel-shell .extras-hub-search,
+html.is-phone .panel-shell .metric-tile,
+html[data-viewport="phone"] .panel-shell .panel-shelf,
+html[data-viewport="phone"] .panel-shell .dash-usage-card,
+html[data-viewport="phone"] .panel-shell .dash-usage-active,
+html[data-viewport="phone"] .panel-shell .dash-home .panel-shelf,
+html[data-viewport="phone"] .panel-shell .dash-cyber-stage,
+html[data-viewport="phone"] .panel-shell .nika-panel,
+html[data-viewport="phone"] .panel-shell .g-arc-card,
+html[data-viewport="phone"] .panel-shell .arc-card,
+html[data-viewport="phone"] .panel-shell .panel-pulse-hero,
+html[data-viewport="phone"] .panel-shell .realm-main > section,
+html[data-viewport="phone"] .panel-shell .act-figures > *,
+html[data-viewport="phone"] .panel-shell .act-bento > *,
+html[data-viewport="phone"] .panel-shell .shift-desk,
+html[data-viewport="phone"] .panel-shell .realm-form,
+html[data-viewport="phone"] .panel-shell .realm-search,
+html[data-viewport="phone"] .panel-shell .realm-actions,
+html[data-viewport="phone"] .panel-shell .extras-hub-search,
+html[data-viewport="phone"] .panel-shell .metric-tile {
+  background: var(--e-plate) !important;
+  background-image: none !important;
+}
+
 html.is-phone .phone-dock.is-tabs-menu,
 html[data-viewport="phone"] .phone-dock.is-tabs-menu {
   padding: 8px !important;
@@ -2929,7 +2970,7 @@ html.is-coaching .firstrun-shield {
 
 html.is-coaching .firstrun-spot {
   z-index: 2;
-  border-radius: 18px;
+  border-radius: 0;
   box-shadow:
     inset 0 0 0 2px var(--e-accent, #fff),
     0 0 0 9999px rgba(0, 0, 0, 0.72);
@@ -3702,4 +3743,45 @@ html[data-viewport="phone"] .preview-card {
   .preview-go {
     transition: none;
   }
+}
+
+/* Поверх более раннего 0.62: на телефоне карточки следуют прозрачности панели. */
+html.is-phone .panel-shell .panel-shelf,
+html.is-phone .panel-shell .dash-usage-card,
+html.is-phone .panel-shell .dash-usage-active,
+html.is-phone .panel-shell .dash-home .panel-shelf,
+html.is-phone .panel-shell .dash-cyber-stage,
+html.is-phone .panel-shell .nika-panel,
+html.is-phone .panel-shell .g-arc-card,
+html.is-phone .panel-shell .arc-card,
+html.is-phone .panel-shell .panel-pulse-hero,
+html.is-phone .panel-shell .realm-main > section,
+html.is-phone .panel-shell .act-figures > *,
+html.is-phone .panel-shell .act-bento > *,
+html.is-phone .panel-shell .shift-desk,
+html.is-phone .panel-shell .realm-form,
+html.is-phone .panel-shell .realm-search,
+html.is-phone .panel-shell .realm-actions,
+html.is-phone .panel-shell .extras-hub-search,
+html.is-phone .panel-shell .metric-tile,
+html[data-viewport="phone"] .panel-shell .panel-shelf,
+html[data-viewport="phone"] .panel-shell .dash-usage-card,
+html[data-viewport="phone"] .panel-shell .dash-usage-active,
+html[data-viewport="phone"] .panel-shell .dash-home .panel-shelf,
+html[data-viewport="phone"] .panel-shell .dash-cyber-stage,
+html[data-viewport="phone"] .panel-shell .nika-panel,
+html[data-viewport="phone"] .panel-shell .g-arc-card,
+html[data-viewport="phone"] .panel-shell .arc-card,
+html[data-viewport="phone"] .panel-shell .panel-pulse-hero,
+html[data-viewport="phone"] .panel-shell .realm-main > section,
+html[data-viewport="phone"] .panel-shell .act-figures > *,
+html[data-viewport="phone"] .panel-shell .act-bento > *,
+html[data-viewport="phone"] .panel-shell .shift-desk,
+html[data-viewport="phone"] .panel-shell .realm-form,
+html[data-viewport="phone"] .panel-shell .realm-search,
+html[data-viewport="phone"] .panel-shell .realm-actions,
+html[data-viewport="phone"] .panel-shell .extras-hub-search,
+html[data-viewport="phone"] .panel-shell .metric-tile {
+  background: var(--e-plate) !important;
+  background-image: none !important;
 }

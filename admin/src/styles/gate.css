@@ -766,7 +766,7 @@ html[data-viewport="phone"] .arc-search {
 .firstrun-spot {
   position: fixed;
   z-index: 81;
-  border-radius: 16px;
+  border-radius: 0;
   outline: none;
   box-shadow:
     inset 0 0 0 2px #fff,

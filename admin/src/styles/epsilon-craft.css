@@ -87,7 +87,7 @@ html.is-phone .panel-shell:has(.panel-layout-farm) .panel-shell-main,
 html[data-viewport="phone"] .panel-shell-main,
 html[data-viewport="phone"] .panel-shell:has(.panel-layout-users) .panel-shell-main {
   padding: max(10px, env(safe-area-inset-top, 0px)) 16px calc(env(safe-area-inset-bottom, 0px) + var(--craft-dock-h-phone) + 16px) !important;
-  background: var(--craft-void) !important;
+  background: transparent !important;
 }
 
 /* Телефон: сверху пусто. Навигация — док снизу + меню. */
@@ -197,7 +197,7 @@ html[data-viewport="phone"] .panel-shelf,
 html[data-viewport="phone"] .nika-panel,
 html[data-viewport="phone"] .realm-main.nika-page > section,
 html[data-viewport="phone"] .shift-desk {
-  background: var(--craft-elev) !important;
+  background: var(--e-plate) !important;
   border-radius: var(--craft-r) !important;
   border: 0 !important;
   box-shadow: none !important;

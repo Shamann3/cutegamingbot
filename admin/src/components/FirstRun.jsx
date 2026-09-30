@@ -4,31 +4,31 @@ import { coachFrame, placeCoachCard } from '../lib/coachPlace'
 export function staffSteps(phone) {
   return [
     {
-      title: 'Нижние вкладки',
-      body: 'Отсюда открываются главные разделы: игроки, архив и поддержка. Остальное собрано во «Ещё».',
+      title: 'Нижняя полоса',
+      body: 'Это кнопки разделов. Нажмите «Игроки», «Архив» или «Поддержка». Разделы, которых нет на полосе, лежат в кнопке «Ещё».',
       target: '[data-coach="dock"]',
     },
     {
-      title: 'Поиск',
+      title: 'Поиск раздела',
       body: phone
-        ? 'Во «Ещё» есть поиск по названию. Раздел открывается сразу, без обхода всей сетки.'
-        : 'Поиск открывает раздел по названию — без обхода всего меню.',
+        ? 'Откройте «Ещё» и введите название. Нужный раздел откроется сразу, листать сетку не нужно.'
+        : 'Введите название раздела в поиск слева. Он откроется сразу.',
       target: phone ? '[data-coach="dock"] [data-section="more"]' : '[data-coach="search"]',
     },
     {
       title: 'Игроки',
-      body: 'Карточка человека: баланс, предметы и история. Запрет на весь проект — только у должности с этим правом.',
+      body: 'Карточка человека: баланс, предметы и история. Запрет на весь проект есть только у должности, которой это право включили.',
       target: '[data-coach="dock"] [data-section="users"]',
     },
     {
       title: 'Поддержка',
-      body: 'Письма игроков. Число на колокольчике — сколько обращений ждут ответа.',
+      body: 'Здесь письма игроков. Число на колокольчике — сколько писем ещё без ответа.',
       target: '[data-coach="bell"], [data-coach="dock"] [data-section="support"]',
     },
     {
       title: 'Сменить панель',
       body: phone
-        ? 'Смена панели лежит внизу «Ещё». Аккаунт при этом не закрывается.'
+        ? 'Смена панели — внизу «Ещё». Аккаунт не закрывается, вы возвращаетесь к выбору: сотрудник или группа.'
         : 'Кнопка слева внизу возвращает к выбору: сотрудник или группа. Из аккаунта вы не выходите.',
       target: phone ? '[data-coach="dock"] [data-section="more"]' : '[data-coach="doors"]',
     },
@@ -39,26 +39,26 @@ export function groupSteps(phone) {
   return [
     {
       title: 'Эта группа',
-      body: 'Имя чата и ваша должность. Ниже — что изменилось сегодня относительно вчера.',
+      body: 'Здесь имя чата и ваша должность. Ниже — что изменилось сегодня по сравнению со вчера.',
       target: '.nika-head h1',
     },
     {
       title: 'Страницы группы',
       body: phone
-        ? 'Нижняя полоса переключает страницы этой группы. Цвет и смена панели — во «Ещё».'
-        : 'Нижняя полоса переключает страницы. Цвет и смена панели — в кнопке слева внизу.',
+        ? 'Нижняя полоса переключает страницы этой группы: обзор, активность и остальные. Цвет и смена панели — в «Ещё».'
+        : 'Нижняя полоса переключает страницы этой группы. Цвет и смена панели — в кнопке слева внизу.',
       target: '[data-coach="dock"]',
     },
     {
       title: 'Активность',
-      body: 'Сообщения за день, месяц и год. Клетка открывает именно этот отрезок.',
+      body: 'Сообщения за день, месяц и год. Нажмите клетку — откроется именно этот отрезок.',
       target: '[data-coach="dock"] [data-section="activity"]',
     },
     {
       title: 'Ещё',
       body: phone
-        ? 'Правила чата и заявка в команду. Под ними — цвет, музыка и смена панели.'
-        : 'Правила чата и заявка в команду. Смена панели — слева внизу.',
+        ? 'Здесь правила чата. Ниже — цвет панели, музыка и смена панели.'
+        : 'Здесь правила чата. Смена панели — кнопка слева внизу.',
       target: '[data-coach="dock"] [data-section="more"]',
     },
   ]
@@ -85,6 +85,12 @@ function bringIntoView(node) {
   }
 }
 
+function spotRadius(node) {
+  const radius = getComputedStyle(node).borderRadius
+  if (!radius || radius === '0px') return '0px'
+  return radius
+}
+
 function spotFor(node) {
   const rect = node.getBoundingClientRect()
   const left = Math.max(EDGE, rect.left)
@@ -99,6 +105,7 @@ function spotFor(node) {
     left,
     width,
     height,
+    radius: spotRadius(node),
     low: top + height / 2 > window.innerHeight * 0.55,
   }
 }
@@ -278,7 +285,7 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
       {box && (
         <div
           className="firstrun-spot"
-          style={{ top: box.top, left: box.left, width: box.width, height: box.height }}
+          style={{ top: box.top, left: box.left, width: box.width, height: box.height, borderRadius: box.radius || '0px' }}
         />
       )}
       <div className="firstrun-sheet is-anchored" style={sheetStyle} ref={cardRef}>

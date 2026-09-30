@@ -520,6 +520,10 @@ export async function fetchPanelAccess() {
 
 
 
+export async function createStaffPost(title) {
+  return adminRequest('/panel-access/roles', { method: 'POST', body: { title } })
+}
+
 export async function setPanelRoleDefault({ role, sectionId, enabled }) {
 
   return adminRequest('/panel-access/role-default', {
@@ -2334,6 +2338,22 @@ export async function fetchGroupPositions(chatId) {
 
 export async function appointGroupAdmin(body) {
   return adminFetch('/group-realm/appoint', { method: 'POST', body })
+}
+
+export async function fetchRealmLogs(chatId) {
+  return adminFetch(`/group-realm/logs?chat_id=${encodeURIComponent(chatId)}`)
+}
+
+export async function checkRealmMember(chatId, memberId) {
+  const query = new URLSearchParams({
+    chat_id: String(chatId),
+    member_id: String(memberId),
+  })
+  return adminFetch(`/group-realm/member-check?${query}`)
+}
+
+export async function setGroupPrefix(body) {
+  return adminFetch('/group-realm/prefix', { method: 'POST', body })
 }
 
 export async function fetchGroupApplications() {

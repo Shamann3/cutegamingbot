@@ -86,6 +86,46 @@ PRESETS: tuple[tuple[str, int, tuple[str, ...], bool], ...] = (
     ("Хелпер", 1, ("view_members", "punish_warn"), True),
 )
 
+KIND_POST = "post"
+KIND_MEMBER = "member"
+KIND_SPAMBLOCK = "spamblock"
+KINDS = frozenset({KIND_POST, KIND_MEMBER, KIND_SPAMBLOCK})
+SPAMBLOCK_PREFIX = "спам блок"
+
+# То, что обычный участник и так может отправлять. Наказаний здесь нет.
+MEMBER_RIGHTS = (
+    "can_send_messages",
+    "can_send_photos",
+    "can_send_videos",
+    "can_send_audios",
+    "can_send_documents",
+    "can_send_voice_notes",
+    "can_send_video_notes",
+    "can_send_polls",
+    "can_send_other_messages",
+    "can_add_web_page_previews",
+)
+
+# Единственный флаг Telegram, который оставляет человека администратором
+# без бана, удаления и назначения. Без него спам-блок снова не пускает писать.
+# Снятие — все флаги False.
+_TG_ADMIN_FLAGS = (
+    "can_manage_chat",
+    "can_delete_messages",
+    "can_manage_video_chats",
+    "can_restrict_members",
+    "can_promote_members",
+    "can_change_info",
+    "can_invite_users",
+    "can_pin_messages",
+    "can_manage_topics",
+    "can_post_messages",
+    "can_edit_messages",
+    "can_post_stories",
+    "can_edit_stories",
+    "can_delete_stories",
+)
+
 
 def action_right(action: str) -> str | None:
     return ACTION_RIGHT.get((action or "").strip().lower())
@@ -188,6 +228,56 @@ def editable_rights(rank: int, requested: list[str] | set[str], *, creator: bool
     return clean
 
 
+def rights_for_kind(kind: str, rank: int, requested: list[str] | set[str], *, creator: bool) -> list[str]:
+    """Спам-блок — пустой набор. Ранг 0 и обычный пользователь — только отправка."""
+    name = kind if kind in KINDS else KIND_POST
+    if name == KIND_SPAMBLOCK:
+        return []
+    if name == KIND_MEMBER or int(rank) <= 0:
+        wanted = set(_rights(requested))
+        chosen = [item for item in MEMBER_RIGHTS if item in wanted]
+        return chosen or list(MEMBER_RIGHTS)
+    return editable_rights(int(rank), requested, creator=creator)
+
+
+def stored_rank(kind: str, rank: int) -> int:
+    """Обычный пользователь и спам-блок всегда на ранге 0: их можно наказать как участника."""
+    if kind in {KIND_MEMBER, KIND_SPAMBLOCK}:
+        return 0
+    return max(0, min(4, int(rank)))
+
+
+def term_bounds(start_raw: str | None, end_raw: str | None) -> tuple[datetime | None, datetime | None, str | None]:
+    """Срок спам-блока. Конец обязателен. Даты — календарные, конец дня по UTC."""
+    try:
+        start = _parse_day(start_raw, end=False) if (start_raw or "").strip() else None
+        end = _parse_day(end_raw, end=True) if (end_raw or "").strip() else None
+    except ValueError:
+        return None, None, "Дата пишется как ГГГГ-ММ-ДД"
+    if end is None:
+        return None, None, "Укажите, по какое число держать спам-блок"
+    if start and start > end:
+        return None, None, "Дата начала позже даты конца"
+    return start, end, None
+
+
+def _parse_day(value: str | None, *, end: bool) -> datetime | None:
+    raw = (value or "").strip()[:10]
+    if not raw:
+        return None
+    day = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    if end:
+        return day.replace(hour=23, minute=59, second=59)
+    return day
+
+
+def clean_prefix(value: str) -> tuple[str, str | None]:
+    text = " ".join((value or "").split())
+    if len(text) > 16:
+        return "", "Префикс в Telegram не длиннее 16 символов"
+    return text, None
+
+
 def may_punish_rank(actor_rank: int, target_rank: int, *, same_person: bool) -> str | None:
     """Наказать можно только того, кто строго младше в этой группе.
 
@@ -255,6 +345,31 @@ async def ensure_tables() -> None:
         );
         """
     )
+    await db.pool.execute(
+        """
+        ALTER TABLE epsilon_positions ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'post';
+        ALTER TABLE epsilon_positions ADD COLUMN IF NOT EXISTS prefix TEXT NOT NULL DEFAULT '';
+        ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS prefix TEXT NOT NULL DEFAULT '';
+        ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_start TIMESTAMPTZ;
+        ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_end TIMESTAMPTZ;
+        CREATE TABLE IF NOT EXISTS epsilon_realm_log (
+            id BIGSERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT,
+            action TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            actor_id BIGINT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS epsilon_realm_log_chat_idx
+            ON epsilon_realm_log (chat_id, created_at DESC);
+        """
+    )
+    chats = await db.pool.fetch(
+        "SELECT chat_id FROM epsilon_official_groups WHERE is_official"
+    )
+    for row in chats:
+        await _ensure_builtin_posts(int(row["chat_id"]))
     _READY = True
 
 
@@ -285,6 +400,139 @@ async def _issue_key(user_id: int) -> str:
     return plain
 
 
+async def _realm_log(chat_id: int, user_id: int | None, action: str, detail: str, actor_id: int | None) -> None:
+    await db.pool.execute(
+        """
+        INSERT INTO epsilon_realm_log (chat_id, user_id, action, detail, actor_id)
+        VALUES ($1, $2, $3, $4, $5)
+        """,
+        int(chat_id),
+        int(user_id) if user_id else None,
+        action,
+        (detail or "")[:500],
+        int(actor_id) if actor_id else None,
+    )
+
+
+async def sweep_expired_spamblocks() -> int:
+    """Снимает спам-блок, когда срок вышел, и пишет это в журнал группы."""
+    try:
+        await ensure_tables()
+    except Exception:
+        return 0
+    rows = await db.pool.fetch(
+        """
+        SELECT s.user_id, s.chat_id, p.title, s.term_end
+        FROM epsilon_seats s
+        JOIN epsilon_positions p ON p.id = s.position_id
+        WHERE p.kind = $1
+          AND s.term_end IS NOT NULL
+          AND s.term_end <= NOW()
+        """,
+        KIND_SPAMBLOCK,
+    )
+    removed = 0
+    for row in rows:
+        await db.pool.execute(
+            "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
+            int(row["user_id"]),
+            int(row["chat_id"]),
+        )
+        note = await _apply_chat_title(int(row["chat_id"]), int(row["user_id"]), "", keep_admin=False)
+        end = row["term_end"]
+        end_label = end.date().isoformat() if end else ""
+        await _realm_log(
+            int(row["chat_id"]),
+            int(row["user_id"]),
+            "spamblock_expired",
+            f"Срок спам-блока кончился {end_label}. Должность «{row['title']}» снята. {note}".strip(),
+            None,
+        )
+        removed += 1
+    return removed
+
+
+def _promote_body(chat_id: int, user_id: int, *, keep_admin: bool) -> dict:
+    body = {"chat_id": int(chat_id), "user_id": int(user_id), "is_anonymous": False}
+    for flag in _TG_ADMIN_FLAGS:
+        body[flag] = bool(keep_admin and flag == "can_manage_chat")
+    return body
+
+
+async def _telegram_call(method: str, payload: dict) -> tuple[bool, str, dict]:
+    try:
+        from config import BOT_TOKEN
+    except Exception:
+        return False, "Бот не настроен", {}
+    if not BOT_TOKEN:
+        return False, "Бот не настроен", {}
+    import aiohttp
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=8)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/{method}",
+                json=payload,
+            ) as resp:
+                data = await resp.json(content_type=None)
+    except Exception:
+        return False, "Telegram не ответил", {}
+    if isinstance(data, dict) and data.get("ok"):
+        return True, "", data
+    description = ""
+    if isinstance(data, dict):
+        description = str(data.get("description") or "")[:180]
+    return False, description or "Telegram отказал", data if isinstance(data, dict) else {}
+
+
+async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, keep_admin: bool) -> str:
+    """Ставит или снимает админку чата. Токен в ответ не попадает."""
+    ok, err, _data = await _telegram_call("promoteChatMember", _promote_body(chat_id, user_id, keep_admin=keep_admin))
+    if not ok:
+        if keep_admin:
+            return f"Место в панели есть. Telegram не назначил администратора: {err}"
+        return f"Из панели снято. В чате админка могла остаться: {err}"
+    if not keep_admin:
+        return "Админка в чате снята."
+    text = title.strip() or SPAMBLOCK_PREFIX
+    titled, title_err, _title_data = await _telegram_call(
+        "setChatAdministratorCustomTitle",
+        {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": text[:16]},
+    )
+    if not titled:
+        return f"Администратор без наказаний назначен. Префикс в чате не встал: {title_err}"
+    return "В чате стоит префикс, наказаний нет."
+
+
+async def _telegram_member(chat_id: int, user_id: int) -> dict:
+    ok, err, data = await _telegram_call("getChatMember", {"chat_id": int(chat_id), "user_id": int(user_id)})
+    if not ok:
+        return {
+            "ok": False,
+            "note": f"Telegram не показал участника: {err}. Срок спам-блока Bot API не сообщает — дату конца задаёте вы.",
+        }
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        return {"ok": False, "note": "Telegram не показал участника. Дату конца задаёте вы."}
+    status = str(result.get("status") or "")
+    until = result.get("until_date")
+    until_iso = ""
+    if isinstance(until, int) and until > 0:
+        until_iso = datetime.fromtimestamp(until, tz=timezone.utc).date().isoformat()
+    if status == "restricted" and until_iso:
+        note = f"Telegram ограничивает человека до {until_iso}. Это ограничение чата, не глобальный спам-блок. Дату всё равно подтверждаете вы."
+    elif status == "restricted":
+        note = "Telegram ограничивает человека без даты конца. Глобальный спам-блок Bot API не показывает — дату задаёте вы."
+    elif status == "administrator":
+        note = "Человек уже администратор этого чата. Глобальный спам-блок отсюда не виден — срок пишете вы."
+    elif status == "kicked":
+        note = "Человек исключён из чата. Сначала верните его, потом назначайте спам-блок."
+    else:
+        note = "Ограничения в ответе Telegram нет. Глобальный спам-блок Bot API не сообщает — срок от и до задаёте вы."
+    return {"ok": True, "status": status, "until": until_iso, "note": note}
+
+
 def _rights(value: Any) -> list[str]:
     if isinstance(value, list):
         raw = value
@@ -299,25 +547,76 @@ def _rights(value: Any) -> list[str]:
     return [str(item) for item in raw if str(item) in allowed]
 
 
+def _position_out(row) -> dict:
+    kind = row["kind"] if row["kind"] in KINDS else KIND_POST
+    rank = int(row["rank"])
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "rank": rank,
+        "kind": kind,
+        "prefix": row["prefix"] or "",
+        "rights": rights_for_kind(kind, rank, _rights(row["rights"]), creator=True),
+        "accepting": bool(row["accepting"]),
+    }
+
+
+async def _ensure_builtin_posts(chat_id: int) -> None:
+    """Ранг 0 — обычный участник. Спам-блок — то же место без наказаний, со сроком."""
+    member = await db.pool.fetchval(
+        "SELECT 1 FROM epsilon_positions WHERE chat_id = $1 AND kind = $2",
+        int(chat_id),
+        KIND_MEMBER,
+    )
+    if not member:
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
+            VALUES ($1, $2, 0, $3::jsonb, FALSE, $4, '')
+            """,
+            int(chat_id),
+            "Обычный пользователь",
+            json.dumps(list(MEMBER_RIGHTS)),
+            KIND_MEMBER,
+        )
+    spam = await db.pool.fetchval(
+        "SELECT 1 FROM epsilon_positions WHERE chat_id = $1 AND kind = $2",
+        int(chat_id),
+        KIND_SPAMBLOCK,
+    )
+    if not spam:
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
+            VALUES ($1, $2, 0, '[]'::jsonb, FALSE, $3, $4)
+            """,
+            int(chat_id),
+            "Спам блок",
+            KIND_SPAMBLOCK,
+            SPAMBLOCK_PREFIX,
+        )
+
+
 async def _seed_positions(chat_id: int) -> None:
     count = await db.pool.fetchval(
         "SELECT COUNT(*)::int FROM epsilon_positions WHERE chat_id = $1",
         int(chat_id),
     )
-    if int(count or 0) > 0:
-        return
-    for title, rank, rights, accepting in PRESETS:
-        await db.pool.execute(
-            """
-            INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting)
-            VALUES ($1, $2, $3, $4::jsonb, $5)
-            """,
-            int(chat_id),
-            title,
-            int(rank),
-            json.dumps(list(rights)),
-            bool(accepting),
-        )
+    if int(count or 0) == 0:
+        for title, rank, rights, accepting in PRESETS:
+            await db.pool.execute(
+                """
+                INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
+                VALUES ($1, $2, $3, $4::jsonb, $5, $6, '')
+                """,
+                int(chat_id),
+                title,
+                int(rank),
+                json.dumps(list(rights)),
+                bool(accepting),
+                KIND_POST,
+            )
+    await _ensure_builtin_posts(int(chat_id))
 
 
 async def seats_for(user_id: int) -> list[dict]:
@@ -348,11 +647,12 @@ async def seats_for(user_id: int) -> list[dict]:
         ]
     rows = await db.pool.fetch(
         """
-        SELECT s.chat_id, g.title, g.username, p.title AS position, p.rank, p.rights
+        SELECT s.chat_id, g.title, g.username, p.title AS position, p.rank, p.rights, p.kind
         FROM epsilon_seats s
         JOIN epsilon_official_groups g ON g.chat_id = s.chat_id AND g.is_official
         JOIN epsilon_positions p ON p.id = s.position_id
         WHERE s.user_id = $1
+          AND (s.term_end IS NULL OR s.term_end > NOW())
         ORDER BY p.rank DESC, g.title
         """,
         int(user_id),
@@ -364,7 +664,8 @@ async def seats_for(user_id: int) -> list[dict]:
             "username": r["username"] or "",
             "position": r["position"],
             "rank": int(r["rank"]),
-            "rights": _rights(r["rights"]),
+            "kind": r["kind"] or KIND_POST,
+            "rights": rights_for_kind(r["kind"] or KIND_POST, int(r["rank"]), _rights(r["rights"]), creator=False),
         }
         for r in rows
     ]
@@ -380,6 +681,7 @@ async def _seat_rank(user_id: int, chat_id: int) -> int:
         FROM epsilon_seats s
         JOIN epsilon_positions p ON p.id = s.position_id
         WHERE s.user_id = $1 AND s.chat_id = $2
+          AND (s.term_end IS NULL OR s.term_end > NOW())
         """,
         int(user_id),
         int(chat_id),
@@ -419,8 +721,10 @@ class PositionEditBody(BaseModel):
 class PositionCreateBody(BaseModel):
     chat_id: int
     title: str = Field(min_length=2, max_length=40)
-    rank: int = Field(ge=1, le=4)
+    rank: int = Field(ge=0, le=4)
     rights: list[str] = Field(default_factory=list)
+    kind: str = KIND_POST
+    prefix: str = Field(default="", max_length=16)
     model_config = {"extra": "forbid"}
 
 
@@ -429,6 +733,16 @@ class AppointBody(BaseModel):
     user_id: int = Field(ge=1)
     position_id: int = Field(ge=1)
     reason: str = Field(default="", max_length=300)
+    prefix: str = Field(default="", max_length=16)
+    term_start: str = Field(default="", max_length=10)
+    term_end: str = Field(default="", max_length=10)
+    model_config = {"extra": "forbid"}
+
+
+class PrefixBody(BaseModel):
+    chat_id: int
+    user_id: int = Field(ge=1)
+    prefix: str = Field(default="", max_length=16)
     model_config = {"extra": "forbid"}
 
 
@@ -470,7 +784,7 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
         SELECT g.chat_id, g.title, g.username, p.id AS position_id, p.title AS position, p.rank, p.rights
         FROM epsilon_official_groups g
         JOIN epsilon_positions p ON p.chat_id = g.chat_id
-        WHERE g.is_official AND p.accepting AND p.rank < 5
+        WHERE g.is_official AND p.accepting AND p.rank < 5 AND p.kind = 'post'
         ORDER BY g.title, p.rank DESC
         """
     )
@@ -654,29 +968,21 @@ async def _seated_people() -> dict[int, list[dict]]:
 async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_tables()
+    await sweep_expired_spamblocks()
     groups = await seats_for(user_id)
     seated = await _seated_people()
     payload = []
     for group in groups:
         rows = await db.pool.fetch(
             """
-            SELECT id, title, rank, rights, accepting
+            SELECT id, title, rank, rights, accepting, kind, prefix
             FROM epsilon_positions
             WHERE chat_id = $1
             ORDER BY rank DESC, id
             """,
             int(group["chatId"]),
         )
-        positions = [
-            {
-                "id": int(r["id"]),
-                "title": r["title"],
-                "rank": int(r["rank"]),
-                "rights": _rights(r["rights"]),
-                "accepting": bool(r["accepting"]),
-            }
-            for r in rows
-        ]
+        positions = [_position_out(r) for r in rows]
         by_id = {p["id"]: p for p in positions}
         seats = []
         for person in seated.get(int(group["chatId"]), []):
@@ -700,33 +1006,23 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
     await ensure_tables()
     rows = await db.pool.fetch(
         """
-        SELECT id, title, rank, rights, accepting
+        SELECT id, title, rank, rights, accepting, kind, prefix
         FROM epsilon_positions
         WHERE chat_id = $1
         ORDER BY rank DESC, id
         """,
         int(chat_id),
     )
-    return {
-        "positions": [
-            {
-                "id": int(r["id"]),
-                "title": r["title"],
-                "rank": int(r["rank"]),
-                "rights": _rights(r["rights"]),
-                "accepting": bool(r["accepting"]),
-            }
-            for r in rows
-        ]
-    }
+    return {"positions": [_position_out(r) for r in rows]}
 
 
 @router.post("/positions")
 async def create_position(body: PositionCreateBody, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
     await ensure_tables()
-    actor = await _can_edit_positions(user_id, int(body.chat_id))
-    if not actor or not may_edit_position(actor["rank"], int(body.rank), creator=actor["creator"]):
-        raise HTTPException(status_code=403, detail="Новая должность должна быть младше вашей")
+    kind = body.kind if body.kind in KINDS else ""
+    if not kind:
+        raise HTTPException(status_code=400, detail="Тип должности: обычная, обычный пользователь или спам-блок")
     official = await db.pool.fetchval(
         "SELECT 1 FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
         int(body.chat_id),
@@ -734,19 +1030,36 @@ async def create_position(body: PositionCreateBody, user_id: int = Depends(get_a
     if not official:
         raise HTTPException(status_code=404, detail="Свои должности есть только у официальной группы")
     title = " ".join(body.title.split())
-    rights = editable_rights(int(body.rank), body.rights, creator=actor["creator"])
+    prefix, prefix_error = clean_prefix(body.prefix)
+    if prefix_error:
+        raise HTTPException(status_code=400, detail=prefix_error)
+    if kind == KIND_SPAMBLOCK and not prefix:
+        prefix = SPAMBLOCK_PREFIX
+    rank = stored_rank(kind, int(body.rank))
+    rights = rights_for_kind(kind, rank, body.rights, creator=True)
+    accepting = kind == KIND_POST and rank > 0
     row = await db.pool.fetchrow(
         """
-        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting)
-        VALUES ($1, $2, $3, $4::jsonb, TRUE)
+        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
         RETURNING id
         """,
         int(body.chat_id),
         title,
-        int(body.rank),
+        rank,
         json.dumps(rights),
+        accepting,
+        kind,
+        prefix,
     )
-    return {"ok": True, "id": int(row["id"]), "title": title, "rank": int(body.rank), "rights": rights}
+    await _realm_log(
+        int(body.chat_id),
+        None,
+        "position_created",
+        f"Должность «{title}», тип {kind}, ранг {rank}",
+        int(user_id),
+    )
+    return {"ok": True, "id": int(row["id"]), "title": title, "rank": rank, "kind": kind, "rights": rights}
 
 
 @router.post("/positions/{position_id}")
@@ -758,7 +1071,7 @@ async def edit_position(
     await ensure_tables()
     row = await db.pool.fetchrow(
         """
-        SELECT p.id, p.chat_id, p.rank
+        SELECT p.id, p.chat_id, p.rank, p.kind
         FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
         WHERE p.id = $1
@@ -771,7 +1084,8 @@ async def edit_position(
     if not actor or not may_edit_position(actor["rank"], int(row["rank"]), creator=actor["creator"]):
         raise HTTPException(status_code=403, detail="Эту должность может менять только тот, кто старше неё")
     title = " ".join(body.title.split())
-    rights = editable_rights(int(row["rank"]), body.rights, creator=actor["creator"])
+    kind = row["kind"] if row["kind"] in KINDS else KIND_POST
+    rights = rights_for_kind(kind, int(row["rank"]), body.rights, creator=actor["creator"])
     await db.pool.execute(
         """
         UPDATE epsilon_positions
@@ -810,9 +1124,11 @@ async def drop_group_access(user_id: int) -> dict:
 async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_tables()
+    await sweep_expired_spamblocks()
     pos = await db.pool.fetchrow(
         """
-        SELECT id FROM epsilon_positions p
+        SELECT p.id, p.kind, p.prefix, p.title, p.rank
+        FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
         WHERE p.id = $1 AND p.chat_id = $2 AND p.rank < 5
         """,
@@ -821,14 +1137,33 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     )
     if not pos:
         raise HTTPException(status_code=400, detail="Должность не найдена в официальной группе")
+    kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
+    prefix, prefix_error = clean_prefix(body.prefix)
+    if prefix_error:
+        raise HTTPException(status_code=400, detail=prefix_error)
+    if not prefix:
+        prefix = (pos["prefix"] or "").strip()
+    term_start = None
+    term_end = None
+    if kind == KIND_SPAMBLOCK:
+        if not prefix:
+            prefix = SPAMBLOCK_PREFIX
+        term_start, term_end, term_error = term_bounds(body.term_start, body.term_end)
+        if term_error:
+            raise HTTPException(status_code=400, detail=term_error)
     await db.pool.execute(
         """
-        INSERT INTO epsilon_seats (user_id, chat_id, position_id, appointed_by, reason)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO epsilon_seats (
+            user_id, chat_id, position_id, appointed_by, reason, prefix, term_start, term_end
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (user_id, chat_id) DO UPDATE
         SET position_id = EXCLUDED.position_id,
             appointed_by = EXCLUDED.appointed_by,
             reason = EXCLUDED.reason,
+            prefix = EXCLUDED.prefix,
+            term_start = EXCLUDED.term_start,
+            term_end = EXCLUDED.term_end,
             created_at = NOW()
         """,
         int(body.user_id),
@@ -836,9 +1171,120 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         int(body.position_id),
         int(user_id),
         body.reason.strip(),
+        prefix,
+        term_start,
+        term_end,
     )
+    telegram_note = ""
+    if prefix or kind == KIND_SPAMBLOCK:
+        telegram_note = await _apply_chat_title(
+            int(body.chat_id),
+            int(body.user_id),
+            prefix or SPAMBLOCK_PREFIX,
+            keep_admin=kind == KIND_SPAMBLOCK,
+        )
+    detail = f"«{pos['title']}»"
+    if kind == KIND_SPAMBLOCK and term_end:
+        detail += f", до {term_end.date().isoformat()}"
+    if prefix:
+        detail += f", префикс «{prefix}»"
+    if telegram_note:
+        detail += f". {telegram_note}"
+    await _realm_log(int(body.chat_id), int(body.user_id), "appointed", detail, int(user_id))
     entry_key = await _issue_key(int(body.user_id))
-    return {"ok": True, "entryKey": entry_key}
+    return {"ok": True, "entryKey": entry_key, "telegram": telegram_note, "prefix": prefix}
+
+
+@router.post("/prefix")
+async def group_prefix(body: PrefixBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Префикс в чате. Создатель проекта. Для спам-блока пустое поле возвращает «спам блок»."""
+    _require_creator(user_id)
+    await ensure_tables()
+    prefix, prefix_error = clean_prefix(body.prefix)
+    if prefix_error:
+        raise HTTPException(status_code=400, detail=prefix_error)
+    seat = await db.pool.fetchrow(
+        """
+        SELECT s.user_id, p.kind
+        FROM epsilon_seats s
+        JOIN epsilon_positions p ON p.id = s.position_id
+        WHERE s.user_id = $1 AND s.chat_id = $2
+        """,
+        int(body.user_id),
+        int(body.chat_id),
+    )
+    if not seat:
+        raise HTTPException(status_code=404, detail="У этого человека нет должности в группе")
+    kind = seat["kind"] if seat["kind"] in KINDS else KIND_POST
+    if kind == KIND_SPAMBLOCK and not prefix:
+        prefix = SPAMBLOCK_PREFIX
+    await db.pool.execute(
+        "UPDATE epsilon_seats SET prefix = $3 WHERE user_id = $1 AND chat_id = $2",
+        int(body.user_id),
+        int(body.chat_id),
+        prefix,
+    )
+    note = ""
+    if prefix:
+        note = await _apply_chat_title(
+            int(body.chat_id),
+            int(body.user_id),
+            prefix,
+            keep_admin=kind == KIND_SPAMBLOCK,
+        )
+    await _realm_log(
+        int(body.chat_id),
+        int(body.user_id),
+        "prefix",
+        f"Префикс «{prefix or 'убран'}». {note}".strip(),
+        int(user_id),
+    )
+    return {"ok": True, "prefix": prefix, "telegram": note}
+
+
+@router.get("/member-check")
+async def group_member_check(
+    chat_id: int,
+    member_id: int,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    """Что Telegram сообщает о человеке. Срока глобального спам-блока в Bot API нет."""
+    _require_creator(user_id)
+    await ensure_tables()
+    return await _telegram_member(int(chat_id), int(member_id))
+
+
+@router.get("/logs")
+async def group_logs(
+    chat_id: int,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    _require_creator(user_id)
+    await ensure_tables()
+    await sweep_expired_spamblocks()
+    rows = await db.pool.fetch(
+        """
+        SELECT id, user_id, action, detail, actor_id, created_at
+        FROM epsilon_realm_log
+        WHERE chat_id = $1
+        ORDER BY created_at DESC
+        LIMIT 40
+        """,
+        int(chat_id),
+    )
+    return {
+        "items": [
+            {
+                "id": int(r["id"]),
+                "userId": int(r["user_id"]) if r["user_id"] else None,
+                "action": r["action"],
+                "detail": r["detail"] or "",
+                "actorId": int(r["actor_id"]) if r["actor_id"] else None,
+                "at": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/applications")
@@ -906,7 +1352,7 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
         return {"ok": True, "status": "rejected"}
     position_id = int(body.position_id or app["position_id"])
     pos = await db.pool.fetchrow(
-        "SELECT id, rank FROM epsilon_positions WHERE id = $1 AND chat_id = $2",
+        "SELECT id, rank, kind FROM epsilon_positions WHERE id = $1 AND chat_id = $2",
         position_id,
         int(app["chat_id"]),
     )
@@ -916,6 +1362,11 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     )
     if not pos or not asked or int(pos["rank"]) > int(asked["rank"]) or int(pos["rank"]) >= 5:
         raise HTTPException(status_code=400, detail="Можно одобрить запрошенную должность или более низкую")
+    if pos["kind"] in {KIND_SPAMBLOCK, KIND_MEMBER}:
+        raise HTTPException(
+            status_code=400,
+            detail="Спам-блок и обычного пользователя назначают отдельно: у спам-блока нужен срок",
+        )
     await db.pool.execute(
         """
         INSERT INTO epsilon_seats (user_id, chat_id, position_id, appointed_by, reason)

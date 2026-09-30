@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createGroupPosition, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import { createGroupPosition, createStaffPost, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
@@ -24,6 +24,8 @@ function StaffTabsEditor() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busyKey, setBusyKey] = useState('')
+  const [postTitle, setPostTitle] = useState('')
+  const [postBusy, setPostBusy] = useState(false)
 
   const load = useCallback(async () => {
     setError('')
@@ -78,9 +80,41 @@ function StaffTabsEditor() {
     }
   }
 
+  const createPost = async (event) => {
+    event.preventDefault()
+    const title = postTitle.trim()
+    if (title.length < 2) return
+    setPostBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const created = await createStaffPost(title)
+      setPostTitle('')
+      setNotice(created.punishNote || `Должность «${created.label || title}» создана. Вкладки и наказания выключены — включите только то, что ей нужно.`)
+      await load()
+      if (created.id) {
+        setRole(created.id)
+        setOpen(true)
+      }
+    } catch (err) {
+      setError(err.message || 'Должность не создалась')
+    } finally {
+      setPostBusy(false)
+    }
+  }
+
   return (
     <div>
-      <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Внутренняя вкладка работает только если открыта сама страница. Исключение одному человеку ставится в Стаффе, в разделе «Доступ».</p>
+      <p className="realm-copy">Это страницы панели сотрудника для всей должности сразу. Владелец видит всё, его здесь нет. Новую должность создаёт только создатель проекта: сначала все вкладки закрыты, потом вы включаете нужные. Наказания этой должности — в матрице выше, тоже с нуля.</p>
+      <form className="realm-form staff-new-post" onSubmit={createPost}>
+        <h2 className="realm-h">Новая должность сотрудника</h2>
+        <label>Название
+          <input value={postTitle} onChange={(event) => setPostTitle(event.target.value)} placeholder="Например, Ночной модератор" />
+        </label>
+        <button type="submit" className="realm-back" disabled={postBusy || postTitle.trim().length < 2}>
+          {postBusy ? 'Создаём…' : 'Создать должность'}
+        </button>
+      </form>
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
       <div className="role-ladder">
@@ -116,6 +150,7 @@ function StaffTabsEditor() {
                     on={enabled(section.id)}
                     disabled={busyKey === section.id}
                     title={section.label}
+                    hint="Открывает эту страницу всей должности. Если выключить, человек её не увидит."
                     onChange={(next) => toggle(section.id, next)}
                   />
                   {enabled(section.id) && (section.children || []).length > 0 && (
@@ -126,6 +161,7 @@ function StaffTabsEditor() {
                           on={enabled(child.key)}
                           disabled={busyKey === child.key}
                           title={child.label}
+                          hint="Вкладка внутри страницы. Работает только пока включена сама страница."
                           onChange={(next) => toggle(child.key, next)}
                         />
                       ))}
@@ -154,6 +190,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
   const [newRank, setNewRank] = useState('2')
+  const [newKind, setNewKind] = useState('post')
 
   const load = useCallback(async () => {
     setError('')
@@ -187,8 +224,9 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
       await createGroupPosition({
         chat_id: Number(chatId),
         title,
-        rank: Math.min(4, Math.max(1, Number(newRank) || 1)),
-        rights: ['view_members'],
+        rank: newKind === 'post' ? Math.min(4, Math.max(0, Number(newRank) || 0)) : 0,
+        kind: newKind,
+        rights: newKind === 'spamblock' ? [] : ['view_members'],
       })
       setNewTitle('')
       setNotice(`Должность «${title}» создана. Отметьте, какие наказания и страницы ей открыты, и сохраните.`)
@@ -253,10 +291,10 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
         </>
       )}
       {office === 'staff' && (
-        <p className="pa-hint">Лестница сотрудников проекта фиксирована: владелец, старший, младший, модератор. Здесь каждая должность получает свои вкладки панели. Наказания этой же лестницы — матрица выше.</p>
+        <p className="pa-hint">Старший, младший и модератор уже есть. Новую должность добавляет только создатель проекта: вкладки и наказания у неё сначала выключены.</p>
       )}
       {office === 'group' && (
-        <p className="pa-hint">Должности живут внутри официальной группы. Новая должность сразу получает «Кто пишет». Мут, бан, кик, варн, голос и страницы кабинета включаются отдельно и начинают работать после сохранения.</p>
+        <p className="pa-hint">Новую должность создаёт только создатель проекта. Обычная сразу получает «Кто пишет», наказания включаются отдельно. «Обычный пользователь» — ранг 0, только писать. «Спам-блок» — тоже ранг 0, без наказаний; срок задаётся, когда человека назначают.</p>
       )}
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (
@@ -285,9 +323,18 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             <label>Название
               <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="Например, Хелпер" />
             </label>
-            <label>Ранг, 1 младше 4
-              <input value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} inputMode="numeric" />
+            <label>Тип
+              <select value={newKind} onChange={(event) => setNewKind(event.target.value)}>
+                <option value="post">Обычная должность</option>
+                <option value="member">Обычный пользователь, ранг 0</option>
+                <option value="spamblock">Спам-блок, без прав</option>
+              </select>
             </label>
+            {newKind === 'post' && (
+              <label>Ранг, 0 как участник, 4 старше
+                <input value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} inputMode="numeric" />
+              </label>
+            )}
             <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
           </form>
           <PositionEditor

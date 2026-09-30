@@ -371,10 +371,15 @@ async def get_role_defaults_map(*, force: bool = False) -> dict[str, dict[str, b
         return _ROLE_DEFAULTS_CACHE[1]
 
     await ensure_panel_access_tables()
+    from staff_posts import list_staff_posts
+
+    custom = await list_staff_posts()
+    custom_ids = [item["id"] for item in custom if item["id"] not in CONFIGURABLE_ROLES]
     rows = await db.pool.fetch(
         "SELECT role, section_id, enabled FROM admin_panel_role_defaults"
     )
-    out: dict[str, dict[str, bool]] = {r: {} for r in CONFIGURABLE_ROLES}
+    known = list(CONFIGURABLE_ROLES) + custom_ids
+    out: dict[str, dict[str, bool]] = {r: {} for r in known}
     for row in rows:
         role = row["role"]
         if role not in out:
@@ -385,6 +390,9 @@ async def get_role_defaults_map(*, force: bool = False) -> dict[str, dict[str, b
         for key in CONFIGURABLE_ACCESS_KEYS:
             if key not in out[role]:
                 out[role][key] = _builtin_default_enabled(role, key)
+    for role in custom_ids:
+        for key in CONFIGURABLE_ACCESS_KEYS:
+            out[role].setdefault(key, False)
     _ROLE_DEFAULTS_CACHE = (now, out)
     return out
 
@@ -543,9 +551,29 @@ async def resolve_account_access(
     return access["permissions"], access["sections"], access["tabs"]
 
 
+async def seed_custom_role_off(role: str, updated_by: int) -> None:
+    """Новая должность сотрудника: все вкладки закрыты, пока создатель их не откроет."""
+    await ensure_panel_access_tables()
+    rows = [(role, key, False, updated_by) for key in CONFIGURABLE_ACCESS_KEYS]
+    if not rows:
+        return
+    await db.pool.executemany(
+        """
+        INSERT INTO admin_panel_role_defaults (role, section_id, enabled, updated_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (role, section_id) DO NOTHING
+        """,
+        rows,
+    )
+    invalidate_role_defaults_cache()
+
+
 async def set_role_default(role: str, section_id: str, enabled: bool, updated_by: int) -> None:
     await ensure_panel_access_tables()
-    if role not in CONFIGURABLE_ROLES:
+    from staff_posts import list_staff_posts
+
+    custom_ids = {item["id"] for item in await list_staff_posts()}
+    if role not in CONFIGURABLE_ROLES and role not in custom_ids:
         raise ValueError("Роль нельзя настраивать")
     if section_id not in CONFIGURABLE_ACCESS_KEY_SET:
         raise ValueError("Раздел недоступен для настройки")
@@ -648,6 +676,13 @@ async def set_user_overrides_batch(
 async def list_panel_access_overview() -> dict:
     """Данные для вкладки владельца — без N+1 по каждому сотруднику."""
     await ensure_panel_access_tables()
+    from staff_posts import list_staff_posts
+
+    custom = await list_staff_posts()
+    custom_labels = {item["id"]: item["label"] for item in custom}
+    role_ids = list(CONFIGURABLE_ROLES) + [
+        item["id"] for item in custom if item["id"] not in CONFIGURABLE_ROLES
+    ]
     defaults = await get_role_defaults_map()
     members = await db.pool.fetch(
         """
@@ -664,7 +699,7 @@ async def list_panel_access_overview() -> dict:
           END,
           COALESCE(first_name, username, user_id::text)
         """,
-        list(CONFIGURABLE_ROLES),
+        role_ids,
     )
     member_ids = [int(m["user_id"]) for m in members]
     override_rows = await db.pool.fetch(
@@ -692,7 +727,7 @@ async def list_panel_access_overview() -> dict:
                 "username": m["username"],
                 "firstName": m["first_name"],
                 "role": role,
-                "roleLabel": ROLE_LABELS.get(role, role),
+                "roleLabel": custom_labels.get(role) or ROLE_LABELS.get(role, role),
                 "overrides": ov,
                 "effectiveSections": access["sections"],
                 "effectiveTabs": access["tabs"],
@@ -740,8 +775,12 @@ async def list_panel_access_overview() -> dict:
         "tree": tree,
         "roles": [
             {"id": r, "label": ROLE_LABELS.get(r, r)} for r in CONFIGURABLE_ROLES
+        ] + [
+            {"id": item["id"], "label": item["label"]}
+            for item in custom
+            if item["id"] not in CONFIGURABLE_ROLES
         ],
         "roleDefaults": defaults,
-        "rolePreview": {r: access_for_maps(r, defaults, {}) for r in CONFIGURABLE_ROLES},
+        "rolePreview": {r: access_for_maps(r, defaults, {}) for r in role_ids},
         "members": items,
     }

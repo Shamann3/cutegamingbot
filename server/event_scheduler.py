@@ -83,6 +83,12 @@ async def _tick() -> None:
     except Exception:
         logger.exception("morning shift skipped")
 
+    try:
+        from group_realm import sweep_expired_spamblocks
+        await sweep_expired_spamblocks()
+    except Exception:
+        logger.exception("spamblock sweep skipped")
+
     await _advance_recurring_quests()
 
     await _send_harvest_notifications()

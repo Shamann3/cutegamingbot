@@ -1370,6 +1370,11 @@ class PanelRoleDefaultBody(BaseModel):
     enabled: bool
 
 
+class StaffPostBody(BaseModel):
+    title: str = Field(min_length=2, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
 class PanelUserAccessBody(BaseModel):
     userId: int
     sectionId: str
@@ -1434,6 +1439,34 @@ async def panel_access_set_role_default(
         ip=_get_client_ip(request),
     )
     return {"ok": True}
+
+
+@router.post("/panel-access/roles")
+async def panel_access_create_role(
+    body: StaffPostBody,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_panel_access")),
+):
+    from config import owner_user_ids
+    from panel_access import seed_custom_role_off
+    from staff_posts import create_staff_post
+
+    if int(user_id) not in set(owner_user_ids()):
+        raise HTTPException(status_code=403, detail="Новую должность сотрудника создаёт только создатель проекта")
+    try:
+        created = await create_staff_post(body.title)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    await seed_custom_role_off(created["id"], user_id)
+    await log_admin_action(
+        user_id,
+        "staff_post_create",
+        target_type="panel",
+        target_id=created["id"],
+        target_label=created["label"],
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, **created}
 
 
 @router.put("/panel-access/user")
@@ -1572,7 +1605,8 @@ async def staff_approve_application(
     user_id: int = Depends(require_admin_permission("assign_roles")),
 ):
     role = body.role.strip()
-    if role not in ASSIGNABLE_ROLES:
+    from staff_posts import is_custom_role
+    if role not in ASSIGNABLE_ROLES and not await is_custom_role(role):
         raise HTTPException(status_code=400, detail="Недопустимая роль")
 
     result = await approve_application(application_id, role, user_id)
@@ -1754,7 +1788,8 @@ async def staff_change_role(
     user_id: int = Depends(require_admin_permission("assign_roles")),
 ):
     role = body.role.strip()
-    if role not in ASSIGNABLE_STAFF_ROLES:
+    from staff_posts import is_custom_role
+    if role not in ASSIGNABLE_STAFF_ROLES and not await is_custom_role(role):
         raise HTTPException(status_code=400, detail="Недопустимая роль")
     if member_id == user_id:
         raise HTTPException(status_code=400, detail="Нельзя менять свою роль")

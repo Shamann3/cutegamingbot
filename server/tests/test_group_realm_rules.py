@@ -50,6 +50,49 @@ def test_position_edit_stays_below_actor():
     assert "manage_positions" in editable_rights(2, ["manage_positions", "punish_warn"], creator=True)
 
 
+def test_rank_zero_and_spamblock_carry_no_punishments():
+    from group_realm import (
+        KIND_MEMBER,
+        KIND_SPAMBLOCK,
+        MEMBER_RIGHTS,
+        _promote_body,
+        rights_for_kind,
+        stored_rank,
+        term_bounds,
+    )
+
+    assert rights_for_kind(KIND_SPAMBLOCK, 3, ["punish_ban", "can_restrict_members"], creator=True) == []
+    assert stored_rank(KIND_SPAMBLOCK, 3) == 0
+    assert stored_rank(KIND_MEMBER, 2) == 0
+    member = rights_for_kind(KIND_MEMBER, 0, [], creator=True)
+    assert member == list(MEMBER_RIGHTS)
+    assert "punish_ban" not in member
+    rank0 = rights_for_kind("post", 0, ["punish_ban", "view_members"], creator=True)
+    assert "punish_ban" not in rank0
+    assert "can_send_messages" in rank0
+    start, end, err = term_bounds("2026-09-01", "2026-09-30")
+    assert err is None and start < end
+    _start, _end, missing = term_bounds("", "")
+    assert missing
+    _start, _end, backwards = term_bounds("2026-10-02", "2026-10-01")
+    assert backwards
+    present = _promote_body(-100, 5, keep_admin=True)
+    assert present["can_manage_chat"] is True
+    assert present["can_restrict_members"] is False
+    assert present["can_delete_messages"] is False
+    assert present["can_promote_members"] is False
+    gone = _promote_body(-100, 5, keep_admin=False)
+    assert all(value is False for key, value in gone.items() if key.startswith("can_"))
+
+
+def test_staff_post_key_stays_on_the_same_title():
+    from staff_posts import role_key
+
+    assert role_key("Ночной модератор") == role_key("  ночной   модератор ")
+    assert role_key("Ночной модератор").startswith("custom_")
+    assert role_key("А") != role_key("Б")
+
+
 def test_cabinet_pages_follow_the_two_lists():
     assert cabinet_pages(["view_archive"]) == ["overview", "archive", "more"]
     people = cabinet_pages(["punish_mute"])
