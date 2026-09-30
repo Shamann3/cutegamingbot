@@ -283,11 +283,13 @@ from ip_ban import add_ip_ban, list_ip_bans, remove_ip_ban
 from admin_tiktok import router as tiktok_router
 from admin_pr_groups import router as pr_groups_router
 from group_realm import router as group_realm_router
+from stat_board import router as stat_board_router
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 router.include_router(tiktok_router)
 router.include_router(pr_groups_router)
 router.include_router(group_realm_router)
+router.include_router(stat_board_router)
 logger = logging.getLogger(__name__)
 
 

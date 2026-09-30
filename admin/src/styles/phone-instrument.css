@@ -3937,3 +3937,113 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   height: 0 !important;
   min-height: 0 !important;
 }
+
+.stat-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--e-text, inherit);
+  color-scheme: dark;
+}
+.stat-metrics,
+.stat-periods,
+.stat-season-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stat-metric,
+.stat-period {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--e-line-strong, rgba(255, 255, 255, 0.14));
+  border-radius: var(--e-r-pill, 999px);
+  background: var(--e-plate, var(--e-surface-2));
+  color: var(--e-text-2, inherit);
+  font: inherit;
+  cursor: pointer;
+}
+.stat-metric.is-on,
+.stat-period.is-on {
+  border-color: transparent;
+  background: var(--e-accent, #f4f4f4);
+  color: var(--e-accent-ink, #111);
+}
+.stat-picks button.is-on,
+.stat-rows button:hover {
+  border-color: rgba(var(--e-accent-rgb, 255, 255, 255), 0.45);
+  background: var(--e-plate-2, var(--e-surface-2));
+}
+.stat-picks,
+.stat-rows {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-picks button,
+.stat-rows button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  background: var(--e-plate, var(--e-surface-2));
+  color: var(--e-text, inherit);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.stat-rows b {
+  flex: 0 0 28px;
+  font-variant-numeric: tabular-nums;
+}
+.stat-rows span,
+.stat-picks span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.stat-rows i,
+.stat-picks button span,
+.stat-rows small {
+  color: var(--e-text-3, var(--gate-muted, #8e8e93));
+  font-style: normal;
+  font-size: 12px;
+}
+.stat-rows em {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.stat-now {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stat-now-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 0;
+}
+.stat-season-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.stat-edit,
+.stat-season,
+.stat-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

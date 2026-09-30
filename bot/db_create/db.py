@@ -8488,7 +8488,11 @@ class Database:
             # Выполнение запроса и получение всех результатов
             referrals = await connection.fetch(query)
 
-        return referrals  # Возвращаем список словарей с user_id и winamount
+        try:
+            from bot.funcs.stat_veil import veil_pairs
+            return await veil_pairs(self.pool, "won", referrals)
+        except Exception:
+            return referrals
 
     async def get_user_loose_all(self):
         query = "SELECT user_id, loose FROM users WHERE loose IS NOT NULL"
@@ -8497,7 +8501,11 @@ class Database:
             # Выполнение запроса и получение всех результатов
             loose_data = await connection.fetch(query)
 
-        return loose_data  # Возвращаем список словарей с user_id и loose
+        try:
+            from bot.funcs.stat_veil import veil_pairs
+            return await veil_pairs(self.pool, "players", loose_data)
+        except Exception:
+            return loose_data
 
     async def get_user_wins_all(self):
         query = "SELECT user_id, wins FROM users WHERE wins IS NOT NULL"
@@ -8506,7 +8514,11 @@ class Database:
             # Выполнение запроса и получение всех результатов
             wins_data = await connection.fetch(query)
 
-        return wins_data  # Возвращаем список словарей с user_id и wins
+        try:
+            from bot.funcs.stat_veil import veil_pairs
+            return await veil_pairs(self.pool, "players", wins_data)
+        except Exception:
+            return wins_data
 
     async def ensure_user_games_day_schema(self) -> None:
         """Дневной счётчик сыгранных игр. Победа и проигрыш — одна игра."""
@@ -8670,11 +8682,16 @@ class Database:
             print(f"[user_games_day] топ лучших игроков: {e}")
             return empty
 
-        return {
+        board = {
             "rows": [(int(row["user_id"]), int(row["games"] or 0)) for row in rows],
             "place": (ahead + 1) if viewer_games > 0 else None,
             "viewer_games": viewer_games,
         }
+        try:
+            from bot.funcs.stat_veil import veil_best_players
+            return await veil_best_players(self.pool, board)
+        except Exception:
+            return board
 
     async def get_user_winamount(self, user_id):
         """
@@ -9921,7 +9938,11 @@ class Database:
             async with self.pool.acquire() as connection:
                 query = "SELECT user_id, refferals FROM users WHERE refferals IS NOT NULL"
                 referrals = await connection.fetch(query)
-                return referrals  # Возвращаем список кортежей (user_id, referrals)
+            try:
+                from bot.funcs.stat_veil import veil_pairs
+                return await veil_pairs(self.pool, "invites", referrals)
+            except Exception:
+                return referrals
         except Exception as e:
             print(f"Ошибка при получении данных о пользователях и их приглашениях: {e}")
             return None
@@ -14447,7 +14468,12 @@ class Database:
         try:
             async with self.pool.acquire() as connection:
                 # Получаем данные пользователей: user_id и donate
-                return await connection.fetch("SELECT user_id, donate FROM users WHERE donate > 0")
+                rows = await connection.fetch("SELECT user_id, donate FROM users WHERE donate > 0")
+            try:
+                from bot.funcs.stat_veil import veil_pairs
+                return await veil_pairs(self.pool, "donors", rows)
+            except Exception:
+                return rows
         except Exception as e:
             print(f"[ERROR] Ошибка при получении данных донатеров: {e}")
             return [ ]
@@ -19896,9 +19922,14 @@ class Database:
             if row [ "max_user_id" ] is not None:
                 max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
 
-            return {"top_users": top_users ,
+            payload = {"top_users": top_users ,
                 "total_messages": int(row [ "total_messages" ] or 0) ,
                 "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+            try:
+                from bot.funcs.stat_veil import veil_message_snapshot
+                return await veil_message_snapshot(self.pool, chat_id, payload)
+            except Exception:
+                return payload
 
         except Exception as e:
             print(
@@ -19972,9 +20003,14 @@ class Database:
             if row [ "max_user_id" ] is not None:
                 max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
 
-            return {"top_users": top_users ,
+            payload = {"top_users": top_users ,
                 "total_messages": int(row [ "total_messages" ] or 0) ,
                 "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+            try:
+                from bot.funcs.stat_veil import veil_message_snapshot
+                return await veil_message_snapshot(self.pool, chat_id, payload)
+            except Exception:
+                return payload
 
         except Exception as e:
             print(
@@ -20053,9 +20089,14 @@ class Database:
             if row [ "max_user_id" ] is not None:
                 max_messages_user = (int(row [ "max_user_id" ]) , int(row [ "max_messages" ] or 0))
 
-            return {"top_users": top_users ,
+            payload = {"top_users": top_users ,
                 "total_messages": int(row [ "total_messages" ] or 0) ,
                 "user_msg_count": int(row [ "user_msg_count" ] or 0) , "max_messages_user": max_messages_user}
+            try:
+                from bot.funcs.stat_veil import veil_message_snapshot
+                return await veil_message_snapshot(self.pool, chat_id, payload)
+            except Exception:
+                return payload
 
         except Exception as e:
             print(f"Ошибка get_stats_snapshot_all_time(chat_id={chat_id}, user_id={user_id}, limit={limit}): {e}")

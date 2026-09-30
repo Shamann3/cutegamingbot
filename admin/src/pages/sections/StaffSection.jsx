@@ -55,6 +55,7 @@ import PayrollSalariesTab from './payroll/SalariesTab'
 import PayrollBonusesTab from './payroll/BonusesTab'
 import PayrollSettingsTab from './payroll/SettingsTab'
 import PayrollMySalaryTab from './payroll/MySalaryTab'
+import StatDesk from './StatDesk'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import RightsSection from './RightsSection'
 import StaffAccessPane from './StaffAccessPane'
@@ -1908,6 +1909,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (canPreview) staff.push({ id: 'view', label: 'Копия панели' })
     if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
     if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
+    if (isProjectCreator) staff.push({ id: 'stats', label: 'Статистика' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
       group.push({ id: 'posts', label: 'Должности' })
@@ -1992,6 +1994,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
           {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
           {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
+          {onStaff && activeId === 'stats' && <StatDesk />}
           {onStaff && activeId === 'work' && (
             <>
               <nav className="sec-tabs staff-work-tabs" aria-label="Команда">

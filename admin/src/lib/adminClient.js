@@ -2440,3 +2440,39 @@ export async function saveGroupPosition(positionId, body) {
 export async function purgeStaffMember(memberId) {
   return adminFetch(`/staff/members/${memberId}/purge`, { method: 'POST', body: {} })
 }
+
+export async function fetchStatCatalog() {
+  return adminFetch('/stat-board/catalog')
+}
+
+export async function fetchStatGroups(query) {
+  return adminFetch(`/stat-board/groups?q=${encodeURIComponent(query || '')}`)
+}
+
+export async function fetchStatBoard(params) {
+  const query = new URLSearchParams()
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+  })
+  return adminFetch(`/stat-board/board?${query}`)
+}
+
+export async function fetchStatPerson(params) {
+  const query = new URLSearchParams()
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+  })
+  return adminFetch(`/stat-board/person?${query}`)
+}
+
+export async function saveStatValue(body) {
+  return adminFetch('/stat-board/value', { method: 'POST', body })
+}
+
+export async function copyStatSeason(body) {
+  return adminFetch('/stat-board/season', { method: 'POST', body })
+}
+
+export async function clearStatSeason(body) {
+  return adminFetch('/stat-board/season', { method: 'DELETE', body })
+}

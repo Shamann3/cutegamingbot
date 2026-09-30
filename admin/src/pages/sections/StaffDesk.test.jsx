@@ -92,7 +92,7 @@ describe('StaffSection', () => {
     expect(staff.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('Настройка доступа')).toBeTruthy()
     const staffTabs = screen.getByRole('navigation', { name: 'Сотрудники' })
-    expect(buttonLabels(staffTabs)).toEqual(['Доступ', 'Копия панели', 'Команда'])
+    expect(buttonLabels(staffTabs)).toEqual(['Доступ', 'Копия панели', 'Статистика', 'Команда'])
 
     fireEvent.click(within(staffTabs).getByRole('button', { name: 'Копия панели' }))
     const card = (await screen.findByText('Модератор')).closest('li')
