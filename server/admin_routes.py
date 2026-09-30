@@ -1357,9 +1357,10 @@ async def admin_me(user_id: int = Depends(require_active_admin)):
         raise HTTPException(status_code=403, detail="Админ-аккаунт не найден")
     account["projectCreatorId"] = int(PROJECT_CREATOR_ID)
     account["isProjectCreator"] = sr_is_creator(user_id)
-    from staff_panel_rights import actor_has_banfull, actor_staff_perms
-    account["canBanfull"] = await actor_has_banfull(user_id)
-    account["staffPerms"] = await actor_staff_perms(user_id)
+    from staff_panel_rights import actor_staff_perms
+    perms = await actor_staff_perms(user_id)
+    account["canBanfull"] = "banfull" in perms
+    account["staffPerms"] = perms
     return account
 
 
@@ -6983,12 +6984,6 @@ async def hard_delete_invite_token_route(
 # Staff punish matrix (staff_rules)
 # ---------------------------------------------------------------------------
 
-_PUNISH_COL_ORDER = (
-    "mute", "muteall", "unmute", "kick", "kickall",
-    "warn", "warnall", "warnfull", "ban", "banall", "banfull",
-)
-
-
 class UpdateStaffPunishBody(BaseModel):
     permissions: dict[str, bool] = Field(default_factory=dict)
     model_config = {"extra": "forbid"}
@@ -6999,102 +6994,103 @@ def _require_creator_panel(user_id: int) -> None:
         raise HTTPException(status_code=403, detail="Только создатель проекта")
 
 
+async def _read_staff_rules():
+    import staff_rules
+    from db import db as _db
+
+    if _db.pool is None:
+        raise HTTPException(status_code=503, detail="База данных не подключена. Повторите через минуту.")
+    try:
+        return await staff_rules.load(_db.pool, fresh=True)
+    except Exception as exc:
+        logger.exception("staff_rules read failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Не удалось прочитать staff_rules из базы. Повторите через минуту.",
+        ) from exc
+
+
+def _punish_columns(schema) -> list[str]:
+    from staff_panel_rights import PUNISH_COLUMNS
+
+    return [col for col in PUNISH_COLUMNS if schema.column(col)]
+
+
+def _punish_role(rule, columns: list[str]) -> dict:
+    from staff_panel_rights import column_granted
+
+    return {
+        "role": rule.role,
+        "title": rule.title,
+        "importance": rule.importance,
+        "permissions": {col: column_granted(rule.permissions, col) for col in columns},
+        "locked": False,
+    }
+
+
 @router.get("/staff/punish-rights")
 async def get_staff_punish_rights(
     user_id: int = Depends(require_admin_permission("manage_panel_access")),
 ):
+    import staff_rules
+
     _require_creator_panel(user_id)
-    try:
-        from bot.admins.mute import get_staff_rules_schema, load_staff_rules
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"staff_rules недоступны: {exc}") from exc
-
-    rules = await load_staff_rules(force_refresh=True)
-    schema = await get_staff_rules_schema()
-    present = {str(c).strip().lower(): str(c) for c in (schema.permission_columns or ())}
-    columns = [c for c in _PUNISH_COL_ORDER if c in present]
-    if not columns:
-        columns = [c for c in _PUNISH_COL_ORDER if any(k == c for k in present)]
-
-    roles = []
-    for rec in rules.values():
-        perms = {}
-        for col in columns:
-            raw = rec.permissions or {}
-            val = raw.get(col)
-            if val is None:
-                for k, v in raw.items():
-                    if str(k).strip().lower() == col:
-                        val = v
-                        break
-            perms[col] = bool(val)
-        roles.append({
-            "role": rec.role,
-            "title": rec.display_name,
-            "importance": rec.importance,
-            "permissions": perms,
-            "locked": False,
-        })
-    roles.sort(key=lambda r: (-(r["importance"] or 0), str(r["title"] or "").lower()))
-    return {"columns": columns, "roles": roles}
+    rules, schema = await _read_staff_rules()
+    columns = _punish_columns(schema)
+    roles = sorted(
+        (_punish_role(rule, columns) for rule in rules.values()),
+        key=lambda r: (-(r["importance"] or 0), r["title"].lower()),
+    )
+    problem = schema.problem or (None if columns else staff_rules.NO_FLAGS)
+    return {"columns": columns, "roles": roles if columns else [], "problem": problem}
 
 
 @router.put("/staff/punish-rights/{role}")
 async def put_staff_punish_rights(
     role: str,
     body: UpdateStaffPunishBody,
+    request: Request,
     user_id: int = Depends(require_admin_permission("manage_panel_access")),
 ):
+    import staff_rules
+    from db import db as _db
+    from staff_panel_rights import PUNISH_COLUMNS
+
     _require_creator_panel(user_id)
     role_key = (role or "").strip().lower()
     if not role_key:
-        raise HTTPException(status_code=400, detail="Роль не указана")
-    try:
-        from bot.admins.mute import (
-            get_staff_rules_schema,
-            invalidate_staff_rules_cache,
-            load_staff_rules,
-        )
-        import db as _db
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"staff_rules недоступны: {exc}") from exc
-
-    rules = await load_staff_rules(force_refresh=True)
+        raise HTTPException(status_code=400, detail="Должность не указана")
+    rules, schema = await _read_staff_rules()
+    if schema.problem:
+        raise HTTPException(status_code=409, detail=schema.problem)
     if role_key not in rules:
-        raise HTTPException(status_code=404, detail="Должность не найдена в staff_rules")
-    schema = await get_staff_rules_schema()
-    present = {str(c).strip().lower(): str(c) for c in (schema.permission_columns or ())}
-    role_col = schema.role_column
-    if not role_col or not present:
-        raise HTTPException(status_code=503, detail="Схема staff_rules неполная")
-
-    sets = []
-    values = []
-    idx = 1
-    for want, raw_val in (body.permissions or {}).items():
-        col_key = str(want).strip().lower()
-        if col_key not in _PUNISH_COL_ORDER:
-            continue
-        real = present.get(col_key)
-        if not real:
-            continue
-        # real is from information_schema — safe identifier
-        sets.append(f'"{real}" = ${idx}')
-        values.append(1 if raw_val else 0)
-        idx += 1
-    if not sets:
-        raise HTTPException(status_code=400, detail="Нет известных столбцов для обновления")
-
-    values.append(role_key)
-    sql = f'UPDATE staff_rules SET {", ".join(sets)} WHERE lower("{role_col}"::text) = ${idx}'
-    pool = _db.pool
-    if not pool:
-        raise HTTPException(status_code=503, detail="Нет подключения к БД")
+        raise HTTPException(status_code=404, detail=f"Должности «{role_key}» нет в staff_rules")
+    update = staff_rules.build_update(schema, role_key, body.permissions, PUNISH_COLUMNS)
+    if update is None:
+        raise HTTPException(status_code=400, detail="В запросе нет известных наказаний")
+    sql, values = update
     try:
-        result = await pool.execute(sql, *values)
+        result = await _db.pool.execute(sql, *values)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Не удалось сохранить: {exc}") from exc
-    invalidate_staff_rules_cache()
-    if str(result).endswith("0"):
-        raise HTTPException(status_code=404, detail="Строка должности не обновлена")
-    return {"ok": True}
+        logger.warning("staff_rules update for %s failed: %s", role_key, exc)
+        raise HTTPException(
+            status_code=500,
+            detail="База не приняла изменение. Подробности в логах сервера.",
+        ) from exc
+    finally:
+        staff_rules.invalidate()
+    if str(result).split()[-1:] == ["0"]:
+        raise HTTPException(status_code=404, detail="Строка должности не обновилась")
+
+    await log_admin_action(
+        user_id,
+        "staff_punish_rights",
+        target_type="staff_rules",
+        target_id=role_key,
+        target_label=rules[role_key].title,
+        details={"permissions": {str(k).strip().lower(): bool(v) for k, v in body.permissions.items()}},
+        ip=_get_client_ip(request),
+    )
+    rules, schema = await _read_staff_rules()
+    rule = rules.get(role_key)
+    return {"ok": True, "role": _punish_role(rule, _punish_columns(schema)) if rule else None}

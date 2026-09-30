@@ -165,6 +165,23 @@ async function parseError(response) {
 
 
 
+function apiDownMessage(status) {
+  return import.meta.env.DEV
+    ? `API не отвечает (ошибка ${status}). Проверь, что запущен start-1-server.bat.`
+    : `Сервер API не ответил (ошибка ${status}). Повторите через минуту.`
+}
+
+export function nonJsonMessage(status, text) {
+  if (/ngrok/i.test(text)) {
+    return 'Ответ не от API (похоже на страницу ngrok). Перезапусти ngrok на порт 5174 и открой панель из admin-бота.'
+  }
+  if (status >= 500) return apiDownMessage(status)
+  if (/<!DOCTYPE|<html/i.test(text)) {
+    return 'Вместо ответа API пришла веб-страница: адрес API ведёт не на сервер.'
+  }
+  return 'Сервер вернул не JSON. Убедись, что API (:8000) и Vite (:5174) запущены.'
+}
+
 async function readJsonResponse(response, path) {
 
   const text = await response.text()
@@ -173,7 +190,7 @@ async function readJsonResponse(response, path) {
 
     if (!response.ok) {
 
-      throw new Error(`Ошибка ${response.status}`)
+      throw new Error(response.status >= 500 ? apiDownMessage(response.status) : `Ошибка ${response.status}`)
 
     }
 
@@ -189,21 +206,7 @@ async function readJsonResponse(response, path) {
 
   } catch {
 
-    if (text.includes('ngrok') || text.includes('<!DOCTYPE')) {
-
-      throw new Error(
-
-        'Ответ не от API (похоже на страницу ngrok). Перезапусти ngrok на порт 5174 и открой панель из admin-бота.',
-
-      )
-
-    }
-
-    throw new Error(
-
-      'Сервер вернул не JSON. Убедись, что API (:8000) и Vite (:5174) запущены.',
-
-    )
+    throw new Error(nonJsonMessage(response.status, text))
 
   }
 

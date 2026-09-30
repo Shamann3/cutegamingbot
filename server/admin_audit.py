@@ -113,7 +113,7 @@ async def list_admin_audit(
 
     if admin_user_id is not None:
         params.append(admin_user_id)
-        conditions.append(f"admin_user_id = ${len(params)}")
+        conditions.append(f"admin_user_id = ${len(params)}::bigint")
     if action:
         params.append(action)
         conditions.append(f"action = ${len(params)}")

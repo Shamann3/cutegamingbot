@@ -2891,6 +2891,15 @@ html[data-viewport="phone"] .panel-shell > .panel-shell-main {
   scroll-padding-bottom: var(--phone-dock-foot) !important;
 }
 
+/* Тосты всплывают над доком, иначе на время показа закрывают его кнопки. */
+html.is-phone .toast-host,
+html[data-viewport="phone"] .toast-host {
+  left: 12px;
+  right: 12px;
+  bottom: calc(62px + max(12px, env(safe-area-inset-bottom, 0px)) + 10px);
+  align-items: center;
+}
+
 html.is-phone .panel-shell .panel-layout::after,
 html[data-viewport="phone"] .panel-shell .panel-layout::after {
   content: "";
@@ -3187,12 +3196,149 @@ html[data-viewport="phone"] .panel-shell .panel-security .sec-tabs {
 .staff-desk-main {
   min-width: 0;
 }
-.staff-switch-list {
-  display: grid;
-  gap: 8px;
-}
 .staff-punish-role {
   margin-top: 18px;
+  min-width: 0;
+  container: staff-punish / inline-size;
+}
+.staff-punish-role > * {
+  margin: 0;
+}
+.staff-punish-role > * + * {
+  margin-top: 12px;
+}
+.staff-punish-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.staff-punish-title,
+.staff-desk .realm-h {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 680;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--e-text-1, #f4f4f4);
+}
+.staff-punish-for {
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--e-text-3, #8a8a92);
+  overflow-wrap: anywhere;
+}
+.staff-punish-lead,
+.staff-punish-state p {
+  margin: 0;
+  max-width: 44rem;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--e-text-3, #8a8a92);
+}
+.staff-punish-state {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+.staff-punish-state[role="alert"] p {
+  color: var(--e-text-2, #c4c4c8);
+}
+.staff-punish-skeleton {
+  display: grid;
+  gap: 10px;
+}
+.staff-punish-skeleton .skeleton {
+  display: block;
+  height: 56px;
+  border-radius: 14px;
+}
+/* Семейство наказаний (мут, кик, варн, бан) держится одной стопкой, чтобы «Бан — Баналл — Банфулл» читались рядом. */
+.staff-punish-groups {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+@container staff-punish (min-width: 620px) {
+  .staff-punish-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+  }
+}
+.staff-punish-group {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.staff-punish-switch {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  margin: 0;
+  padding: 9px 11px 9px 14px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: var(--e-plate-2, rgba(24, 24, 28, 0.494));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+.staff-punish-switch:hover:not(:disabled) {
+  border-color: var(--e-line, rgba(255, 255, 255, 0.07));
+}
+.staff-punish-switch:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.staff-punish-switch:focus-visible {
+  outline: 2px solid var(--e-accent, #f4f4f4);
+  outline-offset: 2px;
+}
+.staff-punish-switch:disabled {
+  cursor: progress;
+}
+.staff-punish-switch:disabled .pa-toggle {
+  opacity: 0.5;
+}
+.staff-punish-switch .pa-toggle {
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+.staff-punish-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.staff-punish-copy strong {
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--e-text-1, #f4f4f4);
+  overflow-wrap: anywhere;
+}
+.staff-punish-copy em {
+  font-style: normal;
+  font-size: max(12px, 0.74rem);
+  line-height: 1.35;
+  color: var(--e-text-3, #8a8a92);
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .staff-punish-switch {
+    transition: none;
+  }
+  .staff-punish-switch:active:not(:disabled) {
+    transform: none;
+  }
 }
 .staff-app-open {
   width: 100%;

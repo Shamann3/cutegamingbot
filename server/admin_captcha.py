@@ -13,8 +13,10 @@ log = logging.getLogger("admin_captcha")
 
 try:
     from bot.funcs.group_captcha import VARIANT_LABELS, ensure_tables
-except Exception:
-    log.exception("captcha admin: не удалось импортировать bot.funcs.group_captcha")
+except Exception as _bot_import_err:
+    # В образе API пакета bot нет: таблицы капчи создаёт бот, сервер их только читает.
+    if not (isinstance(_bot_import_err, ModuleNotFoundError) and _bot_import_err.name == "bot"):
+        log.exception("captcha admin: не удалось импортировать bot.funcs.group_captcha")
     VARIANT_LABELS = {
         1: "Найдите такое же",
         2: "Цвет",

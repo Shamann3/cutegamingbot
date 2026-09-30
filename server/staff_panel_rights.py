@@ -5,6 +5,12 @@
 """
 from __future__ import annotations
 
+import logging
+
+import staff_rules
+
+log = logging.getLogger("staff_panel_rights")
+
 # Столбцы наказаний, которыми управляет матрица в «Админ панель».
 PUNISH_COLUMNS: tuple[str, ...] = (
     "mute",
@@ -42,30 +48,24 @@ def column_granted(permissions: dict | None, column: str) -> bool:
 
 
 async def _rule_for_user(user_id: int):
-    try:
-        from bot.admins.mute import get_admin_account, get_staff_rule
-    except Exception:
+    from db import db
+
+    pool = db.pool
+    if pool is None:
         return None, None
     try:
-        account = await get_admin_account(int(user_id))
-    except Exception:
+        account = await staff_rules.fetch_account(pool, int(user_id))
+        if not account or not account.role:
+            return account, None
+        rules, _schema = await staff_rules.load(pool)
+    except Exception as exc:
+        log.warning("staff_rules for %s unavailable: %s", user_id, exc)
         return None, None
-    if not account or not account.role:
-        return account, None
-    try:
-        rule = await get_staff_rule(account.role)
-    except Exception:
-        return account, None
-    return account, rule
+    return account, rules.get(account.role.strip().lower())
 
 
 async def actor_has_banfull(user_id: int) -> bool:
-    account, rule = await _rule_for_user(user_id)
-    if not account or not rule:
-        return False
-    if not account.is_operational(rule):
-        return False
-    return column_granted(rule.permissions, "banfull")
+    return "banfull" in await actor_staff_perms(user_id)
 
 
 async def actor_staff_perms(user_id: int) -> list[str]:
@@ -75,8 +75,4 @@ async def actor_staff_perms(user_id: int) -> list[str]:
         return []
     if not account.is_operational(rule):
         return []
-    out: list[str] = []
-    for key, value in (rule.permissions or {}).items():
-        if bool(value):
-            out.append(str(key).strip().lower())
-    return out
+    return rule.granted()

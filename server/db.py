@@ -391,6 +391,13 @@ class Database:
                     "system_settings id unique index skipped: %s", _mig_err
                 )
 
+            try:
+                from schema_heal import widen_staff_ids
+
+                await widen_staff_ids(conn, _mig_logger)
+            except Exception as _mig_err:
+                _mig_logger.warning("staff id widening skipped: %s", _mig_err)
+
         from system_settings import init_system_settings
         from economy_settings import init_economy_settings
         from farm_settings import init_farm_settings

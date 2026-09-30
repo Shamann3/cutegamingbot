@@ -1064,7 +1064,7 @@ async def list_staff_actions(admin_user_id: int, limit: int = 50) -> list[dict]:
         """
         SELECT id, action_type, target_player_id, reason, evidence, created_at
         FROM staff_actions
-        WHERE admin_user_id = $1
+        WHERE admin_user_id = $1::bigint
         ORDER BY created_at DESC
         LIMIT $2
         """,
@@ -1160,7 +1160,7 @@ async def list_complaints(status: str | None = None) -> list[dict]:
 async def list_complaints_for_target(target_admin_id: int) -> list[dict]:
     rows = await db.pool.fetch(
         _COMPLAINT_SELECT
-        + " WHERE c.target_admin_id = $1 AND c.status <> 'resolved' ORDER BY c.created_at DESC",
+        + " WHERE c.target_admin_id = $1::bigint AND c.status <> 'resolved' ORDER BY c.created_at DESC",
         target_admin_id,
     )
     return [_complaint_row(r) for r in rows]
@@ -1233,9 +1233,30 @@ async def record_admin_activity(user_id: int) -> None:
         pass
 
 
+_activity_slot_numeric: bool | None = None
+
+
+async def _activity_slot_sql() -> str:
+    """admin_activity.slot (алиас ac) как timestamptz: бот в старых БД хранит там unix-секунды."""
+    global _activity_slot_numeric
+    if _activity_slot_numeric is None:
+        data_type = await db.pool.fetchval(
+            """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = 'admin_activity' AND column_name = 'slot'
+            """
+        )
+        _activity_slot_numeric = data_type in (
+            "bigint", "integer", "smallint", "numeric", "double precision", "real",
+        )
+    return "to_timestamp(ac.slot)" if _activity_slot_numeric else "ac.slot"
+
+
 async def get_online_minutes(user_id: int, since) -> int:
+    slot = await _activity_slot_sql()
     cnt = await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM admin_activity WHERE admin_user_id = $1 AND slot >= $2",
+        f"SELECT COUNT(*)::int FROM admin_activity ac WHERE ac.admin_user_id = $1::bigint AND {slot} >= $2",
         user_id, since,
     )
     return int(cnt or 0) * 10
@@ -1418,7 +1439,7 @@ async def get_member_stats(user_id: int, since) -> dict:
         """
         SELECT action_type, COUNT(*)::int AS cnt
         FROM staff_actions
-        WHERE admin_user_id = $1 AND created_at >= $2
+        WHERE admin_user_id = $1::bigint AND created_at >= $2
         GROUP BY action_type
         """,
         user_id, since,
@@ -1427,18 +1448,18 @@ async def get_member_stats(user_id: int, since) -> dict:
     actions_total = sum(by_action.values())
 
     taken = int(await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM staff_complaints WHERE taken_by = $1 AND taken_at >= $2",
+        "SELECT COUNT(*)::int FROM staff_complaints WHERE taken_by = $1::bigint AND taken_at >= $2",
         user_id, since,
     ) or 0)
     resolved = int(await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM staff_complaints WHERE resolved_by = $1 AND resolved_at >= $2",
+        "SELECT COUNT(*)::int FROM staff_complaints WHERE resolved_by = $1::bigint AND resolved_at >= $2",
         user_id, since,
     ) or 0)
     avg_resp = await db.pool.fetchval(
         """
         SELECT AVG(EXTRACT(EPOCH FROM (taken_at - created_at)))
         FROM staff_complaints
-        WHERE taken_by = $1 AND taken_at >= $2 AND taken_at IS NOT NULL
+        WHERE taken_by = $1::bigint AND taken_at >= $2 AND taken_at IS NOT NULL
         """,
         user_id, since,
     )
@@ -1456,32 +1477,101 @@ async def get_member_stats(user_id: int, since) -> dict:
     }
 
 
-async def get_leaderboard(since) -> list[dict]:
-    members = await db.pool.fetch(
-        """
-        SELECT user_id, username, first_name, role
-        FROM admin_accounts
-        WHERE status = 'active' AND role IN ('senior_admin', 'junior_admin', 'moderator')
-        """,
-    )
-    result = []
-    for m in members:
-        uid = int(m["user_id"])
-        stats = await get_member_stats(uid, since)
-        score = (
-            stats["actionsTotal"]
-            + stats["complaintsResolved"] * 3
-            + stats["complaintsTaken"]
-            + (stats["onlineMinutes"] // 60)
+def _leaderboard_sql(slot_expr: str) -> str:
+    """Один запрос на весь рейтинг. Id сотрудника в параметры не попадает.
+
+    Иначе asyncpg кодирует его как int4 по узкому столбцу вроде resolved_by,
+    и Telegram ID больше 2^31 роняет весь отчёт.
+    """
+    if slot_expr not in ("ac.slot", "to_timestamp(ac.slot)"):
+        raise ValueError(f"unexpected activity slot expression: {slot_expr}")
+    return f"""
+        WITH members AS (
+            SELECT user_id, username, first_name, role
+            FROM admin_accounts
+            WHERE status = 'active'
+              AND role IN ('senior_admin', 'junior_admin', 'moderator')
+        ),
+        actions AS (
+            SELECT admin_user_id,
+                   COUNT(*)::int AS actions_total,
+                   (COUNT(*) FILTER (WHERE action_type = 'ban'))::int AS bans,
+                   (COUNT(*) FILTER (WHERE action_type = 'unban'))::int AS unbans,
+                   (COUNT(*) FILTER (WHERE action_type = 'mute'))::int AS mutes
+            FROM staff_actions
+            WHERE created_at >= $1
+            GROUP BY admin_user_id
+        ),
+        taken AS (
+            SELECT taken_by AS user_id, COUNT(*)::int AS n
+            FROM staff_complaints
+            WHERE taken_at >= $1 AND taken_by IS NOT NULL
+            GROUP BY taken_by
+        ),
+        resolved AS (
+            SELECT resolved_by AS user_id, COUNT(*)::int AS n
+            FROM staff_complaints
+            WHERE resolved_at >= $1 AND resolved_by IS NOT NULL
+            GROUP BY resolved_by
+        ),
+        response AS (
+            SELECT taken_by AS user_id,
+                   AVG(EXTRACT(EPOCH FROM (taken_at - created_at))) AS avg_s
+            FROM staff_complaints
+            WHERE taken_at >= $1 AND taken_at IS NOT NULL AND taken_by IS NOT NULL
+            GROUP BY taken_by
+        ),
+        online AS (
+            SELECT ac.admin_user_id AS user_id, COUNT(*)::int AS slots
+            FROM admin_activity ac
+            WHERE {slot_expr} >= $1
+            GROUP BY ac.admin_user_id
         )
-        result.append({
-            "userId": uid,
-            "username": m["username"],
-            "firstName": m["first_name"],
-            "role": m["role"],
-            "score": score,
-            **stats,
-        })
+        SELECT m.user_id, m.username, m.first_name, m.role,
+               COALESCE(a.actions_total, 0) AS actions_total,
+               COALESCE(a.bans, 0) AS bans,
+               COALESCE(a.unbans, 0) AS unbans,
+               COALESCE(a.mutes, 0) AS mutes,
+               COALESCE(t.n, 0) AS taken,
+               COALESCE(r.n, 0) AS resolved,
+               response.avg_s AS avg_s,
+               COALESCE(o.slots, 0) AS slots
+        FROM members m
+        LEFT JOIN actions a ON a.admin_user_id::bigint = m.user_id::bigint
+        LEFT JOIN taken t ON t.user_id::bigint = m.user_id::bigint
+        LEFT JOIN resolved r ON r.user_id::bigint = m.user_id::bigint
+        LEFT JOIN response ON response.user_id::bigint = m.user_id::bigint
+        LEFT JOIN online o ON o.user_id::bigint = m.user_id::bigint
+    """
+
+
+def _leaderboard_entry(row) -> dict:
+    actions_total = int(row["actions_total"] or 0)
+    taken = int(row["taken"] or 0)
+    resolved = int(row["resolved"] or 0)
+    online = int(row["slots"] or 0) * 10
+    avg = row["avg_s"]
+    return {
+        "userId": int(row["user_id"]),
+        "username": row["username"],
+        "firstName": row["first_name"],
+        "role": row["role"],
+        "score": actions_total + resolved * 3 + taken + online // 60,
+        "actionsTotal": actions_total,
+        "bans": int(row["bans"] or 0),
+        "unbans": int(row["unbans"] or 0),
+        "mutes": int(row["mutes"] or 0),
+        "complaintsTaken": taken,
+        "complaintsResolved": resolved,
+        "avgResponseSeconds": int(avg) if avg is not None else None,
+        "onlineMinutes": online,
+    }
+
+
+async def get_leaderboard(since) -> list[dict]:
+    slot = await _activity_slot_sql()
+    rows = await db.pool.fetch(_leaderboard_sql(slot), since)
+    result = [_leaderboard_entry(r) for r in rows]
     result.sort(key=lambda x: x["score"], reverse=True)
     return result
 
@@ -1494,7 +1584,7 @@ async def list_staff_notes(staff_user_id: int) -> list[dict]:
     rows = await db.pool.fetch(
         """
         SELECT id, author_id, text, created_at
-        FROM staff_notes WHERE staff_user_id = $1
+        FROM staff_notes WHERE staff_user_id = $1::bigint
         ORDER BY created_at DESC LIMIT 100
         """,
         staff_user_id,
@@ -1546,7 +1636,7 @@ async def list_strikes(user_id: int) -> list[dict]:
         """
         SELECT id, reason, complaint_id, created_by, created_at, expires_at,
                (expires_at > NOW()) AS active
-        FROM staff_strikes WHERE user_id = $1
+        FROM staff_strikes WHERE user_id = $1::bigint
         ORDER BY created_at DESC LIMIT 100
         """,
         user_id,
@@ -1567,7 +1657,7 @@ async def list_strikes(user_id: int) -> list[dict]:
 
 async def count_active_strikes(user_id: int) -> int:
     return int(await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM staff_strikes WHERE user_id = $1 AND expires_at > NOW()",
+        "SELECT COUNT(*)::int FROM staff_strikes WHERE user_id = $1::bigint AND expires_at > NOW()",
         user_id,
     ) or 0)
 
@@ -1592,7 +1682,7 @@ async def add_penalty_to_current_salary(user_id: int, add_penalty: int, reason: 
             row = await conn.fetchrow(
                 """
                 SELECT id, base_amount, coefficient, bonus, penalty, penalty_reason, status
-                FROM staff_salaries WHERE user_id = $1 AND week_start = $2 FOR UPDATE
+                FROM staff_salaries WHERE user_id = $1::bigint AND week_start = $2 FOR UPDATE
                 """,
                 user_id, week_start,
             )
@@ -1673,13 +1763,14 @@ async def list_shifts(since, user_id: int | None = None) -> list[dict]:
     if user_id:
         params.append(user_id)
         where += f" AND s.user_id = ${len(params)}"
+    slot = await _activity_slot_sql()
     rows = await db.pool.fetch(
         f"""
         SELECT s.id, s.user_id, s.starts_at, s.ends_at, s.note,
                a.username, a.first_name,
                (SELECT COUNT(*) FROM admin_activity ac
                   WHERE ac.admin_user_id = s.user_id
-                    AND ac.slot >= s.starts_at AND ac.slot < s.ends_at) AS slots
+                    AND {slot} >= s.starts_at AND {slot} < s.ends_at) AS slots
         FROM staff_shifts s
         LEFT JOIN admin_accounts a ON a.user_id = s.user_id
         WHERE {where}
@@ -1861,15 +1952,15 @@ async def get_member_card(user_id: int, since) -> dict:
     sal = await db.pool.fetchrow(
         """
         SELECT amount, paid_amount, status, base_amount, coefficient, bonus, penalty
-        FROM staff_salaries WHERE user_id = $1 AND week_start = $2
+        FROM staff_salaries WHERE user_id = $1::bigint AND week_start = $2
         """,
         user_id, week_start,
     )
     complaints_total = int(await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM staff_complaints WHERE target_admin_id = $1", user_id,
+        "SELECT COUNT(*)::int FROM staff_complaints WHERE target_admin_id = $1::bigint", user_id,
     ) or 0)
     complaints_open = int(await db.pool.fetchval(
-        "SELECT COUNT(*)::int FROM staff_complaints WHERE target_admin_id = $1 AND status <> 'resolved'",
+        "SELECT COUNT(*)::int FROM staff_complaints WHERE target_admin_id = $1::bigint AND status <> 'resolved'",
         user_id,
     ) or 0)
     return {
