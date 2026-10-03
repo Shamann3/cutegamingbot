@@ -248,16 +248,29 @@ async def build_best_players_view(db, viewer_id: int, period: str = "all", sourc
     )
     rows = list(board.get("rows") or [])
     names = await db.get_names_bulk(uid for uid, _ in rows)
-    empty_line = None
+
+    # Формируем "шапку" и заглушку ТОЛЬКО когда они реально нужны.
+    # Иначе передаём None — рендер сам решит, добавлять ли перевод строки.
     lead = None
+    empty_line = None
+
     if board.get("copyHidden") and kind == "all":
         when = board.get("liftLabel") or "выбранной даты"
-        lead = f"До {when} топ за всё время скрыт."
+        # Если текст пустой — `or None` превратит его в None и секция не вставится.
+        lead = f"" or None
         if not rows:
             empty_line = (
-                f"С {when} здесь будет сумма общей статистики и игр после копии. "
-                "День, неделя, месяц и год считаются как обычно."
-            )
-    text = render_best_players_text(board.get("place"), rows, names or {}, kind, empty_line, lead)
+                f"<b>За {when} данных пока нет.</b>\n"
+                f"<b><i>Загляните позже - рейтинг обновляется автоматически.</i></b>"
+            ) or None
+
+    text = render_best_players_text(
+        board.get("place"),
+        rows,
+        names or {},
+        kind,
+        empty_line=empty_line,
+        lead=lead,
+    )
     keyboard = best_players_keyboard(kind, origin)
     return text, keyboard
