@@ -52,6 +52,7 @@ import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../../config/applicationQuestions'
 import PayrollSalariesTab from './payroll/SalariesTab'
+import DeedPay from './payroll/DeedPay'
 import PayrollBonusesTab from './payroll/BonusesTab'
 import PayrollSettingsTab from './payroll/SettingsTab'
 import PayrollMySalaryTab from './payroll/MySalaryTab'
@@ -1896,8 +1897,15 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (perms.has('manage_staff')) list.push({ id: 'questions', label: 'Анкета' })
     if (role && role !== 'owner') list.push({ id: 'mysalary', label: 'Моя зарплата' })
     if (role && role !== 'owner') list.push({ id: 'mycomplaints', label: 'Жалобы на меня' })
-    return filterSectionTabs('staff', list, panelTabs)
-  }, [perms, role, isOwner, panelTabs])
+    if (isProjectCreator || (role && role !== 'applicant')) {
+      list.unshift({ id: 'deeds', label: 'За дело' })
+    }
+    const filtered = filterSectionTabs('staff', list, panelTabs)
+    if (isProjectCreator && !filtered.some((item) => item.id === 'deeds')) {
+      filtered.unshift({ id: 'deeds', label: 'За дело' })
+    }
+    return filtered
+  }, [perms, role, isOwner, panelTabs, isProjectCreator])
 
   const offices = useMemo(() => {
     const allowed = panelTabs?.staff
@@ -2009,6 +2017,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
                   </button>
                 ))}
               </nav>
+              {activeWork === 'deeds' && <DeedPay isProjectCreator={isProjectCreator} />}
               {activeWork === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
               {activeWork === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />}
               {activeWork === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}

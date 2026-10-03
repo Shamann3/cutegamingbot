@@ -1,0 +1,795 @@
+/* Движение панели: у каждого вида управления свой жест.
+   Нажатие, фокус, смена карточки. Слабый режим и системный покой
+   оставляют цвет и состояние, без перелётов. */
+
+:root {
+  --e-move: 180ms;
+  --e-move-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-shell .sec-btn,
+.panel-shell .panel-users-btn,
+.panel-shell .sec-tab,
+.panel-shell .staff-office-btn,
+.panel-shell .e-toggle,
+.gate-root .gate-door,
+.gate-root .gate-color-btn,
+.gate-root .gate-text,
+.auth-screen .auth-btn,
+.auth-screen .auth-tab,
+.auth-screen .auth-input,
+.auth-screen .gate-auth-back {
+  transition:
+    transform var(--e-move) var(--e-move-ease),
+    opacity 140ms linear,
+    background-color var(--e-move) var(--e-move-ease),
+    border-color var(--e-move) var(--e-move-ease),
+    color var(--e-move) var(--e-move-ease),
+    box-shadow var(--e-move) var(--e-move-ease),
+    filter var(--e-move) var(--e-move-ease);
+}
+
+.panel-shell .sec-btn:active:not(:disabled),
+.panel-shell .panel-users-btn:active:not(:disabled),
+.panel-shell .sec-tab:active,
+.panel-shell .staff-office-btn:active,
+.gate-root .gate-color-btn:active,
+.gate-root .gate-text:active,
+.auth-screen .auth-btn:active:not(:disabled),
+.auth-screen .auth-tab:active,
+.auth-screen .gate-auth-back:active {
+  transform: scale(0.97);
+}
+
+.panel-shell .sec-tab.sec-tab-active {
+  transition:
+    transform var(--e-move) var(--e-move-ease),
+    background-color 220ms var(--e-move-ease),
+    color 220ms var(--e-move-ease),
+    box-shadow 220ms var(--e-move-ease);
+}
+
+.panel-shell input:focus-visible,
+.panel-shell textarea:focus-visible,
+.panel-shell select:focus-visible,
+.auth-screen .auth-input:focus-visible {
+  transition:
+    box-shadow 200ms var(--e-move-ease),
+    border-color 200ms var(--e-move-ease),
+    background-color 200ms var(--e-move-ease);
+}
+
+.auth-screen .auth-input:focus-visible {
+  box-shadow: 0 0 0 3px rgba(var(--e-accent-rgb, 255, 255, 255), 0.28);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .panel-shell .staff-member-row,
+  .panel-shell .staff-app-card,
+  .panel-shell .sec-card {
+    transition:
+      transform var(--e-move) var(--e-move-ease),
+      border-color var(--e-move) var(--e-move-ease),
+      background-color var(--e-move) var(--e-move-ease);
+  }
+
+  .panel-shell .staff-member-row:hover,
+  .panel-shell .staff-app-card:hover,
+  .panel-shell .sec-card:hover {
+    transform: translate3d(0, -2px, 0);
+  }
+
+  .gate-root .gate-door:hover {
+    transform: translate3d(0, -3px, 0);
+  }
+}
+
+.gate-root .gate-door:active {
+  transform: scale(0.985);
+}
+
+.deed-card {
+  animation: deedIn 280ms var(--e-move-ease) both;
+}
+
+.deed-card.is-out-left {
+  animation: deedOutLeft 220ms var(--e-move-ease) forwards;
+}
+
+.deed-card.is-out-right {
+  animation: deedOutRight 220ms var(--e-move-ease) forwards;
+}
+
+.deed-choice .deed-no:active:not(:disabled) {
+  transform: translate3d(-4px, 0, 0) scale(0.98);
+}
+
+.deed-choice .deed-yes:active:not(:disabled) {
+  transform: translate3d(4px, 0, 0) scale(0.98);
+}
+
+@keyframes deedIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes deedOutLeft {
+  to {
+    opacity: 0;
+    transform: translate3d(-16%, 0, 0);
+  }
+}
+
+@keyframes deedOutRight {
+  to {
+    opacity: 0;
+    transform: translate3d(16%, 0, 0);
+  }
+}
+
+.deed-choice .sec-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 72px;
+}
+
+.deed-choice .sec-btn small {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.72;
+}
+
+.deed-choice .sec-btn:focus-visible {
+  outline: 2px solid var(--e-accent, #fff);
+  outline-offset: 3px;
+}
+
+.deed-flash {
+  margin: 0 0 0.75rem;
+  color: var(--e-text, #f5f5f5);
+}
+
+@media (max-width: 900px) {
+  .gate-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .gate-tools .gate-color-btn {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: auto;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-shell .sec-btn:active:not(:disabled),
+  .panel-shell .panel-users-btn:active:not(:disabled),
+  .panel-shell .sec-tab:active,
+  .panel-shell .staff-office-btn:active,
+  .panel-shell .staff-member-row:hover,
+  .panel-shell .staff-app-card:hover,
+  .panel-shell .sec-card:hover,
+  .gate-root .gate-door:hover,
+  .gate-root .gate-door:active,
+  .gate-root .gate-color-btn:active,
+  .auth-screen .auth-btn:active:not(:disabled),
+  .deed-choice .deed-no:active:not(:disabled),
+  .deed-choice .deed-yes:active:not(:disabled) {
+    transform: none;
+  }
+
+  .deed-card,
+  .deed-card.is-out-left,
+  .deed-card.is-out-right {
+    animation: none;
+    filter: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+body.perf-light .deed-card,
+body.perf-light .deed-card.is-out-left,
+body.perf-light .deed-card.is-out-right {
+  animation: none;
+  filter: none;
+}
+
+body.perf-light .panel-shell .staff-member-row:hover,
+body.perf-light .panel-shell .sec-card:hover,
+body.perf-light .gate-root .gate-door:hover {
+  transform: none;
+}
+
+/* Вся рабочая зона Эпсилона слушается ползунок прозрачности.
+   --e-plate при 100% имеет альфу 0. Окна поверх чужого текста остаются плотнее. */
+.panel-shell,
+.auth-screen,
+.entry-root,
+.gate-root {
+  --e-surface-0: var(--e-plate);
+  --e-surface-1: var(--e-plate-2);
+  --e-surface-2: var(--e-plate-2);
+  --e-surface-3: var(--e-plate-2);
+}
+
+.panel-shell .panel-shelf,
+.panel-shell .panel-shelf-quiet,
+.panel-shell .elite-block,
+.panel-shell .grp-panel,
+.panel-shell .grp-card,
+.panel-shell .ach-page > section,
+.panel-shell .gbl-page > section,
+.panel-shell .panel-users-card,
+.panel-shell .support-card,
+.panel-shell .analytics-card,
+.panel-shell .chs-card,
+.panel-shell .arc-card,
+.panel-shell .content-card,
+.panel-shell .eco-card,
+.panel-shell .market-card,
+.panel-shell .farm-card,
+.panel-shell .logs-card,
+.panel-shell .settings-card,
+.panel-shell .events-card,
+.panel-shell .sec-card,
+.panel-shell .staff-card,
+.panel-shell .staff-member-row,
+.panel-shell .staff-app-card,
+.panel-shell .staff-action,
+.panel-shell .staff-manage-block,
+.panel-shell .staff-complaint-row,
+.panel-shell .staff-office-btn,
+.panel-shell .sec-tabs,
+.panel-shell .pocket-tools-card,
+.panel-shell article.panel-shelf,
+.panel-shell .panel-broadcast-wrap > section,
+.panel-shell .panel-broadcast > section,
+.panel-accent-trigger,
+html.is-desktop .panel-shell .panel-shelf-sidebar,
+html.is-phone .panel-shell .panel-shelf-sidebar,
+html[data-viewport="desktop"] .panel-shell .panel-shelf-sidebar,
+html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar,
+html.is-phone .phone-dock,
+html[data-viewport="phone"] .phone-dock {
+  background: var(--e-plate) !important;
+  background-color: var(--e-plate) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.panel-shell .panel-sidebar-footer {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+.panel-shell th,
+.panel-shell table thead th {
+  background: var(--e-plate-2) !important;
+  background-color: var(--e-plate-2) !important;
+  background-image: none !important;
+}
+
+.panel-shell input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+.panel-shell select,
+.panel-shell textarea,
+.auth-screen input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
+.auth-screen select,
+.auth-screen textarea,
+.entry-root input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']),
+.entry-root select,
+.entry-root textarea {
+  background: var(--e-plate-2) !important;
+  background-color: var(--e-plate-2) !important;
+  background-image: none !important;
+}
+
+.admin-modal,
+.metric-sheet,
+.focus-sheet,
+.accent-picker-panel:not(.is-inline),
+html.is-coaching .firstrun-sheet {
+  --e-surface-0: var(--e-overlay);
+  --e-surface-1: var(--e-overlay-2);
+  --e-surface-2: var(--e-overlay-2);
+  background: var(--e-overlay) !important;
+  background-color: var(--e-overlay) !important;
+  background-image: none !important;
+}
+
+.admin-modal input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+.metric-sheet input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+.focus-sheet input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
+.accent-picker-panel input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field) {
+  background: var(--e-overlay-2) !important;
+  background-color: var(--e-overlay-2) !important;
+  background-image: none !important;
+}
+
+.panel-appearance {
+  margin: 0 0 14px;
+}
+
+/* Вход сотрудника и вход администратора — одна карточка на весь экран.
+   Низ закреплён, поэтому появление кнопки не сдвигает поле ключа. */
+.auth-screen.auth-screen-panel.auth-screen-fortress {
+  width: 100%;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex !important;
+  align-items: center;
+  justify-content: safe center;
+  padding: 16px !important;
+}
+
+/* Меню входа — одна карточка строго по центру.
+   Прозрачная плита пропускала дождь символов, и казалось, что полей несколько. */
+.gate-root {
+  align-items: center;
+  justify-content: safe center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+.gate-root .gate-frame {
+  display: none;
+}
+
+.gate-root .gate-matrix,
+.auth-screen.auth-screen-fortress .accent-aura-rain {
+  display: none;
+}
+
+.gate-root .gate-sheet {
+  width: min(26rem, calc(100% - 32px));
+  max-width: 26rem;
+  margin: 16px auto;
+  padding: 0;
+  align-items: stretch;
+}
+
+.gate-root .gate-stage {
+  width: 100%;
+  margin: 0;
+  padding: 22px 20px 16px;
+  gap: 14px;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border-radius: 28px;
+  border: 1px solid rgba(244, 244, 244, 0.16) !important;
+  background: rgb(12, 12, 14) !important;
+  background-color: rgb(12, 12, 14) !important;
+  background-image: none !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
+}
+
+.gate-root .gate-head {
+  gap: 6px;
+}
+
+.gate-root .gate-title {
+  font-size: 30px;
+  line-height: 1.12;
+}
+
+.gate-root .gate-door-title {
+  font-size: 18px !important;
+  line-height: 1.2 !important;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.gate-root .gate-head,
+.gate-root .gate-recover,
+.gate-root .gate-doors,
+.gate-root .gate-palette-slot,
+.gate-root .gate-hold {
+  width: 100%;
+  max-width: none;
+  align-items: stretch;
+}
+
+.gate-root .gate-doors {
+  grid-template-columns: 1fr;
+}
+
+.gate-root .gate-door,
+.gate-root .gate-door.is-open,
+.gate-root .gate-door.is-sealed {
+  width: 100%;
+  min-height: 0 !important;
+  padding: 14px 16px 12px !important;
+  gap: 4px !important;
+  text-align: left;
+  background: rgb(22, 22, 24) !important;
+  background-color: rgb(22, 22, 24) !important;
+  background-image: none !important;
+  border: 1px solid rgba(244, 244, 244, 0.16) !important;
+  box-shadow: none !important;
+}
+
+.auth-screen.auth-screen-fortress .auth-card,
+.auth-card.entry-stable,
+.entry-root .entry-card {
+  background: rgb(12, 12, 14) !important;
+  background-color: rgb(12, 12, 14) !important;
+  background-image: none !important;
+  border: 1px solid rgba(244, 244, 244, 0.16) !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
+}
+
+.auth-card.entry-stable {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 26rem);
+  min-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - 32px - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
+.entry-stable .auth-btn-primary {
+  width: 100%;
+  min-height: 46px;
+}
+
+.entry-stable .realm-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+
+.entry-stable .realm-check input[type='checkbox'] {
+  width: 22px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.entry-back {
+  margin-top: auto;
+  align-self: center;
+  appearance: none;
+  border: 0;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: rgba(244, 244, 244, 0.78);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.2;
+  min-height: 44px;
+  padding: 16px 8px 4px;
+  cursor: pointer;
+}
+
+.auth-reveal-slot:not(.is-open) {
+  pointer-events: none;
+}
+
+/* Вкладка входа — одна форма кнопки. Прямоугольник под ней не рисуется. */
+.auth-screen .auth-tabs {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.auth-screen .auth-tabs-indicator {
+  display: none !important;
+}
+
+.auth-screen .auth-tab {
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.auth-screen .auth-tab-active {
+  border-color: transparent !important;
+  background: var(--e-accent, #fff) !important;
+  box-shadow: none !important;
+}
+
+.auth-screen .auth-tab:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 3px;
+}
+
+.auth-screen input[type='checkbox'],
+.panel-shell input[type='checkbox'] {
+  accent-color: var(--e-accent, #fff);
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  max-width: 22px !important;
+  max-height: 22px !important;
+  margin: 0 !important;
+  flex: 0 0 22px !important;
+  border-radius: 6px;
+}
+
+.auth-screen label:has(> input[type='checkbox']),
+.panel-shell label:has(> input[type='checkbox']) {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.choice-trigger {
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--e-plate-2, rgba(22, 22, 24, 0.72));
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.choice-trigger::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  opacity: 0.72;
+}
+
+.choice-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
+.choice-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  animation: choice-dim-in 220ms ease both;
+}
+
+.choice-sheet {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 28rem);
+  max-height: min(82dvh, 640px);
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  padding: 22px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: rgb(16, 16, 18);
+  color: rgb(244, 244, 244);
+  box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.45);
+  animation: choice-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.choice-sheet-title {
+  margin: 0 0 16px;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.choice-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(244, 244, 244, 0.28) transparent;
+}
+
+.choice-option {
+  width: 100%;
+  min-height: 56px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 17px;
+  text-align: left;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms ease;
+}
+
+.choice-option:active {
+  transform: scale(0.985);
+}
+
+.choice-option.is-selected {
+  background: var(--e-accent, #fff);
+  color: var(--e-accent-ink, #111);
+  border-color: transparent;
+}
+
+.choice-option:focus-visible,
+.choice-trigger:focus-visible,
+.choice-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 3px;
+}
+
+.choice-close {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 14px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(244, 244, 244, 0.86);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.choice-layer.is-leaving .choice-dim {
+  animation: choice-dim-out 200ms ease both;
+}
+
+.choice-layer.is-leaving .choice-sheet {
+  animation: choice-drop 200ms ease both;
+}
+
+@keyframes choice-dim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes choice-dim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes choice-rise {
+  from { opacity: 0; transform: translate3d(0, 28px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes choice-drop {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 20px, 0); }
+}
+
+@media (min-width: 720px) {
+  .choice-layer {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .choice-sheet {
+    border-radius: 24px;
+    padding: 24px 22px 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.48);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-dim,
+  .choice-sheet,
+  .choice-layer.is-leaving .choice-dim,
+  .choice-layer.is-leaving .choice-sheet,
+  .choice-option {
+    animation: none;
+    transition: none;
+  }
+}
+
+.rules-scroll {
+  max-height: 11rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rules-message {
+  margin: 0;
+  padding: 12px 14px 8px;
+  border-radius: 16px;
+  background: var(--e-overlay-2, rgba(22, 22, 24, 0.9));
+}
+
+.rules-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
+.rules-end {
+  display: block;
+  height: 8px;
+}
+
+.rules-progress {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.auth-reveal-slot.is-open .auth-reveal-inner > .apply-step {
+  opacity: 1;
+  transform: none;
+}
+
+.apply-step {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 72px;
+}
+
+.apply-hint,
+.apply-note p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.45;
+  color: rgb(244, 244, 244);
+}
+
+.apply-hint {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgb(22, 22, 24);
+  border: 1px solid rgba(244, 244, 244, 0.16);
+}
+
+.apply-note {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgb(16, 16, 18);
+}

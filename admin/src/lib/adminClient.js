@@ -113,11 +113,7 @@ function mapAdminFetchError(error, path) {
 
   if (error?.name === 'AbortError') {
 
-    return new Error(
-
-      'Сервер не ответил вовремя. Проверь: start-1-server.bat и start-2-vite.bat запущены.',
-
-    )
+    return new Error('API не отвечает')
 
   }
 
@@ -125,7 +121,7 @@ function mapAdminFetchError(error, path) {
 
     return new Error(
 
-      'Нет связи с API. Запусти API (:8000) и Vite (:5174), затем открой панель через admin-бота.',
+      'API не отвечает',
 
     )
 
@@ -165,21 +161,13 @@ async function parseError(response) {
 
 
 
-function apiDownMessage(status) {
-  return import.meta.env.DEV
-    ? `API не отвечает (ошибка ${status}). Проверь, что запущен start-1-server.bat.`
-    : `Сервер API не ответил (ошибка ${status}). Повторите через минуту.`
+function apiDownMessage() {
+  return 'API не отвечает'
 }
 
 export function nonJsonMessage(status, text) {
-  if (/ngrok/i.test(text)) {
-    return 'Ответ не от API (похоже на страницу ngrok). Перезапусти ngrok на порт 5174 и открой панель из admin-бота.'
-  }
-  if (status >= 500) return apiDownMessage(status)
-  if (/<!DOCTYPE|<html/i.test(text)) {
-    return 'Вместо ответа API пришла веб-страница: адрес API ведёт не на сервер.'
-  }
-  return 'Сервер вернул не JSON. Убедись, что API (:8000) и Vite (:5174) запущены.'
+  if (status >= 500 || /ngrok/i.test(text) || /<!DOCTYPE|<html/i.test(text)) return apiDownMessage()
+  return apiDownMessage()
 }
 
 async function readJsonResponse(response, path) {
@@ -2091,6 +2079,53 @@ export async function postModerationUnban(userId, reason = '') {
   return adminRequest(`/moderation/unban/${userId}`, { method: 'POST', body })
 }
 
+export async function fetchDeedQueue({ sort = 'new', action = '', adminId = 0 } = {}) {
+  const p = new URLSearchParams({ sort })
+  if (action) p.set('action', action)
+  if (adminId) p.set('adminId', String(adminId))
+  return adminRequest(`/deed-pay/queue?${p}`)
+}
+
+export async function keepDeed(actionId) {
+  return adminRequest(`/deed-pay/queue/${actionId}/keep`, { method: 'POST', body: {} })
+}
+
+export async function dropDeed(actionId) {
+  return adminRequest(`/deed-pay/queue/${actionId}/drop`, { method: 'POST', body: {} })
+}
+
+export async function fetchDeedRates() {
+  return adminRequest('/deed-pay/rates')
+}
+
+export async function saveDeedRates(items) {
+  return adminRequest('/deed-pay/rates', { method: 'PUT', body: { items } })
+}
+
+export async function collectDeedRates() {
+  return adminRequest('/deed-pay/rates/collect', { method: 'POST', body: {} })
+}
+
+export async function fetchDeedMine() {
+  return adminRequest('/deed-pay/mine')
+}
+
+export async function fetchDeedPayouts() {
+  return adminRequest('/deed-pay/payouts')
+}
+
+export async function fetchDeedDone({ sort = 'new', action = '', adminId = 0, status = '' } = {}) {
+  const p = new URLSearchParams({ sort })
+  if (action) p.set('action', action)
+  if (adminId) p.set('adminId', String(adminId))
+  if (status) p.set('status', status)
+  return adminRequest(`/deed-pay/done?${p}`)
+}
+
+export async function payDeed(payoutId) {
+  return adminRequest(`/deed-pay/payouts/${payoutId}/pay`, { method: 'POST', body: {} })
+}
+
 // ---------------------------------------------------------------------------
 // Invite tokens
 // ---------------------------------------------------------------------------
@@ -2324,6 +2359,10 @@ export async function fetchGroupOpen() {
   return adminFetch('/group-realm/open')
 }
 
+export async function fetchGroupRules() {
+  return adminFetch('/group-realm/rules')
+}
+
 export async function submitGroupApplication(body) {
   return adminFetch('/group-realm/apply', { method: 'POST', body })
 }
@@ -2423,6 +2462,10 @@ export async function groupRealmAct(body) {
 
 export async function checkGroupKey(key) {
   return adminFetch('/group-realm/key/check', { method: 'POST', body: { key } })
+}
+
+export async function enterGroupKey(key, totp) {
+  return adminFetch('/group-realm/key/enter', { method: 'POST', body: { key, totp } })
 }
 
 export async function fetchRightsBoard() {

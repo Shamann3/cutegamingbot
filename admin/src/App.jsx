@@ -34,6 +34,7 @@ export default function App() {
   const [displayName, setDisplayName] = useState('admin')
   const [authMode, setAuthMode] = useState('login')
   const [groupPortrait, setGroupPortrait] = useState(null)
+  const [applyPreview, setApplyPreview] = useState(false)
   const [channel, setChannel] = useState(null)
   const channelNext = useRef('gate')
 
@@ -129,13 +130,24 @@ export default function App() {
         onStaffEnter={openStaff}
         onStaffApply={openStaffApply}
         onGroupEnter={openGroup}
-        onGroupApply={() => setScreen('group-apply')}
+        onGroupApply={() => {
+          setApplyPreview(false)
+          setScreen('group-apply')
+        }}
       />
     )
   }
 
   if (screen === 'group-apply') {
-    return <GroupApplyPage onBack={() => setScreen('gate')} />
+    return (
+      <GroupApplyPage
+        preview={applyPreview}
+        onBack={() => {
+          setApplyPreview(false)
+          setScreen('gate')
+        }}
+      />
+    )
   }
 
   if (screen === 'group-key') {
@@ -143,6 +155,10 @@ export default function App() {
       <GroupKeyPage
         onBack={() => setScreen('gate')}
         onPassed={() => openChannel('group', 'group')}
+        onPreview={() => {
+          setApplyPreview(true)
+          setScreen('group-apply')
+        }}
       />
     )
   }

@@ -21,6 +21,7 @@ export const PANEL_SECTION_TABS = {
     { id: 'complaints', label: 'Жалобы', blurb: 'Жалобы на сотрудников и разбор.' },
     { id: 'questions', label: 'Анкета', blurb: 'Вопросы анкеты при регистрации стаффа.' },
     { id: 'mysalary', label: 'Моя зарплата', blurb: 'Личная зарплата сотрудника (не для владельца).', selfOnly: true },
+    { id: 'deeds', label: 'За дело', blurb: 'Оплата за подтверждённые наказания и проверка создателем.', selfOnly: true },
     { id: 'mycomplaints', label: 'Жалобы на меня', blurb: 'Жалобы, где сотрудник — ответчик.', selfOnly: true },
   ],
   content: [

@@ -136,10 +136,10 @@ describe('staff copy', () => {
 describe('group cabinet copy', () => {
   it('shows the same cabinet pages the rights allow', () => {
     const ids = (rights, creator) => groupCabinetTabs(rights, creator).map((item) => item.id)
-    expect(ids([])).toEqual(['overview', 'more'])
-    expect(ids(['punish_mute'])).toEqual(['overview', 'activity', 'more'])
-    expect(ids(new Set(['view_archive', 'manage_positions']))).toEqual(['overview', 'archive', 'rights', 'more'])
-    expect(ids([], true)).toEqual(['overview', 'activity', 'archive', 'rights', 'switches', 'more'])
+    expect(ids([])).toEqual(['overview', 'pay', 'more'])
+    expect(ids(['punish_mute'])).toEqual(['overview', 'activity', 'pay', 'more'])
+    expect(ids(new Set(['view_archive', 'manage_positions']))).toEqual(['overview', 'archive', 'rights', 'pay', 'more'])
+    expect(ids([], true)).toEqual(['overview', 'activity', 'archive', 'rights', 'switches', 'pay', 'more'])
   })
 
   it('never treats the top position as the project creator', () => {

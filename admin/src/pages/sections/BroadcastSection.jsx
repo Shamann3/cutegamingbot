@@ -798,7 +798,7 @@ export default function BroadcastSection({ panelTabs = null }) {
         }}
       />
 
-      <article className="panel-shelf panel-shelf-page">
+      <article className="panel-shelf panel-shelf-page panel-broadcast-intro">
         <p className="panel-shelf-label">Broadcast · Рассылка</p>
         <h2 className="panel-page-title">Рассылка игрокам</h2>
         <p className="panel-page-lead">
@@ -808,7 +808,7 @@ export default function BroadcastSection({ panelTabs = null }) {
         {info && <p className="panel-users-info">{info}</p>}
       </article>
 
-      <div className="panel-economy-stats">
+      <div className="panel-economy-stats panel-broadcast-figures">
         <article className="panel-shelf panel-economy-stat">
           <p className="panel-shelf-label">Онлайн</p>
           <p className="panel-economy-stat-value">{loading ? '…' : overview?.onlineNow ?? '—'}</p>
@@ -922,7 +922,7 @@ export default function BroadcastSection({ panelTabs = null }) {
         )}
       </article>
 
-      <div className="panel-economy-grid-2">
+      <div className="panel-economy-grid-2 panel-broadcast-compose">
         <article className="panel-shelf">
           <p className="panel-shelf-label">Сообщение</p>
           <div className="panel-broadcast-templates">
@@ -1017,7 +1017,7 @@ export default function BroadcastSection({ panelTabs = null }) {
         </article>
       </div>
 
-      <div className="panel-economy-grid-2">
+      <div className="panel-economy-grid-2 panel-broadcast-deliver">
         <article className="panel-shelf">
           <p className="panel-shelf-label">Аудитория</p>
           <div className="panel-broadcast-audience">
@@ -1107,7 +1107,7 @@ export default function BroadcastSection({ panelTabs = null }) {
         </article>
       </div>
 
-      <article className="panel-shelf">
+      <article className="panel-shelf panel-broadcast-history">
         <div className="panel-broadcast-history-head">
           <div>
             <p className="panel-shelf-label">История</p>

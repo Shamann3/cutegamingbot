@@ -98,8 +98,8 @@ export default function RegisterForm({
     <form className="auth-form auth-step" onSubmit={handleFormSubmit}>
       <p className="auth-form-lead">
         {setup
-          ? 'Отсканируйте QR или введите ключ в аутентификатор, затем введите код.'
-          : 'Введите ключ доступа — проверка начнётся автоматически.'}
+          ? 'Откройте приложение с кодами и введите шесть цифр.'
+          : 'Напишите ключ, который выдал создатель.'}
       </p>
 
       <KeyField

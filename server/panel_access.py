@@ -153,6 +153,7 @@ SECTION_TABS: dict[str, list[dict]] = {
         {"id": "complaints", "label": "Жалобы", "perm": "manage_staff"},
         {"id": "questions", "label": "Анкета", "perm": "manage_staff"},
         {"id": "mysalary", "label": "Моя зарплата", "selfOnly": True},
+        {"id": "deeds", "label": "За дело", "selfOnly": True},
         {"id": "mycomplaints", "label": "Жалобы на меня", "selfOnly": True},
     ],
     "content": [

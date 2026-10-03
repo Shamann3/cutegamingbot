@@ -62,7 +62,7 @@ export default function ApplicationForm({ onSubmit, loading, error, info }) {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <p className="auth-form-lead">
-        Заполни анкету. Владелец рассмотрит её и выдаст роль.
+        Ответьте коротко. Создатель решит, пускать ли вас.
       </p>
 
       {questions.map((q) => (

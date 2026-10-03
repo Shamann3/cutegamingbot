@@ -408,8 +408,8 @@ export default function AccentPalette({ value, onChange, inline = false }) {
       >
         <span className="panel-accent-trigger-swatch" style={{ background: accent.hex }} aria-hidden />
         <span className="panel-accent-trigger-meta">
-          <strong>Любой цвет</strong>
-          <em>{accent.hex}</em>
+          <strong>Цвет и прозрачность</strong>
+          <em>{accent.hex} · {Math.round(accent.veil ?? 55)}%</em>
         </span>
         <span className="panel-accent-trigger-chevron" aria-hidden>{open ? '◂' : '▸'}</span>
       </button>

@@ -73,6 +73,7 @@ import {
   staffPreviewNav,
 } from '../lib/panelPreview'
 import PhoneDock from '../components/PhoneDock'
+import AccentPalette from '../components/AccentPalette'
 import ExtrasHub, { PanelPocketTools } from '../components/ExtrasHub'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
@@ -496,6 +497,11 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       )}
 
       <main ref={mainRef} className="panel-shell-main">
+        {phone && !isMore && (
+          <div className="panel-appearance">
+            <AccentPalette value={accent} onChange={handleAccentChange} />
+          </div>
+        )}
         <div
           className={`panel-layout${
             isDashboard || isUsers

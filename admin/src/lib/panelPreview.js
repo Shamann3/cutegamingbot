@@ -128,6 +128,7 @@ export function groupCabinetTabs(rights, isCreator = false) {
   if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
   if (isCreator) items.push({ id: 'switches', label: 'Переключатели' })
+  items.push({ id: 'pay', label: 'Зарплата' })
   items.push({ id: 'more', label: 'Ещё' })
   return items
 }

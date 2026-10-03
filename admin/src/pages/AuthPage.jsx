@@ -14,16 +14,12 @@ import AuthTabs from '../components/AuthTabs'
 import LoginForm from '../components/LoginForm'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
-import EpsilonLogo from '../components/EpsilonLogo'
-import AccentAura from '../components/AccentAura'
+import EntryFrame from '../components/EntryFrame'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 
 function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
 }
-
-// Метка сборки — временная, чтобы точно понять, свежий ли код загрузился на телефоне.
-const BUILD_TAG = 'v9-ident'
 
 export default function AuthPage({ displayName, onAuthenticated, initialMode = 'login', fortress = false, onBack }) {
   const [mode, setMode] = useState(initialMode === 'register' ? 'register' : 'login')
@@ -259,30 +255,16 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
   }
 
   return (
-    <div className={`auth-screen auth-screen-panel${fortress ? ' auth-screen-fortress' : ''}${personal ? ' is-personal' : ''}`}>
-      <AccentAura />
-      {onBack && (
-        <button type="button" className="gate-auth-back" onClick={onBack}>
-          К выбору панели
-        </button>
-      )}
-
-      <div className="auth-card entry-card">
-        <header className="auth-header">
-          <div className="auth-logo-wrap">
-            <EpsilonLogo className="auth-logo" size="lg" alt="Cute Epsilon" />
-          </div>
-          <h1 className="auth-title">Панель сотрудника</h1>
-          <p className="auth-subtitle">
-            Вход по ключу, регистрация по ключу или заявка в команду
-          </p>
-        </header>
-
+    <EntryFrame
+      title="Панель сотрудника"
+      lead="Вход по ключу. Если ключа нет — вкладка «Регистрация»."
+      personal={personal && fortress}
+      onBack={onBack}
+    >
         <AuthTabs mode={mode} onChange={handleTabChange} />
 
         {success && (
           <p className="auth-message auth-message-success auth-success-pop" role="status">
-            <span className="auth-success-check">✓</span>
             {success}
           </p>
         )}
@@ -310,20 +292,6 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
           <span className="auth-salute-text">Виво-Эпсилон!</span>
           <span className="auth-salute-line" />
         </div>
-
-        <p
-          aria-hidden="true"
-          style={{
-            textAlign: 'center',
-            fontSize: '0.62rem',
-            letterSpacing: '0.08em',
-            color: 'rgba(255,255,255,0.28)',
-            margin: '0.55rem 0 0',
-          }}
-        >
-          build {BUILD_TAG}
-        </p>
-      </div>
-    </div>
+    </EntryFrame>
   )
 }

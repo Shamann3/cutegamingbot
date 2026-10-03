@@ -120,13 +120,13 @@ html[data-viewport="phone"] .panel-shell-main label {
   word-break: break-word;
 }
 
-html.is-phone .panel-shell-main input,
+html.is-phone .panel-shell-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 html.is-phone .panel-shell-main textarea,
 html.is-phone .panel-shell-main select,
 html.is-phone .nika-input,
 html.is-phone .grp-page.nika-page .nika-input,
-html.is-phone .panel-users-input,
-html[data-viewport="phone"] .panel-shell-main input,
+html.is-phone .panel-users-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html[data-viewport="phone"] .panel-shell-main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
 html[data-viewport="phone"] .panel-shell-main textarea,
 html[data-viewport="phone"] .panel-shell-main select,
 html[data-viewport="phone"] .nika-input,

@@ -21,6 +21,7 @@ import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccen
 import { punishmentHours } from '../lib/gateRecovery'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs } from '../lib/panelPreview'
+import { DeedMine } from './sections/payroll/DeedPay'
 import FirstRun, { groupSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
@@ -29,6 +30,7 @@ import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import AccentAura from '../components/AccentAura'
+import AccentPalette from '../components/AccentPalette'
 import { MetricSheetProvider, useMetricSheet } from '../components/MetricSheet'
 import DarkPick from '../components/DarkPick'
 import FocusWindow from '../components/FocusWindow'
@@ -158,7 +160,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     labelRu: item.label,
     group: item.id === 'activity' || item.id === 'archive'
       ? 'people'
-      : item.id === 'rights'
+      : item.id === 'rights' || item.id === 'pay'
         ? 'team'
         : item.id === 'more' || item.id === 'switches'
           ? 'system'
@@ -602,6 +604,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           />
         )}
         <div className="grp-page nika-page realm-main">
+          {phone && activeTab !== 'more' && (
+            <div className="panel-appearance">
+              <AccentPalette
+                value={accent}
+                onChange={(next) => setAccent(persistAccent(next))}
+              />
+            </div>
+          )}
           <header className="nika-head">
             <div className="nika-head-copy">
               <h1>{tabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
@@ -945,6 +955,16 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+
+          {!chapter && activeTab === 'pay' && (
+            <section>
+              <h2 className="realm-h">Зарплата</h2>
+              <p className="realm-copy">
+                Куты за наказания, которые создатель подтвердил. Недельная зарплата команды считается отдельно.
+              </p>
+              <DeedMine isProjectCreator={isCreator} />
             </section>
           )}
 

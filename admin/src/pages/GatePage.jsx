@@ -18,7 +18,7 @@ function detectStillGate() {
   return (navigator.hardwareConcurrency || 4) <= 2
 }
 
-function Door({ title, detail, open, onClick, order = 0 }) {
+function Door({ title, detail, mark, open, onClick, order = 0 }) {
   return (
     <button
       type="button"
@@ -29,7 +29,7 @@ function Door({ title, detail, open, onClick, order = 0 }) {
       <span className="gate-door-sheen" aria-hidden="true" />
       <span className="gate-door-title">{title}</span>
       <span className="gate-door-detail">{detail}</span>
-      <span className="gate-door-mark">{open ? 'Войти' : 'Закрыто'}</span>
+      <span className="gate-door-mark">{mark}</span>
     </button>
   )
 }
@@ -80,14 +80,14 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   useOutsideDismiss(colorOpen, [paletteRef], () => setColorOpen(false))
 
   const staffDetail = portrait.staffCanEnter
-    ? 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта'
+    ? 'Команда проекта. Нажмите, чтобы войти.'
     : portrait.applicationStatus === 'pending'
-      ? 'Сюда заходят сотрудники Эпсилона. Заявка уже у создателя, повторно отправлять не нужно.'
-      : 'Сюда заходят сотрудники Эпсилона. Для модерации нашего проекта. Нажатие откроет заявку.'
+      ? 'Заявка уже отправлена. Ждём решение.'
+      : 'Вы ещё не в команде. Нажмите — откроется заявка.'
 
   const groupDetail = portrait.groupCanEnter
-    ? <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand /></>
-    : <>Эта кнопка предназначается для администраторов официальных групп нашего проекта <CuteBrand />. Нажатие откроет заявку.</>
+    ? <>Администратор группы <CuteBrand />. Нажмите, чтобы войти.</>
+    : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
 
   const pressStaff = () => {
     if (portrait.staffCanEnter) {
@@ -124,48 +124,13 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             <EpsilonLogo size="sm" decorative />
           </span>
           <h1 className="gate-title gate-rise" style={{ '--rise': 1 }}>Куда вам нужно войти?</h1>
-          <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Выберите один из вариантов</p>
-          <p className="gate-lead gate-rise" style={{ '--rise': 3 }}>По желанию вы можете выбрать любой цвет интерфейса для приятной работы</p>
-          <div className="gate-palette-slot gate-rise" style={{ '--rise': 4 }} ref={paletteRef}>
-            <div className="gate-tools">
-            <button
-              type="button"
-              className="gate-color-btn"
-              aria-expanded={colorOpen}
-              onClick={() => setColorOpen((open) => !open)}
-            >
-              {colorOpen ? 'Скрыть палитру' : 'Цвет интерфейса'}
-            </button>
-            <button
-              type="button"
-              className={`gate-color-btn gate-perf-btn${lightMode ? ' is-on' : ''}`}
-              aria-pressed={lightMode}
-              onClick={() => setLightMode(!lightMode)}
-            >
-              {lightMode ? 'Обычный режим' : 'Оптимизировать'}
-            </button>
-            </div>
-            {colorOpen && (
-              <div className="gate-palette-pop">
-                <AccentPalette
-                  inline
-                  value={accent}
-                  onChange={(next) => {
-                    const saved = persistAccent(next)
-                    applyAccentToDocument(saved, { flash: true })
-                    setAccent(saved)
-                    setPersonal(accentIsPersonal(saved))
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Одна дверь: сотрудник проекта или администратор группы.</p>
         </header>
 
         {error && (
-          <div className="gate-recover" role="alert">
-            <p className="gate-status gate-status-error">{error}</p>
-            <p className="gate-lead">Сверка не ответила. Вход — дверями ниже, по ключу.</p>
+          <div className="gate-recover gate-rise" style={{ '--rise': 3 }} role="alert">
+            <p className="gate-status gate-status-error">Сервер не ответил. Ниже можно войти по ключу.</p>
+            <p className="gate-lead">{error}</p>
             <button type="button" className="gate-text" onClick={load}>Повторить сверку</button>
           </div>
         )}
@@ -180,20 +145,57 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <div className="gate-doors" aria-busy={checking || undefined}>
             <Door
               title="Панель сотрудника"
-              detail={error ? 'Сверка не ответила. Нажатие откроет вход по ключу.' : staffDetail}
+              detail={error ? 'Ключ, затем код из приложения.' : staffDetail}
+              mark={portrait.applicationStatus === 'pending' && !error ? 'Ждёт' : portrait.staffCanEnter || error ? 'Войти' : 'Заявка'}
               open={portrait.staffCanEnter || Boolean(error)}
               onClick={error ? onStaffEnter : pressStaff}
-              order={5}
+              order={4}
             />
             <Door
               title="Панель администратора"
-              detail={groupDetail}
-              open={portrait.groupCanEnter}
-              onClick={pressGroup}
-              order={6}
+              detail={error ? 'Ключ кабинета группы.' : groupDetail}
+              mark={portrait.groupCanEnter || error ? 'Войти' : 'Заявка'}
+              open={portrait.groupCanEnter || Boolean(error)}
+              onClick={error ? () => onGroupEnter(portrait) : pressGroup}
+              order={5}
             />
           </div>
         )}
+
+        <div className="gate-palette-slot gate-rise" style={{ '--rise': 6 }} ref={paletteRef}>
+          <div className="gate-tools">
+            <button
+              type="button"
+              className="gate-color-btn"
+              aria-expanded={colorOpen}
+              onClick={() => setColorOpen((open) => !open)}
+            >
+              {colorOpen ? 'Скрыть палитру' : 'Цвет и прозрачность'}
+            </button>
+            <button
+              type="button"
+              className={`gate-color-btn gate-perf-btn${lightMode ? ' is-on' : ''}`}
+              aria-pressed={lightMode}
+              onClick={() => setLightMode(!lightMode)}
+            >
+              {lightMode ? 'Обычный режим' : 'Оптимизировать'}
+            </button>
+          </div>
+          {colorOpen && (
+            <div className="gate-palette-pop">
+              <AccentPalette
+                inline
+                value={accent}
+                onChange={(next) => {
+                  const saved = persistAccent(next)
+                  applyAccentToDocument(saved, { flash: true })
+                  setAccent(saved)
+                  setPersonal(accentIsPersonal(saved))
+                }}
+              />
+            </div>
+          )}
+        </div>
         </div>
       </div>
     </div>

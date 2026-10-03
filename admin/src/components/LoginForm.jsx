@@ -95,7 +95,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
 
   return (
     <form className="auth-form auth-step" onSubmit={handleSubmit}>
-      <p className="auth-form-lead">Введите ключ входа.</p>
+      <p className="auth-form-lead">Напишите ключ. Поле кода откроется само, когда ключ подойдёт.</p>
 
       <KeyField
         label="Ключ входа"
@@ -116,7 +116,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
         <p className="auth-message auth-message-error">{shownError}</p>
       )}
 
-      <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`}>
+      <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
         <div className="auth-reveal-inner">
           <label className="auth-field">
             <span className="auth-label">Код из приложения</span>
@@ -127,6 +127,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
               autoComplete="one-time-code"
               placeholder="000000"
               maxLength={6}
+              tabIndex={verified ? 0 : -1}
               value={totp}
               onChange={(event) => {
                 setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
@@ -144,7 +145,8 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
           <button
             type="submit"
             className={`auth-btn auth-btn-primary${working ? ' is-working' : ''}`}
-            disabled={working || totp.length !== 6}
+            tabIndex={verified ? 0 : -1}
+            disabled={!verified || working || totp.length !== 6}
           >
             {working ? 'Входим…' : 'Войти'}
           </button>

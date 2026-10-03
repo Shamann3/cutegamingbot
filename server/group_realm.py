@@ -14,7 +14,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from admin_auth import get_any_telegram_user_id
+from admin_auth import (
+    build_otpauth_uri,
+    generate_totp_secret,
+    get_any_telegram_user_id,
+    totp_qr_data_url,
+    verify_totp,
+)
 from config import owner_user_ids
 from db import db
 
@@ -371,6 +377,8 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS prefix TEXT NOT NULL DEFAULT '';
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_start TIMESTAMPTZ;
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_end TIMESTAMPTZ;
+        ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT '';
+        ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_ready BOOLEAN NOT NULL DEFAULT FALSE;
         CREATE TABLE IF NOT EXISTS epsilon_realm_log (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -782,6 +790,7 @@ class ApplyBody(BaseModel):
     position_id: int = Field(ge=1)
     body: str = Field(min_length=20, max_length=2000)
     rules_read: bool
+    rules_ids: list[int] = Field(min_length=1, max_length=80)
     model_config = {"extra": "forbid"}
 
 
@@ -804,6 +813,12 @@ class ActBody(BaseModel):
 
 class KeyBody(BaseModel):
     key: str = Field(min_length=8, max_length=200)
+    model_config = {"extra": "forbid"}
+
+
+class KeyEnterBody(BaseModel):
+    key: str = Field(min_length=8, max_length=200)
+    totp: str = Field(min_length=6, max_length=16)
     model_config = {"extra": "forbid"}
 
 
@@ -861,6 +876,17 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
     await ensure_tables()
     if not body.rules_read:
         raise HTTPException(status_code=400, detail="Сначала прочитайте правила CuteRules")
+    from rules_channel import load_channel_rules
+
+    rules = await load_channel_rules()
+    live_ids = [int(item["id"]) for item in rules.get("messages") or []]
+    if not live_ids:
+        raise HTTPException(
+            status_code=503,
+            detail=rules.get("error") or "Канал правил не отдал сообщения",
+        )
+    if sorted(set(body.rules_ids)) != sorted(live_ids):
+        raise HTTPException(status_code=400, detail="Прочитайте правила ещё раз: список сообщений обновился")
     pos = await db.pool.fetchrow(
         """
         SELECT p.id, p.rank, p.accepting, g.is_official
@@ -1896,17 +1922,75 @@ async def group_guard_put(chat_id: int, body: GuardBody, user_id: int = Depends(
     return data
 
 
+@router.get("/rules")
+async def group_rules():
+    from rules_channel import load_channel_rules
+
+    rules = await load_channel_rules()
+    if not rules.get("messages"):
+        raise HTTPException(
+            status_code=503,
+            detail=rules.get("error") or "Канал правил не отдал сообщения",
+        )
+    return {"messages": rules["messages"]}
+
+
 @router.post("/key/check")
 async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
     if _is_creator(user_id):
+        return {"ok": True, "needCode": False}
+    row = await _key_row(int(user_id), body.key)
+    secret = str(row["totp_secret"] or "").strip()
+    ready = bool(row["totp_ready"])
+    if not secret:
+        secret = generate_totp_secret()
+        await db.pool.execute(
+            """
+            UPDATE epsilon_group_keys
+            SET totp_secret = $2, totp_ready = FALSE, updated_at = NOW()
+            WHERE user_id = $1
+            """,
+            int(user_id),
+            secret,
+        )
+        ready = False
+    payload = {"ok": True, "needCode": True}
+    if not ready:
+        uri = build_otpauth_uri(secret, account_name=f"group-{int(user_id)}")
+        payload["setup"] = {
+            "qrDataUrl": totp_qr_data_url(uri),
+            "totpSecret": secret,
+        }
+    return payload
+
+
+@router.post("/key/enter")
+async def group_key_enter(body: KeyEnterBody, user_id: int = Depends(get_any_telegram_user_id)):
+    await ensure_tables()
+    if _is_creator(user_id):
         return {"ok": True}
+    row = await _key_row(int(user_id), body.key)
+    secret = str(row["totp_secret"] or "").strip()
+    if not secret or not verify_totp(secret, body.totp):
+        raise HTTPException(status_code=403, detail="Код не подошёл")
+    await db.pool.execute(
+        "UPDATE epsilon_group_keys SET totp_ready = TRUE, updated_at = NOW() WHERE user_id = $1",
+        int(user_id),
+    )
+    return {"ok": True}
+
+
+async def _key_row(user_id: int, key: str):
     row = await db.pool.fetchrow(
-        "SELECT key_hash FROM epsilon_group_keys WHERE user_id = $1",
+        "SELECT key_hash, totp_secret, totp_ready FROM epsilon_group_keys WHERE user_id = $1",
         int(user_id),
     )
     if not row:
-        raise HTTPException(status_code=403, detail="Личный ключ ещё не выдан. Откройте панель из бота или попросите создателя назначить вас снова")
-    if not secrets.compare_digest(_hash_key(body.key.strip()), row["key_hash"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Личный ключ ещё не выдан. Откройте панель из бота или попросите создателя назначить вас снова",
+        )
+    if not secrets.compare_digest(_hash_key(key.strip()), row["key_hash"]):
         raise HTTPException(status_code=403, detail="Ключ не подошёл")
-    return {"ok": True}
+    return row

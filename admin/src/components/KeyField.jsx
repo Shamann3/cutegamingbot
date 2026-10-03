@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function EyeIcon({ off }) {
   if (off) {
@@ -35,12 +35,31 @@ export default function KeyField({
   placeholder = 'Секретный ключ',
   disabled = false,
   name = 'key',
+  invalid = 0,
 }) {
   const [show, setShow] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const node = wrapRef.current
+    if (!invalid || !node?.animate) return undefined
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return undefined
+    node.animate(
+      [
+        { transform: 'translate3d(0, 0, 0)' },
+        { transform: 'translate3d(-6px, 0, 0)' },
+        { transform: 'translate3d(5px, 0, 0)' },
+        { transform: 'translate3d(0, 0, 0)' },
+      ],
+      { duration: 380, easing: 'ease-out' },
+    )
+    return undefined
+  }, [invalid])
+
   return (
     <label className="auth-field">
       <span className="auth-label">{label}</span>
-      <div className="auth-key-wrap">
+      <div className="auth-key-wrap" ref={wrapRef}>
         <input
           className="auth-input auth-key-input"
           name={name}

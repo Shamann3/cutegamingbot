@@ -1437,7 +1437,7 @@ body.perf-light .accent-aura-rain {
 
 @media (max-height: 900px) {
   .gate-door {
-    min-height: 132px !important;
+    min-height: 156px !important;
     padding: 14px 16px !important;
     gap: 6px !important;
   }
@@ -4409,4 +4409,484 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Рассылка на телефоне: вся вкладка в одной колонке, сначала текст и отправка. */
+html.is-phone .panel-shell .panel-layout > .panel-broadcast-wrap,
+html[data-viewport="phone"] .panel-shell .panel-layout > .panel-broadcast-wrap {
+  grid-column: 1 / -1 !important;
+  grid-row: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+html.is-phone .panel-broadcast-wrap,
+html[data-viewport="phone"] .panel-broadcast-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+html.is-phone .panel-broadcast-tabs,
+html[data-viewport="phone"] .panel-broadcast-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.35rem 0 0.65rem;
+  background: var(--e-overlay, rgba(14, 14, 16, 0.92));
+}
+
+html.is-phone .panel-broadcast-tab-btn,
+html[data-viewport="phone"] .panel-broadcast-tab-btn {
+  min-height: 48px;
+  width: 100%;
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
+
+html.is-phone .panel-broadcast-tab-btn-active,
+html[data-viewport="phone"] .panel-broadcast-tab-btn-active {
+  background: var(--e-accent, #fff);
+  color: var(--e-accent-ink, #111);
+  border-color: transparent;
+}
+
+html.is-phone .panel-broadcast,
+html[data-viewport="phone"] .panel-broadcast {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+html.is-phone .panel-broadcast-intro,
+html[data-viewport="phone"] .panel-broadcast-intro { order: 1; }
+html.is-phone .panel-broadcast-compose,
+html[data-viewport="phone"] .panel-broadcast-compose { order: 2; }
+html.is-phone .panel-broadcast-deliver,
+html[data-viewport="phone"] .panel-broadcast-deliver { order: 3; }
+html.is-phone .panel-broadcast-figures,
+html[data-viewport="phone"] .panel-broadcast-figures { order: 4; }
+html.is-phone .panel-broadcast-rotation,
+html[data-viewport="phone"] .panel-broadcast-rotation { order: 5; }
+html.is-phone .panel-broadcast-history,
+html[data-viewport="phone"] .panel-broadcast-history { order: 6; }
+
+html.is-phone .panel-broadcast-wrap .panel-shelf-page > .panel-shelf-label,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-shelf-page > .panel-shelf-label {
+  display: none;
+}
+
+html.is-phone .panel-broadcast-wrap .panel-page-lead,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-page-lead {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+html.is-phone .panel-broadcast-preview-shelf:not(:has(.panel-broadcast-preview-web)),
+html[data-viewport="phone"] .panel-broadcast-preview-shelf:not(:has(.panel-broadcast-preview-web)) {
+  display: none;
+}
+
+html.is-phone .panel-broadcast-rotation-grid,
+html[data-viewport="phone"] .panel-broadcast-rotation-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+html.is-phone .panel-broadcast-channels,
+html[data-viewport="phone"] .panel-broadcast-channels,
+html.is-phone .panel-broadcast-audience,
+html[data-viewport="phone"] .panel-broadcast-audience {
+  display: flex;
+  flex-direction: column;
+}
+
+html.is-phone .panel-broadcast-wrap .panel-market-check,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-market-check,
+html.is-phone .panel-broadcast-wrap .e-toggle,
+html[data-viewport="phone"] .panel-broadcast-wrap .e-toggle {
+  display: flex;
+  white-space: normal;
+  width: 100%;
+  min-height: 48px;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+html.is-phone .panel-broadcast-wrap .panel-market-check,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-market-check {
+  align-items: flex-start;
+}
+
+html.is-phone .panel-broadcast-wrap .e-toggle,
+html[data-viewport="phone"] .panel-broadcast-wrap .e-toggle {
+  align-items: center;
+}
+
+html.is-phone .panel-broadcast-wrap input[type="file"],
+html[data-viewport="phone"] .panel-broadcast-wrap input[type="file"] {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 48px !important;
+  max-height: none !important;
+  font-size: 16px !important;
+}
+
+html.is-phone .panel-broadcast-wrap input[type="checkbox"],
+html.is-phone .panel-broadcast-wrap input[type="radio"],
+html[data-viewport="phone"] .panel-broadcast-wrap input[type="checkbox"],
+html[data-viewport="phone"] .panel-broadcast-wrap input[type="radio"] {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  min-height: 1.25rem !important;
+  max-height: 1.25rem !important;
+  flex: 0 0 1.25rem !important;
+  margin: 0.15rem 0 0 !important;
+  accent-color: var(--e-accent, #fff);
+}
+
+html.is-phone .panel-broadcast-actions,
+html.is-phone .panel-broadcast-rotation-actions,
+html.is-phone .panel-broadcast-history-tools,
+html[data-viewport="phone"] .panel-broadcast-actions,
+html[data-viewport="phone"] .panel-broadcast-rotation-actions,
+html[data-viewport="phone"] .panel-broadcast-history-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  align-items: stretch;
+}
+
+html.is-phone .panel-broadcast-template-name,
+html.is-phone .panel-broadcast-templates .panel-economy-field,
+html.is-phone .panel-broadcast-history-tools .panel-select,
+html.is-phone .panel-broadcast-wrap .panel-select,
+html[data-viewport="phone"] .panel-broadcast-template-name,
+html[data-viewport="phone"] .panel-broadcast-templates .panel-economy-field,
+html[data-viewport="phone"] .panel-broadcast-history-tools .panel-select,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-select {
+  min-width: 0;
+  width: 100%;
+}
+
+html.is-phone .panel-broadcast-wrap .panel-select-trigger,
+html[data-viewport="phone"] .panel-broadcast-wrap .panel-select-trigger {
+  min-height: 48px;
+  width: 100%;
+}
+
+html.is-phone .panel-select-option,
+html[data-viewport="phone"] .panel-select-option {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+html.is-phone .panel-broadcast-send,
+html[data-viewport="phone"] .panel-broadcast-send {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 0.85rem;
+}
+
+html.is-phone .panel-broadcast-run-stats,
+html[data-viewport="phone"] .panel-broadcast-run-stats {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+html.is-phone .panel-broadcast-run-actions,
+html[data-viewport="phone"] .panel-broadcast-run-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  width: 100%;
+}
+
+html.is-phone .panel-broadcast-run-head,
+html[data-viewport="phone"] .panel-broadcast-run-head {
+  flex-direction: column;
+}
+
+html.is-phone .panel-broadcast-history-details-grid,
+html[data-viewport="phone"] .panel-broadcast-history-details-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html.is-phone .panel-broadcast-preview-telegram,
+html[data-viewport="phone"] .panel-broadcast-preview-telegram {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
+html.is-phone .panel-broadcast-recipients-head,
+html[data-viewport="phone"] .panel-broadcast-recipients-head {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+html.is-phone .panel-broadcast-recipients-filters,
+html[data-viewport="phone"] .panel-broadcast-recipients-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 100%;
+}
+
+html.is-phone .panel-broadcast-recipient-row,
+html[data-viewport="phone"] .panel-broadcast-recipient-row {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+html.is-phone .panel-grouppost-button,
+html[data-viewport="phone"] .panel-grouppost-button {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html.is-phone .panel-grouppost-chatpicker-toolbar,
+html.is-phone .panel-grouppost-chatpicker-add,
+html.is-phone .panel-grouppost-row-actions,
+html[data-viewport="phone"] .panel-grouppost-chatpicker-toolbar,
+html[data-viewport="phone"] .panel-grouppost-chatpicker-add,
+html[data-viewport="phone"] .panel-grouppost-row-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.45rem;
+  width: 100%;
+}
+
+html.is-phone .panel-grouppost-chatpicker-toolbar .panel-users-input,
+html.is-phone .panel-grouppost-chatpicker-add .panel-users-input,
+html[data-viewport="phone"] .panel-grouppost-chatpicker-toolbar .panel-users-input,
+html[data-viewport="phone"] .panel-grouppost-chatpicker-add .panel-users-input {
+  grid-column: 1 / -1;
+}
+
+html.is-phone .panel-grouppost-behaviour-nested,
+html[data-viewport="phone"] .panel-grouppost-behaviour-nested {
+  margin-left: 0.35rem;
+}
+
+html.is-phone .panel-grouppost-photo-preview,
+html[data-viewport="phone"] .panel-grouppost-photo-preview {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+html.is-phone .panel-grouppost-photo-preview img,
+html[data-viewport="phone"] .panel-grouppost-photo-preview img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 16rem;
+}
+
+/* Рабочая зона «Стафф» и оплата за дела: та же пластина, что у полок.
+   При прозрачности 100 альфа пластины ноль, сплошной заливки нет. */
+html.is-desktop .panel-shell .staff-desk,
+html.is-phone .panel-shell .staff-desk,
+html[data-viewport="desktop"] .panel-shell .staff-desk,
+html[data-viewport="phone"] .panel-shell .staff-desk,
+html.is-desktop .panel-shell .staff-desk .staff-member-row,
+html.is-phone .panel-shell .staff-desk .staff-member-row,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-member-row,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-member-row,
+html.is-desktop .panel-shell .staff-desk .staff-card,
+html.is-phone .panel-shell .staff-desk .staff-card,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-card,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-card,
+html.is-desktop .panel-shell .staff-desk .staff-app-card,
+html.is-phone .panel-shell .staff-desk .staff-app-card,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-app-card,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-app-card,
+html.is-desktop .panel-shell .staff-desk .staff-action,
+html.is-phone .panel-shell .staff-desk .staff-action,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-action,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-action,
+html.is-desktop .panel-shell .staff-desk .staff-manage-block,
+html.is-phone .panel-shell .staff-desk .staff-manage-block,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-manage-block,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-manage-block,
+html.is-desktop .panel-shell .staff-desk .staff-complaint-row,
+html.is-phone .panel-shell .staff-desk .staff-complaint-row,
+html[data-viewport="desktop"] .panel-shell .staff-desk .staff-complaint-row,
+html[data-viewport="phone"] .panel-shell .staff-desk .staff-complaint-row,
+html.is-desktop .panel-shell .staff-desk .sec-tabs,
+html.is-phone .panel-shell .staff-desk .sec-tabs,
+html[data-viewport="desktop"] .panel-shell .staff-desk .sec-tabs,
+html[data-viewport="phone"] .panel-shell .staff-desk .sec-tabs,
+html.is-desktop .panel-shell .staff-office-btn,
+html.is-phone .panel-shell .staff-office-btn,
+html[data-viewport="desktop"] .panel-shell .staff-office-btn,
+html[data-viewport="phone"] .panel-shell .staff-office-btn,
+html.is-desktop .panel-shell .realm-main .deed-mine .staff-member-row,
+html.is-phone .panel-shell .realm-main .deed-mine .staff-member-row,
+html[data-viewport="desktop"] .panel-shell .realm-main .deed-mine .staff-member-row,
+html[data-viewport="phone"] .panel-shell .realm-main .deed-mine .staff-member-row {
+  background: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-color: var(--e-plate, rgba(14, 14, 16, 0.494)) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+.deed-sum {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 720;
+  letter-spacing: -0.03em;
+  color: var(--e-text, #f5f5f5);
+}
+
+.deed-lead {
+  margin: 0.35rem 0 0.85rem;
+  max-width: 40rem;
+  color: var(--e-text-3, #8a8a92);
+  line-height: 1.45;
+}
+
+.deed-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin: 0 0 0.85rem;
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.deed-lines {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.deed-card,
+.deed-choice {
+  max-width: 32rem;
+}
+
+.deed-face {
+  margin-bottom: 0.75rem;
+}
+
+.deed-photo {
+  display: block;
+  width: 100%;
+  max-height: 22rem;
+  object-fit: cover;
+  border-radius: 16px;
+  background: var(--e-plate-2, rgba(24, 24, 28, 0.5));
+}
+
+.deed-photo-empty {
+  min-height: 16rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  padding: 1.1rem;
+  box-sizing: border-box;
+}
+
+.deed-photo-empty strong {
+  font-size: 1.35rem;
+}
+
+.deed-reason {
+  margin: 0.45rem 0 0;
+  font-size: 1.15rem;
+  line-height: 1.4;
+  font-weight: 650;
+  color: var(--e-text, #f5f5f5);
+}
+
+.deed-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.panel-shell .deed-choice .sec-btn {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: auto !important;
+  min-height: 72px !important;
+  max-height: none !important;
+  width: 100%;
+  padding: 8px 16px !important;
+  font-size: 1rem !important;
+}
+
+.deed-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.45rem 0;
+}
+
+.deed-bar {
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.deed-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--e-accent, #fff);
+}
+
+.deed-history {
+  list-style: none;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.deed-history li {
+  display: grid;
+  gap: 0.1rem;
+  font-size: 13px;
+  color: var(--e-text-3, #8a8a92);
+}
+
+.deed-rate,
+.deed-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.deed-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+}
+
+html.is-phone .panel-shell .deed-choice .sec-btn,
+html[data-viewport="phone"] .panel-shell .deed-choice .sec-btn {
+  min-height: 72px !important;
+  max-height: none !important;
+  height: auto !important;
 }

@@ -265,16 +265,12 @@ body.perf-light .gate-matrix {
 
 .gate-brand-word {
   display: inline;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  font-stretch: normal;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   white-space: nowrap;
-  color: var(--e-accent, #f4f4f4);
-  background: linear-gradient(120deg, var(--e-accent, #fff) 0%, #fff 55%, var(--e-accent-bright, #ddd) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  color: inherit;
+  -webkit-text-fill-color: inherit;
+  background: none;
 }
 
 .gate-status-error {
