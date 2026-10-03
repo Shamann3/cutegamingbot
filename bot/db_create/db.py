@@ -8577,8 +8577,8 @@ class Database:
 
         period='all' — победы плюс проигрыши.
         Иначе сумма user_games_day за [start, end].
-        Пока копия включена, любой срок для людей пустой.
-        Новые игры в это время пишутся в отдельный счётчик и прибавляются к основной статистике, когда срок кончится.
+        Пока копия включена, людям виден обычный топ по играм этого срока.
+        Старые числа в этот список не входят. Когда срок кончится, они сложатся с ним.
         Место совпадает с порядком games DESC, user_id ASC.
         """
         empty = {"rows": [], "place": None, "viewer_games": 0}
@@ -8599,24 +8599,40 @@ class Database:
         try:
             async with self.pool.acquire() as connection:
                 today = _msk_today()
+                hidden = False
                 try:
                     from bot.funcs.players_hold import public_players_gate
                     from bot.funcs.stat_veil import forget_season_cache
 
                     async with connection.transaction():
-                        hidden, folded, lift = await public_players_gate(connection, today)
+                        hidden, folded, _lift = await public_players_gate(connection, today)
                     if folded:
                         forget_season_cache()
-                    if hidden:
-                        return {
-                            "rows": [],
-                            "place": None,
-                            "viewer_games": 0,
-                            "copyHidden": True,
-                            "liftLabel": lift.strftime("%d.%m.%Y") if lift else "",
-                        }
                 except Exception as e:
                     print(f"[user_games_day] копия игр: {e}")
+                    hidden = False
+                if hidden:
+                    try:
+                        from bot.funcs.players_hold import held_board
+
+                        whole = str(period or "all") == "all" or start is None or end is None
+                        played = await held_board(
+                            connection,
+                            viewer_id=viewer,
+                            start=None if whole else start,
+                            end=None if whole else end,
+                            limit=cap,
+                        )
+                    except Exception as e:
+                        print(f"[user_games_day] топ за срок копии: {e}")
+                        return empty
+                    return {
+                        "rows": played["rows"],
+                        "place": played["place"],
+                        "viewer_games": played["viewer_games"],
+                        "copyHidden": False,
+                        "liftLabel": "",
+                    }
                 if str(period or "all") == "all" or start is None or end is None:
                     rows = await connection.fetch(
                         """

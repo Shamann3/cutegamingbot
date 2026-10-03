@@ -214,6 +214,105 @@ async def fold_held_games_now(connection) -> bool:
     return True
 
 
+async def held_board(connection, *, viewer_id: int, start: date | None, end: date | None, limit: int) -> dict:
+    """Топ по играм отдельного счётчика. Для людей это обычный топ, без пометки про копию.
+
+    start и end пустые — все дни счётчика, то есть «за всё время» на экране.
+    Иначе только дни выбранного срока.
+    """
+    viewer = int(viewer_id)
+    cap = int(limit)
+    if start is None or end is None:
+        rows = await connection.fetch(
+            """
+            SELECT user_id, COALESCE(SUM(games), 0)::bigint AS games
+            FROM epsilon_players_hold
+            GROUP BY user_id
+            HAVING COALESCE(SUM(games), 0) > 0
+            ORDER BY games DESC, user_id ASC
+            LIMIT $1
+            """,
+            cap,
+        )
+        viewer_games = int(await connection.fetchval(
+            """
+            SELECT COALESCE(SUM(games), 0)::bigint
+            FROM epsilon_players_hold
+            WHERE user_id = $1
+            """,
+            viewer,
+        ) or 0)
+        ahead = 0
+        if viewer_games > 0:
+            ahead = int(await connection.fetchval(
+                """
+                WITH totals AS (
+                    SELECT user_id, SUM(games)::bigint AS games
+                    FROM epsilon_players_hold
+                    GROUP BY user_id
+                    HAVING SUM(games) > 0
+                )
+                SELECT COUNT(*)::int
+                FROM totals
+                WHERE games > $1
+                   OR (games = $1 AND user_id < $2)
+                """,
+                viewer_games,
+                viewer,
+            ) or 0)
+    else:
+        rows = await connection.fetch(
+            """
+            SELECT user_id, COALESCE(SUM(games), 0)::bigint AS games
+            FROM epsilon_players_hold
+            WHERE day >= $1::date AND day <= $2::date
+            GROUP BY user_id
+            HAVING COALESCE(SUM(games), 0) > 0
+            ORDER BY games DESC, user_id ASC
+            LIMIT $3
+            """,
+            start,
+            end,
+            cap,
+        )
+        viewer_games = int(await connection.fetchval(
+            """
+            SELECT COALESCE(SUM(games), 0)::bigint
+            FROM epsilon_players_hold
+            WHERE user_id = $1 AND day >= $2::date AND day <= $3::date
+            """,
+            viewer,
+            start,
+            end,
+        ) or 0)
+        ahead = 0
+        if viewer_games > 0:
+            ahead = int(await connection.fetchval(
+                """
+                WITH totals AS (
+                    SELECT user_id, SUM(games)::bigint AS games
+                    FROM epsilon_players_hold
+                    WHERE day >= $2::date AND day <= $3::date
+                    GROUP BY user_id
+                    HAVING SUM(games) > 0
+                )
+                SELECT COUNT(*)::int
+                FROM totals
+                WHERE games > $1
+                   OR (games = $1 AND user_id < $4)
+                """,
+                viewer_games,
+                start,
+                end,
+                viewer,
+            ) or 0)
+    return {
+        "rows": [(int(row["user_id"]), int(row["games"] or 0)) for row in rows],
+        "place": (ahead + 1) if viewer_games > 0 else None,
+        "viewer_games": viewer_games,
+    }
+
+
 async def held_totals(pool, *, start: date | None = None, end: date | None = None) -> dict[int, dict]:
     """Сколько игр лежит в отдельном счётчике. Пустой словарь, если таблицы ещё нет."""
     if pool is None:

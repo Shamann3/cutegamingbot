@@ -49,7 +49,7 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "День, неделя, месяц, год и всё время. Копия сохраняет каждый топ. До выбранной даты люди видят пустую статистику, а новые игры пишутся в отдельный счётчик. С даты этот счётчик прибавляется к тому, что было до копии.",
+        "blurb": "День, неделя, месяц, год и всё время. До выбранной даты в топе только игры этого срока. С даты к ним прибавляется статистика, которая была до копии.",
         "needsGroup": False,
         "periods": ["day", "week", "month", "year", "all"],
         "fields": [
@@ -274,6 +274,29 @@ async def _release_players_copy(today: date) -> None:
         forget_season_cache()
 
 
+def _rows_people_see(rows: list, limit: int) -> list:
+    """В срок копии топ — это игры, сыгранные за срок. Старые числа остаются в raw."""
+    visible = []
+    for item in rows:
+        played = int(item.get("held") or 0)
+        item["seen"] = played
+        if played > 0:
+            visible.append(item)
+    visible.sort(key=lambda item: (-int(item["seen"]), int(item["userId"])))
+    visible = visible[: max(int(limit or 1), 1)]
+    for index, item in enumerate(visible, start=1):
+        item["place"] = index
+    return visible
+
+
+def _public_count(payload: dict, played: int, view: str) -> dict:
+    if view != "zero":
+        return payload
+    shown = dict(payload)
+    shown["seen"] = int(played or 0)
+    return shown
+
+
 async def _attach_held(rows_out: list, period: str, today: date, stage: str) -> None:
     from bot.funcs.players_hold import held_totals
 
@@ -346,8 +369,8 @@ def _season_payload(row, today: date) -> dict | None:
         notes = {
             "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
             "zero": (
-                f"До {lift_label} в чате пустые топы: день, неделя, месяц, год и всё время. "
-                f"Новые игры пишутся в отдельный счётчик. С {lift_label} он прибавится к статистике, которая была до копии."
+                f"До {lift_label} в топе только игры этого срока: день, неделя, месяц, год и всё время. "
+                f"С {lift_label} к ним прибавится статистика, которая была до копии."
             ),
             "after": (
                 f"С {lift_label} отдельный счётчик сложен со статистикой до копии. В чате видна общая сумма."
@@ -740,6 +763,8 @@ async def stat_board(
             })
     if spec["id"] == "players":
         await _attach_held(rows_out, name, today, stage)
+        if stage == "zero":
+            rows_out = _rows_people_see(rows_out, limit)
     names = await _names([item["userId"] for item in rows_out])
     for item in rows_out:
         who = names.get(item["userId"], {})
@@ -813,13 +838,13 @@ async def stat_person(
             "key": "wins",
             "label": "Победы",
             "held": int(held.get("wins") or 0),
-            **_apply_seen(wins, win_copy, view),
+            **_public_count(_apply_seen(wins, win_copy, view), int(held.get("wins") or 0), view),
         })
         fields.append({
             "key": "losses",
             "label": "Проигрыши",
             "held": int(held.get("losses") or 0),
-            **_apply_seen(losses, loss_copy, view),
+            **_public_count(_apply_seen(losses, loss_copy, view), int(held.get("losses") or 0), view),
         })
         copied_games = None
         if name == "all" and (win_copy is not None or loss_copy is not None):
@@ -830,7 +855,7 @@ async def stat_person(
             "key": "games",
             "label": "В топе сыграно",
             "held": int(held.get("games") or 0),
-            **_apply_seen(games, copied_games, view),
+            **_public_count(_apply_seen(games, copied_games, view), int(held.get("games") or 0), view),
         })
     else:
         column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]

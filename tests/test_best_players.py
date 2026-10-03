@@ -148,5 +148,6 @@ def test_dispatch_wires_phrases():
     db_py = (ROOT / "bot" / "db_create" / "db.py").read_text(encoding="utf-8")
     assert db_py.count("_note_games_played(connection, user_id, increment)") == 4
     assert db_py.count("await game_goes_to_hold(") == 2
+    assert "held_board(" in db_py
     assert "epsilon_players_hold" in (ROOT / "bot" / "funcs" / "players_hold.py").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS user_games_day" in db_py
