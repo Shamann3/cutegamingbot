@@ -6,8 +6,13 @@
 from server.players_hold import (  # noqa: F401
     add_held_game,
     fold_held_games_now,
+    fold_outcome_now,
     game_goes_to_hold,
     held_board,
     held_totals,
+    outcome_totals,
+    place_played,
+    public_outcome_gate,
+    public_outcome_rows,
     public_players_gate,
 )

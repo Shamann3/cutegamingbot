@@ -58,8 +58,7 @@ async def veil_message_snapshot(pool, chat_id: int, payload: dict) -> dict:
 async def veil_pairs(pool, metric: str, rows):
     if not rows:
         return rows
-    season_metric = "players" if metric in ("players_wins", "players_losses") else metric
-    if not await season_hides(pool, season_metric, 0):
+    if not await season_hides(pool, metric, 0):
         return rows
     return []
 

@@ -147,11 +147,29 @@ def test_dispatch_wires_phrases():
     assert 'c.data == "bestplayers"' in top_py
     db_py = (ROOT / "bot" / "db_create" / "db.py").read_text(encoding="utf-8")
     assert db_py.count("_note_games_played(connection, user_id, increment)") == 4
-    assert db_py.count("await game_goes_to_hold(") == 2
+    assert db_py.count("await place_played(") == 2
+    assert "await game_goes_to_hold(" not in db_py
+    assert "public_outcome_rows" in db_py
     assert "held_board(" in db_py
-    assert "epsilon_players_hold" in (ROOT / "server" / "players_hold.py").read_text(encoding="utf-8")
-    assert "from server.players_hold import" in (ROOT / "bot" / "funcs" / "players_hold.py").read_text(encoding="utf-8")
+    hold_py = (ROOT / "server" / "players_hold.py").read_text(encoding="utf-8")
+    assert "epsilon_players_hold" in hold_py
+    assert "epsilon_stat_hold" in hold_py
+    assert "await game_goes_to_hold(" in hold_py
+    reexport = (ROOT / "bot" / "funcs" / "players_hold.py").read_text(encoding="utf-8")
+    assert "from server.players_hold import" in reexport
+    assert "place_played" in reexport
+    assert "public_outcome_rows" in reexport
+    veil = (ROOT / "bot" / "funcs" / "stat_veil.py").read_text(encoding="utf-8")
+    assert "players_wins" not in veil
     board = (ROOT / "server" / "stat_board.py").read_text(encoding="utf-8")
     assert "from bot.funcs.players_hold import" not in board
     assert "from players_hold import" in board
     assert "CREATE TABLE IF NOT EXISTS user_games_day" in db_py
+    for metric_id in ("wins", "losses", "rich", "groups"):
+        assert f'"id": "{metric_id}"' in board
+    players_at = board.find('"id": "players"')
+    wins_at = board.find('"id": "wins"')
+    players_block = board[players_at:wins_at]
+    assert '"key": "games"' in players_block
+    assert '"key": "wins"' not in players_block
+    assert '"key": "losses"' not in players_block

@@ -8495,30 +8495,34 @@ class Database:
             return referrals
 
     async def get_user_loose_all(self):
+        try:
+            from bot.funcs.players_hold import public_outcome_rows
+
+            held = await public_outcome_rows(self.pool, "losses")
+            if held is not None:
+                return held
+        except Exception:
+            pass
         query = "SELECT user_id, loose FROM users WHERE loose IS NOT NULL"
 
         async with self.pool.acquire() as connection:
-            # Выполнение запроса и получение всех результатов
             loose_data = await connection.fetch(query)
-
-        try:
-            from bot.funcs.stat_veil import veil_pairs
-            return await veil_pairs(self.pool, "players_losses", loose_data)
-        except Exception:
-            return loose_data
+        return loose_data
 
     async def get_user_wins_all(self):
+        try:
+            from bot.funcs.players_hold import public_outcome_rows
+
+            held = await public_outcome_rows(self.pool, "wins")
+            if held is not None:
+                return held
+        except Exception:
+            pass
         query = "SELECT user_id, wins FROM users WHERE wins IS NOT NULL"
 
         async with self.pool.acquire() as connection:
-            # Выполнение запроса и получение всех результатов
             wins_data = await connection.fetch(query)
-
-        try:
-            from bot.funcs.stat_veil import veil_pairs
-            return await veil_pairs(self.pool, "players_wins", wins_data)
-        except Exception:
-            return wins_data
+        return wins_data
 
     async def ensure_user_games_day_schema(self) -> None:
         """Дневной счётчик сыгранных игр. Победа и проигрыш — одна игра."""
@@ -8600,12 +8604,14 @@ class Database:
             async with self.pool.acquire() as connection:
                 today = _msk_today()
                 hidden = False
+                hold_ready = False
                 try:
                     from bot.funcs.players_hold import public_players_gate
                     from bot.funcs.stat_veil import forget_season_cache
 
                     async with connection.transaction():
                         hidden, folded, _lift = await public_players_gate(connection, today)
+                    hold_ready = True
                     if folded:
                         forget_season_cache()
                 except Exception as e:
@@ -8634,41 +8640,107 @@ class Database:
                         "liftLabel": "",
                     }
                 if str(period or "all") == "all" or start is None or end is None:
-                    rows = await connection.fetch(
-                        """
-                        SELECT user_id,
-                               (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
-                        FROM users
-                        WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > 0
-                        ORDER BY games DESC, user_id ASC
-                        LIMIT $1
-                        """,
-                        cap,
-                    )
-                    own = await connection.fetchrow(
-                        """
-                        SELECT (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
-                        FROM users
-                        WHERE user_id = $1
-                        """,
-                        viewer,
-                    )
-                    viewer_games = int(own["games"] or 0) if own else 0
-                    ahead = 0
-                    if viewer_games > 0:
-                        ahead = int(await connection.fetchval(
+                    if hold_ready:
+                        rows = await connection.fetch(
                             """
-                            SELECT COUNT(*)::int
-                            FROM users
-                            WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > $1
-                               OR (
-                                    (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) = $1
-                                    AND user_id < $2
-                               )
+                            WITH totals AS (
+                                SELECT user_id, SUM(games)::bigint AS games
+                                FROM (
+                                    SELECT user_id,
+                                           (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                                    FROM users
+                                    UNION ALL
+                                    SELECT user_id, COALESCE(amount, 0)::bigint AS games
+                                    FROM epsilon_stat_hold
+                                    WHERE metric IN ('wins', 'losses')
+                                ) AS parts
+                                GROUP BY user_id
+                                HAVING SUM(games) > 0
+                            )
+                            SELECT user_id, games
+                            FROM totals
+                            ORDER BY games DESC, user_id ASC
+                            LIMIT $1
                             """,
-                            viewer_games,
+                            cap,
+                        )
+                        viewer_games = int(await connection.fetchval(
+                            """
+                            SELECT COALESCE(SUM(games), 0)::bigint
+                            FROM (
+                                SELECT (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                                FROM users
+                                WHERE user_id = $1
+                                UNION ALL
+                                SELECT COALESCE(amount, 0)::bigint AS games
+                                FROM epsilon_stat_hold
+                                WHERE user_id = $1 AND metric IN ('wins', 'losses')
+                            ) AS parts
+                            """,
                             viewer,
                         ) or 0)
+                        ahead = 0
+                        if viewer_games > 0:
+                            ahead = int(await connection.fetchval(
+                                """
+                                WITH totals AS (
+                                    SELECT user_id, SUM(games)::bigint AS games
+                                    FROM (
+                                        SELECT user_id,
+                                               (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                                        FROM users
+                                        UNION ALL
+                                        SELECT user_id, COALESCE(amount, 0)::bigint AS games
+                                        FROM epsilon_stat_hold
+                                        WHERE metric IN ('wins', 'losses')
+                                    ) AS parts
+                                    GROUP BY user_id
+                                    HAVING SUM(games) > 0
+                                )
+                                SELECT COUNT(*)::int
+                                FROM totals
+                                WHERE games > $1
+                                   OR (games = $1 AND user_id < $2)
+                                """,
+                                viewer_games,
+                                viewer,
+                            ) or 0)
+                    else:
+                        rows = await connection.fetch(
+                            """
+                            SELECT user_id,
+                                   (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                            FROM users
+                            WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > 0
+                            ORDER BY games DESC, user_id ASC
+                            LIMIT $1
+                            """,
+                            cap,
+                        )
+                        own = await connection.fetchrow(
+                            """
+                            SELECT (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                            FROM users
+                            WHERE user_id = $1
+                            """,
+                            viewer,
+                        )
+                        viewer_games = int(own["games"] or 0) if own else 0
+                        ahead = 0
+                        if viewer_games > 0:
+                            ahead = int(await connection.fetchval(
+                                """
+                                SELECT COUNT(*)::int
+                                FROM users
+                                WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > $1
+                                   OR (
+                                        (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) = $1
+                                        AND user_id < $2
+                                   )
+                                """,
+                                viewer_games,
+                                viewer,
+                            ) or 0)
                 else:
                     rows = await connection.fetch(
                         """
@@ -8824,17 +8896,26 @@ class Database:
                 recorded = False
                 try:
                     async with connection.transaction():
-                        from bot.funcs.players_hold import add_held_game, game_goes_to_hold
+                        from bot.funcs.players_hold import place_played
 
-                        if await game_goes_to_hold(connection, _msk_today()):
-                            await add_held_game(connection, int(user_id), _msk_today(), wins=int(increment))
-                            print(
-                                f"[update_user_wins] копия статистики: +{increment} в отдельный счётчик user_id={user_id}")
+                        placed = await place_played(
+                            connection, int(user_id), _msk_today(), wins=int(increment),
+                        )
+                        if not placed.wins_held:
+                            print(f"[update_user_wins] ✏️ Прибавляю wins: +{increment} user_id={user_id}")
+                            await connection.execute(
+                                "UPDATE users SET wins = COALESCE(wins, 0) + $1::bigint WHERE user_id = $2",
+                                int(increment),
+                                user_id,
+                            )
                         else:
-                            new_wins = (result [ 'wins' ] or 0) + increment
-                            print(f"[update_user_wins] ✏️ Обновляю wins: {result [ 'wins' ]} -> {new_wins}")
-                            await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
+                            print(
+                                f"[update_user_wins] копия побед: +{increment} в отдельный счётчик user_id={user_id}")
+                        if not placed.games_held:
                             await self._note_games_played(connection, user_id, increment)
+                        else:
+                            print(
+                                f"[update_user_wins] копия игр: +{increment} в отдельный счётчик user_id={user_id}")
                     recorded = True
                 except Exception as e:
                     print(f"[update_user_wins] отдельный счётчик не записался, пишу в основную статистику: {e}")
@@ -9058,17 +9139,26 @@ class Database:
                 recorded = False
                 try:
                     async with connection.transaction():
-                        from bot.funcs.players_hold import add_held_game, game_goes_to_hold
+                        from bot.funcs.players_hold import place_played
 
-                        if await game_goes_to_hold(connection, _msk_today()):
-                            await add_held_game(connection, int(user_id), _msk_today(), loose=int(increment))
-                            print(
-                                f"[update_user_loose] копия статистики: +{increment} в отдельный счётчик user_id={user_id}")
+                        placed = await place_played(
+                            connection, int(user_id), _msk_today(), loose=int(increment),
+                        )
+                        if not placed.losses_held:
+                            print(f"[update_user_loose] ✏️ Прибавляю loose: +{increment} user_id={user_id}")
+                            await connection.execute(
+                                "UPDATE users SET loose = COALESCE(loose, 0) + $1::bigint WHERE user_id = $2",
+                                int(increment),
+                                user_id,
+                            )
                         else:
-                            new_loose = (result [ 'loose' ] or 0) + increment
-                            print(f"[update_user_loose] ✏️ Обновляю loose: {result [ 'loose' ]} -> {new_loose}")
-                            await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
+                            print(
+                                f"[update_user_loose] копия проигрышей: +{increment} в отдельный счётчик user_id={user_id}")
+                        if not placed.games_held:
                             await self._note_games_played(connection, user_id, increment)
+                        else:
+                            print(
+                                f"[update_user_loose] копия игр: +{increment} в отдельный счётчик user_id={user_id}")
                     recorded = True
                 except Exception as e:
                     print(f"[update_user_loose] отдельный счётчик не записался, пишу в основную статистику: {e}")

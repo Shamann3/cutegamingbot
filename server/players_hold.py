@@ -1,13 +1,15 @@
-"""Отдельный счётчик игр, пока у лучших игроков открыта копия.
+"""Отдельные счётчики, пока у статистики открыта копия.
 
-Пока срок копии не кончился, победы и проигрыши пишутся в epsilon_players_hold.
-users.wins, users.loose и user_games_day в это время не растут.
+Лучшие игроки, победы и проигрыши копируются по отдельности.
+Пока открыта копия игр, новые игры пишутся в epsilon_players_hold
+и не попадают в user_games_day. Победы и проигрыши при этом идут
+в свои счётчики, только если открыта именно их копия.
 Когда срок кончился — или создатель снимает новую копию, или убирает текущую —
-строки отдельного счётчика прибавляются к основной статистике и удаляются.
+отдельный счётчик прибавляется к основной статистике и удаляется.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 try:
     from server.stat_lens import hold_destination
@@ -16,6 +18,8 @@ except ImportError:  # панель запускается с server/ в пут�
 
 # Один замок на запись игры и на сложение счётчиков. Совпадает у бота и у панели.
 HOLD_LOCK = 872343
+_MSK = timezone(timedelta(hours=3))
+_OUTCOME_COLUMN = {"wins": "wins", "losses": "loose"}
 
 
 async def ensure_players_hold(connection) -> None:
@@ -57,6 +61,17 @@ async def ensure_players_hold(connection) -> None:
             copied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             count_from TIMESTAMPTZ,
             PRIMARY KEY (metric, chat_id)
+        )
+        """
+    )
+    await connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epsilon_stat_hold (
+            metric TEXT NOT NULL,
+            user_id BIGINT NOT NULL,
+            day DATE NOT NULL,
+            amount BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (metric, user_id, day)
         )
         """
     )
@@ -139,11 +154,19 @@ async def game_goes_to_hold(connection, today: date) -> bool:
     return dest == "hold"
 
 
-async def add_held_game(connection, user_id: int, day: date, *, wins: int = 0, loose: int = 0) -> None:
+async def add_held_game(
+    connection,
+    user_id: int,
+    day: date,
+    *,
+    wins: int = 0,
+    loose: int = 0,
+    games: int | None = None,
+) -> None:
     won = int(wins or 0)
     lost = int(loose or 0)
-    games = won + lost
-    if won == 0 and lost == 0:
+    played = won + lost if games is None else int(games)
+    if won == 0 and lost == 0 and played == 0:
         return
     await connection.execute(
         """
@@ -158,7 +181,7 @@ async def add_held_game(connection, user_id: int, day: date, *, wins: int = 0, l
         day,
         won,
         lost,
-        games,
+        played,
     )
 
 
@@ -359,3 +382,221 @@ async def held_totals(pool, *, start: date | None = None, end: date | None = Non
         }
         for row in rows
     }
+
+
+def _moscow_today() -> date:
+    return datetime.now(_MSK).date()
+
+
+class Played:
+    """Куда легла одна игра: в отдельный счётчик или в основную статистику."""
+
+    def __init__(self, games_held: bool, wins_held: bool, losses_held: bool):
+        self.games_held = games_held
+        self.wins_held = wins_held
+        self.losses_held = losses_held
+
+
+async def _outcome_season(connection, metric: str):
+    return await connection.fetchrow(
+        """
+        SELECT zero_from, zero_until
+        FROM epsilon_stat_season
+        WHERE metric = $1 AND chat_id = 0
+        """,
+        metric,
+    )
+
+
+async def _fold_outcome(connection, metric: str) -> None:
+    column = _OUTCOME_COLUMN[metric]
+    await connection.execute(
+        f"""
+        UPDATE users AS u
+        SET {column} = COALESCE(u.{column}, 0) + h.amount
+        FROM (
+            SELECT user_id, COALESCE(SUM(amount), 0)::bigint AS amount
+            FROM epsilon_stat_hold
+            WHERE metric = $1
+            GROUP BY user_id
+            HAVING COALESCE(SUM(amount), 0) <> 0
+        ) AS h
+        WHERE u.user_id = h.user_id
+        """,
+        metric,
+    )
+    await connection.execute("DELETE FROM epsilon_stat_hold WHERE metric = $1", metric)
+
+
+async def outcome_goes_to_hold(connection, metric: str, today: date) -> bool:
+    """True — эту победу или проигрыш писать в свой отдельный счётчик.
+
+    Копия игр на это не влияет. Вызывать внутри транзакции.
+    """
+    if metric not in _OUTCOME_COLUMN:
+        return False
+    await ensure_players_hold(connection)
+    await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", HOLD_LOCK)
+    row = await _outcome_season(connection, metric)
+    if row is None:
+        return False
+    dest = hold_destination(today, row["zero_from"], row["zero_until"])
+    if dest == "fold":
+        await _fold_outcome(connection, metric)
+        return False
+    return dest == "hold"
+
+
+async def add_outcome_hold(connection, metric: str, user_id: int, day: date, amount: int) -> None:
+    gained = int(amount or 0)
+    if metric not in _OUTCOME_COLUMN or gained == 0:
+        return
+    await connection.execute(
+        """
+        INSERT INTO epsilon_stat_hold (metric, user_id, day, amount)
+        VALUES ($1, $2::bigint, $3::date, $4::bigint)
+        ON CONFLICT (metric, user_id, day) DO UPDATE
+        SET amount = epsilon_stat_hold.amount + EXCLUDED.amount
+        """,
+        metric,
+        int(user_id),
+        day,
+        gained,
+    )
+
+
+async def place_played(connection, user_id: int, day: date, *, wins: int = 0, loose: int = 0) -> Played:
+    """Разложить одну игру по открытым копиям.
+
+    Копия лучших игроков забирает только число игр.
+    Копия побед забирает только победы, копия проигрышей — только проигрыши.
+    """
+    won = int(wins or 0)
+    lost = int(loose or 0)
+    played = won + lost
+    games_held = await game_goes_to_hold(connection, day)
+    if games_held and played:
+        await add_held_game(connection, int(user_id), day, games=played)
+    wins_held = False
+    losses_held = False
+    if won:
+        wins_held = await outcome_goes_to_hold(connection, "wins", day)
+        if wins_held:
+            await add_outcome_hold(connection, "wins", int(user_id), day, won)
+    if lost:
+        losses_held = await outcome_goes_to_hold(connection, "losses", day)
+        if losses_held:
+            await add_outcome_hold(connection, "losses", int(user_id), day, lost)
+    return Played(games_held, wins_held, losses_held)
+
+
+async def fold_outcome_now(connection, metric: str) -> bool:
+    """Сложить отдельный счётчик побед или проигрышей, даже если срок ещё идёт."""
+    if metric not in _OUTCOME_COLUMN:
+        return False
+    await ensure_players_hold(connection)
+    await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", HOLD_LOCK)
+    pending = await connection.fetchval(
+        "SELECT 1 FROM epsilon_stat_hold WHERE metric = $1 LIMIT 1",
+        metric,
+    )
+    if not pending:
+        return False
+    await _fold_outcome(connection, metric)
+    return True
+
+
+async def public_outcome_gate(connection, today: date, metric: str) -> tuple[bool, bool, date | None]:
+    """(топ показывает отдельный счётчик, счётчик уже сложен, дата снятия)."""
+    if metric not in _OUTCOME_COLUMN:
+        return False, False, None
+    await ensure_players_hold(connection)
+    row = await _outcome_season(connection, metric)
+    if row is None or row["zero_from"] is None or row["zero_until"] is None:
+        return False, False, None
+    lift = row["zero_until"] + timedelta(days=1)
+    dest = hold_destination(today, row["zero_from"], row["zero_until"])
+    if dest == "hold":
+        return True, False, lift
+    if dest != "fold":
+        return False, False, lift
+    pending = await connection.fetchval(
+        "SELECT 1 FROM epsilon_stat_hold WHERE metric = $1 LIMIT 1",
+        metric,
+    )
+    if not pending:
+        return False, False, lift
+    await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", HOLD_LOCK)
+    row = await _outcome_season(connection, metric)
+    if row is None or row["zero_from"] is None or row["zero_until"] is None:
+        pending = await connection.fetchval(
+            "SELECT 1 FROM epsilon_stat_hold WHERE metric = $1 LIMIT 1",
+            metric,
+        )
+        if pending:
+            await _fold_outcome(connection, metric)
+            return False, True, None
+        return False, False, None
+    lift = row["zero_until"] + timedelta(days=1)
+    dest = hold_destination(today, row["zero_from"], row["zero_until"])
+    if dest == "hold":
+        return True, False, lift
+    pending = await connection.fetchval(
+        "SELECT 1 FROM epsilon_stat_hold WHERE metric = $1 LIMIT 1",
+        metric,
+    )
+    if dest == "fold" and pending:
+        await _fold_outcome(connection, metric)
+        return False, True, lift
+    return False, False, lift
+
+
+async def outcome_totals(pool, metric: str) -> dict[int, int]:
+    """Сколько побед или проигрышей лежит в отдельном счётчике."""
+    if pool is None or metric not in _OUTCOME_COLUMN:
+        return {}
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT user_id, COALESCE(SUM(amount), 0)::bigint AS amount
+            FROM epsilon_stat_hold
+            WHERE metric = $1
+            GROUP BY user_id
+            HAVING COALESCE(SUM(amount), 0) <> 0
+            """,
+            metric,
+        )
+    except Exception:
+        return {}
+    return {int(row["user_id"]): int(row["amount"] or 0) for row in rows}
+
+
+async def public_outcome_rows(pool, metric: str):
+    """Пары (user_id, число) для чата, пока открыта копия этой статистики.
+
+    None — копии нет, чат читает основную колонку.
+    Список — даже пустой — копия открыта. Основную колонку в этом случае не показывать.
+    """
+    if pool is None or metric not in _OUTCOME_COLUMN:
+        return None
+    hidden = False
+    try:
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                hidden, _folded, _lift = await public_outcome_gate(connection, _moscow_today(), metric)
+            if not hidden:
+                return None
+            rows = await connection.fetch(
+                """
+                SELECT user_id, COALESCE(SUM(amount), 0)::bigint AS amount
+                FROM epsilon_stat_hold
+                WHERE metric = $1
+                GROUP BY user_id
+                HAVING COALESCE(SUM(amount), 0) > 0
+                ORDER BY amount DESC, user_id ASC
+                """,
+                metric,
+            )
+    except Exception:
+        return [] if hidden else None
+    return [(int(row["user_id"]), int(row["amount"] or 0)) for row in rows]

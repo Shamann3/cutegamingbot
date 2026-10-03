@@ -1,9 +1,10 @@
 """Топы для создателя: те же числа, что видят люди, и правка на месте.
 
 Сообщения пишутся в chatchange (срок) и chatall (всё время).
-Победы и проигрыши за всё время — users.wins и users.loose.
-За день, неделю, месяц и год — user_games_day, сумма игр в топе лучших.
+Лучшие игроки — число сыгранных игр. Победы и проигрыши — отдельные топы.
+Богачи — users.balance. Баланс групп — chat.chatbalance.
 Донат — users.donate. Выиграно — users.winamount. Приглашения — users.refferals.
+У каждой статистики своя копия.
 """
 from __future__ import annotations
 
@@ -17,7 +18,14 @@ from admin_audit import log_admin_action
 from admin_auth import get_any_telegram_user_id
 from admin_soft_restart import is_project_creator
 from db import db
-from players_hold import fold_held_games_now, held_totals, public_players_gate
+from players_hold import (
+    fold_held_games_now,
+    fold_outcome_now,
+    held_totals,
+    outcome_totals,
+    public_outcome_gate,
+    public_players_gate,
+)
 from stat_lens import (
     PERIODS,
     anchor_day,
@@ -50,16 +58,46 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "День, неделя, месяц, год и всё время. До выбранной даты в топе только игры этого срока. С даты к ним прибавляется статистика, которая была до копии.",
+        "blurb": "Сыгранные игры за день, неделю, месяц, год и всё время. Победы и проигрыши здесь не правятся: у них свои топы и свои копии.",
         "needsGroup": False,
         "periods": ["day", "week", "month", "year", "all"],
-        "fields": [
-            {"key": "wins", "label": "Победы"},
-            {"key": "losses", "label": "Проигрыши"},
-        ],
+        "fields": [{"key": "games", "label": "Сыграно"}],
         "rowUnit": "сыгранных игр",
         "topLimit": 10,
         "season": "players",
+    },
+    "wins": {
+        "id": "wins",
+        "title": "Победы",
+        "blurb": "Сколько побед за всё время. Копия своя и не связана с лучшими игроками: до даты в топе только победы за этот срок, с даты они складываются с прежними.",
+        "needsGroup": False,
+        "periods": ["all"],
+        "fields": [{"key": "wins", "label": "Победы"}],
+        "rowUnit": "побед",
+        "topLimit": 10,
+        "season": "wins",
+    },
+    "losses": {
+        "id": "losses",
+        "title": "Проигрыши",
+        "blurb": "Сколько проигрышей за всё время. Копия своя и не связана с лучшими игроками: до даты в топе только проигрыши за этот срок, с даты они складываются с прежними.",
+        "needsGroup": False,
+        "periods": ["all"],
+        "fields": [{"key": "losses", "label": "Проигрыши"}],
+        "rowUnit": "проигрышей",
+        "topLimit": 10,
+        "season": "losses",
+    },
+    "rich": {
+        "id": "rich",
+        "title": "Богачи",
+        "blurb": "Баланс кут, без группы. До даты копии люди видят пустой топ. С даты снова видна сумма.",
+        "needsGroup": False,
+        "periods": ["all"],
+        "fields": [{"key": "balance", "label": "Баланс"}],
+        "rowUnit": "кут",
+        "topLimit": 10,
+        "season": "rich",
     },
     "donors": {
         "id": "donors",
@@ -94,7 +132,28 @@ METRICS: dict[str, dict[str, Any]] = {
         "topLimit": 10,
         "season": "invites",
     },
+    "groups": {
+        "id": "groups",
+        "title": "Баланс групп",
+        "blurb": "Баланс публичных групп. До даты копии люди видят пустой топ. С даты снова видна сумма.",
+        "needsGroup": False,
+        "periods": ["all"],
+        "fields": [{"key": "balance", "label": "Баланс"}],
+        "rowUnit": "кут",
+        "topLimit": 10,
+        "season": "groups",
+    },
 }
+
+_USER_COLUMN = {
+    "donors": "donate",
+    "won": "winamount",
+    "invites": "refferals",
+    "rich": "balance",
+    "wins": "wins",
+    "losses": "loose",
+}
+_HOLD_METRICS = frozenset({"wins", "losses"})
 
 _PERIOD_LABEL = {
     "day": "За день",
@@ -175,7 +234,7 @@ class ValueBody(BaseModel):
     metric: str
     period: str = "all"
     chat_id: int = 0
-    user_id: int = Field(ge=1)
+    user_id: int
     values: dict[str, int]
     model_config = {"extra": "forbid"}
 
@@ -270,6 +329,30 @@ async def _release_players_copy(today: date) -> None:
             await public_players_gate(connection, today)
 
 
+async def _release_outcome(metric: str, today: date) -> None:
+    async with db.pool.acquire() as connection:
+        async with connection.transaction():
+            await public_outcome_gate(connection, today, metric)
+
+
+async def _attach_outcome(rows_out: list, metric: str) -> None:
+    held = await outcome_totals(db.pool, metric)
+    seen_ids = set()
+    for item in rows_out:
+        item["held"] = int(held.get(int(item["userId"])) or 0)
+        seen_ids.add(int(item["userId"]))
+    for uid, amount in held.items():
+        if uid in seen_ids or int(amount or 0) <= 0:
+            continue
+        rows_out.append({
+            "place": 0,
+            "userId": int(uid),
+            "raw": 0,
+            "seen": 0,
+            "held": int(amount),
+        })
+
+
 def _rows_people_see(rows: list, limit: int) -> list:
     """В срок копии топ — это игры, сыгранные за срок. Старые числа остаются в raw."""
     visible = []
@@ -359,7 +442,8 @@ def _season_payload(row, today: date) -> dict | None:
     stage = phase(today, row["zero_from"], row["zero_until"])
     lift = _lift_day(row)
     lift_label = lift.strftime("%d.%m.%Y")
-    if str(row["metric"]) == "players":
+    metric_name = str(row["metric"])
+    if metric_name == "players":
         notes = {
             "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
             "zero": (
@@ -369,6 +453,24 @@ def _season_payload(row, today: date) -> dict | None:
             "after": (
                 f"С {lift_label} отдельный счётчик сложен со статистикой до копии. В чате видна общая сумма."
             ),
+        }
+    elif metric_name == "wins":
+        notes = {
+            "before": f"Копия уже снята. До {lift_label} люди видят обычные победы.",
+            "zero": (
+                f"До {lift_label} в топе только победы за этот срок. "
+                f"С {lift_label} к ним прибавятся победы, которые были до копии."
+            ),
+            "after": f"С {lift_label} победы за срок копии сложены с прежними. В чате видна общая сумма.",
+        }
+    elif metric_name == "losses":
+        notes = {
+            "before": f"Копия уже снята. До {lift_label} люди видят обычные проигрыши.",
+            "zero": (
+                f"До {lift_label} в топе только проигрыши за этот срок. "
+                f"С {lift_label} к ним прибавятся проигрыши, которые были до копии."
+            ),
+            "after": f"С {lift_label} проигрыши за срок копии сложены с прежними. В чате видна общая сумма.",
         }
     else:
         notes = {
@@ -536,12 +638,27 @@ async def _player_rows(period: str, today: date, limit: int):
     if period == "all":
         rows = await db.pool.fetch(
             """
+            WITH parts AS (
+                SELECT user_id,
+                       COALESCE(wins, 0)::bigint AS wins,
+                       COALESCE(loose, 0)::bigint AS losses,
+                       (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
+                FROM users
+                UNION ALL
+                SELECT user_id,
+                       0::bigint AS wins,
+                       0::bigint AS losses,
+                       COALESCE(amount, 0)::bigint AS games
+                FROM epsilon_stat_hold
+                WHERE metric IN ('wins', 'losses')
+            )
             SELECT user_id,
-                   COALESCE(wins, 0)::bigint AS wins,
-                   COALESCE(loose, 0)::bigint AS losses,
-                   (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) AS games
-            FROM users
-            WHERE (COALESCE(wins, 0)::bigint + COALESCE(loose, 0)::bigint) > 0
+                   SUM(wins)::bigint AS wins,
+                   SUM(losses)::bigint AS losses,
+                   SUM(games)::bigint AS games
+            FROM parts
+            GROUP BY user_id
+            HAVING SUM(games) > 0
             ORDER BY games DESC, user_id ASC
             LIMIT $1
             """,
@@ -694,6 +811,8 @@ async def stat_board(
     today = _today()
     if spec["id"] == "players":
         await _release_players_copy(today)
+    elif spec["id"] in _HOLD_METRICS:
+        await _release_outcome(spec["id"], today)
     chat = await _require_chat(scope) if spec["needsGroup"] else None
     season = await _season_row(spec["season"], scope)
     stage = phase(today, season["zero_from"], season["zero_until"]) if season else "off"
@@ -734,8 +853,33 @@ async def stat_board(
                 "losses": losses,
                 "games": games,
             })
+    elif spec["id"] == "groups":
+        raw_rows = await db.pool.fetch(
+            """
+            SELECT chat_id AS user_id,
+                   COALESCE(chatbalance, 0)::bigint AS amount,
+                   COALESCE(namechat, chat_id::text) AS title,
+                   COALESCE(usernamechat, '') AS username
+            FROM chat
+            WHERE COALESCE(chatbalance, 0) > 0
+            ORDER BY amount DESC, chat_id ASC
+            LIMIT $1
+            """,
+            limit,
+        )
+        for index, row in enumerate(raw_rows, start=1):
+            uid = int(row["user_id"])
+            raw = int(row["amount"] or 0)
+            rows_out.append({
+                "place": index,
+                "userId": uid,
+                "raw": raw,
+                "seen": seen_number(raw, copied.get(uid), stage),
+                "name": row["title"] or str(uid),
+                "username": row["username"] or "",
+            })
     else:
-        column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]
+        column = _USER_COLUMN[spec["id"]]
         raw_rows = await db.pool.fetch(
             f"""
             SELECT user_id, COALESCE({column}, 0)::bigint AS amount
@@ -759,8 +903,17 @@ async def stat_board(
         await _attach_held(rows_out, name, today, stage)
         if stage == "zero":
             rows_out = _rows_people_see(rows_out, limit)
-    names = await _names([item["userId"] for item in rows_out])
+    elif spec["id"] in _HOLD_METRICS:
+        await _attach_outcome(rows_out, spec["id"])
+        if stage == "zero":
+            rows_out = _rows_people_see(rows_out, limit)
+    if spec["id"] != "groups":
+        names = await _names([item["userId"] for item in rows_out])
+    else:
+        names = {}
     for item in rows_out:
+        if item.get("name"):
+            continue
         who = names.get(item["userId"], {})
         item["name"] = who.get("name") or str(item["userId"])
         item["username"] = who.get("username") or ""
@@ -786,7 +939,7 @@ def _period_stage(stage: str) -> str:
 @router.get("/person")
 async def stat_person(
     metric: str,
-    user_id: int = Query(ge=1),
+    user_id: int = Query(),
     period: str = "all",
     chat_id: int = 0,
     actor_id: int = Depends(get_any_telegram_user_id),
@@ -798,10 +951,18 @@ async def stat_person(
     scope = _scope_chat(spec, chat_id)
     if spec["needsGroup"]:
         await _require_chat(scope)
-    person = await _require_user(user_id)
+    if spec["id"] == "groups":
+        chat_row = await _require_chat(int(user_id))
+        person = {"userId": chat_row["chatId"], "name": chat_row["title"], "username": chat_row["username"]}
+    else:
+        if int(user_id) < 1:
+            raise HTTPException(status_code=400, detail="Такого пользователя нет")
+        person = await _require_user(user_id)
     today = _today()
     if spec["id"] == "players":
         await _release_players_copy(today)
+    elif spec["id"] in _HOLD_METRICS:
+        await _release_outcome(spec["id"], today)
     season = await _season_row(spec["season"], scope)
     stage = phase(today, season["zero_from"], season["zero_until"]) if season else "off"
     fields = []
@@ -811,15 +972,15 @@ async def stat_person(
         view_stage = stage if name == "all" else _period_stage(stage)
         fields.append({"key": "messages", "label": "Сообщений", **_apply_seen(raw, copied, view_stage)})
     elif spec["id"] == "players":
-        wins, losses, games = await _player_raw(int(user_id), name, today)
+        _wins, _losses, games = await _player_raw(int(user_id), name, today)
         view = stage
-        win_copy = None
-        loss_copy = None
-        if season and name == "all":
-            win_copy = await _one_copy("players_wins", 0, int(user_id))
-            loss_copy = await _one_copy("players_losses", 0, int(user_id))
+        if name == "all" and season:
+            copied_games = await _one_copy("players_wins", 0, int(user_id))
+            copied_games += await _one_copy("players_losses", 0, int(user_id))
         elif season:
-            copied_period = await _one_copy(f"players_{name}", 0, int(user_id))
+            copied_games = await _one_copy(f"players_{name}", 0, int(user_id))
+        else:
+            copied_games = None
         if name == "all":
             held_one = await held_totals(db.pool)
         else:
@@ -827,39 +988,35 @@ async def stat_person(
             held_one = await held_totals(db.pool, start=held_start, end=held_end)
         held = held_one.get(int(user_id)) or {}
         fields.append({
-            "key": "wins",
-            "label": "Победы",
-            "held": int(held.get("wins") or 0),
-            **_public_count(_apply_seen(wins, win_copy, view), int(held.get("wins") or 0), view),
-        })
-        fields.append({
-            "key": "losses",
-            "label": "Проигрыши",
-            "held": int(held.get("losses") or 0),
-            **_public_count(_apply_seen(losses, loss_copy, view), int(held.get("losses") or 0), view),
-        })
-        copied_games = None
-        if name == "all" and (win_copy is not None or loss_copy is not None):
-            copied_games = int(win_copy or 0) + int(loss_copy or 0)
-        elif name != "all" and season:
-            copied_games = copied_period
-        fields.append({
             "key": "games",
-            "label": "В топе сыграно",
+            "label": "Сыграно",
             "held": int(held.get("games") or 0),
             **_public_count(_apply_seen(games, copied_games, view), int(held.get("games") or 0), view),
         })
+    elif spec["id"] == "groups":
+        raw = int(await db.pool.fetchval(
+            "SELECT COALESCE(chatbalance, 0)::bigint FROM chat WHERE chat_id = $1::bigint",
+            int(user_id),
+        ) or 0)
+        copied = await _one_copy("groups", 0, int(user_id)) if season else None
+        fields.append({"key": "balance", "label": "Баланс", **_apply_seen(raw, copied, stage)})
     else:
-        column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]
+        column = _USER_COLUMN[spec["id"]]
         raw = int(await db.pool.fetchval(
             f"SELECT COALESCE({column}, 0)::bigint FROM users WHERE user_id = $1::bigint",
             int(user_id),
         ) or 0)
         copied = await _one_copy(spec["season"], 0, int(user_id)) if season else None
+        payload = _apply_seen(raw, copied, stage)
+        if spec["id"] in _HOLD_METRICS:
+            held_one = await outcome_totals(db.pool, spec["id"])
+            played = int(held_one.get(int(user_id)) or 0)
+            payload = _public_count(payload, played, stage)
+            payload["held"] = played
         fields.append({
             "key": spec["fields"][0]["key"],
             "label": spec["fields"][0]["label"],
-            **_apply_seen(raw, copied, stage),
+            **payload,
         })
     return {
         **person,
@@ -920,7 +1077,15 @@ async def _player_raw(user_id: int, period: str, today: date) -> tuple[int, int,
         )
         wins = int(row["wins"] or 0) if row else 0
         losses = int(row["losses"] or 0) if row else 0
-        return wins, losses, wins + losses
+        held = int(await db.pool.fetchval(
+            """
+            SELECT COALESCE(SUM(amount), 0)::bigint
+            FROM epsilon_stat_hold
+            WHERE user_id = $1::bigint AND metric IN ('wins', 'losses')
+            """,
+            int(user_id),
+        ) or 0)
+        return wins, losses, wins + losses + held
     start, end = period_bounds(period, today)
     row = await db.pool.fetchrow(
         """
@@ -946,7 +1111,12 @@ async def stat_value(body: ValueBody, user_id: int = Depends(get_any_telegram_us
     scope = _scope_chat(spec, body.chat_id)
     if spec["needsGroup"]:
         await _require_chat(scope)
-    await _require_user(body.user_id)
+    if spec["id"] == "groups":
+        await _require_chat(int(body.user_id))
+    else:
+        if int(body.user_id) < 1:
+            raise HTTPException(status_code=400, detail="Такого пользователя нет")
+        await _require_user(body.user_id)
     allowed = {field["key"] for field in spec["fields"]}
     clean = {}
     for key, value in body.values.items():
@@ -959,13 +1129,12 @@ async def stat_value(body: ValueBody, user_id: int = Depends(get_any_telegram_us
     if spec["id"] == "messages":
         await _set_messages(scope, int(body.user_id), name, today, clean["messages"])
     elif spec["id"] == "players":
-        await _set_players(int(body.user_id), name, today, clean["wins"], clean["losses"])
-    elif spec["id"] == "donors":
-        await _set_column("donate", int(body.user_id), clean["donate"])
-    elif spec["id"] == "won":
-        await _set_column("winamount", int(body.user_id), clean["winamount"])
+        await _set_players(int(body.user_id), name, today, clean["games"])
+    elif spec["id"] == "groups":
+        await _set_group_balance(int(body.user_id), clean["balance"])
     else:
-        await _set_column("refferals", int(body.user_id), clean["invites"])
+        field_key = spec["fields"][0]["key"]
+        await _set_column(_USER_COLUMN[spec["id"]], int(body.user_id), clean[field_key])
     await log_admin_action(
         int(user_id),
         "stat_set",
@@ -977,7 +1146,7 @@ async def stat_value(body: ValueBody, user_id: int = Depends(get_any_telegram_us
 
 
 async def _set_column(column: str, user_id: int, value: int) -> None:
-    if column not in {"donate", "winamount", "refferals", "wins", "loose"}:
+    if column not in {"donate", "winamount", "refferals", "wins", "loose", "balance"}:
         raise HTTPException(status_code=400, detail="Это поле нельзя записать")
     result = await db.pool.execute(
         f"UPDATE users SET {column} = $2::bigint WHERE user_id = $1::bigint",
@@ -1084,20 +1253,27 @@ async def _write_message_day(connection, chat_id: int, user_id: int, day: date, 
     )
 
 
-async def _set_players(user_id: int, period: str, today: date, wins: int, losses: int) -> None:
+async def _set_group_balance(chat_id: int, value: int) -> None:
+    result = await db.pool.execute(
+        "UPDATE chat SET chatbalance = $2::bigint WHERE chat_id = $1::bigint",
+        int(chat_id),
+        int(value),
+    )
+    if not _wrote(result):
+        raise HTTPException(status_code=404, detail="Такой группы нет")
+
+
+async def _set_players(user_id: int, period: str, today: date, games: int) -> None:
     if period == "all":
-        await _set_column("wins", user_id, wins)
-        await _set_column("loose", user_id, losses)
-        return
+        raise HTTPException(status_code=400, detail="Победы и проигрыши правятся в своих статистиках")
     start, end = period_bounds(period, today)
     spot = anchor_day(period, today)
-    games = int(wins) + int(losses)
     async with db.pool.acquire() as connection:
         async with connection.transaction():
             await connection.execute(
                 """
                 UPDATE user_games_day
-                SET wins = 0, loose = 0, games = 0
+                SET games = 0
                 WHERE user_id = $1::bigint AND day >= $2 AND day <= $3 AND day <> $4
                 """,
                 int(user_id),
@@ -1108,15 +1284,13 @@ async def _set_players(user_id: int, period: str, today: date, wins: int, losses
             await connection.execute(
                 """
                 INSERT INTO user_games_day (user_id, day, games, wins, loose)
-                VALUES ($1::bigint, $2, $3::bigint, $4::bigint, $5::bigint)
+                VALUES ($1::bigint, $2, $3::bigint, 0, 0)
                 ON CONFLICT (user_id, day) DO UPDATE
-                SET games = EXCLUDED.games, wins = EXCLUDED.wins, loose = EXCLUDED.loose
+                SET games = EXCLUDED.games
                 """,
                 int(user_id),
                 spot,
-                games,
-                int(wins),
-                int(losses),
+                int(games),
             )
 
 
@@ -1141,6 +1315,8 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
             async with connection.transaction():
                 if spec["id"] == "players":
                     await fold_held_games_now(connection)
+                elif spec["id"] in _HOLD_METRICS:
+                    await fold_outcome_now(connection, spec["id"])
                 await connection.execute(
                     "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
                     f"{spec['season']}%",
@@ -1256,7 +1432,17 @@ async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:
                 end,
             )
         return
-    column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]
+    if spec["id"] == "groups":
+        await connection.execute(
+            """
+            INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)
+            SELECT 'groups', 0, chat_id, COALESCE(chatbalance, 0)::bigint
+            FROM chat
+            WHERE COALESCE(chatbalance, 0) <> 0
+            """
+        )
+        return
+    column = _USER_COLUMN[spec["id"]]
     await connection.execute(
         f"""
         INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)
@@ -1278,6 +1464,8 @@ async def stat_season_clear(body: SeasonBody, user_id: int = Depends(get_any_tel
         async with connection.transaction():
             if spec["id"] == "players":
                 await fold_held_games_now(connection)
+            elif spec["id"] in _HOLD_METRICS:
+                await fold_outcome_now(connection, spec["id"])
             await connection.execute(
                 "DELETE FROM epsilon_stat_season WHERE metric = $1 AND chat_id = $2",
                 spec["season"],

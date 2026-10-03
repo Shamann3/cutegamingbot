@@ -1840,6 +1840,8 @@ async def casdasdqwqdqwallback_top(call: types.CallbackQuery):
 
         text = f"<tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>Статистика проигравших</b>\n" \
                f"<tg-emoji emoji-id='5397772549511717747'>🦞</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
+        if not sorted_users:
+            text += "Пока проигрышей нет."
 
         # Выводим информацию о топ-10 пользователях
         _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
@@ -1900,6 +1902,8 @@ async def callasdqiqjback_top(call: types.CallbackQuery):
 
         text = f"<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>Статистика победителей</b>\n" \
                f"<tg-emoji emoji-id='5897658922600240288'>⭐️</tg-emoji> <b>Ваше место : <i>{win_amount_formatted}</i></b>\n\n"
+        if not sorted_users:
+            text += "Пока побед нет."
 
         # Выводим информацию о топ-10 пользователях
         _names_bulk = await db.get_names_bulk(uid for uid , _ in sorted_users [ :10 ])
@@ -1973,9 +1977,16 @@ async def callbrgtrgegrewrack_top(call: types.CallbackQuery):
 
         # Получаем данные пользователей из базы данных
         data = await db.get_data_users()
+        pairs = [(item[0], item[1]) for item in (data or []) if len(item) >= 2]
+        try:
+            from bot.funcs.stat_veil import veil_pairs
+
+            pairs = await veil_pairs(db.pool, "rich", pairs)
+        except Exception:
+            pass
 
         # Создаем словарь для хранения баланса пользователей по их user_id
-        user_id_balance = {item[0]: item[1] for item in data if len(item) >= 2}
+        user_id_balance = {item[0]: item[1] for item in pairs if item[1] is not None}
 
         # Сортируем пользователей по балансу
         sorted_users = sorted(user_id_balance.items(), key=lambda x: x[1], reverse=True)
@@ -1986,6 +1997,8 @@ async def callbrgtrgegrewrack_top(call: types.CallbackQuery):
         # Формируем текст статистики
         win_amount_formatted = "{:,.0f}".format(user_position).replace(",", ".") if user_position else "н/a"
         text = f"<tg-emoji emoji-id='5318959255385043017'>💰</tg-emoji> <b>Статистика богачей\n<tg-emoji emoji-id='5294026527850132517'>✨</tg-emoji> Ваше место в топе : <i>{win_amount_formatted}</i></b>\n\n"
+        if not sorted_users:
+            text += "Пока в топе никого нет."
 
         # Выводим информацию о топ-пользователях (первые 10)
         _names_bulk = await db.get_names_bulk(uid for uid, _ in sorted_users[:10])
@@ -2023,6 +2036,21 @@ async def calsadqwdqwqdqwcqlback_top(call: types.CallbackQuery):
     if user_id not in user_top or user_top[user_id] != message_id:
         await call.answer(random.choice(randommessagehelp))
         return
+
+    try:
+        from bot.funcs.stat_veil import season_hides
+
+        if await season_hides(db.pool, "groups", 0):
+            await call.answer()
+            await call.message.edit_text(
+                "<tg-emoji emoji-id='5262924479226473498'>🏆</tg-emoji> <b>Топ групп по балансу</b>\n\nПока групп в топе нет.",
+                reply_markup=btn_backtop123,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return
+    except Exception:
+        pass
 
     # Получение данных из БД
     data = await db.get_group_balances()

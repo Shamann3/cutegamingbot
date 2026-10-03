@@ -38,18 +38,17 @@ function periodOf(metric, current) {
   return ids[0] || 'all'
 }
 
+function holdCopy(metric) {
+  return metric?.id === 'players' || metric?.id === 'wins' || metric?.id === 'losses'
+}
+
 function draftFrom(metric, source) {
   const next = {}
   if (!metric) return next
   if (source?.fields) {
     source.fields.forEach((field) => {
-      if (field.key !== 'games') next[field.key] = String(field.raw ?? 0)
+      next[field.key] = String(field.raw ?? 0)
     })
-    return next
-  }
-  if (metric.id === 'players') {
-    next.wins = String(source?.wins ?? 0)
-    next.losses = String(source?.losses ?? 0)
     return next
   }
   const key = metric.fields?.[0]?.key
@@ -80,27 +79,15 @@ function personSig(data) {
   return `${data.userId}#${fields}`
 }
 
-function unclassifiedGames(person) {
-  const read = (key) => Number((person?.fields || []).find((field) => field.key === key)?.raw || 0)
-  const gap = read('games') - read('wins') - read('losses')
-  return gap > 0 ? gap : 0
-}
-
 function paintRow(row, metric, values, hiding) {
-  if (metric.id === 'players') {
-    const games = Number(values.wins || 0) + Number(values.losses || 0)
-    return {
-      ...row,
-      wins: values.wins,
-      losses: values.losses,
-      games,
-      raw: games,
-      seen: hiding ? 0 : games,
-    }
-  }
   const key = metric.fields[0]?.key
   const amount = Number(values[key] || 0)
-  return { ...row, raw: amount, seen: hiding ? 0 : amount }
+  return {
+    ...row,
+    [key]: amount,
+    raw: amount,
+    seen: hiding && !holdCopy(metric) ? 0 : (hiding ? row.seen : amount),
+  }
 }
 
 function StatEditor({
@@ -114,9 +101,11 @@ function StatEditor({
   error,
 }) {
   const hidden = person?.season?.phase === 'zero'
+  const locked = metric.id === 'players' && period === 'all'
+  const when = person?.season?.liftLabel || person?.season?.zeroUntil
   return (
     <form className="stat-row-edit" onSubmit={onSubmit}>
-      {person && (person.fields || []).filter((field) => field.key !== 'games').map((field) => (
+      {person && (person.fields || []).map((field) => (
         <p key={field.key} className="stat-now-line">
           <span>{field.label}</span>
           <strong>{fmt(field.seen)} сейчас в топе</strong>
@@ -125,45 +114,46 @@ function StatEditor({
         </p>
       ))}
       {!person && <p className="stat-loading">Считаю число…</p>}
-      <div className="stat-fields">
-        {metric.fields.map((field) => (
-          <label key={field.key} className="staff-ga-field">{field.label}
-            <input
-              className="sec-input"
-              inputMode="numeric"
-              value={draft[field.key] ?? ''}
-              onChange={(event) => onDraft(field.key, event.target.value)}
-            />
-          </label>
-        ))}
-      </div>
+      {locked ? (
+        <p className="realm-copy">Число складывается из побед и проигрышей. Они правятся отдельно.</p>
+      ) : (
+        <div className="stat-fields">
+          {metric.fields.map((field) => (
+            <label key={field.key} className="staff-ga-field">{field.label}
+              <input
+                className="sec-input"
+                inputMode="numeric"
+                value={draft[field.key] ?? ''}
+                onChange={(event) => onDraft(field.key, event.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+      )}
       {metric.id === 'messages' && period === 'all' && (
         <p className="realm-copy">Это число за всё время. День, неделя, месяц и год останутся как были.</p>
       )}
       {metric.id === 'messages' && period !== 'all' && (
         <p className="realm-copy">Сумма за выбранный срок станет ровно такой. Всё время при этом не меняется.</p>
       )}
-      {metric.id === 'players' && period === 'all' && (
-        <p className="realm-copy">Это победы и проигрыши за всё время. День, неделя, месяц и год останутся как были.</p>
-      )}
       {metric.id === 'players' && period !== 'all' && (
-        <p className="realm-copy">В топе за этот срок будет сумма этих двух чисел.</p>
+        <p className="realm-copy">В топе за этот срок будет это число.</p>
       )}
-      {metric.id === 'players' && period !== 'all' && unclassifiedGames(person) > 0 && (
-        <p className="realm-note">
-          За этот срок уже есть {fmt(unclassifiedGames(person))} игр без побед и проигрышей. После сохранения в топе останется только сумма этих двух чисел.
-        </p>
+      {(metric.id === 'wins' || metric.id === 'losses') && (
+        <p className="realm-copy">Это число за всё время. Копия лучших игроков его не прячет.</p>
       )}
-      {hidden && metric.id === 'players' && (
-        <p className="realm-note">До {person.season.liftLabel || person.season.zeroUntil} в топе только игры этого срока. Старое число написано рядом. Когда срок кончится, числа сложатся. Сохранение меняет основную статистику.</p>
+      {hidden && holdCopy(metric) && (
+        <p className="realm-note">До {when} в топе только число за этот срок. Старое число написано рядом. Когда срок кончится, числа сложатся. Сохранение меняет основную статистику.</p>
       )}
-      {hidden && metric.id !== 'players' && (
-        <p className="realm-note">До {person.season.liftLabel || person.season.zeroUntil} люди видят ноль. Сохранение меняет число в базе.</p>
+      {hidden && !holdCopy(metric) && (
+        <p className="realm-note">До {when} люди видят ноль. Сохранение меняет число в базе.</p>
       )}
       {error && <p className="sec-error" role="alert">{error}</p>}
-      <button type="submit" className="sec-btn" disabled={saving}>
-        {saving ? 'Сохраняю…' : 'Сохранить в этот топ'}
-      </button>
+      {!locked && (
+        <button type="submit" className="sec-btn" disabled={saving}>
+          {saving ? 'Сохраняю…' : 'Сохранить в этот топ'}
+        </button>
+      )}
     </form>
   )
 }
@@ -501,6 +491,10 @@ export default function StatDesk() {
       setRowError('Сначала выберите группу')
       return
     }
+    if (metric.id === 'players' && period === 'all') {
+      setRowError('Победы и проигрыши правятся в своих статистиках')
+      return
+    }
     if (metric.fields.some((field) => digits(draft[field.key]) === '')) {
       setRowError('Впишите число')
       return
@@ -510,9 +504,7 @@ export default function StatDesk() {
       values[field.key] = Number(digits(draft[field.key]))
     })
     const hiding = board?.season?.phase === 'zero'
-    const shown = metric.id === 'players'
-      ? Number(values.wins || 0) + Number(values.losses || 0)
-      : Number(values[metric.fields[0].key] || 0)
+    const shown = Number(values[metric.fields[0].key] || 0)
     epoch.current += 1
     savingRef.current = true
     boardSigRef.current = ''
@@ -537,9 +529,11 @@ export default function StatDesk() {
           )),
         }
       })
-      setNotice(hiding
-        ? `В базе теперь ${fmt(shown)}. Люди видят 0 до ${board?.season?.liftLabel || 'даты снятия'}.`
-        : `Сохранено. В этом топе теперь ${fmt(shown)}.`)
+      setNotice(hiding && holdCopy(metric)
+        ? `В базе теперь ${fmt(shown)}. В топе по-прежнему только число за срок копии.`
+        : hiding
+          ? `В базе теперь ${fmt(shown)}. Люди видят 0 до ${board?.season?.liftLabel || 'даты снятия'}.`
+          : `Сохранено. В этом топе теперь ${fmt(shown)}.`)
       dirtyRef.current = false
       try {
         await refreshBoard()
@@ -584,11 +578,14 @@ export default function StatDesk() {
       })
       const when = result?.liftLabel || liftOn
       const games = fmt(result?.frozenGames || 0)
+      const during = {
+        players: `До ${when} в топе только новые игры: день, неделя, месяц, год и всё время. В сохранённой статистике ${games} игр. С ${when} они сложатся.`,
+        wins: `До ${when} в топе только новые победы. С ${when} они сложатся с прежними.`,
+        losses: `До ${when} в топе только новые проигрыши. С ${when} они сложатся с прежними.`,
+      }
       setCopyFlash(result?.sumsNow
         ? `С ${when} людям показывается сумма: общая статистика на момент копии и всё, что прибавится после.`
-        : metric.id === 'players'
-          ? `До ${when} в топе только новые игры: день, неделя, месяц, год и всё время. В сохранённой статистике ${games} игр. С ${when} они сложатся.`
-          : `До ${when} люди видят ноль. С ${when} сложится общая статистика на момент копии и всё, что прибавится после.`)
+        : (during[metric.id] || `До ${when} люди видят ноль. С ${when} сложится общая статистика на момент копии и всё, что прибавится после.`))
       await refreshBoard()
     } catch (err) {
       setCopyError(err.message || 'Скопировать не удалось')
@@ -600,7 +597,10 @@ export default function StatDesk() {
 
   const clearSeason = async () => {
     if (!metric) return
-    if (!window.confirm('Убрать копию? Люди сразу снова увидят числа из базы.')) return
+    const folding = holdCopy(metric)
+    if (!window.confirm(folding
+      ? 'Убрать копию? Числа за этот срок сложатся с основной статистикой, и люди сразу увидят сумму.'
+      : 'Убрать копию? Люди сразу снова увидят числа из базы.')) return
     epoch.current += 1
     seasonBusyRef.current = true
     setSeasonBusy('clear')
@@ -609,7 +609,9 @@ export default function StatDesk() {
     setCopyFlash('')
     try {
       await clearStatSeason({ metric: metric.id, chat_id: chat?.chatId || 0 })
-      setCopyFlash('Копия убрана. Топ снова показывает числа из базы.')
+      setCopyFlash(holdCopy(metric)
+        ? 'Копия убрана. Числа за срок сложены с основной статистикой.'
+        : 'Копия убрана. Топ снова показывает числа из базы.')
       await refreshBoard()
     } catch (err) {
       setCopyError(err.message || 'Убрать копию не удалось')
@@ -640,9 +642,7 @@ export default function StatDesk() {
   return (
     <div className="sec-tab-body stat-desk">
       <p className="realm-copy">
-        {metric?.id === 'players'
-          ? 'День, неделя, месяц, год и всё время. До выбранной даты в топе только игры этого срока. С даты к ним прибавляется статистика, которая была до копии.'
-          : 'Один срок — один топ, такой же, как в чате. Число правится в строке и сразу записывается в этот топ.'}
+        Один срок — один топ, такой же, как в чате. Число правится в строке и сразу записывается в этот топ.
       </p>
       {metric && <p className="stat-live">Числа обновляются сами, каждую секунду. Пока вы вписываете своё, поле не перебивается.</p>}
       <div className="stat-metrics" role="tablist" aria-label="Какая статистика">
@@ -682,8 +682,14 @@ export default function StatDesk() {
       {metric?.id === 'messages' && (
         <p className="realm-copy">День, неделя, месяц, год и всё время считаются отдельно. Сейчас на экране только выбранный срок.</p>
       )}
-      {metric?.id === 'players' && (
+      {metric?.id === 'players' && season?.phase === 'zero' && (
         <p className="realm-copy">Пока копия включена, в топе только игры этого срока. Рядом написано, сколько было до неё.</p>
+      )}
+      {metric?.id === 'wins' && season?.phase === 'zero' && (
+        <p className="realm-copy">Пока копия включена, в топе только победы за этот срок.</p>
+      )}
+      {metric?.id === 'losses' && season?.phase === 'zero' && (
+        <p className="realm-copy">Пока копия включена, в топе только проигрыши за этот срок.</p>
       )}
 
       {metric?.needsGroup && !chat && (
@@ -762,7 +768,11 @@ export default function StatDesk() {
           )}
           {loadingBoard && !boardReady && <p className="stat-loading">Считаю этот топ…</p>}
           {boardReady && rows.length === 0 && (
-            <p className="realm-copy">В этом топе пока никого. Ниже можно найти человека и задать число.</p>
+            <p className="realm-copy">
+              {metric.id === 'groups'
+                ? 'В этом топе пока никого.'
+                : 'В этом топе пока никого. Ниже можно найти человека и задать число.'}
+            </p>
           )}
           <ol className="stat-rows">
             {rows.map((row) => {
@@ -792,7 +802,7 @@ export default function StatDesk() {
               {editor}
             </div>
           )}
-          {boardReady && (
+          {boardReady && metric.id !== 'groups' && (
             <div className="stat-add">
               <p className="realm-copy">Нет в списке — найдите человека и задайте число в этом же топе.</p>
               <UserLookupPreview
@@ -813,7 +823,11 @@ export default function StatDesk() {
           <p className="realm-copy">
             {metric?.id === 'players'
               ? 'Одна копия сохраняет день, неделю, месяц, год и всё время. До выбранной даты в топе только игры этого срока. Старые числа люди не видят. С этой даты старые и новые складываются. Дата московская.'
-              : 'Поставьте дату, когда снять копирование. До неё люди видят ноль. С неё в топ складывается общая статистика на момент копии и всё, что прибавилось после. Дата московская.'}
+              : metric?.id === 'wins'
+                ? 'До выбранной даты в топе только новые победы. С этой даты они складываются с прежними. Дата московская.'
+                : metric?.id === 'losses'
+                  ? 'До выбранной даты в топе только новые проигрыши. С этой даты они складываются с прежними. Дата московская.'
+                  : 'Поставьте дату, когда снять копирование. До неё люди видят ноль. С неё в топ складывается общая статистика на момент копии и всё, что прибавилось после. Дата московская.'}
           </p>
           <label className="staff-ga-field">Снять копирование
             <input
