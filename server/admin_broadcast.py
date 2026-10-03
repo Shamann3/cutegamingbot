@@ -9,6 +9,7 @@ import logging
 import os
 import random
 import re
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,7 +17,13 @@ from config import ONLINE_WINDOW_SECONDS, WEBAPP_URL
 from db import db
 from presence import count_online
 from user_notify import create_admin_message_notifications_batch
-from telegram_notify import send_telegram_message
+from telegram_notify import (
+    QUIET_DM_CATEGORIES,
+    flush_quiet_send_log,
+    load_unreachable_dm,
+    remember_unreachable_dm_many,
+    send_telegram_message,
+)
 
 logger = logging.getLogger("cute-farm.admin.broadcast")
 
@@ -986,7 +993,66 @@ async def _flush_recipient_log(
         logger.exception("Failed to log broadcast recipients (run_id=%s)", run_id)
 
 
+_BROADCAST_LOCK_CLASS = 872341
+
+
+@asynccontextmanager
+async def _one_worker_broadcast(run_id: int):
+    """Один процесс на одну рассылку. Второй воркер не обходит тот же список."""
+    lock_conn = None
+    lock_key = int(run_id) & 0x7FFFFFFF
+    owned = False
+    try:
+        lock_conn = await db.pool.acquire()
+        owned = bool(
+            await lock_conn.fetchval(
+                "SELECT pg_try_advisory_lock($1::int, $2::int)",
+                _BROADCAST_LOCK_CLASS,
+                lock_key,
+            )
+        )
+        if not owned:
+            logger.info(
+                "Рассылка %s уже идёт в другом процессе, второй запуск не шлёт",
+                run_id,
+            )
+    except Exception:
+        logger.exception("Не взял замок рассылки %s, иду без него", run_id)
+        if lock_conn is not None:
+            try:
+                await db.pool.release(lock_conn)
+            except Exception:
+                logger.exception("Не вернул соединение замка рассылки %s", run_id)
+            lock_conn = None
+        owned = True
+    try:
+        yield owned
+    finally:
+        if lock_conn is None:
+            return
+        try:
+            if owned:
+                await lock_conn.execute(
+                    "SELECT pg_advisory_unlock($1::int, $2::int)",
+                    _BROADCAST_LOCK_CLASS,
+                    lock_key,
+                )
+        except Exception:
+            logger.exception("Не отпустил замок рассылки %s", run_id)
+        try:
+            await db.pool.release(lock_conn)
+        except Exception:
+            logger.exception("Не вернул соединение замка рассылки %s", run_id)
+
+
 async def _execute_broadcast(run_id: int) -> None:
+    async with _one_worker_broadcast(run_id) as owned:
+        if not owned:
+            return
+        await _run_broadcast(run_id)
+
+
+async def _run_broadcast(run_id: int) -> None:
     row = await db.pool.fetchrow(
         """
         SELECT
@@ -1033,6 +1099,16 @@ async def _execute_broadcast(run_id: int) -> None:
         existing_reasons = json.loads(existing_reasons) if existing_reasons else {}
     telegram_failed_reasons: dict[str, int] = dict(existing_reasons or {})
     recipient_log: list[tuple[int, str, str, str | None, str | None]] = []
+    unreachable: dict[int, str] = {}
+    if channels["telegram"]:
+        unreachable = await load_unreachable_dm()
+    dead_batch: list[tuple[int, str]] = []
+
+    async def _flush_dead() -> None:
+        if dead_batch:
+            await remember_unreachable_dm_many(list(dead_batch))
+            dead_batch.clear()
+        flush_quiet_send_log()
 
     if resuming:
         logger.info(
@@ -1073,6 +1149,7 @@ async def _execute_broadcast(run_id: int) -> None:
             for user in page:
                 if await _is_cancelled(run_id):
                     await _flush_recipient_log(run_id, recipient_log)
+                    await _flush_dead()
                     row_now = await db.pool.fetchrow(
                         """
                         SELECT webapp_sent, telegram_sent, telegram_failed
@@ -1124,36 +1201,51 @@ async def _execute_broadcast(run_id: int) -> None:
                         webapp_batch.clear()
 
                 if channels["telegram"] and tg_text.strip():
-                    try:
-                        result = await send_telegram_message(
-                            tg_text, chat_id=str(user_id),
-                            cta_text=cta_text, cta_url=cta_url,
-                        )
-                        if result.ok:
-                            telegram_sent += 1
-                            recipient_log.append((user_id, "telegram", "sent", None, template_label))
-                            if is_daily_rotation:
-                                cooldown_batch.append(user_id)
-                                if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
-                                    await db.pool.execute(
-                                        "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
-                                        cooldown_batch,
-                                    )
-                                    cooldown_batch.clear()
-                        else:
-                            telegram_failed += 1
-                            reason = result.category or "other"
-                            telegram_failed_reasons[reason] = telegram_failed_reasons.get(reason, 0) + 1
-                            recipient_log.append((user_id, "telegram", "failed", reason, template_label))
+                    known = unreachable.get(user_id)
+                    if known:
+                        telegram_failed += 1
+                        telegram_failed_reasons[known] = telegram_failed_reasons.get(known, 0) + 1
+                        recipient_log.append((user_id, "telegram", "failed", known, template_label))
                         if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
                             await _flush_recipient_log(run_id, recipient_log)
                             recipient_log.clear()
-                        await asyncio.sleep(TELEGRAM_SEND_DELAY)
-                    except Exception:
-                        telegram_failed += 1
-                        telegram_failed_reasons["other"] = telegram_failed_reasons.get("other", 0) + 1
-                        recipient_log.append((user_id, "telegram", "failed", "other", template_label))
-                        logger.exception("Telegram broadcast failed (user_id=%s)", user_id)
+                    else:
+                        try:
+                            result = await send_telegram_message(
+                                tg_text, chat_id=str(user_id),
+                                cta_text=cta_text, cta_url=cta_url,
+                                remember_dead=False,
+                            )
+                            if result.ok:
+                                telegram_sent += 1
+                                recipient_log.append((user_id, "telegram", "sent", None, template_label))
+                                if is_daily_rotation:
+                                    cooldown_batch.append(user_id)
+                                    if len(cooldown_batch) >= WEBAPP_NOTIFY_BATCH_SIZE:
+                                        await db.pool.execute(
+                                            "UPDATE users SET last_daily_broadcast_sent_at = NOW() WHERE user_id = ANY($1::bigint[])",
+                                            cooldown_batch,
+                                        )
+                                        cooldown_batch.clear()
+                            else:
+                                telegram_failed += 1
+                                reason = result.category or "other"
+                                telegram_failed_reasons[reason] = telegram_failed_reasons.get(reason, 0) + 1
+                                recipient_log.append((user_id, "telegram", "failed", reason, template_label))
+                                if reason in QUIET_DM_CATEGORIES:
+                                    unreachable[user_id] = reason
+                                    dead_batch.append((user_id, reason))
+                                    if len(dead_batch) >= 100:
+                                        await _flush_dead()
+                            if len(recipient_log) >= RECIPIENT_LOG_FLUSH_SIZE:
+                                await _flush_recipient_log(run_id, recipient_log)
+                                recipient_log.clear()
+                            await asyncio.sleep(TELEGRAM_SEND_DELAY)
+                        except Exception:
+                            telegram_failed += 1
+                            telegram_failed_reasons["other"] = telegram_failed_reasons.get("other", 0) + 1
+                            recipient_log.append((user_id, "telegram", "failed", "other", template_label))
+                            logger.exception("Telegram broadcast failed (user_id=%s)", user_id)
 
                 processed += 1
                 if processed % PROGRESS_UPDATE_EVERY == 0 or processed == recipient_total:
@@ -1182,11 +1274,13 @@ async def _execute_broadcast(run_id: int) -> None:
 
             await _flush_recipient_log(run_id, recipient_log)
             recipient_log.clear()
+            await _flush_dead()
 
             offset += RECIPIENT_PAGE_SIZE
             if len(page) < RECIPIENT_PAGE_SIZE:
                 break
 
+        await _flush_dead()
         await _update_run(
             run_id,
             status="done",
@@ -1200,6 +1294,7 @@ async def _execute_broadcast(run_id: int) -> None:
         logger.exception("Broadcast run failed (id=%s)", run_id)
         await _flush_recipient_log(run_id, recipient_log)
         recipient_log.clear()
+        await _flush_dead()
         await _update_run(
             run_id,
             status="failed",

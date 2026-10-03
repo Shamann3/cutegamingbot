@@ -55,67 +55,11 @@ async def veil_message_snapshot(pool, chat_id: int, payload: dict) -> dict:
     }
 
 
-def subtract_copied(rows, copied: dict) -> list:
-    """Оставляет только то, что прибавилось после снимка. Нулевые строки из топа уходят."""
-    out = []
-    for row in rows or []:
-        try:
-            uid = int(row[0])
-            value = int(row[1] or 0)
-        except (TypeError, ValueError, IndexError):
-            continue
-        left = value - int(copied.get(uid, 0) or 0)
-        if left > 0:
-            out.append((uid, left))
-    return out
-
-
-async def _players_copy_on(pool) -> bool:
-    if pool is None:
-        return False
-    try:
-        return bool(await pool.fetchval(
-            """
-            SELECT 1 FROM epsilon_stat_season
-            WHERE metric = 'players' AND chat_id = 0
-              AND COALESCE(count_from, copied_at) <= NOW()
-            """
-        ))
-    except Exception as exc:
-        print(f"[stat_veil] копия игр: {exc}")
-        try:
-            return bool(await pool.fetchval(
-                """
-                SELECT 1 FROM epsilon_stat_season
-                WHERE metric = 'players' AND chat_id = 0
-                """
-            ))
-        except Exception as inner:
-            print(f"[stat_veil] копия игр без времени: {inner}")
-            return False
-
-
 async def veil_pairs(pool, metric: str, rows):
     if not rows:
         return rows
-    if metric in ("players_wins", "players_losses"):
-        if not await _players_copy_on(pool):
-            return rows
-        try:
-            copied_rows = await pool.fetch(
-                """
-                SELECT user_id, value
-                FROM epsilon_stat_snapshot
-                WHERE metric = $1 AND chat_id = 0
-                """,
-                metric,
-            )
-        except Exception as exc:
-            print(f"[stat_veil] снимок {metric}: {exc}")
-            return rows
-        copied = {int(row["user_id"]): int(row["value"] or 0) for row in copied_rows}
-        return subtract_copied(rows, copied)
-    if not await season_hides(pool, metric, 0):
+    season_metric = "players" if metric in ("players_wins", "players_losses") else metric
+    if not await season_hides(pool, season_metric, 0):
         return rows
     return []
 

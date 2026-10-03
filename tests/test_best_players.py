@@ -1,7 +1,6 @@
 """Топ лучших игроков: фразы, периоды, текст и кнопка под «Богачи»."""
 import pathlib
 
-from bot.funcs.stat_veil import subtract_copied
 from bot.funcs.best_players import (
     BEST_PLAYERS_EMOJI_ID,
     BEST_PLAYERS_PLACE_EMOJI_ID,
@@ -100,11 +99,6 @@ def test_empty_after_copy_keeps_old_games_out_of_the_line():
     )
     assert "После копии новых игр пока нет." in text
     assert "Игр пока нет." not in text
-
-
-def test_copy_subtracts_the_snapshot_and_drops_zeros():
-    left = subtract_copied([(7, 40), (8, 10), (9, None)], {7: 25, 8: 10})
-    assert left == [(7, 15)]
 
 
 def test_keyboard_periods_and_footer():

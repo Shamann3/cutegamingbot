@@ -66,37 +66,14 @@ def gained(raw: int, copied: int | None) -> int:
     return int(raw or 0) - int(copied or 0)
 
 
-def games_people_see(raw: int, copied: int | None) -> int:
-    """В топе игр после копии видно только то, что сыграли позже копии."""
-    number = int(raw or 0)
-    if copied is None:
-        return number
-    left = number - int(copied or 0)
-    return left if left > 0 else 0
+def copy_bounds(today: date, lift_on: date) -> tuple[date, date]:
+    """Нули с сегодняшнего дня до кануна даты снятия.
 
-
-def hide_pair(wins: int, losses: int, played_since: int | None) -> tuple[int, int]:
-    """Сколько побед и проигрышей остаётся в копии и не входит в топ за всё время.
-
-    played_since is None — срез на сейчас, прячется весь текущий итог.
-    Иначе played_since — игры с выбранного дня, они остаются в топе.
+    В день снятия фаза уже «после»: людям видна сумма снимка и прироста.
     """
-    wins_n = int(wins or 0)
-    losses_n = int(losses or 0)
-    if wins_n < 0:
-        wins_n = 0
-    if losses_n < 0:
-        losses_n = 0
-    if played_since is None:
-        return wins_n, losses_n
-    since = int(played_since or 0)
-    if since < 0:
-        since = 0
-    hide = wins_n + losses_n - since
-    if hide < 0:
-        hide = 0
-    hide_wins = wins_n if hide > wins_n else hide
-    return hide_wins, hide - hide_wins
+    if lift_on < today:
+        raise ValueError("Эта дата уже прошла. Поставьте сегодня или позже.")
+    return today, lift_on - timedelta(days=1)
 
 
 def plan_period_total(days: list[tuple[date, int]], anchor: date, target: int) -> list[tuple[date, int]]:

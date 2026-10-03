@@ -250,10 +250,14 @@ async def build_best_players_view(db, viewer_id: int, period: str = "all", sourc
     names = await db.get_names_bulk(uid for uid, _ in rows)
     empty_line = None
     lead = None
-    if board.get("sinceCopy") and kind == "all":
-        lead = "Считаются только игры после последней копии."
+    if board.get("copyHidden") and kind == "all":
+        when = board.get("liftLabel") or "выбранной даты"
+        lead = f"До {when} топ за всё время скрыт."
         if not rows:
-            empty_line = "После копии новых игр пока нет. Старые в этот топ не входят."
+            empty_line = (
+                f"С {when} здесь будет сумма общей статистики и игр после копии. "
+                "День, неделя, месяц и год считаются как обычно."
+            )
     text = render_best_players_text(board.get("place"), rows, names or {}, kind, empty_line, lead)
     keyboard = best_players_keyboard(kind, origin)
     return text, keyboard

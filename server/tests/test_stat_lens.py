@@ -2,9 +2,8 @@ from datetime import date
 
 from stat_lens import (
     anchor_day,
+    copy_bounds,
     gained,
-    games_people_see,
-    hide_pair,
     period_bounds,
     phase,
     plan_period_total,
@@ -35,18 +34,26 @@ def test_people_see_zero_inside_the_window_and_the_sum_after():
     assert seen_number(5, None, "after") == 5
 
 
-def test_past_day_keeps_games_since_that_day_in_the_lifetime_top():
-    assert hide_pair(100, 40, None) == (100, 40)
-    assert hide_pair(100, 40, 25) == (100, 15)
-    assert hide_pair(10, 4, 100) == (0, 0)
-    assert hide_pair(3, 0, 1) == (2, 0)
-
-
-def test_game_copy_keeps_only_games_after_the_snapshot():
-    assert games_people_see(1040, None) == 1040
-    assert games_people_see(1040, 1000) == 40
-    assert games_people_see(1000, 1000) == 0
-    assert games_people_see(10, 40) == 0
+def test_lift_date_hides_until_then_and_then_sums():
+    today = date(2026, 9, 30)
+    start, end = copy_bounds(today, date(2026, 10, 3))
+    assert (start, end) == (today, date(2026, 10, 2))
+    assert phase(today, start, end) == "zero"
+    assert phase(date(2026, 10, 3), start, end) == "after"
+    copied = 1000
+    since = 40
+    raw = copied + since
+    assert seen_number(raw, copied, "zero") == 0
+    assert seen_number(raw, copied, "after") == copied + since
+    assert seen_number(raw, copied, "after") == raw
+    same_start, same_end = copy_bounds(today, today)
+    assert phase(today, same_start, same_end) == "after"
+    try:
+        copy_bounds(today, date(2026, 9, 29))
+    except ValueError as exc:
+        assert "уже прошла" in str(exc)
+    else:
+        raise AssertionError("past lift date must be refused")
 
 
 def test_period_total_lands_on_the_anchor_without_going_negative():

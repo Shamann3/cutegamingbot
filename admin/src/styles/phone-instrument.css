@@ -4391,6 +4391,7 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
+.stat-season input[type='date'],
 .stat-season input[type='datetime-local'] {
   box-sizing: border-box;
   width: 100%;

@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 import os
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -48,6 +50,16 @@ PERMANENT_FAILURE_CATEGORIES = frozenset(
     {"message_not_found", "cant_delete", "chat_not_found", "deactivated", "blocked"}
 )
 
+# Личка, которой больше не существует: человек не открывал бота, заблокировал
+# его или удалил аккаунт. На каждого такое письмо писать warning бессмысленно —
+# при рассылке это тысячи одинаковых строк. Считаем пачкой и больше не шлём.
+QUIET_DM_CATEGORIES = frozenset({"chat_not_found", "blocked", "deactivated"})
+_quiet_lock = threading.Lock()
+_quiet_counts: dict[str, int] = {}
+_quiet_logged_at = 0.0
+_QUIET_FLUSH_EVERY = 200
+_QUIET_FLUSH_SEC = 30.0
+
 
 def _classify_error(error_code: int | None, description: str) -> str:
     desc = (description or "").lower()
@@ -71,6 +83,107 @@ def _classify_error(error_code: int | None, description: str) -> str:
         if "message can't be deleted" in desc:
             return "cant_delete"
     return "other"
+
+
+def log_each_telegram_error(category: str | None) -> bool:
+    """Ожидаемый отказ лички не печатаем по одному. Остальные ошибки — да."""
+    return category not in QUIET_DM_CATEGORIES
+
+
+def _log_api_error(method: str, chat_id, error_code, description: str, category: str) -> None:
+    if log_each_telegram_error(category):
+        logger.warning(
+            "Telegram %s error (chat_id=%s): %s %s",
+            method, chat_id, error_code, description,
+        )
+        return
+    summary = None
+    with _quiet_lock:
+        global _quiet_logged_at
+        _quiet_counts[category] = _quiet_counts.get(category, 0) + 1
+        now = time.monotonic()
+        if _quiet_logged_at <= 0:
+            _quiet_logged_at = now
+        total = sum(_quiet_counts.values())
+        if total >= _QUIET_FLUSH_EVERY or now - _quiet_logged_at >= _QUIET_FLUSH_SEC:
+            summary = dict(_quiet_counts)
+            _quiet_counts.clear()
+            _quiet_logged_at = now
+    if summary:
+        parts = ", ".join(f"{name}={count}" for name, count in sorted(summary.items()))
+        logger.info(
+            "Telegram %s: не доставлено %s. Этим людям повторно не пишем.",
+            method,
+            parts,
+        )
+
+
+def flush_quiet_send_log(method: str = "sendMessage") -> None:
+    """Дописать остаток сводки, когда рассылка закончилась раньше окна."""
+    with _quiet_lock:
+        global _quiet_logged_at
+        summary = dict(_quiet_counts)
+        _quiet_counts.clear()
+        _quiet_logged_at = time.monotonic()
+    if not summary:
+        return
+    parts = ", ".join(f"{name}={count}" for name, count in sorted(summary.items()))
+    logger.info(
+        "Telegram %s: не доставлено %s. Этим людям повторно не пишем.",
+        method,
+        parts,
+    )
+
+
+_dm_table_ready = False
+
+
+async def _ensure_dm_table() -> None:
+    global _dm_table_ready
+    if _dm_table_ready:
+        return
+    from db import db
+    await db.pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epsilon_dm_unreachable (
+            user_id BIGINT PRIMARY KEY,
+            reason TEXT NOT NULL,
+            seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    _dm_table_ready = True
+
+
+async def load_unreachable_dm() -> dict[int, str]:
+    """Люди, которым личное сообщение уже не доходит."""
+    try:
+        await _ensure_dm_table()
+        from db import db
+        rows = await db.pool.fetch("SELECT user_id, reason FROM epsilon_dm_unreachable")
+    except Exception:
+        logger.exception("Не прочитал список недоступных личек")
+        return {}
+    return {int(row["user_id"]): str(row["reason"] or "chat_not_found") for row in rows}
+
+
+async def remember_unreachable_dm_many(rows: list[tuple[int, str]]) -> None:
+    if not rows:
+        return
+    try:
+        await _ensure_dm_table()
+        from db import db
+        await db.pool.executemany(
+            """
+            INSERT INTO epsilon_dm_unreachable (user_id, reason, seen_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET reason = EXCLUDED.reason, seen_at = NOW()
+            """,
+            rows,
+        )
+    except Exception:
+        logger.exception("Не записал недоступные лички (%s)", len(rows))
 
 
 def _is_group_chat(chat_id: str | None) -> bool:
@@ -210,7 +323,7 @@ def _call_bot_api_sync(
         error_code = result.get("error_code")
         description = result.get("description", "")
         category = _classify_error(error_code, description)
-        logger.warning("Telegram %s error (chat_id=%s): %s %s", method, chat_id, error_code, description)
+        _log_api_error(method, chat_id, error_code, description, category)
         return TelegramSendResult(ok=False, category=category, error_code=error_code, description=description)
 
     raw = result.get("result")
@@ -265,9 +378,10 @@ async def send_telegram_message(
     cta_text: str | None = None,
     cta_url: str | None = None,
     buttons: list[list[dict]] | None = None,
+    remember_dead: bool = True,
 ) -> TelegramSendResult:
     try:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             send_telegram_message_sync,
             text,
             chat_id=chat_id,
@@ -280,6 +394,18 @@ async def send_telegram_message(
     except Exception as exc:
         logger.exception("Telegram send failed (chat_id=%s)", chat_id)
         return TelegramSendResult(ok=False, category="other", description=str(exc))
+    if (
+        remember_dead
+        and not result.ok
+        and result.category in QUIET_DM_CATEGORIES
+    ):
+        try:
+            user_id = int(str(chat_id).strip())
+        except (TypeError, ValueError):
+            user_id = 0
+        if user_id > 0:
+            await remember_unreachable_dm_many([(user_id, result.category or "chat_not_found")])
+    return result
 
 
 async def send_telegram_photo_bytes(
@@ -329,7 +455,7 @@ async def send_telegram_photo_bytes(
         error_code = result.get("error_code")
         description = result.get("description", "")
         category = _classify_error(error_code, description)
-        logger.warning("Telegram sendPhoto error (chat_id=%s): %s %s", chat_id, error_code, description)
+        _log_api_error("sendPhoto", chat_id, error_code, description, category)
         return TelegramSendResult(ok=False, category=category, error_code=error_code, description=description)
 
     message = result.get("result") or {}

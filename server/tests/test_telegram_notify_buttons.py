@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from telegram_notify import build_inline_keyboard, group_safe_button_url
+from telegram_notify import build_inline_keyboard, group_safe_button_url, log_each_telegram_error
 
 
 def test_group_web_app_farm_becomes_deep_link():
@@ -41,3 +41,11 @@ def test_private_keyboard_keeps_web_app():
 def test_external_url_stays_external():
     url = group_safe_button_url("https://t.me/CuteGamingChat", "Группа", "url")
     assert url == "https://t.me/CuteGamingChat"
+
+
+def test_dead_private_chat_is_not_logged_one_by_one():
+    assert log_each_telegram_error("chat_not_found") is False
+    assert log_each_telegram_error("blocked") is False
+    assert log_each_telegram_error("deactivated") is False
+    assert log_each_telegram_error("rate_limited") is True
+    assert log_each_telegram_error("other") is True
