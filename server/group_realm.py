@@ -802,7 +802,7 @@ class ApplyBody(BaseModel):
     position_id: int = Field(ge=1)
     body: str = Field(min_length=20, max_length=2000)
     rules_read: bool
-    rules_ids: list[int] = Field(min_length=1, max_length=80)
+    rules_ids: list[int] = Field(default_factory=list, max_length=80)
     model_config = {"extra": "forbid"}
 
 
@@ -856,6 +856,13 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
         """,
         int(user_id),
     )
+    own = await db.pool.fetchrow(
+        "SELECT entry_key, disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(user_id),
+    )
+    own_key = ""
+    if own and not own["disabled"]:
+        own_key = str(own["entry_key"] or "")
     return {
         "positions": [
             {
@@ -877,6 +884,7 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
                 "status": r["status"],
                 "note": r["review_note"] or "",
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
+                "entryKey": own_key if r["status"] == "approved" else "",
             }
             for r in mine
         ],
@@ -887,18 +895,7 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
 async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
     if not body.rules_read:
-        raise HTTPException(status_code=400, detail="Сначала прочитайте правила CuteRules")
-    from rules_channel import load_channel_rules
-
-    rules = await load_channel_rules()
-    live_ids = [int(item["id"]) for item in rules.get("messages") or []]
-    if not live_ids:
-        raise HTTPException(
-            status_code=503,
-            detail=rules.get("error") or "Канал правил не отдал сообщения",
-        )
-    if sorted(set(body.rules_ids)) != sorted(live_ids):
-        raise HTTPException(status_code=400, detail="Прочитайте правила ещё раз: список сообщений обновился")
+        raise HTTPException(status_code=400, detail="Сначала отметьте, что вы знаете правила")
     pos = await db.pool.fetchrow(
         """
         SELECT p.id, p.rank, p.accepting, g.is_official
@@ -955,6 +952,9 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
         int(body.position_id),
         body.body.strip(),
     )
+    from staff_notify import notify_owners
+
+    notify_owners("Новая заявка в панель администратора. Она в разделе «Заявки».")
     return {"ok": True, "id": int(app_id)}
 
 
@@ -1694,6 +1694,17 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
         position_id,
     )
     entry_key = await _issue_key(int(app["user_id"]))
+    from telegram_notify import send_telegram_message
+
+    try:
+        await send_telegram_message(
+            "Заявка в панель администратора принята.\n\n"
+            f"Ваш ключ:\n{entry_key}\n\n"
+            "Откройте панель администратора и введите этот ключ сами.",
+            chat_id=str(int(app["user_id"])),
+        )
+    except Exception:
+        pass
     return {"ok": True, "status": "approved", "entryKey": entry_key}
 
 

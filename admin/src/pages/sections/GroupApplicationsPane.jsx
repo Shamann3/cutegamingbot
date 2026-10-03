@@ -53,7 +53,7 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
       setItems((list) => list.filter((row) => row.id !== item.id))
       setKeyOnce(data?.entryKey || '')
       setNotice(data?.entryKey
-        ? 'Заявка одобрена. Личный ключ кабинета показан один раз — скопируйте его сейчас.'
+        ? 'Заявка одобрена. Ключ ушёл человеку в бота. Здесь он тоже показан — передайте его, если сообщение не дошло.'
         : 'Заявка одобрена.')
     } catch (err) {
       setError(err.message || 'Одобрить не удалось')

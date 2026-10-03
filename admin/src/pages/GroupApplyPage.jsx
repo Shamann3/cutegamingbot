@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { fetchGroupOpen, fetchGroupRules, submitGroupApplication } from '../lib/adminClient'
+import { fetchGroupOpen, submitGroupApplication } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import ChoiceSheet from '../components/ChoiceSheet'
 import EntryFrame from '../components/EntryFrame'
-import RulesReader from '../components/RulesReader'
+
+const RULES_CHANNEL = 'https://t.me/CuteRules'
 
 const PREVIEW_POSITIONS = [
   {
@@ -65,9 +66,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const [textSettled, setTextSettled] = useState(false)
   const nextRef = useRef(null)
   const [sheet, setSheet] = useState(null)
-  const [rules, setRules] = useState([])
-  const [rulesError, setRulesError] = useState('')
-  const [rulesLoading, setRulesLoading] = useState(false)
   const [rulesKnown, setRulesKnown] = useState(false)
   const [sending, setSending] = useState(false)
   const [done, setDone] = useState(false)
@@ -82,19 +80,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       })
       .catch((err) => setError(err.message || 'Список групп не открылся'))
       .finally(() => setLoading(false))
-  }
-
-  const loadRules = () => {
-    setRulesLoading(true)
-    setRulesError('')
-    fetchGroupRules()
-      .then((data) => {
-        const messages = Array.isArray(data?.messages) ? data.messages : []
-        setRules(messages)
-        if (!messages.length) setRulesError('Канал правил не отдал сообщения')
-      })
-      .catch((err) => setRulesError(err.message || 'Канал правил не открылся'))
-      .finally(() => setRulesLoading(false))
   }
 
   useEffect(() => {
@@ -122,12 +107,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   }, [text])
 
   useEffect(() => {
-    if (!textSettled || !enough || rules.length || rulesLoading || rulesError) return undefined
-    loadRules()
-    return undefined
-  }, [textSettled, enough, rules.length, rulesLoading, rulesError])
-
-  useEffect(() => {
     if (!textSettled) return undefined
     const node = nextRef.current
     if (!node) return undefined
@@ -139,7 +118,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       if (delta > 1) card.scrollTo({ top: card.scrollTop + delta, behavior: 'smooth' })
     }, 580)
     return () => window.clearTimeout(timer)
-  }, [textSettled, enough, rulesLoading, rulesError, rules.length])
+  }, [textSettled, enough, rulesKnown])
 
   const chats = useMemo(() => {
     const map = new Map()
@@ -163,8 +142,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       setError(symbolsLeft(MIN_BODY - text.length))
       return
     }
-    if (!rulesKnown || !rules.length) {
-      setError('Сначала прочитайте все сообщения с правилами')
+    if (!rulesKnown) {
+      setError('Сначала отметьте «Я знаю правила»')
       return
     }
     setSending(true)
@@ -180,7 +159,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
         position_id: chosen.positionId,
         body: body.trim(),
         rules_read: true,
-        rules_ids: rules.map((item) => item.id),
       })
       setDone(true)
     } catch (err) {
@@ -214,8 +192,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
         {!loading && done && (
           <p className="auth-form-lead">
             {preview
-              ? 'Форма заполнена. Если создатель примет заявку, в следующий раз вход будет как у сотрудника: сначала ключ, потом код из приложения. Если отклонит — в эту группу можно снова через 7 дней.'
-              : 'Заявка ушла создателю. Если её примут, зайдите снова: сначала ключ, потом код из приложения. Если отклонят, в эту группу можно снова через 7 дней.'}
+              ? 'Форма заполнена. Создатель увидит заявку. Если примет — вам придёт ключ, и вы сами входите им в панель администратора. Если отклонит — в эту группу можно снова через 7 дней.'
+              : 'Заявка ушла создателю. Когда он её примет, ключ придёт вам в бота. С этим ключом вы сами входите в панель администратора. Если заявку отклонят, в эту группу можно снова через 7 дней.'}
           </p>
         )}
 
@@ -276,15 +254,28 @@ export default function GroupApplyPage({ onBack, preview = false }) {
               <div className="auth-reveal-inner">
                 <div className="apply-step" ref={nextRef}>
                   {!enough && <p className="apply-hint">{symbolsLeft(MIN_BODY - text.length)}</p>}
-                  {enough && rulesLoading && <p className="auth-checking">Читаем сообщения канала правил…</p>}
-                  {enough && rulesError && (
-                    <div className="apply-note" role="alert">
-                      <p>{rulesError}</p>
-                      <button type="button" className="auth-btn auth-btn-primary" onClick={loadRules}>Повторить</button>
+                  {enough && (
+                    <div className="apply-rules">
+                      <p className="apply-rules-title">Прочтите правила</p>
+                      <a className="auth-btn auth-btn-primary" href={RULES_CHANNEL} target="_blank" rel="noreferrer">
+                        Канал с правилами
+                      </a>
+                      <p className="apply-rules-note">
+                        При открытии правил нужно будет перезайти в панель и написать заявку заново.
+                      </p>
+                      <p className="apply-rules-ask">Вы ознакомлены с правилами проекта?</p>
+                      <label className="apply-rules-check">
+                        <input
+                          type="checkbox"
+                          checked={rulesKnown}
+                          onChange={(event) => {
+                            setRulesKnown(event.target.checked)
+                            setError('')
+                          }}
+                        />
+                        <span>Я знаю правила</span>
+                      </label>
                     </div>
-                  )}
-                  {enough && rules.length > 0 && (
-                    <RulesReader messages={rules} known={rulesKnown} onKnown={() => setRulesKnown(true)} />
                   )}
                 </div>
               </div>
@@ -307,6 +298,9 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                 <div className="realm-row">
                   <strong>Заявка {item.id}</strong>
                   <span>{STATUS_LABEL[item.status] || item.status}{item.note ? ` · ${item.note}` : ''}</span>
+                  {item.entryKey ? (
+                    <span className="apply-own-key" data-copyable="1">Ваш ключ для входа: {item.entryKey}</span>
+                  ) : null}
                 </div>
               </li>
             ))}
