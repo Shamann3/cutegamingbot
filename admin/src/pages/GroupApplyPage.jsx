@@ -45,7 +45,7 @@ function symbolsLeft(count) {
     : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
       ? 'символа'
       : 'символов'
-  return `Ещё ${count} ${word} — и откроются правила.`
+  return `Ещё ${count} ${word}`
 }
 
 const STATUS_LABEL = {
@@ -64,7 +64,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const [chatId, setChatId] = useState(null)
   const [positionId, setPositionId] = useState(null)
   const [body, setBody] = useState('')
-  const [textSettled, setTextSettled] = useState(false)
   const nextRef = useRef(null)
   const [sheet, setSheet] = useState(null)
   const [rulesKnown, setRulesKnown] = useState(false)
@@ -104,19 +103,10 @@ export default function GroupApplyPage({ onBack, preview = false }) {
 
   const text = body.trim()
   const enough = text.length >= MIN_BODY
+  const canSend = rulesKnown && Boolean(chatId) && Boolean(positionId) && enough
 
   useEffect(() => {
-    if (!text) {
-      setTextSettled(false)
-      setRulesKnown(false)
-      return undefined
-    }
-    const timer = window.setTimeout(() => setTextSettled(true), 450)
-    return () => window.clearTimeout(timer)
-  }, [text])
-
-  useEffect(() => {
-    if (!textSettled) return undefined
+    if (!canSend) return undefined
     const node = nextRef.current
     if (!node) return undefined
     const timer = window.setTimeout(() => {
@@ -127,7 +117,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       if (delta > 1) card.scrollTo({ top: card.scrollTop + delta, behavior: 'smooth' })
     }, 580)
     return () => window.clearTimeout(timer)
-  }, [textSettled, enough, rulesKnown])
+  }, [canSend])
 
   const chats = useMemo(() => {
     const map = new Map()
@@ -222,27 +212,39 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                   type="checkbox"
                   checked={rulesKnown}
                   onChange={(event) => {
-                    setRulesKnown(event.target.checked)
+                    const on = event.target.checked
+                    setRulesKnown(on)
+                    if (!on) {
+                      setChatId(null)
+                      setPositionId(null)
+                      setBody('')
+                      setSheet(null)
+                    }
                     setError('')
                   }}
                 />
                 <span>Я знаю правила</span>
               </label>
             </div>
-            <ChoiceSheet
-              prompt="Выберите группу, в которой вы хотите работать"
-              value={chatId}
-              options={chats.map((chat) => ({ id: chat.chatId, label: chat.title }))}
-              open={sheet === 'group'}
-              onOpen={() => setSheet('group')}
-              onClose={() => setSheet(null)}
-              onChange={(id) => {
-                setChatId(id)
-                setPositionId(null)
-                setSheet(null)
-                setError('')
-              }}
-            />
+            <div className={`auth-reveal-slot${rulesKnown ? ' is-open' : ''}`} aria-hidden={rulesKnown ? undefined : true}>
+              <div className="auth-reveal-inner">
+                <ChoiceSheet
+                  prompt="Выберите группу, в которой вы хотите работать"
+                  value={chatId}
+                  options={chats.map((chat) => ({ id: chat.chatId, label: chat.title }))}
+                  open={sheet === 'group'}
+                  onOpen={() => setSheet('group')}
+                  onClose={() => setSheet(null)}
+                  onChange={(id) => {
+                    setChatId(id)
+                    setPositionId(null)
+                    setBody('')
+                    setSheet(null)
+                    setError('')
+                  }}
+                />
+              </div>
+            </div>
 
             <div className={`auth-reveal-slot${chatId ? ' is-open' : ''}`} aria-hidden={chatId ? undefined : true}>
               <div className="auth-reveal-inner">
@@ -255,6 +257,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                   onClose={() => setSheet(null)}
                   onChange={(id) => {
                     setPositionId(id)
+                    setBody('')
                     setSheet(null)
                     setError('')
                   }}
@@ -273,18 +276,11 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                   <span className="auth-form-lead">Напишите, чем вы полезны для группы, которую вы выбрали</span>
                   <textarea className="auth-input" value={body} onChange={(e) => setBody(e.target.value)} rows={4} />
                 </label>
+                {!enough && <p className="apply-hint">{symbolsLeft(MIN_BODY - text.length)}</p>}
               </div>
             </div>
 
-            <div className={`auth-reveal-slot${textSettled ? ' is-open' : ''}`} aria-hidden={textSettled ? undefined : true}>
-              <div className="auth-reveal-inner">
-                <div className="apply-step" ref={nextRef}>
-                  {!enough && <p className="apply-hint">{symbolsLeft(MIN_BODY - text.length)}</p>}
-                </div>
-              </div>
-            </div>
-
-            <div className={`auth-reveal-slot${rulesKnown ? ' is-open' : ''}`} aria-hidden={rulesKnown ? undefined : true}>
+            <div className={`auth-reveal-slot${canSend ? ' is-open' : ''}`} aria-hidden={canSend ? undefined : true} ref={nextRef}>
               <div className="auth-reveal-inner">
                 <button type="submit" className="auth-btn auth-btn-primary" disabled={sending}>
                   {sending ? 'Отправка…' : 'Отправить заявку'}
