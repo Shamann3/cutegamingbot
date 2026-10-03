@@ -42,12 +42,9 @@ async def send_number4(message: Message, state: FSMContext):
     if is_number(message.text):
         message_money = int(message.text)
         if message_money >= 10:
-            users = await db.get_data_users()
-            balance = ""
-            for row in users:
-                if message.from_user.id == row[0]:
-                    balance = row[1]
-            if int(message.text) <= int(balance):
+            from bot.funcs.stake_gate import read_stake_balance, stake_covers
+            balance = await read_stake_balance(message.from_user.id)
+            if stake_covers(balance, message_money):
                 cube_class = Cube122(
                     bet=int(message.text),
                     user_id=message.from_user.id,

@@ -595,7 +595,9 @@ async def plate(message: Message):
             await message.reply("😓", reply_markup=kb, parse_mode="HTML")
             return
     else:
-        if not using_demo and not using_0demo and bet_amount > user_balance:
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
+        if bet_amount > user_balance:
             bot_username = await get_bot_username_by_token(TOKEN)
             stars = _dec(bet_amount) * _dec(donate_bet)
             stars_q = stars.quantize(Decimal("1.000000"), rounding=ROUND_HALF_UP).normalize()
@@ -677,8 +679,9 @@ async def plate_process_game_buttons(call: types.CallbackQuery):
             using_demo = bool(game_data.get("using_demo"))
             using_0demo = bool(game_data.get("using_0demo"))
             chat_id = _safe_int(game_data.get("chat_id"), int(call.message.chat.id))
-            if not (has_assignment and is_free) and not using_demo and not using_0demo:
-                ub_check = _safe_int(await db.get_user_balance(owner_id), 0)
+            if not (has_assignment and is_free):
+                from bot.funcs.stake_gate import read_stake_balance
+                ub_check = await read_stake_balance(owner_id)
                 if bet_amount > ub_check:
                     await call.answer("💭 Недостаточно кут для игры", show_alert=True); return
             if row_index != current_row: return

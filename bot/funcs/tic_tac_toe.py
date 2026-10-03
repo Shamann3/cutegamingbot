@@ -390,7 +390,8 @@ def check_winner(board, symbol, board_size):
 
 async def check_bet(user_id, bet_amount):
     try:
-        current_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(user_id)
 
         if current_balance < bet_amount:
             print(f"Недостаточно средств для пользователя {user_id}. Баланс: {current_balance}, Ставка: {bet_amount}")
@@ -449,10 +450,8 @@ async def tic_tac_toe(message: Message):
         creator_id = message.from_user.id
 
         if bet > 0:
-            creator_balance = await db.get_user_balance(creator_id)
-            if creator_balance is None:
-                return
-
+            from bot.funcs.stake_gate import read_stake_balance
+            creator_balance = await read_stake_balance(creator_id)
             if int(creator_balance) < int(bet):
                 from bot.funcs.help import callbaYTRWEQck_main  # noqa: F401
 
@@ -696,7 +695,8 @@ async def tictactoe_join_game_callback(callback_query: types.CallbackQuery):
 
             bet = int(game.get("bet", 0) or 0)
             try:
-                bal = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(user_id)
                 enough = (bal is not None) and int(bal) >= bet
             except Exception:
                 enough = False
@@ -825,7 +825,8 @@ async def start_game_callback(callback_query: types.CallbackQuery):
             return
 
         bet = int(game["bet"])
-        current_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(user_id)
         if current_balance is None or current_balance < bet:
             await callback_query.answer("💭 У вас недостаточно средств для игры.", show_alert=True)
             return
@@ -845,7 +846,8 @@ async def start_game_callback(callback_query: types.CallbackQuery):
                     print(f"Неверный идентификатор участника: {participant_id}")
                     continue
 
-            current_balance = await db.get_user_balance(participant_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            current_balance = await read_stake_balance(participant_id)
 
             if current_balance is None or current_balance < bet:
                 first_name = await db.get_firstname_by_user_id(participant_id)
@@ -948,7 +950,8 @@ async def make_move_callback(callback_query: types.CallbackQuery):
                 print(f"Неверный идентификатор участника: {participant_id}")
                 continue
 
-        current_balance = await db.get_user_balance(participant_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(participant_id)
 
         if current_balance is None or current_balance < bet_amount:
             first_name = await db.get_firstname_by_user_id(participant_id)

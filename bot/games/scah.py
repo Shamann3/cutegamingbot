@@ -104,8 +104,8 @@ def initialize_board():
 
 
 async def check_balance(user_id, bet):
-    bal = await db.get_user_balance(user_id)
-    return bal is not None and bal >= bet
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, bet)
 
 
 # ---------------------- АРКАДНЫЙ РЕЖИМ (исправлен) ----------------------
@@ -647,7 +647,8 @@ async def scah_join_game_callback(callback_query: CallbackQuery):
                 return
 
             bet = int(game.get("bet", 0) or 0)
-            bal = await db.get_user_balance(user_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            bal = await read_stake_balance(user_id)
             if bal is None or bal < bet:
                 await safe_callback_answer(callback_query, "💭 У вас недостаточно средств для участия.", show_alert=True)
                 return
@@ -751,7 +752,8 @@ async def scah_start_game_callback(callback_query: types.CallbackQuery):
     required_bet = game['bet']
     insufficient = []
     for p in game['participants']:
-        bal = await db.get_user_balance(p)
+        from bot.funcs.stake_gate import read_stake_balance
+        bal = await read_stake_balance(p)
         if bal is None or bal < required_bet:
             insufficient.append(p)
     if insufficient:
@@ -903,7 +905,8 @@ async def scah_select_piece_callback(callback_query: types.CallbackQuery):
 
     insufficient = []
     for p in game['participants']:
-        bal = await db.get_user_balance(p)
+        from bot.funcs.stake_gate import read_stake_balance
+        bal = await read_stake_balance(p)
         if bal is None or bal < required_bet:
             insufficient.append(p)
     if insufficient:

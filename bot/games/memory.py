@@ -171,11 +171,8 @@ def _get_join_lock(game_id: str) -> asyncio.Lock:
 
 # ======================== УТИЛИТЫ ===========================
 async def check_balance_fast(user_id: int, bet: int) -> bool:
-    try:
-        bal = await db.get_user_balance(user_id)
-        return bal is not None and int(bal) >= int(bet)
-    except Exception:
-        return False
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, bet)
 
 def log_board_and_pairs(board: List[List[str]], game_id: Optional[str] = None):
     if not DEBUG_MEMORY:
@@ -686,7 +683,8 @@ async def memory_join_game(cb: CallbackQuery):
             bet = int(g.get("bet", 0) or 0)
             if bet > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                     if not (bal is not None and int(bal) >= bet):
                         await safe_answer(cb, "💭 Недостаточно средств для участия в игре.", show_alert=True);
                         return

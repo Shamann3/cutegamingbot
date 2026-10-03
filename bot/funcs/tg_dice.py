@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Исход Telegram-dice = то, что видит игрок в анимации.
 
-Документация python-telegram-bot / фактическая анимация Telegram:
-  ⚽  4–5 гол, 1–3 мимо (3 — штанга, выглядит «почти», но это промах)
+Фактическая анимация Telegram:
+  ⚽  3–5 гол (мяч в сетке), 1–2 мимо
   🏀  4–5 кольцо, 1–3 мимо (3 — удар в дужку)
   🎯  6 центр, 1–5 мимо (5 — соседнее кольцо, не центр)
   🎳  6 страйк, 1–5 не страйк (5 кеглей — не победа)
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, Set
 
-SOCCER_WIN = frozenset({4, 5})
+SOCCER_WIN = frozenset({3, 4, 5})
 BASKET_WIN = frozenset({4, 5})
 DARTS_WIN = frozenset({6})
 BOWLING_WIN = frozenset({6})

@@ -379,6 +379,7 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_end TIMESTAMPTZ;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT '';
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_ready BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
         CREATE TABLE IF NOT EXISTS epsilon_realm_log (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -419,7 +420,8 @@ async def _issue_key(user_id: int) -> str:
         """
         INSERT INTO epsilon_group_keys (user_id, key_hash)
         VALUES ($1, $2)
-        ON CONFLICT (user_id) DO UPDATE SET key_hash = EXCLUDED.key_hash, updated_at = NOW()
+        ON CONFLICT (user_id) DO UPDATE
+        SET key_hash = EXCLUDED.key_hash, disabled = FALSE, updated_at = NOW()
         """,
         int(user_id),
         hashed,
@@ -692,6 +694,10 @@ async def seats_for(user_id: int) -> list[dict]:
         JOIN epsilon_positions p ON p.id = s.position_id
         WHERE s.user_id = $1
           AND (s.term_end IS NULL OR s.term_end > NOW())
+          AND NOT EXISTS (
+            SELECT 1 FROM epsilon_group_keys k
+            WHERE k.user_id = s.user_id AND k.disabled
+          )
         ORDER BY p.rank DESC, g.title
         """,
         int(user_id),
@@ -721,6 +727,10 @@ async def _seat_rank(user_id: int, chat_id: int) -> int:
         JOIN epsilon_positions p ON p.id = s.position_id
         WHERE s.user_id = $1 AND s.chat_id = $2
           AND (s.term_end IS NULL OR s.term_end > NOW())
+          AND NOT EXISTS (
+            SELECT 1 FROM epsilon_group_keys k
+            WHERE k.user_id = s.user_id AND k.disabled
+          )
         """,
         int(user_id),
         int(chat_id),
@@ -990,9 +1000,11 @@ async def _seated_people() -> dict[int, list[dict]]:
             """
             SELECT s.chat_id, s.user_id, s.position_id, s.prefix, s.term_end,
                    u.username, u.display_name, u.first_name,
-                   aa.role AS staff_role, aa.status AS staff_status
+                   aa.role AS staff_role, aa.status AS staff_status,
+                   COALESCE(k.disabled, FALSE) AS access_off
             FROM epsilon_seats s
             LEFT JOIN users u ON u.user_id = s.user_id
+            LEFT JOIN epsilon_group_keys k ON k.user_id = s.user_id
             LEFT JOIN LATERAL (
                 SELECT role, status
                 FROM admin_accounts
@@ -1020,6 +1032,7 @@ async def _seated_people() -> dict[int, list[dict]]:
             "seatPrefix": r["prefix"] or "",
             "termEnd": end.date().isoformat() if end else "",
             "staff": bool(staff),
+            "accessOff": bool(r["access_off"]),
         })
     return out
 
@@ -1375,6 +1388,65 @@ async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegr
         int(user_id),
     )
     return {"ok": True, "telegram": note}
+
+
+class AccessBody(BaseModel):
+    user_id: int = Field(ge=1)
+    model_config = {"extra": "forbid"}
+
+
+async def _seat_chat(user_id: int) -> int | None:
+    chat_id = await db.pool.fetchval(
+        "SELECT chat_id FROM epsilon_seats WHERE user_id = $1 ORDER BY created_at LIMIT 1",
+        int(user_id),
+    )
+    return int(chat_id) if chat_id is not None else None
+
+
+@router.post("/access/off")
+async def group_access_off(body: AccessBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Закрывает кабинет. Должность остаётся, старый ключ больше не подходит."""
+    _require_creator(user_id)
+    if int(body.user_id) == int(user_id):
+        raise HTTPException(status_code=400, detail="Нельзя отключить свой доступ")
+    await ensure_tables()
+    chat_id = await _seat_chat(int(body.user_id))
+    if chat_id is None:
+        raise HTTPException(status_code=404, detail="У этого человека нет должности")
+    hashed = _hash_key(secrets.token_urlsafe(24))
+    await db.pool.execute(
+        """
+        INSERT INTO epsilon_group_keys (user_id, key_hash, disabled)
+        VALUES ($1, $2, TRUE)
+        ON CONFLICT (user_id) DO UPDATE
+        SET key_hash = EXCLUDED.key_hash, disabled = TRUE, updated_at = NOW()
+        """,
+        int(body.user_id),
+        hashed,
+    )
+    await _realm_log(chat_id, int(body.user_id), "access_off", "Доступ к кабинету отключён", int(user_id))
+    return {"ok": True}
+
+
+@router.post("/access/key")
+async def group_access_key(body: AccessBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Новый ключ кабинета. Код приложения остаётся. Ключ показывается один раз."""
+    _require_creator(user_id)
+    if int(body.user_id) == int(user_id):
+        raise HTTPException(status_code=400, detail="Нельзя выдать ключ самому себе")
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        "SELECT disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(body.user_id),
+    )
+    if not row or not row["disabled"]:
+        raise HTTPException(status_code=409, detail="Сначала отключите доступ")
+    chat_id = await _seat_chat(int(body.user_id))
+    if chat_id is None:
+        raise HTTPException(status_code=404, detail="У этого человека нет должности")
+    plain = await _issue_key(int(body.user_id))
+    await _realm_log(chat_id, int(body.user_id), "access_key", "Выдан новый ключ кабинета", int(user_id))
+    return {"ok": True, "entryKey": plain}
 
 
 @router.post("/prefix")
@@ -1983,13 +2055,18 @@ async def group_key_enter(body: KeyEnterBody, user_id: int = Depends(get_any_tel
 
 async def _key_row(user_id: int, key: str):
     row = await db.pool.fetchrow(
-        "SELECT key_hash, totp_secret, totp_ready FROM epsilon_group_keys WHERE user_id = $1",
+        "SELECT key_hash, totp_secret, totp_ready, disabled FROM epsilon_group_keys WHERE user_id = $1",
         int(user_id),
     )
     if not row:
         raise HTTPException(
             status_code=403,
             detail="Личный ключ ещё не выдан. Откройте панель из бота или попросите создателя назначить вас снова",
+        )
+    if row["disabled"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ отключён. Нужен новый ключ от создателя",
         )
     if not secrets.compare_digest(_hash_key(key.strip()), row["key_hash"]):
         raise HTTPException(status_code=403, detail="Ключ не подошёл")

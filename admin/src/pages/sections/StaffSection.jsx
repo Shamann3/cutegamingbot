@@ -38,10 +38,12 @@ import {
   suspendStaffMember,
   purgeStaffMember,
   takeStaffComplaint,
-  unsuspendStaffMember,
+  reissueStaffKey,
   appointGroupAdmin,
   checkRealmMember,
   dismissGroupAdmin,
+  disableGroupAccess,
+  reissueGroupKey,
   fetchRightsBoard,
 } from '../../lib/adminClient'
 import AdminSelect from '../../components/AdminSelect'
@@ -63,6 +65,7 @@ import StaffAccessPane from './StaffAccessPane'
 import StaffPreviewPane from './StaffPreviewPane'
 import GroupApplicationsPane from './GroupApplicationsPane'
 import GroupPreviewPane from './GroupPreviewPane'
+import AccessKeySheet from '../../components/AccessKeySheet'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -662,30 +665,31 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
   }, [])
 
   const [feedMember, setFeedMember] = useState(null)
+  const [accessSheet, setAccessSheet] = useState(null)
 
   useEffect(() => { load() }, [load])
 
-  const handleSuspend = async (member) => {
-    if (!confirm(`Отстранить ${nameOf(member)}?`)) return
+  const confirmAccess = async () => {
+    if (!accessSheet || accessSheet.step === 'shown') return
+    const member = accessSheet.member
     setActing(member.userId)
+    setAccessSheet((current) => (current ? { ...current, error: '' } : current))
     try {
-      await suspendStaffMember(member.userId)
-      await load()
+      if (accessSheet.step === 'off') {
+        await suspendStaffMember(member.userId)
+        await load()
+        setAccessSheet(null)
+      } else {
+        const data = await reissueStaffKey(member.userId)
+        const loginKey = data?.loginKey || ''
+        if (!loginKey) throw new Error('Сервер не вернул ключ')
+        await load()
+        setAccessSheet((current) => (current ? { ...current, step: 'shown', key: loginKey, error: '' } : current))
+      }
     } catch (err) {
-      alert(err?.message || 'Не удалось отстранить')
-    } finally {
-      setActing(null)
-    }
-  }
-
-  const handleUnsuspend = async (member) => {
-    if (!confirm(`Вернуть ${nameOf(member)} к работе?`)) return
-    setActing(member.userId)
-    try {
-      await unsuspendStaffMember(member.userId)
-      await load()
-    } catch (err) {
-      alert(err?.message || 'Не удалось вернуть')
+      setAccessSheet((current) => (
+        current ? { ...current, error: err?.message || 'Не вышло' } : current
+      ))
     } finally {
       setActing(null)
     }
@@ -737,7 +741,7 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
                 {m.roleLabel}
               </span>
               {m.status === 'suspended' && (
-                <span className="staff-badge" style={{ '--badge-color': '#f87171' }}>отстранён</span>
+                <span className="staff-badge" style={{ '--badge-color': '#f87171' }}>доступ выключен</span>
               )}
               {m.availability === 'vacation' && (
                 <span className="staff-badge" style={{ '--badge-color': '#fbbf24' }}>отпуск</span>
@@ -788,9 +792,9 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
                       <button
                         className="sec-btn sec-btn-ghost sec-btn-sm"
                         disabled={acting === m.userId}
-                        onClick={() => handleSuspend(m)}
+                        onClick={() => setAccessSheet({ member: m, step: 'off', key: '', error: '' })}
                       >
-                        {acting === m.userId ? '…' : 'Отстранить'}
+                        Отключить
                       </button>
                     )}
                     {m.role !== 'owner' && m.status === 'suspended' && !isSelf && (
@@ -798,9 +802,9 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
                         <button
                           className="sec-btn sec-btn-sm sec-btn-success"
                           disabled={acting === m.userId}
-                          onClick={() => handleUnsuspend(m)}
+                          onClick={() => setAccessSheet({ member: m, step: 'key', key: '', error: '' })}
                         >
-                          {acting === m.userId ? '…' : 'Вернуть'}
+                          Выдать ключ
                         </button>
                         {isOwner && (
                           <button
@@ -826,6 +830,18 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
           <p className="sec-empty">Сотрудников пока нет</p>
         )}
       </div>
+
+      <AccessKeySheet
+        open={Boolean(accessSheet)}
+        name={accessSheet ? nameOf(accessSheet.member) : ''}
+        kind="staff"
+        step={accessSheet?.step || 'off'}
+        busy={Boolean(accessSheet && acting === accessSheet.member.userId)}
+        error={accessSheet?.error || ''}
+        issuedKey={accessSheet?.key || ''}
+        onClose={() => { if (!acting) setAccessSheet(null) }}
+        onConfirm={confirmAccess}
+      />
 
       {feedMember && (
         <MemberActionsModal member={feedMember} onClose={() => setFeedMember(null)} onSaved={load} canManageStaff={canManageStaff} />
@@ -1469,7 +1485,7 @@ function positionHint(position) {
   return `ранг ${position.rank}`
 }
 
-function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
+function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(null)
@@ -1490,6 +1506,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
   const [gaStart, setGaStart] = useState('')
   const [gaEnd, setGaEnd] = useState('')
   const [gaCheck, setGaCheck] = useState('')
+  const [accessSheet, setAccessSheet] = useState(null)
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
@@ -1584,6 +1601,37 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
       setGroups(data.groups || [])
     } catch (err) {
       setGaError(err?.message || 'Не удалось выдать ключ админа группы')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const reloadGroups = async () => {
+    const data = await fetchRightsBoard()
+    setGroups(data.groups || [])
+  }
+
+  const confirmGroupAccess = async () => {
+    if (!accessSheet || accessSheet.step === 'shown') return
+    const person = accessSheet.person
+    setBusy(`access-${person.userId}`)
+    setAccessSheet((current) => (current ? { ...current, error: '' } : current))
+    try {
+      if (accessSheet.step === 'off') {
+        await disableGroupAccess(person.userId)
+        await reloadGroups()
+        setAccessSheet(null)
+      } else {
+        const data = await reissueGroupKey(person.userId)
+        const entryKey = data?.entryKey || ''
+        if (!entryKey) throw new Error('Сервер не вернул ключ')
+        await reloadGroups()
+        setAccessSheet((current) => (current ? { ...current, step: 'shown', key: entryKey, error: '' } : current))
+      }
+    } catch (err) {
+      setAccessSheet((current) => (
+        current ? { ...current, error: err?.message || 'Не вышло' } : current
+      ))
     } finally {
       setBusy(null)
     }
@@ -1770,23 +1818,51 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
             {gaGroup && (
             <div className="staff-ga-seats">
               <h4 className="realm-h">Сейчас на должностях</h4>
-              <p className="realm-copy">Снятие убирает должность и префикс в группе. Из чата человека не исключает.</p>
+              <p className="realm-copy">Отключение закрывает кабинет и гасит старый ключ. Должность остаётся. Снятие убирает должность и префикс, из чата человека не исключает.</p>
               {(gaGroup.seats || []).length === 0 && <p className="realm-copy">В этой группе должностей ни у кого нет.</p>}
               <ul className="realm-list">
-                {(gaGroup?.seats || []).map((person) => (
-                  <li key={person.userId} className="realm-row staff-ga-person">
+                {(gaGroup?.seats || []).map((person) => {
+                  const isSelf = myUserId != null && person.userId === myUserId
+                  return (
+                  <li key={person.userId} className={`realm-row staff-ga-person${person.accessOff ? ' is-access-off' : ''}`}>
                     <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
-                    <span>{person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}</span>
-                    <button
-                      type="button"
-                      className="sec-btn sec-btn-ghost sec-btn-sm"
-                      disabled={busy === `off-${person.userId}`}
-                      onClick={() => handleDismiss(person)}
-                    >
-                      {busy === `off-${person.userId}` ? '…' : 'Снять должность'}
-                    </button>
+                    <span>
+                      {person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}
+                      {person.accessOff ? ' · доступ выключен' : ''}
+                    </span>
+                    <div className="staff-ga-actions">
+                      {!isSelf && !person.accessOff && (
+                        <button
+                          type="button"
+                          className="sec-btn sec-btn-ghost sec-btn-sm"
+                          disabled={busy === `access-${person.userId}`}
+                          onClick={() => setAccessSheet({ person, step: 'off', key: '', error: '' })}
+                        >
+                          Отключить
+                        </button>
+                      )}
+                      {!isSelf && person.accessOff && (
+                        <button
+                          type="button"
+                          className="sec-btn sec-btn-sm sec-btn-success"
+                          disabled={busy === `access-${person.userId}`}
+                          onClick={() => setAccessSheet({ person, step: 'key', key: '', error: '' })}
+                        >
+                          Выдать ключ
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="sec-btn sec-btn-ghost sec-btn-sm"
+                        disabled={busy === `off-${person.userId}`}
+                        onClick={() => handleDismiss(person)}
+                      >
+                        {busy === `off-${person.userId}` ? '…' : 'Снять должность'}
+                      </button>
+                    </div>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             </div>
             )}
@@ -1865,6 +1941,18 @@ function InvitesTab({ isProjectCreator = false, scope = 'both' }) {
         )}
       </div>
       </>}
+
+      <AccessKeySheet
+        open={Boolean(accessSheet)}
+        name={accessSheet?.person?.name || (accessSheet ? String(accessSheet.person.userId) : '')}
+        kind="group"
+        step={accessSheet?.step || 'off'}
+        busy={Boolean(accessSheet && busy === `access-${accessSheet.person.userId}`)}
+        error={accessSheet?.error || ''}
+        issuedKey={accessSheet?.key || ''}
+        onClose={() => { if (!String(busy || '').startsWith('access-')) setAccessSheet(null) }}
+        onConfirm={confirmGroupAccess}
+      />
     </div>
   )
 }
@@ -2001,7 +2089,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           )}
           {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
           {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
-          {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" />}
+          {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" myUserId={myUserId} />}
           {onStaff && activeId === 'stats' && <StatDesk />}
           {onStaff && activeId === 'work' && (
             <>
@@ -2039,7 +2127,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           )}
           {onGroup && activeId === 'view' && <GroupPreviewPane onOpen={onOpenPreview} />}
           {onGroup && activeId === 'apps' && <GroupApplicationsPane onOpenUser={onOpenUser} />}
-          {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" />}
+          {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" myUserId={myUserId} />}
 
           {!activeId && <p className="sec-empty">Нет доступных разделов</p>}
       </div>

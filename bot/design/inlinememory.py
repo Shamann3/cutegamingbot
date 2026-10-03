@@ -339,7 +339,8 @@ async def inline_memory_create_game_callback(cb: CallbackQuery):
         # проверка баланса под ставку
         if bet_amount > 0:
             try:
-                bal = await db.get_user_balance(creator_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(creator_id)
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:
@@ -493,7 +494,8 @@ async def inline_memory_join_memory_game(cb: CallbackQuery):
             bet_amount = int(game.get("bet_amount", 0) or 0)
             if bet_amount > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                 except Exception:
                     bal = 0
                 enough = (bal is not None) and int(bal) >= bet_amount
@@ -575,7 +577,8 @@ async def inline_memory_start_game_callback(cb: CallbackQuery):
         bet_amount = int(game.get('bet_amount', 0) or 0)
         if bet_amount > 0:
             try:
-                bal = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(user_id)
             except Exception:
                 bal = 0
             if int(bal or 0) < bet_amount:

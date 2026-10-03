@@ -11,6 +11,7 @@ import { useMetricSheet } from '../../components/MetricSheet'
 
 function periodBars(map) {
   return PERIODS.map((item) => ({
+    id: item.id,
     label: item.label,
     value: Number(map?.[item.id]?.current ?? 0),
   }))
@@ -43,7 +44,31 @@ function CollectingCopy() {
   )
 }
 
-function UsageCard({ title, pair, meta, loading, suffix, period, split, onOpen }) {
+function PeriodStrip({ map, active }) {
+  const bars = periodBars(map)
+  const max = Math.max(...bars.map((bar) => bar.value), 1)
+  return (
+    <span className="dash-strip" aria-hidden="true">
+      {bars.map((bar, index) => (
+        <span
+          key={bar.id}
+          className={`dash-strip-col${bar.id === active ? ' is-on' : ''}`}
+          style={{ '--i': index }}
+        >
+          <span className="dash-strip-track">
+            <span
+              className="dash-strip-bar"
+              style={{ height: `${Math.max(bar.value > 0 ? 14 : 4, Math.round((bar.value / max) * 100))}%` }}
+            />
+          </span>
+          <span className="dash-strip-label">{bar.label}</span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function UsageCard({ title, pair, map, meta, loading, suffix, period, split, onOpen }) {
   const current = Number(pair?.current ?? 0)
   const previous = pair?.previous
   const Tag = loading || !onOpen ? 'div' : 'button'
@@ -66,6 +91,7 @@ function UsageCard({ title, pair, meta, loading, suffix, period, split, onOpen }
             {meta.now}
             {previous != null ? ` · ${meta.prev}: ${fmtCompact(previous)}` : ''}
           </span>
+          {!loading && map && <PeriodStrip map={map} active={period} />}
           {split && (
             <div className="dash-usage-split">
               <span className="dash-usage-split-item is-lost">
@@ -323,6 +349,7 @@ export default function DashboardSection() {
               {meta.now}
               {` · ${meta.prev}: ${fmt(botPrev)}`}
             </span>
+            <PeriodStrip map={usage.botEvents} active={period} />
           </>
         )}
       </div>
@@ -343,6 +370,7 @@ export default function DashboardSection() {
             meta={meta}
             loading={collecting}
             period={period}
+            map={usage.allMessages}
             onOpen={collecting ? null : () => metric.open(allSpec)}
           />
           <UsageCard
@@ -352,6 +380,7 @@ export default function DashboardSection() {
             loading={collecting}
             period={period}
             suffix=" кут"
+            map={usage.gameWager}
             split={{ lost: wagerPair.lost ?? 0, won: wagerPair.won ?? 0 }}
             onOpen={collecting ? null : () => metric.open(wagerSpec)}
           />
@@ -361,6 +390,7 @@ export default function DashboardSection() {
             meta={meta}
             loading={collecting}
             period={period}
+            map={usage.officialMessages}
             onOpen={collecting ? null : () => metric.open(officialSpec)}
           />
         </div>

@@ -7,9 +7,9 @@ async def crash(message: Message):
 
         if len(message.text.split()) > 2:
 
-            username = message.from_user.username
+            from bot.funcs.stake_gate import read_stake_balance, stake_covers
             user_id = message.from_user.id
-            balance = await db.get_user_balance(user_id)  # Получаем баланс пользователя
+            balance = await read_stake_balance(user_id)
 
             # Получаем ставки и удаляем запятые и точки для корректного преобразования
             bet_amount1_str = message.text.split() [ 2 ].replace(',' , '').replace('.' , '')
@@ -25,7 +25,7 @@ async def crash(message: Message):
             print(bet_amount)
             print(balance)
 
-            if balance >= bet_amount1:
+            if stake_covers(balance, bet_amount1):
 
                 # Если у пользователя достаточно средств, размещаем ставку
                 db.set_bet(user_id , bet_amount)

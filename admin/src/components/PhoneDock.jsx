@@ -10,13 +10,11 @@ function FallbackIcon() {
   )
 }
 
-function SlidersIcon() {
+function GearIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <line x1="4" y1="8" x2="20" y2="8" />
-      <line x1="4" y1="16" x2="20" y2="16" />
-      <circle cx="9" cy="8" r="2.2" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="16" r="2.2" fill="currentColor" stroke="none" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
     </svg>
   )
 }
@@ -63,6 +61,14 @@ export default function PhoneDock({
         aria-current={on ? 'page' : undefined}
         onClick={() => onNavigate(item.id)}
       >
+        {on && (
+          <motion.span
+            className="phone-dock-pill"
+            layoutId="phone-dock-pill"
+            aria-hidden="true"
+            transition={reduce || document.body.classList.contains('perf-light') ? { duration: 0 } : { type: 'spring', stiffness: 460, damping: 36, mass: 0.7 }}
+          />
+        )}
         <span className="phone-dock-icon">
           <Icon />
           {count > 0 && (
@@ -73,7 +79,7 @@ export default function PhoneDock({
         <span className="phone-dock-mark" aria-hidden="true" />
       </button>
     )
-  }, [activeSection, badges, onNavigate])
+  }, [activeSection, badges, onNavigate, reduce])
 
   if (!sections.length) return null
 
@@ -121,8 +127,7 @@ export default function PhoneDock({
           aria-label={menuOpen ? 'Закрыть настройки' : 'Настройки панели'}
           onClick={onOpenMenu}
         >
-          <span className="phone-dock-icon"><SlidersIcon /></span>
-          <span className="phone-dock-label">Настройки</span>
+          <span className="phone-dock-icon"><GearIcon /></span>
         </button>
       )}
     </motion.nav>

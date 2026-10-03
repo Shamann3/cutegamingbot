@@ -363,13 +363,8 @@ async def _call_with_flood_retry(
 # -----------------------------------
 
 async def _has_funds(user_id: int, amount: int) -> bool:
-    try:
-        bal = await db.get_user_balance(user_id)
-        if bal is None:
-            return int(amount) <= 0
-        return int(bal) >= int(amount)
-    except Exception:
-        return False
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, amount)
 
 
 async def _build_participants_text(participants: List[Tuple[int, str]]) -> str:
@@ -595,8 +590,9 @@ async def ruletka(message: Message):
         pass
 
     if bet > 0:
-        creator_balance = await db.get_user_balance(creator_id)
-        if creator_balance is None or creator_balance < bet:
+        from bot.funcs.stake_gate import read_stake_balance
+        creator_balance = await read_stake_balance(creator_id)
+        if creator_balance < bet:
             from bot.funcs.help import callbaYTRWEQck_main  # noqa: F401
 
             button_help = InlineKeyboardButton(

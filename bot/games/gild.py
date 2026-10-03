@@ -8,8 +8,8 @@ user_gild = {}
 gamesgild = {}
 
 async def check_balance_gild(user_id, bet):
-    current_balance = await db.get_user_balance(user_id)
-    return current_balance is not None and current_balance >= bet
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, bet)
 
 
 def create_game_board_gild():

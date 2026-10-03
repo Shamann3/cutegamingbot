@@ -419,11 +419,8 @@ async def _get_balance_as_int(user_id: int) -> int:
             return 0
 
 async def _has_funds(user_id: int, amount: int) -> bool:
-    try:
-        cur = await _get_balance_as_int(user_id)
-        return cur >= int(amount)
-    except Exception:
-        return False
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, amount)
 
 async def get_bot_username_by_token(token: str) -> str:
     me = await bot1.get_me()

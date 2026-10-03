@@ -176,7 +176,8 @@ async def orel(message: Message):
 
         # баланс (только если bet > 0)
         if bet > 0:
-            creator_balance = await db.get_user_balance(creator_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            creator_balance = await read_stake_balance(creator_id)
             if creator_balance is None or int(creator_balance) < int(bet):
                 btn_help = InlineKeyboardButton(text="Как заработать кут?", callback_data="9help_btn22")
 
@@ -317,7 +318,8 @@ async def join_game_callback(callback_query: CallbackQuery):
 
             bet = int(game.get("bet", 0) or 0)
             if bet > 0:
-                bal = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(user_id)
                 if bal is None or int(bal) < bet:
                     await callback_query.answer("❗️ У вас недостаточно средств для участия в игре.", show_alert=True)
                     return
@@ -446,7 +448,8 @@ async def start_game_callback(callback_query: CallbackQuery):
     # проверка баланса у обоих
     if bet > 0:
         for pid in game["participants"]:
-            bal = await db.get_user_balance(pid)
+            from bot.funcs.stake_gate import read_stake_balance
+            bal = await read_stake_balance(pid)
             if bal is None or int(bal) < bet:
                 chat_id = game.get("chat_id")
                 message_id = game.get("message_id")
@@ -512,7 +515,8 @@ async def roll_callback(callback_query: CallbackQuery):
 
     # баланс перед броском
     if bet > 0:
-        bal = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        bal = await read_stake_balance(user_id)
         if bal is None or int(bal) < bet:
             chat_id = game.get("chat_id")
             message_id = game.get("message_id")

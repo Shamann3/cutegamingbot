@@ -732,7 +732,8 @@ async def bombs(message: Message):
             return
     else:
         # Обычный режим – проверяем основной баланс (даже если using_demo/using_0demo)
-        user_balance = _dec(await db.get_user_balance(user_id) or 0)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = _dec(await read_stake_balance(user_id) or 0)
         if bet_dec > user_balance:
             try:
                 bot_username = await get_bot_username_by_token(TOKEN)
@@ -949,10 +950,12 @@ async def _handle_bomb_click_inner(callback_query: CallbackQuery, data: str):
             _finalize_game(uid, msg_id)
             return
 
-        # Проверка баланса только для обычного режима (без demo/0demo и не free-челлендж)
-        if not (has_assignment and is_free) and not using_demo and not using_0demo:
+        # Платный ход смотрит настоящий кошелёк, даже если раунд на demo или 0demo.
+        # Бесплатный челлендж сюда не входит: он играет со своего счёта.
+        if not (has_assignment and is_free):
             try:
-                user_balance = _dec(await db.get_user_balance(uid) or 0)
+                from bot.funcs.stake_gate import read_stake_balance
+                user_balance = _dec(await read_stake_balance(uid) or 0)
             except Exception:
                 user_balance = Decimal(0)
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyAccentToDocument, inkOnAccent, overlayPlateAlpha } from './accentTheme'
+import { applyAccentToDocument, coachPlateAlpha, inkOnAccent, overlayPlateAlpha } from './accentTheme'
 
 describe('inkOnAccent', () => {
   it('кладёт тёмный текст на светлый и серый акцент', () => {
@@ -31,5 +31,26 @@ describe('overlayPlateAlpha', () => {
     const root = document.documentElement
     expect(root.style.getPropertyValue('--e-plate')).toBe('rgba(14, 14, 16, 0.000)')
     expect(root.style.getPropertyValue('--e-overlay')).toBe('rgba(14, 14, 16, 0.820)')
+    expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 0.450)')
+  })
+})
+
+describe('coachPlateAlpha', () => {
+  it('на полной прозрачности страницы обучение остаётся на 55%', () => {
+    expect(coachPlateAlpha(100)).toBeCloseTo(0.45)
+    expect(coachPlateAlpha(80)).toBeCloseTo(0.45)
+    expect(coachPlateAlpha(55)).toBeCloseTo(0.45)
+  })
+
+  it('до 55% слушается ползунок и на нуле становится сплошным', () => {
+    expect(coachPlateAlpha(0)).toBeCloseTo(1)
+    expect(coachPlateAlpha(20)).toBeCloseTo(0.8)
+  })
+
+  it('при нулевой прозрачности кладёт сплошную карточку обучения', () => {
+    applyAccentToDocument({ hex: '#ffffff', h: 0, s: 0, v: 1, veil: 0, glow: 0 })
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--e-plate')).toBe('rgba(14, 14, 16, 1.000)')
+    expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 1.000)')
   })
 })

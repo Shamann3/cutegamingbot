@@ -179,7 +179,8 @@ async def _check_balances_or_stop(game_id: str, game: Dict[str, Any]) -> bool:
 
     for uid in _dedupe_preserve_order_uids(parts):
         try:
-            bal = await db.get_user_balance(int(uid))
+            from bot.funcs.stake_gate import read_stake_balance
+            bal = await read_stake_balance(int(uid))
         except Exception:
             bal = None
         try:
@@ -252,7 +253,8 @@ async def inline_create_game_callback(callback_query: types.CallbackQuery):
     # 2) проверка баланса под ставку
     if bet_amount > 0:
         try:
-            bal = await db.get_user_balance(user_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            bal = await read_stake_balance(user_id)
         except Exception:
             bal = 0
         try:
@@ -397,7 +399,8 @@ async def inline_join_game_callback(callback_query: types.CallbackQuery):
 
             if bet > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                 except Exception:
                     bal = 0
                 try:
@@ -565,7 +568,8 @@ async def inline_start_game_callback(callback_query: CallbackQuery):
 
             if bet > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                 except Exception:
                     bal = 0
                 try:
@@ -690,7 +694,8 @@ async def inline_roll_callback(callback_query: CallbackQuery):
 
             if bet > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                 except Exception:
                     bal = None
                 try:

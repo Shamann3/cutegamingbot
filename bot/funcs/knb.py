@@ -70,7 +70,8 @@ async def knb(message: Message):
 
         # Проверка баланса (только если ставка > 0)
         if bet > 0:
-            creator_balance = await db.get_user_balance(creator_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            creator_balance = await read_stake_balance(creator_id)
             if creator_balance is None:
                 return
             if int(creator_balance) < int(bet):
@@ -229,7 +230,8 @@ async def knb_join_game_callback(callback_query: types.CallbackQuery):
             # баланс / ставка
             bet = int(game.get('bet', 0) or 0)
             try:
-                current_balance = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                current_balance = await read_stake_balance(user_id)
                 enough = (current_balance is not None) and int(current_balance) >= bet
             except Exception:
                 enough = False
@@ -351,7 +353,8 @@ async def knb_start_game_callback(callback_query: CallbackQuery):
             return
 
         bet = game['bet']
-        current_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(user_id)
         if current_balance is None or current_balance < bet:
             await callback_query.answer("💭 Недостаточно средств для старта игры.", show_alert=True)
             return
@@ -366,7 +369,8 @@ async def knb_start_game_callback(callback_query: CallbackQuery):
                 InlineKeyboardButton(text="📃 Бумага" , callback_data=f"chooseknb:{game_id}:paper") ] ])
 
         for participant_id in game [ 'participants' ]:
-            current_balance = await db.get_user_balance(participant_id)
+            from bot.funcs.stake_gate import read_stake_balance
+            current_balance = await read_stake_balance(participant_id)
 
             # Если у участника недостаточно средств, останавливаем игру
             if current_balance is None or current_balance < game [ 'bet' ]:
@@ -420,7 +424,8 @@ async def knb_choose_callback(callback_query: CallbackQuery):
             return
 
         # Проверка текущего баланса пользователя
-        current_balance = await db.get_user_balance(user_id)  # Обязательно используйте await
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(user_id)
 
         if current_balance is None or current_balance < game['bet']:
             first_name = await db.get_firstname_by_user_id(user_id)

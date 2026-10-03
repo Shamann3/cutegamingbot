@@ -1588,9 +1588,10 @@ async def _fortuna_paid_game(
                     return
 
                 balance, chat_balance = await _safe_get_balances(user_id, chat_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                balance = await read_stake_balance(user_id)
 
-                # --- Проверка баланса (только для обычного режима) ---
-                if not using_demo and not using_0demo and bet_int > balance:
+                if bet_int > balance:
                     from bot.funcs.func import get_bot_username_by_token
                     try:
                         bot_username = await get_bot_username_by_token(TOKEN)

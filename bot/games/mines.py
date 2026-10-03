@@ -37,8 +37,8 @@ from bot.games.safe_game_edit import safe_game_edit
 
 
 async def check_balance(user_id, bet):
-    current_balance = await db.get_user_balance(user_id)
-    return current_balance is not None and current_balance >= bet
+    from bot.funcs.stake_gate import paid_stake_ok
+    return await paid_stake_ok(user_id, bet)
 
 
 def create_game_board():
@@ -233,7 +233,8 @@ async def mines_join_game_callback(callback_query: CallbackQuery):
             # Баланс/ставка
             bet = int(game.get('bet', 0) or 0)
             if bet > 0:
-                bal = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(user_id)
                 try:
                     enough = (bal is not None) and int(bal) >= bet
                 except Exception:

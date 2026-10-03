@@ -768,12 +768,10 @@ async def tgbowling(message: Message):
         await _tgbowling_free_game(message, user_id, chat_id, bet_int, gc_state)
         return
 
-    try:
-        balance = int(await db.get_user_balance(user_id) or 0)
-    except Exception:
-        balance = 0
+    from bot.funcs.stake_gate import read_stake_balance
+    balance = await read_stake_balance(user_id)
 
-    if not using_demo and not using_0demo and bet_int > balance:
+    if bet_int > balance:
         bet_dec = Decimal(bet_int)
         stars = bet_dec * _dec(donate_bet)
         stars_q = stars.quantize(Decimal("1.000000"), rounding=ROUND_HALF_UP).normalize()

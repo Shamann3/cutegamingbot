@@ -260,13 +260,32 @@ body.perf-light .gate-root .gate-door:hover {
 .panel-shell article.panel-shelf,
 .panel-shell .panel-broadcast-wrap > section,
 .panel-shell .panel-broadcast > section,
+.panel-shell .realm-main > section,
+.panel-shell .realm-main.nika-page > section,
+.panel-shell .act-bento > *,
+.panel-shell .act-figures > *,
+.panel-shell .nika-sweep-card,
+.panel-shell .nika-panel,
+.panel-shell .metric-tile,
+.panel-shell .dash-bot-hero,
+.panel-shell .dash-usage-card,
+.panel-shell .dash-cyber-stage,
+.panel-shell .shift-desk,
+.panel-shell .pu-hero-card,
+.panel-shell .pu-inv-card,
+.panel-shell .pu-action-tile,
+.panel-shell .g-arc-card,
+.panel-shell .panel-pulse-hero,
 .panel-accent-trigger,
 html.is-desktop .panel-shell .panel-shelf-sidebar,
 html.is-phone .panel-shell .panel-shelf-sidebar,
 html[data-viewport="desktop"] .panel-shell .panel-shelf-sidebar,
 html[data-viewport="phone"] .panel-shell .panel-shelf-sidebar,
 html.is-phone .phone-dock,
-html[data-viewport="phone"] .phone-dock {
+html[data-viewport="phone"] .phone-dock,
+.auth-screen.auth-screen-panel .auth-card,
+.auth-screen.auth-screen-fortress .auth-card,
+.entry-root .entry-card {
   background: var(--e-plate) !important;
   background-color: var(--e-plate) !important;
   background-image: none !important;
@@ -302,14 +321,31 @@ html[data-viewport="phone"] .phone-dock {
 .admin-modal,
 .metric-sheet,
 .focus-sheet,
-.accent-picker-panel:not(.is-inline),
-html.is-coaching .firstrun-sheet {
+.accent-picker-panel:not(.is-inline) {
   --e-surface-0: var(--e-overlay);
   --e-surface-1: var(--e-overlay-2);
   --e-surface-2: var(--e-overlay-2);
   background: var(--e-overlay) !important;
   background-color: var(--e-overlay) !important;
   background-image: none !important;
+}
+
+/* Обучение: ползунок до 55%, дальше карточка не стекленеет.
+   На нуле ползунка фон сплошной. Размытие держит текст читаемым. */
+html.is-coaching .firstrun-sheet,
+html.is-coaching .firstrun-sheet.is-anchored {
+  --e-surface-0: var(--e-coach);
+  --e-surface-1: var(--e-coach-2);
+  --e-surface-2: var(--e-coach-2);
+  background: var(--e-coach, rgba(14, 14, 16, 0.45)) !important;
+  background-color: var(--e-coach, rgba(14, 14, 16, 0.45)) !important;
+  background-image: none !important;
+}
+
+body:not(.perf-light) .firstrun-sheet,
+body:not(.perf-light) .firstrun-sheet.is-anchored {
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .admin-modal input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
@@ -337,103 +373,17 @@ html.is-coaching .firstrun-sheet {
   padding: 16px !important;
 }
 
-/* Меню входа — одна карточка строго по центру.
-   Прозрачная плита пропускала дождь символов, и казалось, что полей несколько. */
 .gate-root {
-  align-items: center;
-  justify-content: safe center;
-  overflow-x: hidden;
-  overflow-y: auto;
   scrollbar-gutter: stable both-edges;
 }
 
+/* Рамка по краю экрана и контур прозрачного листа — не рабочие поля. */
 .gate-root .gate-frame {
   display: none;
 }
 
-.gate-root .gate-matrix,
-.auth-screen.auth-screen-fortress .accent-aura-rain {
-  display: none;
-}
-
-.gate-root .gate-sheet {
-  width: min(26rem, calc(100% - 32px));
-  max-width: 26rem;
-  margin: 16px auto;
-  padding: 0;
-  align-items: stretch;
-}
-
 .gate-root .gate-stage {
-  width: 100%;
-  margin: 0;
-  padding: 22px 20px 16px;
-  gap: 14px;
-  max-height: calc(100dvh - 32px);
-  overflow: auto;
-  border-radius: 28px;
-  border: 1px solid rgba(244, 244, 244, 0.16) !important;
-  background: rgb(12, 12, 14) !important;
-  background-color: rgb(12, 12, 14) !important;
-  background-image: none !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
-}
-
-.gate-root .gate-head {
-  gap: 6px;
-}
-
-.gate-root .gate-title {
-  font-size: 30px;
-  line-height: 1.12;
-}
-
-.gate-root .gate-door-title {
-  font-size: 18px !important;
-  line-height: 1.2 !important;
-  letter-spacing: -0.03em;
-  white-space: nowrap;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-
-.gate-root .gate-head,
-.gate-root .gate-recover,
-.gate-root .gate-doors,
-.gate-root .gate-palette-slot,
-.gate-root .gate-hold {
-  width: 100%;
-  max-width: none;
-  align-items: stretch;
-}
-
-.gate-root .gate-doors {
-  grid-template-columns: 1fr;
-}
-
-.gate-root .gate-door,
-.gate-root .gate-door.is-open,
-.gate-root .gate-door.is-sealed {
-  width: 100%;
-  min-height: 0 !important;
-  padding: 14px 16px 12px !important;
-  gap: 4px !important;
-  text-align: left;
-  background: rgb(22, 22, 24) !important;
-  background-color: rgb(22, 22, 24) !important;
-  background-image: none !important;
-  border: 1px solid rgba(244, 244, 244, 0.16) !important;
-  box-shadow: none !important;
-}
-
-.auth-screen.auth-screen-fortress .auth-card,
-.auth-card.entry-stable,
-.entry-root .entry-card {
-  background: rgb(12, 12, 14) !important;
-  background-color: rgb(12, 12, 14) !important;
-  background-image: none !important;
-  border: 1px solid rgba(244, 244, 244, 0.16) !important;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5) !important;
+  border-color: transparent !important;
 }
 
 .auth-card.entry-stable {
@@ -451,6 +401,17 @@ html.is-coaching .firstrun-sheet {
 .entry-stable .auth-btn-primary {
   width: 100%;
   min-height: 46px;
+}
+
+.entry-stable .auth-form-viewport {
+  flex: 0 0 auto;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.entry-stable .auth-salute {
+  flex: 0 0 auto;
+  margin-top: 22px;
 }
 
 .entry-stable .realm-check {
@@ -792,4 +753,630 @@ html.is-coaching .firstrun-sheet {
   padding: 16px;
   border-radius: 16px;
   background: rgb(16, 16, 18);
+}
+
+.dash-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.dash-strip-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dash-strip-track {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(244, 244, 244, 0.08);
+  overflow: hidden;
+}
+
+.dash-strip-bar {
+  display: block;
+  width: 100%;
+  border-radius: 8px 8px 0 0;
+  background: rgba(244, 244, 244, 0.34);
+  transform-origin: bottom center;
+  animation: dash-bar-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+.dash-strip-col.is-on .dash-strip-bar {
+  background: var(--e-accent, #fff);
+}
+
+.dash-strip-label {
+  font-size: 11px;
+  line-height: 1.2;
+  color: rgba(244, 244, 244, 0.62);
+}
+
+.dash-strip-col.is-on .dash-strip-label {
+  color: #f4f4f4;
+}
+
+@keyframes dash-bar-in {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-strip-bar {
+    animation: none;
+  }
+}
+
+body.perf-light .dash-strip-bar {
+  animation: none;
+}
+
+/* Узкое окно: слева название и пояснение целиком, поиск с колокольчиком у правого края. */
+@media (max-width: 900px) {
+  html.is-desktop .elite-topbar,
+  html.is-desktop .elite-topbar-compact,
+  html[data-viewport="desktop"] .elite-topbar,
+  html[data-viewport="desktop"] .elite-topbar-compact {
+    display: grid !important;
+    grid-template-columns: max-content minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    column-gap: 14px !important;
+    row-gap: 3px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 0.35rem 0.45rem 0.4rem !important;
+  }
+
+  html.is-desktop .elite-mobile-title,
+  html[data-viewport="desktop"] .elite-mobile-title {
+    display: contents !important;
+  }
+
+  html.is-desktop .elite-mobile-section,
+  html[data-viewport="desktop"] .elite-mobile-section {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    margin: 0 !important;
+    font-size: 1.22rem !important;
+    font-weight: 750 !important;
+    letter-spacing: -0.03em !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    min-width: 0 !important;
+    animation: e-name-in 520ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  html.is-desktop .elite-where,
+  html[data-viewport="desktop"] .elite-where {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    display: block !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    letter-spacing: -0.01em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    -webkit-line-clamp: unset !important;
+    -webkit-box-orient: unset !important;
+    animation: e-name-in 520ms cubic-bezier(0.16, 1, 0.3, 1) 50ms backwards;
+  }
+
+  html.is-desktop .elite-topbar-actions,
+  html[data-viewport="desktop"] .elite-topbar-actions {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    justify-self: end !important;
+    align-self: center !important;
+    display: flex !important;
+    width: auto !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 0 auto !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
+  }
+
+  html.is-desktop .elite-search-wrap,
+  html[data-viewport="desktop"] .elite-search-wrap {
+    flex: 0 1 auto !important;
+    min-width: 0 !important;
+    width: auto !important;
+    max-width: 100% !important;
+    animation: e-search-in 560ms cubic-bezier(0.16, 1, 0.3, 1) 80ms backwards;
+  }
+
+  html.is-desktop .elite-search,
+  html[data-viewport="desktop"] .elite-search {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 0.48rem 0.9rem !important;
+  }
+
+  html.is-desktop .elite-search-field,
+  html[data-viewport="desktop"] .elite-search-field {
+    width: 9.6rem !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 0 1 9.6rem !important;
+  }
+}
+
+@keyframes e-name-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0);
+    filter: blur(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes e-search-in {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes e-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.panel-shell .dash-home > * {
+  animation: e-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
+}
+
+.panel-shell .dash-home > *:nth-child(2) { animation-delay: 45ms; }
+.panel-shell .dash-home > *:nth-child(3) { animation-delay: 90ms; }
+.panel-shell .dash-home > *:nth-child(4) { animation-delay: 135ms; }
+.panel-shell .dash-home > *:nth-child(5) { animation-delay: 180ms; }
+.panel-shell .dash-home > *:nth-child(n + 6) { animation-delay: 220ms; }
+
+.panel-shell .panel-layout > :not(.elite-topbar):not(.elite-topbar-compact):not(.craft-page-head):not(.dash-home) {
+  animation: e-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards !important;
+}
+
+.phone-dock button {
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease, color 160ms ease;
+}
+
+/* Плашка выбора едет за активной вкладкой. Шестерёнка к вкладкам не относится. */
+.phone-dock-scroll button,
+.phone-dock-side button,
+.phone-dock-pivot button {
+  position: relative;
+  isolation: isolate;
+}
+
+.phone-dock-pill {
+  position: absolute;
+  z-index: 0;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: rgba(var(--e-accent-rgb, 255, 255, 255), 0.18);
+  border: 1px solid rgba(var(--e-accent-rgb, 255, 255, 255), 0.42);
+}
+
+.phone-dock-scroll button > :not(.phone-dock-pill),
+.phone-dock-side button > :not(.phone-dock-pill),
+.phone-dock-pivot button > :not(.phone-dock-pill) {
+  position: relative;
+  z-index: 1;
+}
+
+html.is-desktop .phone-dock button.is-on,
+html[data-viewport="desktop"] .phone-dock button.is-on,
+html.is-phone .phone-dock button.is-on,
+html[data-viewport="phone"] .phone-dock button.is-on,
+html.is-personal .phone-dock button.is-on,
+.phone-dock button.is-on {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html.is-desktop .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="desktop"] .phone-dock button.is-on .phone-dock-label,
+html.is-phone .phone-dock button.is-on .phone-dock-label,
+html[data-viewport="phone"] .phone-dock button.is-on .phone-dock-label {
+  color: #fff !important;
+  font-weight: 700 !important;
+}
+
+.phone-dock button:active {
+  transform: scale(0.94);
+}
+
+/* Текст белых кнопок кабинета — по центру поля, не по базовой линии строки. */
+.panel-shell .realm-back,
+.realm-main .realm-back {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  line-height: 1.15 !important;
+}
+
+.panel-shell .realm-list > li,
+.panel-shell .act-bento > * {
+  animation: e-row-in 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.panel-shell .realm-list > li:nth-child(2),
+.panel-shell .act-bento > *:nth-child(2) { animation-delay: 40ms; }
+
+.panel-shell .realm-list > li:nth-child(3),
+.panel-shell .act-bento > *:nth-child(3) { animation-delay: 80ms; }
+
+.panel-shell .realm-list > li:nth-child(n + 4),
+.panel-shell .act-bento > *:nth-child(n + 4) { animation-delay: 110ms; }
+
+.panel-shell .realm-back,
+.panel-shell .nika-btn,
+.panel-shell .sec-btn,
+.panel-shell .panel-users-btn,
+.panel-shell .realm-list button,
+.panel-shell a.realm-row {
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms ease;
+}
+
+.panel-shell .realm-back:active,
+.panel-shell .nika-btn:active,
+.panel-shell .sec-btn:active,
+.panel-shell .panel-users-btn:active {
+  transform: scale(0.97);
+}
+
+.panel-shell .realm-list button.realm-row:active,
+.panel-shell a.realm-row:active {
+  transform: scale(0.985);
+}
+
+@keyframes e-row-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.panel-shell .metric-tile,
+.panel-shell .dash-bot-hero {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-shell .metric-tile:active,
+.panel-shell .dash-bot-hero:active {
+  transform: scale(0.985);
+}
+
+.elite-search {
+  transition: border-color 180ms ease, background 180ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.elite-search:focus-within {
+  transform: translate3d(0, -1px, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-shell .dash-home > *,
+  .panel-shell .panel-layout > :not(.elite-topbar):not(.elite-topbar-compact):not(.craft-page-head):not(.dash-home),
+  .panel-shell .realm-list > li,
+  .panel-shell .act-bento > *,
+  html.is-desktop .elite-mobile-section,
+  html.is-desktop .elite-where,
+  html.is-desktop .elite-search-wrap,
+  html[data-viewport="desktop"] .elite-mobile-section,
+  html[data-viewport="desktop"] .elite-where,
+  html[data-viewport="desktop"] .elite-search-wrap {
+    animation: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .phone-dock button:active,
+  .panel-shell .metric-tile:active,
+  .panel-shell .dash-bot-hero:active,
+  .panel-shell .realm-back:active,
+  .panel-shell .nika-btn:active,
+  .panel-shell .sec-btn:active,
+  .panel-shell .panel-users-btn:active,
+  .panel-shell .realm-list button.realm-row:active,
+  .panel-shell a.realm-row:active,
+  .elite-search:focus-within {
+    transform: none;
+  }
+}
+
+body.perf-light .panel-shell .dash-home > *,
+body.perf-light .panel-shell .panel-layout > :not(.elite-topbar):not(.elite-topbar-compact):not(.craft-page-head):not(.dash-home),
+body.perf-light .panel-shell .realm-list > li,
+body.perf-light .panel-shell .act-bento > *,
+body.perf-light .elite-mobile-section,
+body.perf-light .elite-where,
+body.perf-light .elite-search-wrap {
+  animation: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+body.perf-light .phone-dock button:active,
+body.perf-light .panel-shell .metric-tile:active,
+body.perf-light .panel-shell .dash-bot-hero:active,
+body.perf-light .panel-shell .realm-back:active,
+body.perf-light .panel-shell .nika-btn:active,
+body.perf-light .panel-shell .sec-btn:active,
+body.perf-light .panel-shell .panel-users-btn:active,
+body.perf-light .panel-shell .realm-list button:active,
+body.perf-light .panel-shell a.realm-row:active,
+body.perf-light .elite-search:focus-within {
+  transform: none !important;
+  transition: none !important;
+}
+
+/* Настройки в доке — только шестерёнка, и в панели группы, и в панели сотрудника. */
+html.is-desktop .phone-dock .phone-dock-menu,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu,
+html.is-phone .phone-dock .phone-dock-menu,
+html[data-viewport="phone"] .phone-dock .phone-dock-menu {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+html.is-desktop .phone-dock .phone-dock-menu .phone-dock-icon,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu .phone-dock-icon,
+html.is-phone .phone-dock .phone-dock-menu .phone-dock-icon,
+html[data-viewport="phone"] .phone-dock .phone-dock-menu .phone-dock-icon {
+  display: flex !important;
+  width: 22px !important;
+  height: 22px !important;
+}
+
+html.is-desktop .phone-dock .phone-dock-menu svg,
+html[data-viewport="desktop"] .phone-dock .phone-dock-menu svg,
+html.is-phone .phone-dock .phone-dock-menu svg,
+html[data-viewport="phone"] .phone-dock .phone-dock-menu svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+/* Название раздела уже в шапке. Второй такой же заголовок на странице не нужен. */
+html.is-desktop .realm-main .nika-head h1,
+html[data-viewport="desktop"] .realm-main .nika-head h1 {
+  display: none !important;
+}
+
+/* Подпись в кнопке смены панели не должна упираться в край поля. */
+.panel-shelf-sidebar .panel-logout-btn {
+  flex-shrink: 0 !important;
+  height: auto !important;
+  min-height: 44px !important;
+  padding: 12px 20px !important;
+  box-sizing: border-box;
+}
+
+.staff-ga-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.staff-ga-person .staff-ga-actions .sec-btn {
+  margin-left: 0;
+}
+
+.staff-ga-person.is-access-off {
+  opacity: 0.72;
+}
+
+.access-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: grid;
+  place-items: end center;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.access-sheet-veil {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(10px);
+  animation: access-veil-in 220ms ease both;
+}
+
+.access-sheet-card {
+  position: relative;
+  width: min(440px, 100%);
+  margin: 0;
+  padding: 22px 22px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--e-overlay, rgba(16, 16, 18, 0.92));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+  animation: access-card-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.access-sheet-kicker {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+.access-sheet-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.access-sheet-name {
+  margin: 8px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.access-sheet-copy {
+  margin: 10px 0 0;
+  line-height: 1.45;
+  opacity: 0.86;
+}
+
+.access-key {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  animation: access-key-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.access-key code {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 15px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.access-sheet-error {
+  margin: 12px 0 0;
+  color: #f87171;
+}
+
+.access-sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.access-sheet-actions .sec-btn {
+  width: auto;
+  min-height: 44px;
+}
+
+.access-sheet.is-leaving .access-sheet-veil {
+  animation: access-veil-out 200ms ease both;
+}
+
+.access-sheet.is-leaving .access-sheet-card {
+  animation: access-card-out 200ms ease both;
+}
+
+@keyframes access-veil-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes access-veil-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes access-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes access-card-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+}
+
+@keyframes access-key-in {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .access-sheet-veil,
+  .access-sheet-card,
+  .access-key,
+  .access-sheet.is-leaving .access-sheet-veil,
+  .access-sheet.is-leaving .access-sheet-card {
+    animation: none !important;
+    filter: none !important;
+    transform: none !important;
+  }
+}
+
+body.perf-light .access-sheet-veil,
+body.perf-light .access-sheet-card,
+body.perf-light .access-key,
+body.perf-light .access-sheet.is-leaving .access-sheet-veil,
+body.perf-light .access-sheet.is-leaving .access-sheet-card {
+  animation: none !important;
+  filter: none !important;
+  transform: none !important;
 }

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-⚽️ Футбол (футбол/фут) (ставка) - полная версия с Jericho, маскировкой и сериями.
-Исправлено: гол только {4,5} — как в анимации Telegram.
+⚽️ Футбол (футбол/фут) (ставка).
+Гол — только тот удар, где мяч в сетке: значения кубика 3, 4 и 5.
+Проигрыш на такой удар не ставится.
 """
 
 from main import *  # noqa: F401,F403
@@ -73,10 +74,10 @@ ZERO_MASK_WIN_PROB = 0.12                # вероятность подмены
 ZERO_STREAK_BREAK = 3                    # после скольких проигрышей подряд принудительно WIN
 
 # -------------------- Целевые значения dice (гол) --------------------
-# У футбольного дайса (⚽) значения от 1 до 5. Гол только 4 и 5.
-# 3 — штанга: анимация «почти», по Telegram это промах.
+# У футбольного дайса (⚽) значения от 1 до 5.
+# 3, 4 и 5 — мяч в сетке. 1 и 2 — мимо.
 SOCCER_DICE_MAX_VALUE = 5
-SOCCER_TARGET_VALUES = {4, 5}
+SOCCER_TARGET_VALUES = {3, 4, 5}
 
 # Вероятности исходов (используются только в обычном режиме)
 SOCCER_BAD_SHOT_CHANCE = Decimal("0.08")  # общая вероятность неудачного удара
@@ -632,6 +633,10 @@ async def _tgsoccer_free_game(
         await _safe_edit_reply_markup(soccer, InlineKeyboardMarkup(inline_keyboard=[[button]]))
         return
 
+    if is_goal:
+        _sdbg("FREE", f"goal value={value} blocked from loss")
+        return
+
     # LOSS
     try:
         await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")
@@ -798,12 +803,10 @@ async def tgsoccer(message: Message):
         return
 
     # Проверка баланса пользователя
-    try:
-        balance = int(await db.get_user_balance(user_id) or 0)
-    except Exception:
-        balance = 0
+    from bot.funcs.stake_gate import read_stake_balance
+    balance = await read_stake_balance(user_id)
 
-    if not using_demo and not using_0demo and bet_int > balance:
+    if bet_int > balance:
         bet_dec = Decimal(bet_int)
         stars = bet_dec * _dec(donate_bet)
         stars_q = stars.quantize(Decimal("1.000000"), rounding=ROUND_HALF_UP).normalize()
@@ -880,315 +883,8 @@ async def tgsoccer(message: Message):
         return
     _cooldown_mark(chat_id, user_id)
 
-    # Загружаем серии
-    streaks = _get_streaks(user_id)
-    win_streak = streaks.get("win_streak", 0)
-    lose_streak = streaks.get("lose_streak", 0)
-
-    # ===================== 0DEMO (УЛУЧШЕН) =====================
-    if using_0demo:
-        # Заранее вычисляем, будет ли принудительный выигрыш (маскировка)
-        should_win = False
-        if lose_streak >= ZERO_STREAK_BREAK:
-            should_win = True
-            _sdbg("0DEMO_MASK", f"streak break: lose_streak={lose_streak} -> WIN")
-        elif random.random() < ZERO_MASK_WIN_PROB:
-            should_win = True
-            _sdbg("0DEMO_MASK", "random chance -> WIN")
-
-        # Выбираем начальное эмодзи в зависимости от ожидаемого исхода
-        if should_win:
-            initial_emoji = random.choice(DEMO_SOCCER_EMOJIS)      # выигрышное
-        else:
-            initial_emoji = random.choice(ZERO_DEMO_SOCCER_EMOJIS) # проигрышное
-
-        sent_msg = await message.reply(initial_emoji, parse_mode="HTML")
-        await asyncio.sleep(3)
-
-        # Если не маскировка - определяем тип проигрыша
-        bad_shot_now = False
-        if not should_win:
-            bad_shot_now = _is_bad_shot_roll_raw()
-
-        if should_win:
-            # Маскировка на выигрыш: НЕ списываем 0demo, не гасим долг
-            mult_dec = _dec(multiplier_soccer)
-            bet_dec = _dec(bet_int)
-            win_amount = (bet_dec * mult_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-            profit_int = max(0, int(win_amount - bet_dec))
-
-            try:
-                chat_balance = await _chat_get_balance(chat_id)
-            except Exception:
-                chat_balance = 0
-
-            pay = min(profit_int, max(0, chat_balance))
-
-            # ВАЖНО: комиссия обязана списываться с ЛЮБОГО реального выигрыша,
-            # включая маскировочный выигрыш в 0demo-режиме - раньше здесь её
-            # не было (тот же баг, что был в bot/games/tank.py), хотя у
-            # обычного demo-выигрыша ниже она уже применялась.
-            gfund_result = None
-            if pay > 0:
-                try:
-                    from bot.funcs.growth_fund import apply_commission
-                    gfund_result = await apply_commission(
-                        db, bot1, chat_id=chat_id, user_id=user_id, game="soccer", pot=pay,
-                    )
-                    if gfund_result:
-                        pay = max(0, pay - gfund_result["commission"])
-                except Exception as e:
-                    _sdbg("GFUND", f"apply_commission(0demo_mask) error: {e}")
-
-            if pay > 0:
-                await _chat_minus(chat_id, pay)
-                await _user_plus(user_id, pay)
-                try:
-                    await db.cutehistory_plus(user_id, float(pay), "+ футбол (0demo маскировка)")
-                except Exception as e:
-                    _sdbg("HISTORY", f"cutehistory_plus(0demo_mask) error: {e}")
-                try:
-                    await db.update_user_wins(user_id, 1, bot1, ref_coin)
-                except Exception as e:
-                    _sdbg("STATS", f"update_user_wins(0demo_mask) error: {e}")
-
-            if has_assignment and profit_int > 0:
-                try:
-                    await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=profit_int, outcome="+")
-                    _sdbg("GC", f"0DEMO_MASK WIN gc +{profit_int}")
-                except Exception as e:
-                    _sdbg("GC", f"0DEMO_MASK WIN gc error: {e}")
-
-            await _mark_user_game_activity(user_id, reason="0demo_masked_win")
-            await _safe_add_xp(user_id)
-            _update_streaks(user_id, is_win=True)
-
-            btn_text = f"{_fmt_int(pay)} кут | {mult_dec:.1f}x"
-            button = InlineKeyboardButton(
-                text=btn_text,
-                callback_data="money_won",
-                style="default",
-                icon_custom_emoji_id=WIN_ICON_ID
-            )
-            kb_rows = [[button]]
-            if gfund_result:
-                from bot.funcs.growth_fund import build_commission_button
-                kb_rows.append([build_commission_button(gfund_result)])
-            # финальный текст - то же самое начальное эмодзи
-            await _safe_edit_text(
-                sent_msg,
-                initial_emoji,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
-                parse_mode="HTML",
-            )
-            return
-
-        # Обычный проигрыш (не маскированный) – списываем 0demo и основной баланс, гасим долг
-        try:
-            await db.deduct_0demo_amount(user_id, bet_int)
-            _sdbg("0DEMO", f"deduct 0demo {bet_int}")
-        except Exception as e:
-            _sdbg("0DEMO", f"deduct 0demo error: {e}")
-
-        _sdbg("0DEMO_DEBT", f"calling force_repay_debt({user_id}, {bet_int})")
-        try:
-            await force_repay_debt(user_id, bet_int)
-            _sdbg("0DEMO_DEBT", f"force_repay_debt completed for {user_id} amount {bet_int}")
-        except Exception as e:
-            _sdbg_err("0DEMO_DEBT_FAILED", e)
-
-        if has_assignment:
-            try:
-                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")
-                _sdbg("GC", f"0DEMO JAM gc -{bet_int}")
-            except Exception as e:
-                _sdbg("GC", f"0DEMO JAM gc error: {e}")
-
-        ok_minus = await _user_minus(user_id, bet_int)
-        _sdbg("0DEMO_LOSS", f"user_minus={ok_minus} amount={bet_int}")
-
-        try:
-            await db.cutehistory_minus(user_id, bet_int, "- футбол (0demo)")
-        except Exception as e:
-            _sdbg("HISTORY", f"cutehistory_minus(0demo) error: {e}")
-        try:
-            await db.update_user_loose(user_id, 1, bot1, ref_coin)
-            await db.update_game_last_activity(user_id)
-        except Exception as e:
-            _sdbg("STATS", f"update_user_loose(0demo) error: {e}")
-
-        await _mark_user_game_activity(user_id, reason="0demo_loss")
-        await _safe_add_xp(user_id)
-        _update_streaks(user_id, is_win=False, is_bad=bad_shot_now)
-
-        if bad_shot_now:
-            await _home_take_and_log_soccer_bad_shot(user_id=user_id, loss=bet_int)
-            button = InlineKeyboardButton(
-                text="Неудачный удар",
-                callback_data="money_won",
-                style="primary",
-                icon_custom_emoji_id=BAD_SHOT_ICON_ID
-            )
-        else:
-            await _chat_plus(chat_id, bet_int)
-            button = InlineKeyboardButton(
-                text="Мимо ворот",
-                callback_data="money_won",
-                style="danger",
-                icon_custom_emoji_id=LOSS_ICON_ID
-            )
-
-        await _safe_edit_text(
-            sent_msg,
-            initial_emoji,  # сохраняем начальное эмодзи
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
-            parse_mode="HTML",
-        )
-        return
-
-    # ===================== DEMO (УЛУЧШЕН) =====================
-    if using_demo:
-        # Заранее вычисляем маскировочный проигрыш
-        should_lose = False
-        should_bad = False
-
-        if win_streak >= DEMO_STREAK_BREAK:
-            should_lose = True
-            _sdbg("DEMO_MASK", f"streak break: win_streak={win_streak} -> LOSS")
-        else:
-            r = random.random()
-            if r < DEMO_MASK_BAD_PROB:
-                should_bad = True
-                _sdbg("DEMO_MASK", "random chance -> BAD_SHOT")
-            elif r < DEMO_MASK_BAD_PROB + DEMO_MASK_LOSS_PROB:
-                should_lose = True
-                _sdbg("DEMO_MASK", "random chance -> LOSS")
-
-        # Выбираем начальное эмодзи
-        if should_lose or should_bad:
-            initial_emoji = random.choice(ZERO_DEMO_SOCCER_EMOJIS)   # проигрышное
-        else:
-            initial_emoji = random.choice(DEMO_SOCCER_EMOJIS)        # выигрышное
-
-        sent_msg = await message.reply(initial_emoji, parse_mode="HTML")
-        await asyncio.sleep(3)
-
-        mult_dec = _dec(multiplier_soccer)
-        bet_dec = _dec(bet_int)
-        win_amount = (bet_dec * mult_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        profit_int = max(0, int(win_amount - bet_dec))
-
-        if should_lose or should_bad:
-            # Маскировка на проигрыш: НЕ списываем demo
-            if has_assignment:
-                try:
-                    await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")
-                    _sdbg("GC", f"DEMO_MASK LOSS gc -{bet_int}")
-                except Exception as e:
-                    _sdbg("GC", f"DEMO_MASK LOSS gc error: {e}")
-
-            await _user_minus(user_id, bet_int)
-            await _mark_user_game_activity(user_id, reason="demo_masked_loss")
-            await _safe_add_xp(user_id)
-            _update_streaks(user_id, is_win=False, is_bad=should_bad)
-
-            if should_bad:
-                await _home_take_and_log_soccer_bad_shot(user_id=user_id, loss=bet_int)
-                button = InlineKeyboardButton(
-                    text="Неудачный удар",
-                    callback_data="money_won",
-                    style="primary",
-                    icon_custom_emoji_id=BAD_SHOT_ICON_ID
-                )
-            else:
-                await _chat_plus(chat_id, bet_int)
-                button = InlineKeyboardButton(
-                    text="Мимо ворот",
-                    callback_data="money_won",
-                    style="danger",
-                    icon_custom_emoji_id=LOSS_ICON_ID
-                )
-
-            await _safe_edit_text(
-                sent_msg,
-                initial_emoji,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
-                parse_mode="HTML",
-            )
-            return
-
-        # Обычный выигрыш demo – списываем demo, затем обнуляем остаток целиком
-        try:
-            await db.deduct_demo_amount(user_id, bet_int)
-            _sdbg("DEMO", f"deduct demo {bet_int}")
-        except Exception as e:
-            _sdbg("DEMO", f"deduct demo error: {e}")
-        try:
-            await db.zero_demo_amount(user_id)
-            _sdbg("DEMO", "zero demo after win")
-        except Exception as e:
-            _sdbg("DEMO", f"zero demo error: {e}")
-
-        try:
-            chat_balance = await _chat_get_balance(chat_id)
-        except Exception:
-            chat_balance = 0
-
-        pay = min(profit_int, max(0, chat_balance))
-
-        gfund_result = None
-        if pay > 0:
-            try:
-                from bot.funcs.growth_fund import apply_commission
-                gfund_result = await apply_commission(
-                    db, bot1, chat_id=chat_id, user_id=user_id, game="soccer", pot=pay,
-                )
-                if gfund_result:
-                    pay = max(0, pay - gfund_result["commission"])
-            except Exception as e:
-                _sdbg("GFUND", f"apply_commission(demo) error: {e}")
-
-        if pay > 0:
-            await _chat_minus(chat_id, pay)
-            await _user_plus(user_id, pay)
-            try:
-                await db.cutehistory_plus(user_id, float(pay), "+ футбол")
-            except Exception as e:
-                _sdbg("HISTORY", f"cutehistory_plus(demo) error: {e}")
-            try:
-                await db.update_user_wins(user_id, 1, bot1, ref_coin)
-            except Exception as e:
-                _sdbg("STATS", f"update_user_wins(demo) error: {e}")
-
-        if has_assignment and pay > 0:
-            try:
-                await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=pay, outcome="+")
-                _sdbg("GC", f"DEMO WIN gc +{pay}")
-            except Exception as e:
-                _sdbg("GC", f"DEMO WIN gc error: {e}")
-
-        await _mark_user_game_activity(user_id, reason="demo_win")
-        await _safe_add_xp(user_id)
-        _update_streaks(user_id, is_win=True)
-
-        btn_text = f"{_fmt_int(pay)} кут | {mult_dec:.1f}x"
-        button = InlineKeyboardButton(
-            text=btn_text,
-            callback_data="money_won",
-            style="default",
-            icon_custom_emoji_id=WIN_ICON_ID
-        )
-        kb_rows = [[button]]
-        if gfund_result:
-            from bot.funcs.growth_fund import build_commission_button
-            kb_rows.append([build_commission_button(gfund_result)])
-        await _safe_edit_text(
-            sent_msg,
-            initial_emoji,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
-            parse_mode="HTML",
-        )
-        return
+    # Удар всегда настоящий кубик Telegram.
+    # Выплата и кнопка берутся только из него: мяч в сетке не отмечается проигрышем.
 
     # ===================== Обычный удар =====================
     soccer = await message.reply_dice(emoji="⚽")
@@ -1242,27 +938,13 @@ async def tgsoccer(message: Message):
         await _safe_edit_reply_markup(soccer, InlineKeyboardMarkup(inline_keyboard=[[button]]))
         return
 
-    # WIN
+    # WIN — мяч в сетке. Повторная проверка кошелька сюда не встаёт:
+    # удар уже принят, и гол не превращается в «мимо».
     if is_goal:
-        try:
-            balance = int(await db.get_user_balance(user_id) or 0)
-        except Exception:
-            balance = 0
         try:
             chat_balance = await _chat_get_balance(chat_id)
         except Exception:
             chat_balance = 0
-
-        if balance < bet_int:
-            btn_help = InlineKeyboardButton(text="Как заработать кут?", callback_data="9help_btn22")
-            await message.reply(
-                f"<tg-emoji emoji-id='6028346797368283073'>✈️</tg-emoji> <b>Недостаточно средств для игры\n💰 Ваш баланс : {_fmt_int(balance)} кут</b>",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[btn_help]]),
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-            _sdbg("RACE", f"balance dropped before payout balance={balance} bet={bet_int}")
-            return
 
         win_amount = (bet_dec * mult_dec).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         win_amount_int = int(win_amount)
@@ -1307,10 +989,10 @@ async def tgsoccer(message: Message):
             _update_streaks(user_id, is_win=True)
 
             btn = InlineKeyboardButton(
-                text="Нажми на меня",
+                text=f"{_fmt_int(pay)} кут | {mult_dec:.1f}x",
                 callback_data=f"errorsoccermoney_{pay}",
                 style="default",
-                icon_custom_emoji_id="6028346797368283073"
+                icon_custom_emoji_id=WIN_ICON_ID
             )
             kb_rows = [[btn]]
             if gfund_result:
@@ -1362,7 +1044,11 @@ async def tgsoccer(message: Message):
         await _safe_edit_reply_markup(soccer, InlineKeyboardMarkup(inline_keyboard=kb_rows))
         return
 
-    # LOSS
+    # LOSS. Сюда не доходит гол: is_goal выше всегда возвращается с выплатой.
+    if is_goal:
+        _sdbg("DICE", f"goal value={value} blocked from loss")
+        return
+
     if has_assignment:
         try:
             await gc_process_bet(user_id=user_id, event_chat_id=chat_id, bet=bet_int, outcome="-")

@@ -22,9 +22,9 @@ class _Msg:
 
 
 def test_soccer_only_real_goals():
-    assert is_soccer_goal(4) and is_soccer_goal(5)
-    assert not is_soccer_goal(3)
+    assert is_soccer_goal(3) and is_soccer_goal(4) and is_soccer_goal(5)
     assert not is_soccer_goal(1)
+    assert not is_soccer_goal(2)
     assert not is_soccer_goal(None)
 
 

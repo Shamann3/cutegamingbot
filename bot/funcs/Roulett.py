@@ -53,14 +53,8 @@ async def roulett(message: Message):
 
     # Проверка баланса пользователя (только если ставка > 0)
     if bet > 0:
-        user_balance = await db.get_user_balance(user_id)
-        if user_balance is None:
-            await message.reply(
-                "🛠 <b>Ошибка при получении баланса пользователя.</b>",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            return
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
 
         if bet > user_balance:
             from bot.funcs.help import callbaYTRWEQck_main  # noqa: F401
@@ -222,7 +216,8 @@ async def Roullet_process_join(callback_query: types.CallbackQuery):
             # Баланс / ставка
             bet = int(game.get('bet', 0) or 0)
             try:
-                user_balance = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                user_balance = await read_stake_balance(user_id)
                 enough = (user_balance is not None) and int(user_balance) >= bet
             except Exception:
                 enough = False
@@ -348,7 +343,8 @@ async def Roullet_process_start(callback_query: types.CallbackQuery):
 
     # Проверка баланса всех участников
     for participant_id in game111['participants']:
-        current_balance = await db.get_user_balance(participant_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(participant_id)
 
         # Если у участника недостаточно средств, останавливаем игру
         if current_balance is None or current_balance < game111['bet']:
@@ -369,7 +365,8 @@ async def Roullet_process_start(callback_query: types.CallbackQuery):
             return  # Завершаем выполнение функции
 
     # Проверяем баланс создателя игры
-    user_balance = await db.get_user_balance(user_id)
+    from bot.funcs.stake_gate import read_stake_balance
+    user_balance = await read_stake_balance(user_id)
     if game111['bet'] > user_balance:
         await callback_query.answer("💭 Недостаточно средств для старта игры", show_alert=True)
         return
@@ -398,7 +395,8 @@ async def Roullet_process_shoot(callback_query: types.CallbackQuery):
     message_id = games_roulett [ game_id ] [ "message_id" ]
     try:
         game = games_roulett[game_id]
-        user_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if game['bet'] > user_balance:
             await callback_query.answer("💭 Недостаточно средств для участия в игре", show_alert=True)
             return

@@ -47,7 +47,8 @@ async def induel_create_game_callback(callback_query: types.CallbackQuery):
         return
     # Если ставка больше 0, проверяем, достаточно ли у пользователя средств
     if bet_amount > 0:
-        user_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if user_balance < bet_amount:
             # Если средств недостаточно, отправляем сообщение и выходим из функции
             await callback_query.answer("💭 Недостаточно средств для игры с такой ставкой." , show_alert=True)
@@ -165,7 +166,8 @@ async def induel_Roullet_process_join(callback_query: types.CallbackQuery):
             # баланс / ставка
             bet_amount = int(game.get("bet", 0) or 0)
             try:
-                user_balance = await db.get_user_balance(user_id)
+                from bot.funcs.stake_gate import read_stake_balance
+                user_balance = await read_stake_balance(user_id)
                 enough = (user_balance is not None) and int(user_balance) >= bet_amount
             except Exception:
                 enough = False
@@ -296,14 +298,15 @@ async def induel_Roullet_process_start(callback_query: types.CallbackQuery):
 
     # Если ставка больше 0, проверяем, достаточно ли у игрока денег
     if bet_amount > 0:
-        user_balance = await db.get_user_balance(
-            callback_query.from_user.id)  # Предполагается, что баланс хранится в поле 'balance'
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(callback_query.from_user.id)
         if user_balance < bet_amount:
             await callback_query.answer("💭 Недостаточно средств для игры." , show_alert=True)
             return
     # Проверка баланса всех участников
     for participant_id in game111['participants']:
-        current_balance = await db.get_user_balance(participant_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(participant_id)
 
         # Если у участника недостаточно средств, останавливаем игру
         if current_balance is None or current_balance < game111['bet']:
@@ -322,7 +325,8 @@ async def induel_Roullet_process_start(callback_query: types.CallbackQuery):
             return  # Завершаем выполнение функции
 
     # Проверяем баланс создателя игры
-    user_balance = await db.get_user_balance(user_id)
+    from bot.funcs.stake_gate import read_stake_balance
+    user_balance = await read_stake_balance(user_id)
     if game111['bet'] > user_balance:
         await callback_query.answer("💭 Недостаточно средств для старта игры", show_alert=True)
         return
@@ -357,7 +361,8 @@ async def induel_Roullet_process_shoot(callback_query: types.CallbackQuery):
 
     try:
         game = games_roulettinduel[game_id]
-        user_balance = await db.get_user_balance(user_id)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if game['bet'] > user_balance:
             await callback_query.answer("💭 Недостаточно средств для участия в игре", show_alert=True)
             return

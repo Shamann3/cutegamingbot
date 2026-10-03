@@ -40,6 +40,20 @@ async def word(message: Message):
             hint = " ".join(text_parts[2:]) if len(text_parts) > 2 else None
             #print(f"[DEBUG] Игра без ставки. Слово для отгадывания: {word_to_guess} 🔤. Подсказка: {hint}")
 
+        if bet > 0:
+            from bot.funcs.stake_gate import paid_stake_ok
+            if not await paid_stake_ok(creator_id, bet):
+                await message.reply(
+                    "💭 <b>Недостаточно средств для игры</b>",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                try:
+                    await bot1.delete_message(chat_id=group_id, message_id=message.message_id)
+                except Exception:
+                    pass
+                return
+
         # Добавляем информацию об игре в словарь
         wordgames[group_id] = {'creator_id': creator_id, 'word_to_guess': word_to_guess, 'hint': hint, 'bet': bet, 'message_id': message.message_id}
         #print(f"[DEBUG] Игра успешно добавлена в словарь: {wordgames[group_id]} 🗃️")

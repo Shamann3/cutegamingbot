@@ -102,9 +102,9 @@ from admin_db import (
     delete_suspended_member,
     save_pending_registration,
     submit_complaint_evidence,
+    reissue_member_key,
     suspend_member,
     take_complaint,
-    unsuspend_member,
     upsert_salary,
 )
 from admin_permissions import (
@@ -1197,7 +1197,7 @@ async def _resolve_login_key_ok(user_id: int, account: dict, login_key: str) -> 
     """env-ключ владельца ИЛИ персональный login_key пользователя."""
     from db import db as _db
     personal_key = account.get("login_key") or ""
-    if not personal_key:
+    if not personal_key and account.get("status") == "active":
         personal_key = await _db.pool.fetchval(
             "SELECT token FROM admin_invite_tokens WHERE used_by = $1 LIMIT 1",
             user_id,
@@ -1241,10 +1241,10 @@ async def admin_login_verify_key(
     if not account:
         raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
 
+    _login_status_guard(account)
+
     if not await _resolve_login_key_ok(user_id, account, body.loginKey):
         raise HTTPException(status_code=403, detail="Неверный ключ входа")
-
-    _login_status_guard(account)
 
     totp_secret = normalize_totp_secret(await get_admin_totp_secret(user_id) or "")
     if not totp_secret:
@@ -1270,10 +1270,10 @@ async def admin_login_reveal_code(
     if not account:
         raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
 
+    _login_status_guard(account)
+
     if not await _resolve_login_key_ok(user_id, account, body.loginKey):
         raise HTTPException(status_code=403, detail="Неверный ключ входа")
-
-    _login_status_guard(account)
 
     totp_secret = normalize_totp_secret(await get_admin_totp_secret(user_id) or "")
     if not totp_secret:
@@ -1302,6 +1302,8 @@ async def admin_login(
     if not account:
         raise HTTPException(status_code=403, detail="Сначала пройдите регистрацию")
 
+    _login_status_guard(account)
+
     if not await _resolve_login_key_ok(user_id, account, body.loginKey):
         schedule_security_alert(
             "ERR_SEC_ADMIN_LOGIN_FAIL",
@@ -1311,8 +1313,6 @@ async def admin_login(
             status=403,
         )
         raise HTTPException(status_code=403, detail="Неверный ключ входа")
-
-    _login_status_guard(account)
 
     totp_secret = await get_admin_totp_secret(user_id)
     if not totp_secret or not verify_totp(totp_secret, body.totp, valid_window=max(ADMIN_TOTP_VALID_WINDOW, 30)):
@@ -1678,7 +1678,7 @@ async def staff_suspend_member(
     user_id: int = Depends(require_admin_permission("manage_staff")),
 ):
     if member_id == user_id:
-        raise HTTPException(status_code=400, detail="Нельзя отстранить самого себя")
+        raise HTTPException(status_code=400, detail="Нельзя отключить свой доступ")
 
     ok = await suspend_member(member_id, user_id)
     if not ok:
@@ -1688,10 +1688,37 @@ async def staff_suspend_member(
         user_id, "staff_suspend",
         target_type="staff",
         target_id=str(member_id),
-        target_label="Отстранён",
+        target_label="Доступ отключён",
         ip=_get_client_ip(request),
     )
     return {"ok": True}
+
+
+@router.post("/staff/members/{member_id}/reissue-key")
+async def staff_reissue_member_key(
+    member_id: int,
+    request: Request,
+    user_id: int = Depends(require_admin_permission("manage_staff")),
+):
+    """Новый ключ входа. Только после отключения: старый ключ уже не действует."""
+    if member_id == user_id:
+        raise HTTPException(status_code=400, detail="Нельзя выдать ключ самому себе")
+
+    plain = await reissue_member_key(member_id)
+    if not plain:
+        raise HTTPException(
+            status_code=409,
+            detail="Сначала отключите доступ. Новый ключ выдаётся отключённому сотруднику",
+        )
+
+    await log_admin_action(
+        user_id, "staff_reissue_key",
+        target_type="staff",
+        target_id=str(member_id),
+        target_label="Выдан новый ключ входа",
+        ip=_get_client_ip(request),
+    )
+    return {"ok": True, "loginKey": plain}
 
 
 @router.post("/staff/members/{member_id}/purge")
@@ -1749,18 +1776,10 @@ async def staff_unsuspend_member(
     request: Request,
     user_id: int = Depends(require_admin_permission("manage_staff")),
 ):
-    ok = await unsuspend_member(member_id, user_id)
-    if not ok:
-        raise HTTPException(status_code=409, detail="Сотрудник не найден или не отстранён")
-
-    await log_admin_action(
-        user_id, "staff_unsuspend",
-        target_type="staff",
-        target_id=str(member_id),
-        target_label="Возвращён к работе",
-        ip=_get_client_ip(request),
+    raise HTTPException(
+        status_code=409,
+        detail="Вернуть без нового ключа нельзя. Выдайте ключ отключённому сотруднику",
     )
-    return {"ok": True}
 
 
 @router.delete("/staff/members/{member_id}")

@@ -843,7 +843,8 @@ async def provoda(message: Message):
             await message.reply("😓", reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
             return
     else:
-        user_balance = int(await db.get_user_balance(user_id) or 0)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if bet_amount > user_balance:
             stars = _dec(bet_amount) * _dec(donate_bet)
             stars_q = stars.quantize(Decimal("1.000000"), rounding=ROUND_HALF_UP).normalize()
@@ -1121,9 +1122,10 @@ async def provoda_callback(callback_query: CallbackQuery):
             has_assignment = gc_state["has_assignment"]
             is_free = gc_state["is_free"]
 
-            if not (has_assignment and is_free) and not using_demo and not using_0demo:
+            if not (has_assignment and is_free):
                 try:
-                    user_balance = int(await db.get_user_balance(clicker_id) or 0)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    user_balance = await read_stake_balance(clicker_id)
                 except Exception:
                     user_balance = 0
                 try:

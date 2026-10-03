@@ -294,10 +294,15 @@ class FootGame:
         user_dice = await self.message.reply_dice(emoji='⚽️')
 
         # Проверяем результат кубика
-        print('s',user_dice)
-        result = user_dice.dice.value in self.target_value
+        from bot.funcs.tg_dice import is_soccer_goal, read_dice_value
+        value = read_dice_value(user_dice)
+        result = is_soccer_goal(value)
 
-        if result:
+        if value is None:
+            win_amount_commission = 0
+            message_text = "Бросок не прочитался"
+            callback_data = "money_won"
+        elif result:
             win_amount = self.bet * 2.4  # Выигрыш без комиссии
             win_amount_commission = round(win_amount)  # С учетом комиссии
             message_text = f"💸 Победа! {win_amount_commission:,.0f} кут".replace(",", ".")

@@ -342,6 +342,8 @@ async def trade(message: Message):
             return
     else:
         # Обычный режим: проверяем ТОЛЬКО основной баланс (даже если есть demo/0demo)
+        from bot.funcs.stake_gate import read_stake_balance
+        current_balance = await read_stake_balance(user_id)
         if bet_amount > current_balance:
             from bot.funcs.help import callbaYTRWEQck_main  # noqa: F401
 

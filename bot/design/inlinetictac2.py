@@ -228,8 +228,9 @@ async def inline_tic_tac_create_game_callback(callback_query: types.CallbackQuer
         bet_amount = int(data_parts[2]) if len(data_parts) > 2 and str(data_parts[2]).isdigit() else 0
 
         if bet_amount > 0:
-            user_balance = await db.get_user_balance(user_id)
-            if user_balance is None or int(user_balance) < bet_amount:
+            from bot.funcs.stake_gate import read_stake_balance
+            user_balance = await read_stake_balance(user_id)
+            if int(user_balance) < bet_amount:
                 await callback_query.answer("💭 Недостаточно средств для игры с такой ставкой.", show_alert=True)
                 return
 
@@ -432,7 +433,8 @@ async def inline_tic_tac_join_game_callback(callback_query: types.CallbackQuery)
             bet_amount = int(game.get("bet_amount", 0) or 0)
             if bet_amount > 0:
                 try:
-                    bal = await db.get_user_balance(user_id)
+                    from bot.funcs.stake_gate import read_stake_balance
+                    bal = await read_stake_balance(user_id)
                     enough = (bal is not None) and int(bal) >= bet_amount
                 except Exception:
                     enough = False
@@ -585,12 +587,13 @@ async def inline_tic_tac_start_game_callback(callback_query: types.CallbackQuery
         bet_amount = int(game.get("bet_amount", 0) or 0)
 
         if bet_amount > 0:
-            creator_balance = await db.get_user_balance(callback_query.from_user.id)
+            from bot.funcs.stake_gate import read_stake_balance
+            creator_balance = await read_stake_balance(callback_query.from_user.id)
             if creator_balance is None or int(creator_balance) < bet_amount:
                 await callback_query.answer("❌ Недостаточно средств для игры.", show_alert=True)
                 return
 
-            opponent_balance = await db.get_user_balance(game["opponent_id"])
+            opponent_balance = await read_stake_balance(game["opponent_id"])
             if opponent_balance is None or int(opponent_balance) < bet_amount:
                 await callback_query.answer("❌ У второго игрока недостаточно средств.", show_alert=True)
                 return

@@ -38,27 +38,27 @@ export function staffSteps(phone) {
 export function groupSteps(phone) {
   return [
     {
-      title: 'Эта группа',
-      body: 'Здесь имя чата и ваша должность. Ниже — что изменилось сегодня по сравнению со вчера.',
-      target: '.nika-head h1',
+      title: 'Добро пожаловать',
+      body: 'Сейчас вы находитесь на главной вкладке Админ панели Эпсилона, здесь находится основная информация о группе, которую вы модерируете.',
+      target: '.grp-overview-stats',
     },
     {
-      title: 'Страницы группы',
+      title: 'Вкладки',
       body: phone
-        ? 'Нижняя полоса переключает страницы этой группы: обзор, активность и остальные. Цвет и смена панели — в «Ещё».'
-        : 'Нижняя полоса переключает страницы этой группы. Цвет и смена панели — в кнопке слева внизу.',
+        ? 'Снизу вы можете выбрать любую доступную вам вкладку для использования'
+        : 'Смена интерфейса слева от остальных вкладок в настройках',
       target: '[data-coach="dock"]',
     },
     {
       title: 'Активность',
-      body: 'Сообщения за день, месяц и год. Нажмите клетку — откроется именно этот отрезок.',
+      body: 'Сообщения за день, месяц и год в группе которую вы модерируете',
       target: '[data-coach="dock"] [data-section="activity"]',
     },
     {
-      title: 'Ещё',
+      title: 'Дополнительные вкладки',
       body: phone
-        ? 'Здесь правила чата. Ниже — цвет панели, музыка и смена панели.'
-        : 'Здесь правила чата. Смена панели — кнопка слева внизу.',
+        ? 'Во вкладке "Ещё" вы сможете открыть дополнительные вкладки для удобной работы'
+        : 'Там же можно прочесть правила групп в проекте.',
       target: '[data-coach="dock"] [data-section="more"]',
     },
   ]
@@ -279,9 +279,25 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
     }
     : undefined
 
+  const [shieldClip, setShieldClip] = useState('')
+
+  useLayoutEffect(() => {
+    const card = cardRef.current?.getBoundingClientRect()
+    const holes = []
+    const cardBox = card && card.width > 8 && card.height > 8
+      ? [card.left, card.top, card.right, card.bottom]
+      : null
+    if (box) {
+      const spot = [box.left, box.top, box.left + box.width, box.top + box.height]
+      if (!cardBox || !rectsOverlap(spot, cardBox)) holes.push(spot)
+    }
+    if (cardBox) holes.push(cardBox)
+    setShieldClip(holes.length ? shieldHole(holes) : '')
+  }, [place, box])
+
   return (
     <div className={`firstrun${box ? ' has-spot' : ''}`} role="dialog" aria-modal="true" aria-labelledby="firstrun-title">
-      <div className="firstrun-shield" />
+      <div className="firstrun-shield" style={shieldClip ? { clipPath: shieldClip } : undefined} />
       {box && (
         <div
           className="firstrun-spot"
@@ -307,6 +323,24 @@ export default function FirstRun({ storageKey, steps, onDone, onStep, layoutKey 
       </div>
     </div>
   )
+}
+
+function rectsOverlap(a, b) {
+  return !(a[2] <= b[0] || a[0] >= b[2] || a[3] <= b[1] || a[1] >= b[3])
+}
+
+function shieldHole(holes) {
+  const w = Math.round(window.innerWidth)
+  const h = Math.round(window.innerHeight)
+  const parts = [`M 0 0 H ${w} V ${h} H 0 Z`]
+  for (const [left, top, right, bottom] of holes) {
+    const l = Math.round(left)
+    const t = Math.round(top)
+    const r = Math.round(right)
+    const b = Math.round(bottom)
+    parts.push(`M ${l} ${t} H ${r} V ${b} H ${l} Z`)
+  }
+  return `path(evenodd, '${parts.join(' ')}')`
 }
 
 function neverKey(storageKey) {

@@ -352,7 +352,7 @@ export default function GroupsStudioSection({
   ]), [])
 
   const detailSubs = useMemo(() => ([
-    { id: 'overview', label: 'Обзор' },
+    { id: 'overview', label: 'Главная' },
     { id: 'economy', label: 'Экономика' },
     { id: 'people', label: 'Люди' },
     { id: 'captcha', label: 'Капча' },

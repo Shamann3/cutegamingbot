@@ -121,7 +121,7 @@ export function staffPreviewNav(preview, projectCreatorId = null) {
 export function groupCabinetTabs(rights, isCreator = false) {
   const set = rights instanceof Set ? rights : new Set(rights || [])
   const has = (key) => isCreator || set.has(key)
-  const items = [{ id: 'overview', label: 'Обзор' }]
+  const items = [{ id: 'overview', label: 'Главная' }]
   if (has('view_members') || has('view_analytics') || [...set].some((item) => item.startsWith('punish_'))) {
     items.push({ id: 'activity', label: 'Активность' })
   }

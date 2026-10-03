@@ -372,7 +372,8 @@ async def balls(message: Message):
             return
     else:
         # Обычный режим: проверяем ТОЛЬКО основной баланс (даже при using_demo/using_0demo)
-        user_balance = int(await db.get_user_balance(user_id) or 0)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if bet_amount > user_balance:
             bot_username = await get_bot_username_by_token(TOKEN)
             stars_amount = str(int(bet_amount * float(donate_bet))) if donate_bet else str(bet_amount)

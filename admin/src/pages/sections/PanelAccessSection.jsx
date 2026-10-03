@@ -13,7 +13,7 @@ import RightsSection from './RightsSection'
 import StaffPunishMatrix from '../../components/StaffPunishMatrix'
 
 const GROUP_LABELS = {
-  overview: 'Обзор',
+  overview: 'Главная',
   people: 'Игроки',
   economy: 'Экономика',
   content: 'Контент',

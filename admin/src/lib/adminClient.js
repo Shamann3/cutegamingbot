@@ -1023,6 +1023,20 @@ export async function unsuspendStaffMember(memberId) {
 
 
 
+export async function reissueStaffKey(memberId) {
+
+  return adminRequest(`/staff/members/${memberId}/reissue-key`, {
+
+    method: 'POST',
+
+    body: {},
+
+  })
+
+}
+
+
+
 export async function changeMemberRole(memberId, role, reason = '') {
 
   return adminRequest(`/staff/members/${memberId}/role`, {
@@ -2381,6 +2395,14 @@ export async function appointGroupAdmin(body) {
 
 export async function dismissGroupAdmin(body) {
   return adminFetch('/group-realm/dismiss', { method: 'POST', body })
+}
+
+export async function disableGroupAccess(userId) {
+  return adminFetch('/group-realm/access/off', { method: 'POST', body: { user_id: userId } })
+}
+
+export async function reissueGroupKey(userId) {
+  return adminFetch('/group-realm/access/key', { method: 'POST', body: { user_id: userId } })
 }
 
 export async function fetchRealmLogs(chatId) {

@@ -55,7 +55,10 @@ class Cube122:
     async def cuber(self):
         if self.bet > self.MAX_BET:
             await self.send_max_bet_error()
-            return  # Stop the function if the bet exceeds the maximum value
+            return
+        from bot.funcs.stake_gate import block_short_stake
+        if await block_short_stake(self.message, self.user_id, self.bet):
+            return
 
         user_id = self.message.from_user.id
 
@@ -190,7 +193,10 @@ class dart122:
     async def dart(self):
         if self.bet > self.MAX_BET:
             await self.send_max_bet_error()
-            return  # Stop the function if the bet exceeds the maximum value
+            return
+        from bot.funcs.stake_gate import block_short_stake
+        if await block_short_stake(self.message, self.user_id, self.bet):
+            return
 
         user_id = self.message.from_user.id
 
@@ -322,7 +328,10 @@ class foot1:
     async def foot(self):
         if self.bet > self.MAX_BET:
             await self.send_max_bet_error()
-            return  # Stop the function if the bet exceeds the maximum value
+            return
+        from bot.funcs.stake_gate import block_short_stake
+        if await block_short_stake(self.message, self.user_id, self.bet):
+            return
 
         user_id = self.message.from_user.id
 
@@ -463,6 +472,9 @@ class Bowling34:
             if self.bet > self.MAX_BET:
                 await self.send_max_bet_error()
                 return
+            from bot.funcs.stake_gate import block_short_stake
+            if await block_short_stake(self.message, self.user_id, self.bet):
+                return
 
             user_id = self.message.from_user.id
             user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
@@ -579,6 +591,10 @@ class Basketball34:
         if self.bet > self.MAX_BET:
             await self.send_max_bet_error()
             return
+        from bot.funcs.stake_gate import block_short_stake
+        if await block_short_stake(self.message, self.user_id, self.bet):
+            return
+            return
 
         user_id = self.message.from_user.id
         user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
@@ -672,6 +688,9 @@ class Slots1:
 
     async def main(self):
         user_id = self.message.from_user.id
+        from bot.funcs.stake_gate import block_short_stake
+        if await block_short_stake(self.message, user_id, self.bet):
+            return
 
         users = self.db.get_data_users()
         balance = ""
@@ -871,12 +890,13 @@ async def gamekazik_function(message, db, commission_kazik, colld_kazino):
                 await message.reply("⚠️ Ставка должна быть числом.")
                 return
 
-            balance = await db.get_user_balance(user_id)
+            from bot.funcs.stake_gate import read_stake_balance, stake_covers
+            balance = await read_stake_balance(user_id)
 
             if bet <= 0:
                 await message.reply("⚠️ Ставка должна быть больше нуля.")
                 return
-            if bet > balance:
+            if not stake_covers(balance, bet):
                 from bot.funcs.help import callbaYTRWEQck_main
                 button = InlineKeyboardButton(text=f"Как заработать кут?" , callback_data="9help_btn22")
 

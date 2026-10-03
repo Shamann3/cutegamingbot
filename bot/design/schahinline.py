@@ -482,7 +482,8 @@ async def create_checkers_game_callback(callback_query: types.CallbackQuery):
 
     if bet_amount > 0:
         try:
-            user_balance = await db.get_user_balance(user_id) or 0
+            from bot.funcs.stake_gate import read_stake_balance
+            user_balance = await read_stake_balance(user_id)
         except Exception:
             user_balance = 0
         if user_balance < bet_amount:
@@ -699,7 +700,8 @@ async def join_checkers_game_callback(callback_query: types.CallbackQuery):
 
             bet_amount = int(game.get("bet_amount", 0) or 0)
             if bet_amount > 0:
-                bal = await db.get_user_balance(user_id) or 0
+                from bot.funcs.stake_gate import read_stake_balance
+                bal = await read_stake_balance(user_id) or 0
                 if bal < bet_amount:
                     await safe_callback_answer(callback_query, "💭 У вас недостаточно средств для игры.", show_alert=True)
                     return
@@ -782,7 +784,8 @@ async def start_checkers_game_callback(callback_query: types.CallbackQuery):
     bet_amount = int(game.get("bet_amount", 0) or 0)
     insufficient = []
     for pid in participants:
-        bal = await db.get_user_balance(pid) or 0
+        from bot.funcs.stake_gate import read_stake_balance
+        bal = await read_stake_balance(pid) or 0
         if bal < bet_amount:
             insufficient.append(pid)
     if insufficient:
@@ -869,7 +872,8 @@ async def select_piece_callback(callback_query: types.CallbackQuery):
     bet_amount = int(game.get("bet_amount", 0) or 0)
     if bet_amount > 0:
         for pid in game.get("participants", []):
-            bal = await db.get_user_balance(pid) or 0
+            from bot.funcs.stake_gate import read_stake_balance
+            bal = await read_stake_balance(pid) or 0
             if bal < bet_amount:
                 links = []
                 for p in game["participants"]:

@@ -528,11 +528,12 @@ async def set_member_curator(user_id: int, curator_id: int | None) -> bool:
 
 
 async def suspend_member(user_id: int, reviewer_id: int) -> bool:
-    """Отстраняет сотрудника (роль сохраняется, меняется статус). Владельца нельзя."""
+    """Закрывает вход. Роль остаётся, личный ключ стирается. Владельца нельзя."""
     result = await db.pool.execute(
         """
         UPDATE admin_accounts
         SET status = 'suspended',
+            login_key = NULL,
             force_reauth_at = NOW(), session_fingerprint = NULL
         WHERE user_id = $1 AND role <> 'owner' AND status = 'active'
         """,
@@ -542,6 +543,34 @@ async def suspend_member(user_id: int, reviewer_id: int) -> bool:
         return int(result.split()[-1]) > 0
     except (ValueError, IndexError):
         return False
+
+
+async def reissue_member_key(user_id: int) -> str | None:
+    """Новый личный ключ отключённому сотруднику. Старый уже стёрт при отключении.
+
+    Ключ возвращается один раз. Сессия остаётся сброшенной, пока человек
+    не войдёт этим ключом.
+    """
+    import secrets
+
+    plain = secrets.token_urlsafe(18)
+    result = await db.pool.execute(
+        """
+        UPDATE admin_accounts
+        SET login_key = $2,
+            status = 'active',
+            force_reauth_at = NOW(),
+            session_fingerprint = NULL
+        WHERE user_id = $1 AND role <> 'owner' AND status = 'suspended'
+        """,
+        user_id,
+        plain,
+    )
+    try:
+        changed = int(result.split()[-1]) > 0
+    except (ValueError, IndexError):
+        changed = False
+    return plain if changed else None
 
 
 async def unsuspend_member(user_id: int, reviewer_id: int) -> bool:

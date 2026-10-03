@@ -67,11 +67,12 @@ async def bullet(message: Message):
     if await reject_if_private_game(message, "bullet"):
         return
 
-    current_balance = await db.get_user_balance(user_id)
+    from bot.funcs.stake_gate import read_stake_balance, stake_covers
+    current_balance = await read_stake_balance(user_id)
     chat_balance = await db.get_chat_balance(bot1,chat_id)
 
     # Проверка баланса
-    if bet > current_balance:
+    if not stake_covers(current_balance, bet):
         await message.reply("💭 <b>Недостаточно средств для игры</b>", parse_mode="HTML", disable_web_page_preview=True)
         return
 
@@ -124,7 +125,8 @@ async def join_game_callback(callback_query: CallbackQuery):
         await callback_query.answer("❕ Игра заполнена", show_alert=True)
         return
 
-    if not await db.get_user_balance(user_id) >= game [ 'bet' ]:
+    from bot.funcs.stake_gate import read_stake_balance, stake_covers
+    if not stake_covers(await read_stake_balance(user_id), game['bet']):
         await callback_query.answer("💭 Недостаточно средств для участия в игре.", show_alert=True)
         return
 
@@ -190,7 +192,8 @@ async def start_game_callback(callback_query: CallbackQuery):
     game_field = game['game_field']  # Извлекаем поле игры
 
     # Получаем текущий баланс пользователя и баланс чата
-    current_balance = await db.get_user_balance(user_id)
+    from bot.funcs.stake_gate import read_stake_balance
+    current_balance = await read_stake_balance(user_id)
     chat_balance = await db.get_chat_balance(bot1,chat_id)
 
     # Проверка наличия достаточного баланса у пользователя и в группе

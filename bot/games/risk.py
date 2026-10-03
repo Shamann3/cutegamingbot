@@ -922,6 +922,8 @@ async def risk(message: Message):
             return
     else:
         # Обычный режим: проверяем основной баланс (даже если using_demo или using_0demo)
+        from bot.funcs.stake_gate import read_stake_balance
+        user_balance = await read_stake_balance(user_id)
         if bet_amount > user_balance:
             try:
                 bot_username = await get_bot_username_by_token(TOKEN)

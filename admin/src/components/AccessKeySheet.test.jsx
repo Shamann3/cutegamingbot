@@ -1,0 +1,48 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import AccessKeySheet from './AccessKeySheet'
+
+afterEach(() => {
+  cleanup()
+})
+
+describe('AccessKeySheet', () => {
+  it('asks before access is turned off', () => {
+    const onConfirm = vi.fn()
+    render(
+      <AccessKeySheet
+        open
+        name="Иван"
+        kind="staff"
+        step="off"
+        onClose={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Отключить доступ' })).toBeTruthy()
+    expect(screen.getByText('Иван')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Отключить' }))
+    expect(onConfirm).toHaveBeenCalledOnce()
+  })
+
+  it('shows the new key once and copies it', async () => {
+    const writeText = vi.fn().mockResolvedValue()
+    Object.assign(navigator, { clipboard: { writeText } })
+    render(
+      <AccessKeySheet
+        open
+        name="Аня"
+        kind="group"
+        step="shown"
+        issuedKey="fresh-key"
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Ключ готов' })).toBeTruthy()
+    expect(screen.getByText('fresh-key')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Скопировать' }))
+    expect(writeText).toHaveBeenCalledWith('fresh-key')
+    expect(await screen.findByRole('button', { name: 'Скопировано' })).toBeTruthy()
+  })
+})

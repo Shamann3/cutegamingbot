@@ -615,13 +615,10 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           <header className="nika-head">
             <div className="nika-head-copy">
               <h1>{tabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
-              {!phone && (
-                <p>Страницы внизу экрана. Меню — кнопка с ползунками в доке.</p>
-              )}
             </div>
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
               <b className={`grp-role-badge is-${roleClass}`}>{roleLabel}</b>
-              <span>{chatId ? `${fmt(summary?.messages30d)} за 30 дней` : 'её отмечает создатель'}</span>
+              {chatId && <span>{fmt(summary?.messages30d)} за 30 дней</span>}
             </div>
           </header>
           {error && (

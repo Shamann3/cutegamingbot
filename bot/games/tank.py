@@ -478,7 +478,8 @@ async def game_filter_tank(message: Message):
             return
     else:
         # Обычный режим: проверяем ТОЛЬКО основной баланс
-        cur_balance = _safe_int(await db.get_user_balance(user_id), 0)
+        from bot.funcs.stake_gate import read_stake_balance
+        cur_balance = await read_stake_balance(user_id)
         if bet_amount > cur_balance:
             # Не хватает основных средств – показываем кнопку покупки, даже если есть demo/0demo
             print("[TANK] Недостаточно основного баланса – показываем инвойс")
