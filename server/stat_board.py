@@ -17,6 +17,7 @@ from admin_audit import log_admin_action
 from admin_auth import get_any_telegram_user_id
 from admin_soft_restart import is_project_creator
 from db import db
+from players_hold import fold_held_games_now, held_totals, public_players_gate
 from stat_lens import (
     PERIODS,
     anchor_day,
@@ -264,14 +265,9 @@ def _catalog() -> dict:
 
 async def _release_players_copy(today: date) -> None:
     """Если срок копии уже кончился, сложить отдельный счётчик с основной статистикой."""
-    from bot.funcs.players_hold import public_players_gate
-    from bot.funcs.stat_veil import forget_season_cache
-
     async with db.pool.acquire() as connection:
         async with connection.transaction():
-            _hidden, folded, _lift = await public_players_gate(connection, today)
-    if folded:
-        forget_season_cache()
+            await public_players_gate(connection, today)
 
 
 def _rows_people_see(rows: list, limit: int) -> list:
@@ -298,8 +294,6 @@ def _public_count(payload: dict, played: int, view: str) -> dict:
 
 
 async def _attach_held(rows_out: list, period: str, today: date, stage: str) -> None:
-    from bot.funcs.players_hold import held_totals
-
     if period == "all":
         held = await held_totals(db.pool)
     else:
@@ -826,8 +820,6 @@ async def stat_person(
             loss_copy = await _one_copy("players_losses", 0, int(user_id))
         elif season:
             copied_period = await _one_copy(f"players_{name}", 0, int(user_id))
-        from bot.funcs.players_hold import held_totals
-
         if name == "all":
             held_one = await held_totals(db.pool)
         else:
@@ -1148,8 +1140,6 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
         async with db.pool.acquire() as connection:
             async with connection.transaction():
                 if spec["id"] == "players":
-                    from bot.funcs.players_hold import fold_held_games_now
-
                     await fold_held_games_now(connection)
                 await connection.execute(
                     "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
@@ -1197,9 +1187,6 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
             frozen_games = int(counted["games"] or 0) if counted else 0
     except Exception as exc:
         print(f"[stat_board] ответ копии {spec['id']}: {exc}")
-    from bot.funcs.stat_veil import forget_season_cache
-
-    forget_season_cache()
     await log_admin_action(
         int(user_id),
         "stat_copy",
@@ -1287,9 +1274,6 @@ async def stat_season_clear(body: SeasonBody, user_id: int = Depends(get_any_tel
     await ensure_tables()
     spec = _metric(body.metric)
     scope = _scope_chat(spec, body.chat_id)
-    from bot.funcs.players_hold import fold_held_games_now
-    from bot.funcs.stat_veil import forget_season_cache
-
     async with db.pool.acquire() as connection:
         async with connection.transaction():
             if spec["id"] == "players":
@@ -1304,7 +1288,6 @@ async def stat_season_clear(body: SeasonBody, user_id: int = Depends(get_any_tel
                 f"{spec['season']}%",
                 scope,
             )
-    forget_season_cache()
     await log_admin_action(
         int(user_id),
         "stat_copy_clear",
