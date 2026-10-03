@@ -254,16 +254,6 @@ async def build_best_players_view(db, viewer_id: int, period: str = "all", sourc
     lead = None
     empty_line = None
 
-    if board.get("copyHidden") and kind == "all":
-        when = board.get("liftLabel") or "выбранной даты"
-        # Если текст пустой — `or None` превратит его в None и секция не вставится.
-        lead = f"" or None
-        if not rows:
-            empty_line = (
-                f"<b>За {when} данных пока нет.</b>\n"
-                f"<b><i>Загляните позже - рейтинг обновляется автоматически.</i></b>"
-            ) or None
-
     text = render_best_players_text(
         board.get("place"),
         rows,

@@ -49,9 +49,9 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "Вся статистика побед и проигрышей за всё время. До даты снятия копии люди видят ноль, потом сумму общей статистики и игр после неё.",
+        "blurb": "День, неделя, месяц, год и всё время. Копия сохраняет каждый топ и прячет его до выбранной даты. Игры в это время пишутся как обычно. С даты людям видна сумма копии и того, что наиграли.",
         "needsGroup": False,
-        "periods": ["all"],
+        "periods": ["day", "week", "month", "year", "all"],
         "fields": [
             {"key": "wins", "label": "Победы"},
             {"key": "losses", "label": "Проигрыши"},
@@ -297,17 +297,29 @@ def _season_payload(row, today: date) -> dict | None:
     stage = phase(today, row["zero_from"], row["zero_until"])
     lift = _lift_day(row)
     lift_label = lift.strftime("%d.%m.%Y")
-    notes = {
-        "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
-        "zero": (
-            f"До {lift_label} люди видят ноль. "
-            f"С {lift_label} сложится общая статистика на момент копии и всё, что прибавилось после."
-        ),
-        "after": (
-            f"С {lift_label} людям показывается сумма: общая статистика на момент копии "
-            "и всё, что прибавилось после неё."
-        ),
-    }
+    if str(row["metric"]) == "players":
+        notes = {
+            "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
+            "zero": (
+                f"До {lift_label} в чате пустые топы: день, неделя, месяц, год и всё время. "
+                f"Игры в это время пишутся в базу. С {lift_label} людям видна сумма копии и того, что наиграли."
+            ),
+            "after": (
+                f"С {lift_label} в чате сумма: сохранённая копия и всё, что наиграли, пока копия была включена."
+            ),
+        }
+    else:
+        notes = {
+            "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
+            "zero": (
+                f"До {lift_label} люди видят ноль. "
+                f"С {lift_label} сложится общая статистика на момент копии и всё, что прибавилось после."
+            ),
+            "after": (
+                f"С {lift_label} людям показывается сумма: общая статистика на момент копии "
+                "и всё, что прибавилось после неё."
+            ),
+        }
     return {
         "phase": stage,
         "zeroFrom": row["zero_from"].isoformat(),
@@ -635,8 +647,13 @@ async def stat_board(
             rows_out.append({"place": index, "userId": uid, "raw": raw, "seen": seen, "messages": raw})
     elif spec["id"] == "players":
         raw_rows, period_label = await _player_rows(name, today, limit)
-        copied_games = await _players_copied_games() if season and name == "all" else {}
-        view = stage if name == "all" else "off"
+        if season and name == "all":
+            copied_games = await _players_copied_games()
+        elif season:
+            copied_games = await _copied_map(f"players_{name}", 0)
+        else:
+            copied_games = {}
+        view = stage
         for index, row in enumerate(raw_rows, start=1):
             uid = int(row["user_id"])
             games = int(row["games"] or 0)
@@ -725,17 +742,21 @@ async def stat_person(
         fields.append({"key": "messages", "label": "Сообщений", **_apply_seen(raw, copied, view_stage)})
     elif spec["id"] == "players":
         wins, losses, games = await _player_raw(int(user_id), name, today)
-        view = stage if name == "all" else "off"
+        view = stage
         win_copy = None
         loss_copy = None
         if season and name == "all":
             win_copy = await _one_copy("players_wins", 0, int(user_id))
             loss_copy = await _one_copy("players_losses", 0, int(user_id))
+        elif season:
+            copied_period = await _one_copy(f"players_{name}", 0, int(user_id))
         fields.append({"key": "wins", "label": "Победы", **_apply_seen(wins, win_copy, view)})
         fields.append({"key": "losses", "label": "Проигрыши", **_apply_seen(losses, loss_copy, view)})
         copied_games = None
-        if win_copy is not None or loss_copy is not None:
+        if name == "all" and (win_copy is not None or loss_copy is not None):
             copied_games = int(win_copy or 0) + int(loss_copy or 0)
+        elif name != "all" and season:
+            copied_games = copied_period
         fields.append({
             "key": "games",
             "label": "В топе сыграно",
@@ -1129,6 +1150,22 @@ async def _copy_snapshot(connection, spec: dict, chat_id: int) -> None:
             WHERE COALESCE(wins, 0) <> 0 OR COALESCE(loose, 0) <> 0
             """
         )
+        today = datetime.now(_MSK).date()
+        for label in ("day", "week", "month", "year"):
+            start, end = period_bounds(label, today)
+            await connection.execute(
+                """
+                INSERT INTO epsilon_stat_snapshot (metric, chat_id, user_id, value)
+                SELECT $1, 0, user_id, COALESCE(SUM(games), 0)::bigint
+                FROM user_games_day
+                WHERE day >= $2 AND day <= $3
+                GROUP BY user_id
+                HAVING COALESCE(SUM(games), 0) <> 0
+                """,
+                f"players_{label}",
+                start,
+                end,
+            )
         return
     column = {"donors": "donate", "won": "winamount", "invites": "refferals"}[spec["id"]]
     await connection.execute(

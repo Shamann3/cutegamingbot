@@ -8575,8 +8575,9 @@ class Database:
     ) -> dict:
         """Топ по числу игр и место зрителя.
 
-        period='all' — победы плюс проигрыши. До даты снятия копии топ пустой.
+        period='all' — победы плюс проигрыши.
         Иначе сумма user_games_day за [start, end].
+        Пока копия включена, любой срок для людей пустой. Счётчики при этом пишутся как обычно.
         Место совпадает с порядком games DESC, user_id ASC.
         """
         empty = {"rows": [], "place": None, "viewer_games": 0}
@@ -8596,33 +8597,33 @@ class Database:
         viewer = int(viewer_id)
         try:
             async with self.pool.acquire() as connection:
+                today = _msk_today()
+                season = None
+                try:
+                    season = await connection.fetchrow(
+                        """
+                        SELECT zero_from, zero_until
+                        FROM epsilon_stat_season
+                        WHERE metric = 'players' AND chat_id = 0
+                        """
+                    )
+                except Exception as e:
+                    print(f"[user_games_day] копия игр: {e}")
+                if (
+                    season
+                    and season["zero_from"] is not None
+                    and season["zero_until"] is not None
+                    and season["zero_from"] <= today <= season["zero_until"]
+                ):
+                    lift = season["zero_until"] + timedelta(days=1)
+                    return {
+                        "rows": [],
+                        "place": None,
+                        "viewer_games": 0,
+                        "copyHidden": True,
+                        "liftLabel": lift.strftime("%d.%m.%Y"),
+                    }
                 if str(period or "all") == "all" or start is None or end is None:
-                    today = _msk_today()
-                    season = None
-                    try:
-                        season = await connection.fetchrow(
-                            """
-                            SELECT zero_from, zero_until
-                            FROM epsilon_stat_season
-                            WHERE metric = 'players' AND chat_id = 0
-                            """
-                        )
-                    except Exception as e:
-                        print(f"[user_games_day] копия игр: {e}")
-                    if (
-                        season
-                        and season["zero_from"] is not None
-                        and season["zero_until"] is not None
-                        and season["zero_from"] <= today <= season["zero_until"]
-                    ):
-                        lift = season["zero_until"] + timedelta(days=1)
-                        return {
-                            "rows": [],
-                            "place": None,
-                            "viewer_games": 0,
-                            "copyHidden": True,
-                            "liftLabel": lift.strftime("%d.%m.%Y"),
-                        }
                     rows = await connection.fetch(
                         """
                         SELECT user_id,
