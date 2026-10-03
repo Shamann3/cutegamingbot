@@ -193,6 +193,14 @@ async def _user_minus(uid, amt):
     except:
         return False
 
+async def _note_tank_loss(user_id: int) -> None:
+    """Проигрыш башни, в том числе «домой», пишется в статистику игр."""
+    try:
+        await db.update_user_loose(int(user_id), 1, bot1, ref_coin)
+    except Exception as e:
+        print(f"[TANK][STATS] проигрыш не записан user_id={user_id}: {e}")
+
+
 async def _home_take_and_log_tower_collapsed(*, bot, user_id: int, loss: int):
     try:
         await _chat_plus(TECH_CHAT_ID, int(loss))
@@ -592,11 +600,13 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         if not is_free:
                             await _user_minus(owner_id, loss)
                             await db.cutehistory_minus(owner_id, loss, "- башня (0demo collapse)")
+                            await _note_tank_loss(owner_id)
                             await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                             await _post_game_activity_update(owner_id, reason="collapse_0demo")
                     else:
                         await _user_minus(owner_id, loss)
                         await db.cutehistory_minus(owner_id, loss, "- башня (0demo collapse)")
+                        await _note_tank_loss(owner_id)
                         await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                         await _post_game_activity_update(owner_id, reason="collapse_0demo")
                 else:  # TRAP
@@ -608,11 +618,13 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         if not is_free:
                             await _user_minus(owner_id, loss)
                             await db.cutehistory_minus(owner_id, loss, "- башня (0demo trap)")
+                            await _note_tank_loss(owner_id)
                             await _chat_plus(chat_id, loss)
                             await _post_game_activity_update(owner_id, reason="loss_0demo")
                     else:
                         await _user_minus(owner_id, loss)
                         await db.cutehistory_minus(owner_id, loss, "- башня (0demo trap)")
+                        await _note_tank_loss(owner_id)
                         await _chat_plus(chat_id, loss)
                         await _post_game_activity_update(owner_id, reason="loss_0demo")
 
@@ -638,11 +650,13 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                         if not is_free:
                             await _user_minus(owner_id, loss)
                             await db.cutehistory_minus(owner_id, loss, "- башня (demo collapse)")
+                            await _note_tank_loss(owner_id)
                             await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                             await _post_game_activity_update(owner_id, reason="collapse_demo")
                     else:
                         await _user_minus(owner_id, loss)
                         await db.cutehistory_minus(owner_id, loss, "- башня (demo collapse)")
+                        await _note_tank_loss(owner_id)
                         await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                         await _post_game_activity_update(owner_id, reason="collapse_demo")
                     game_data["closed"] = True
@@ -788,10 +802,12 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                     if not is_free:
                         await _user_minus(owner_id, loss)
                         await db.cutehistory_minus(owner_id, loss, "- башня (домой)")
+                        await _note_tank_loss(owner_id)
                         await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                 else:
                     await _user_minus(owner_id, loss)
                     await db.cutehistory_minus(owner_id, loss, "- башня (домой)")
+                    await _note_tank_loss(owner_id)
                     await _home_take_and_log_tower_collapsed(bot=bot1, user_id=owner_id, loss=loss)
                 print("[TANK] 💥 Разрушение в обычном режиме (долг не списывается)")
                 game_data["closed"] = True
@@ -807,10 +823,12 @@ async def tank_process_game_buttons(call: types.CallbackQuery):
                     if not is_free:
                         await _user_minus(owner_id, loss)
                         await db.cutehistory_minus(owner_id, loss, "- башня")
+                        await _note_tank_loss(owner_id)
                         await _chat_plus(chat_id, loss)
                 else:
                     await _user_minus(owner_id, loss)
                     await db.cutehistory_minus(owner_id, loss, "- башня")
+                    await _note_tank_loss(owner_id)
                     await _chat_plus(chat_id, loss)
                 print("[TANK] ♨️ Ловушка в обычном режиме (долг не списывается)")
                 game_data["closed"] = True

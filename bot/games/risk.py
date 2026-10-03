@@ -1196,6 +1196,10 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
                 await force_repay_debt(owner_id, bet_amount)
 
                 await _mark_user_game_activity(owner_id, reason="0demo_loss")
+                try:
+                    await db.update_user_loose(owner_id, 1, bot1, ref_coin)
+                except Exception as e:
+                    dbg_err("LOOSE_0DEMO", e)
                 game_data["closed"] = True
                 game_data["row_lock"] = False
                 lose_streak += 1
@@ -1406,6 +1410,10 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                 if using_demo:
                     await _mark_user_game_activity(owner_id, reason="home_demo")
+                    try:
+                        await db.update_user_loose(owner_id, 1, bot1, ref_coin)
+                    except Exception as e:
+                        dbg_err("LOOSE_HOME_DEMO", e)
                 else:
                     if has_assignment:
                         await _gc_call(owner_id, chat_id, loss, "-", "HOME_FAIL")
@@ -1458,6 +1466,10 @@ async def risk_process_game_buttons(call: types.CallbackQuery):
 
                 if using_demo:
                     await _mark_user_game_activity(owner_id, reason="loss_demo")
+                    try:
+                        await db.update_user_loose(owner_id, 1, bot1, ref_coin)
+                    except Exception as e:
+                        dbg_err("LOOSE_LOSS_DEMO", e)
                 else:
                     if has_assignment:
                         await _gc_call(owner_id, chat_id, loss, "-", "LOSS")

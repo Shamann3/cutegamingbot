@@ -21228,6 +21228,44 @@ class Database:
             return
         await self.ensure_society_indexes()
 
+    async def _donate_month_cutoff_sql(self) -> str | None:
+        """Выражение «месяц назад», если колонка donate.data вообще хранит дату.
+
+        В проде колонка часто имеет тип time without time zone: там только
+        время суток, сравнивать его с NOW() нельзя и незачем.
+        """
+        cached = getattr(self, "_donate_month_cutoff_sql", None)
+        if cached is not None or getattr(self, "_donate_month_cutoff_known", False):
+            return cached
+        kind = ""
+        try:
+            async with self.pool.acquire() as conn:
+                kind = await conn.fetchval(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_name = 'donate'
+                      AND column_name = 'data'
+                    ORDER BY CASE WHEN table_schema = 'public' THEN 0 ELSE 1 END
+                    LIMIT 1
+                    """
+                )
+            kind = str(kind or "").strip().lower()
+        except Exception as e:
+            print(f"[DB] тип donate.data: {e}")
+            kind = ""
+        cutoff = {
+            "timestamp with time zone": "(NOW() - ($2::int * INTERVAL '1 day'))",
+            "timestamp without time zone": "((NOW() AT TIME ZONE 'Europe/Moscow') - ($2::int * INTERVAL '1 day'))",
+            "date": "(((NOW() AT TIME ZONE 'Europe/Moscow')::date) - $2::int)",
+        }.get(kind)
+        self._donate_month_cutoff_known = True
+        self._donate_month_cutoff_sql = cutoff
+        if cutoff is None and not getattr(self, "_donate_time_noted", False):
+            self._donate_time_noted = True
+            print("[DB] donate.data без даты, смесь донатов считает только общий донат")
+        return cutoff
+
     async def get_users_donate_blend_map(
         self,
         user_ids,
@@ -21272,6 +21310,8 @@ class Database:
 
         try:
             await self.ensure_donate_query_index()
+            if not await self._donate_month_cutoff_sql():
+                w_life, w_month = 1.0, 0.0
 
             async def _life():
                 async with self.pool.acquire() as conn:
@@ -21285,14 +21325,18 @@ class Database:
                         ids,
                     )
 
+            month_cutoff = await self._donate_month_cutoff_sql()
+
             async def _month():
+                if not month_cutoff:
+                    return []
                 async with self.pool.acquire() as conn:
                     return await conn.fetch(
-                        """
+                        f"""
                         SELECT user_id, SUM(count)::float8 AS month
                         FROM public.donate
                         WHERE user_id = ANY($1::bigint[])
-                          AND data >= (NOW() - ($2::int * INTERVAL '1 day'))
+                          AND data >= {month_cutoff}
                         GROUP BY user_id
                         HAVING SUM(count) > 0
                         """,
