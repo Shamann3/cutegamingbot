@@ -848,10 +848,13 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
     )
     mine = await db.pool.fetch(
         """
-        SELECT id, chat_id, position_id, status, review_note, created_at
-        FROM epsilon_group_applications
-        WHERE user_id = $1
-        ORDER BY created_at DESC
+        SELECT a.id, a.chat_id, a.position_id, a.status, a.review_note, a.created_at,
+               g.title AS group_title, p.title AS position
+        FROM epsilon_group_applications a
+        LEFT JOIN epsilon_official_groups g ON g.chat_id = a.chat_id
+        LEFT JOIN epsilon_positions p ON p.id = a.position_id
+        WHERE a.user_id = $1
+        ORDER BY a.created_at DESC
         LIMIT 12
         """,
         int(user_id),
@@ -882,6 +885,8 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
                 "chatId": int(r["chat_id"]),
                 "positionId": int(r["position_id"]),
                 "status": r["status"],
+                "group": r["group_title"] or "",
+                "position": r["position"] or "",
                 "note": r["review_note"] or "",
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
                 "entryKey": own_key if r["status"] == "approved" else "",
