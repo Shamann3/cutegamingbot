@@ -1282,9 +1282,11 @@ html[data-viewport="desktop"] .realm-main .nika-head h1 {
 
 .access-key code {
   display: block;
+  color: #f4f4f5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 15px;
-  line-height: 1.4;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
   word-break: break-all;
 }
 

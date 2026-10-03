@@ -13,6 +13,8 @@ export function portraitFrom(status) {
     groupCanEnter: Boolean(groupCanEnter),
     groups,
     isOwner,
+    isProjectCreator: Boolean(status?.isProjectCreator),
+    userId: status?.userId ?? null,
     applicationStatus: status?.applicationStatus || null,
     accountStatus,
   }

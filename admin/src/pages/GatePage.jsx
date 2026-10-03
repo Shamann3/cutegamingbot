@@ -86,7 +86,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
       : 'Вы ещё не в команде. Нажмите — откроется заявка.'
 
   const groupDetail = portrait.groupCanEnter
-    ? <>Администратор группы <CuteBrand />. Нажмите, чтобы войти.</>
+    ? <>Дальше нужен ключ кабинета <CuteBrand />.</>
     : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
 
   const pressStaff = () => {

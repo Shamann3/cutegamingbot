@@ -102,6 +102,7 @@ from admin_db import (
     delete_suspended_member,
     save_pending_registration,
     submit_complaint_evidence,
+    member_login_key,
     reissue_member_key,
     suspend_member,
     take_complaint,
@@ -983,6 +984,7 @@ async def admin_auth_status(
         "status": account_status,
         "applicationStatus": application["status"] if application else None,
         "isOwner": is_owner,
+        "isProjectCreator": sr_is_creator(user_id),
         "staffCanEnter": staff_can_enter,
         "groupCanEnter": is_owner or len(groups) > 0,
         "groups": groups,
@@ -1719,6 +1721,22 @@ async def staff_reissue_member_key(
         ip=_get_client_ip(request),
     )
     return {"ok": True, "loginKey": plain}
+
+
+@router.post("/staff/members/{member_id}/show-key")
+async def staff_show_member_key(
+    member_id: int,
+    user_id: int = Depends(require_active_admin),
+):
+    """Действующий ключ входа другого сотрудника. Только создатель проекта."""
+    if not sr_is_creator(user_id):
+        raise HTTPException(status_code=403, detail="Ключи видит только создатель проекта")
+    if int(member_id) == int(user_id):
+        raise HTTPException(status_code=400, detail="Свой ключ здесь не показывается")
+    key = await member_login_key(int(member_id))
+    if key is None:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    return {"ok": True, "loginKey": key}
 
 
 @router.post("/staff/members/{member_id}/purge")

@@ -12,11 +12,11 @@ function leaveDelay() {
 const COPY = {
   staff: {
     off: 'Вход в панель сотрудника закроется сразу. Роль сохранится. Старый ключ больше не подойдёт — новый можно выдать, когда решите вернуть человека.',
-    key: 'Человек снова сможет войти. Код из приложения останется. Этот ключ панель покажет один раз, старые сессии закроются.',
+    key: 'Человек снова сможет войти. Код из приложения останется, старые сессии закроются. Создатель сможет открыть этот ключ снова.',
   },
   group: {
     off: 'Кабинет закроется сразу. Должность в группе сохранится. Старый ключ больше не подойдёт — новый можно выдать позже.',
-    key: 'Кабинет снова откроется этим ключом. Код из приложения останется. Ключ показывается один раз.',
+    key: 'Кабинет снова откроется этим ключом. Код из приложения останется. Создатель сможет открыть этот ключ снова.',
   },
 }
 
@@ -28,6 +28,7 @@ export default function AccessKeySheet({
   busy = false,
   error = '',
   issuedKey = '',
+  copy = '',
   onClose,
   onConfirm,
 }) {
@@ -69,11 +70,16 @@ export default function AccessKeySheet({
   if (!mounted) return null
 
   const place = COPY[kind] || COPY.staff
-  const shown = step === 'shown'
-  const title = shown ? 'Ключ готов' : step === 'key' ? 'Новый ключ' : 'Отключить доступ'
-  const body = shown
-    ? 'Скопируйте ключ сейчас и передайте его лично. Второй раз панель его не покажет.'
-    : place[step] || place.off
+  const looking = step === 'look'
+  const shown = step === 'shown' || (looking && Boolean(issuedKey))
+  const title = looking ? 'Ключ' : shown ? 'Ключ готов' : step === 'key' ? 'Новый ключ' : 'Отключить доступ'
+  const body = looking
+    ? (issuedKey
+      ? 'Этот ключ сейчас действует. Его можно открыть снова.'
+      : (busy ? 'Открываем ключ…' : (error ? 'Ключ не открылся.' : (copy || 'Сейчас действующего ключа нет.'))))
+    : shown
+      ? 'Скопируйте ключ и передайте его лично. Создатель проекта сможет открыть его снова.'
+      : (copy || place[step] || place.off)
 
   const copyKey = async () => {
     if (!issuedKey) return
@@ -111,17 +117,25 @@ export default function AccessKeySheet({
         ) : null}
         {error ? <p className="access-sheet-error" role="alert">{error}</p> : null}
         <div className="access-sheet-actions">
-          {shown ? (
+          {shown || looking ? (
             <>
+              {issuedKey ? (
+                <button
+                  ref={primaryRef}
+                  type="button"
+                  className="sec-btn sec-btn-sm"
+                  onClick={copyKey}
+                >
+                  {copied ? 'Скопировано' : 'Скопировать'}
+                </button>
+              ) : null}
               <button
-                ref={primaryRef}
+                ref={issuedKey ? undefined : primaryRef}
                 type="button"
-                className="sec-btn sec-btn-sm"
-                onClick={copyKey}
+                className="sec-btn sec-btn-ghost sec-btn-sm"
+                disabled={busy}
+                onClick={onClose}
               >
-                {copied ? 'Скопировано' : 'Скопировать'}
-              </button>
-              <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={onClose}>
                 Готово
               </button>
             </>

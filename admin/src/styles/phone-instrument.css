@@ -4154,6 +4154,14 @@ html[data-viewport="phone"] .panel-shell .metric-tile {
   flex-direction: column;
   gap: 8px;
 }
+.staff-ga-own {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .staff-ga-seats {
   margin-top: 8px;
 }
@@ -4785,10 +4793,19 @@ html[data-viewport="phone"] .panel-shell .realm-main .deed-mine .staff-member-ro
 .deed-photo {
   display: block;
   width: 100%;
+  height: 18rem;
   max-height: 22rem;
   object-fit: cover;
   border-radius: 16px;
   background: var(--e-plate-2, rgba(24, 24, 28, 0.5));
+}
+
+.deed-face .tg-photo-ph,
+.deed-face .tg-photo-fallback {
+  min-height: 18rem;
+  height: 18rem;
+  border: 0;
+  border-radius: 16px;
 }
 
 .deed-photo-empty {

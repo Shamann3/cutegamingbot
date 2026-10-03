@@ -39,11 +39,14 @@ import {
   purgeStaffMember,
   takeStaffComplaint,
   reissueStaffKey,
+  showStaffKey,
   appointGroupAdmin,
   checkRealmMember,
   dismissGroupAdmin,
   disableGroupAccess,
   reissueGroupKey,
+  issueOwnGroupKey,
+  showGroupKey,
   fetchRightsBoard,
 } from '../../lib/adminClient'
 import AdminSelect from '../../components/AdminSelect'
@@ -669,8 +672,34 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
 
   useEffect(() => { load() }, [load])
 
+  const lookStaffKey = async (member) => {
+    setActing(member.userId)
+    setAccessSheet({ member, step: 'look', key: '', error: '', copy: '' })
+    try {
+      const data = await showStaffKey(member.userId)
+      const loginKey = data?.loginKey || ''
+      setAccessSheet({
+        member,
+        step: 'look',
+        key: loginKey,
+        error: '',
+        copy: loginKey ? '' : 'Сейчас действующего ключа нет. Когда доступ включён, ключ откроется здесь.',
+      })
+    } catch (err) {
+      setAccessSheet({
+        member,
+        step: 'look',
+        key: '',
+        error: err?.message || 'Ключ не открылся',
+        copy: '',
+      })
+    } finally {
+      setActing(null)
+    }
+  }
+
   const confirmAccess = async () => {
-    if (!accessSheet || accessSheet.step === 'shown') return
+    if (!accessSheet || accessSheet.step === 'shown' || accessSheet.step === 'look') return
     const member = accessSheet.member
     setActing(member.userId)
     setAccessSheet((current) => (current ? { ...current, error: '' } : current))
@@ -726,6 +755,7 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
       <div className="sec-audit-filters">
         <button className="sec-btn sec-btn-ghost" onClick={load}>Обновить</button>
         <span className="sec-audit-count">{items.length} сотрудников</span>
+        <p className="realm-copy">Отключение закрывает вход и гасит старый ключ. Роль остаётся. Новый ключ можно выдать потом.{isProjectCreator ? ' Действующий ключ другого человека открывается кнопкой «Ключ».' : ''}</p>
       </div>
 
       {loading && <p className="sec-loading">Загрузка…</p>}
@@ -788,6 +818,15 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
                         {acting === m.userId ? '…' : 'Убрать допуск'}
                       </button>
                     )}
+                    {isProjectCreator && !isSelf && (
+                      <button
+                        className="sec-btn sec-btn-ghost sec-btn-sm"
+                        disabled={acting === m.userId}
+                        onClick={() => lookStaffKey(m)}
+                      >
+                        Ключ
+                      </button>
+                    )}
                     {m.role !== 'owner' && m.status !== 'suspended' && !isSelf && (
                       <button
                         className="sec-btn sec-btn-ghost sec-btn-sm"
@@ -839,6 +878,7 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
         busy={Boolean(accessSheet && acting === accessSheet.member.userId)}
         error={accessSheet?.error || ''}
         issuedKey={accessSheet?.key || ''}
+        copy={accessSheet?.copy || ''}
         onClose={() => { if (!acting) setAccessSheet(null) }}
         onConfirm={confirmAccess}
       />
@@ -1507,6 +1547,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
   const [gaEnd, setGaEnd] = useState('')
   const [gaCheck, setGaCheck] = useState('')
   const [accessSheet, setAccessSheet] = useState(null)
+  const [ownSheet, setOwnSheet] = useState(null)
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), [])
 
@@ -1611,8 +1652,54 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
     setGroups(data.groups || [])
   }
 
+  const confirmOwnKey = async () => {
+    if (!ownSheet || ownSheet.step === 'shown') return
+    setBusy('own-key')
+    setOwnSheet((current) => (current ? { ...current, error: '' } : current))
+    try {
+      const data = await issueOwnGroupKey()
+      const entryKey = data?.entryKey || ''
+      if (!entryKey) throw new Error('Сервер не вернул ключ')
+      setOwnSheet({ step: 'shown', key: entryKey, error: '' })
+    } catch (err) {
+      setOwnSheet((current) => (
+        current ? { ...current, error: err?.message || 'Не вышло' } : current
+      ))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const lookGroupKey = async (person) => {
+    setBusy(`access-${person.userId}`)
+    setAccessSheet({ person, step: 'look', key: '', error: '', copy: '' })
+    try {
+      const data = await showGroupKey(person.userId)
+      const entryKey = data?.entryKey || ''
+      setAccessSheet({
+        person,
+        step: 'look',
+        key: entryKey,
+        error: '',
+        copy: entryKey
+          ? ''
+          : 'Копии этого ключа нет: он выдан до того, как панель стала его хранить. Отключите доступ и выдайте новый — тогда ключ останется у вас.',
+      })
+    } catch (err) {
+      setAccessSheet({
+        person,
+        step: 'look',
+        key: '',
+        error: err?.message || 'Ключ не открылся',
+        copy: '',
+      })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const confirmGroupAccess = async () => {
-    if (!accessSheet || accessSheet.step === 'shown') return
+    if (!accessSheet || accessSheet.step === 'shown' || accessSheet.step === 'look') return
     const person = accessSheet.person
     setBusy(`access-${person.userId}`)
     setAccessSheet((current) => (current ? { ...current, error: '' } : current))
@@ -1710,7 +1797,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
     <div className="sec-tab-body staff-invites-tab">
       <p className="staff-hint">
         {scope === 'group'
-          ? 'Личный ключ кабинета группы. Его выдаёт создатель вместе с должностью. Показывается один раз.'
+          ? 'Личный ключ кабинета группы. Создатель открывает его у человека на должности и может скопировать снова.'
           : 'Ключ входа в панель сотрудника. Человек вводит его на экране регистрации, затем подтверждает код из аутентификатора.'}
       </p>
 
@@ -1745,6 +1832,16 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
           </p>
         ) : (
           <form className="staff-invite-form staff-ga-form" onSubmit={handleGroupAppoint}>
+            <div className="staff-ga-own">
+              <p className="realm-copy">Вход в панель администратора спрашивает ваш ключ кабинета. Здесь его можно получить один раз.</p>
+              <button
+                type="button"
+                className="sec-btn sec-btn-sm"
+                onClick={() => setOwnSheet({ step: 'key', key: '', error: '' })}
+              >
+                Получить ключ кабинета
+              </button>
+            </div>
             <UserLookupPreview
               value={gaUser}
               onChange={(v) => { setGaUser(v); setGaUserId(null) }}
@@ -1831,6 +1928,16 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
                       {person.accessOff ? ' · доступ выключен' : ''}
                     </span>
                     <div className="staff-ga-actions">
+                      {isProjectCreator && !isSelf && !person.accessOff && (
+                        <button
+                          type="button"
+                          className="sec-btn sec-btn-ghost sec-btn-sm"
+                          disabled={busy === `access-${person.userId}`}
+                          onClick={() => lookGroupKey(person)}
+                        >
+                          Ключ
+                        </button>
+                      )}
                       {!isSelf && !person.accessOff && (
                         <button
                           type="button"
@@ -1943,6 +2050,19 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
       </>}
 
       <AccessKeySheet
+        open={Boolean(ownSheet)}
+        name="Ваш кабинет"
+        kind="group"
+        copy="Этот ключ открывает панель администратора. Он показывается один раз."
+        step={ownSheet?.step || 'key'}
+        busy={busy === 'own-key'}
+        error={ownSheet?.error || ''}
+        issuedKey={ownSheet?.key || ''}
+        onClose={() => { if (busy !== 'own-key') setOwnSheet(null) }}
+        onConfirm={confirmOwnKey}
+      />
+
+      <AccessKeySheet
         open={Boolean(accessSheet)}
         name={accessSheet?.person?.name || (accessSheet ? String(accessSheet.person.userId) : '')}
         kind="group"
@@ -1950,6 +2070,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
         busy={Boolean(accessSheet && busy === `access-${accessSheet.person.userId}`)}
         error={accessSheet?.error || ''}
         issuedKey={accessSheet?.key || ''}
+        copy={accessSheet?.copy || ''}
         onClose={() => { if (!String(busy || '').startsWith('access-')) setAccessSheet(null) }}
         onConfirm={confirmGroupAccess}
       />

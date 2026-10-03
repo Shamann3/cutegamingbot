@@ -97,12 +97,8 @@ export default function App() {
 
   const openGroup = useCallback((portrait) => {
     setGroupPortrait(portrait || null)
-    if (portrait?.isOwner || hasTelegramInitData() || isAdminSessionValid()) {
-      openChannel('group', 'group')
-      return
-    }
     setScreen('group-key')
-  }, [openChannel])
+  }, [])
 
   if (screen === 'boot') {
     return (

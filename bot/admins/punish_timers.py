@@ -455,3 +455,5 @@ async def start_moderation_workers() -> None:
   _ensure_expiry_worker()
   from bot.admins.ban import _ensure_ban_expiry_worker
   _ensure_ban_expiry_worker()
+  from bot.admins.proof_blob import start_proof_backfill
+  start_proof_backfill()

@@ -3,6 +3,9 @@ import {
   appointGroupAdmin,
   checkRealmMember,
   dismissGroupAdmin,
+  disableGroupAccess,
+  reissueGroupKey,
+  showGroupKey,
   fetchRightsBoard,
   decideGroupApplication,
   fetchGroupApplications,
@@ -48,6 +51,7 @@ import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useTabScroll } from '../lib/useTabScroll'
 import { useMusicMode } from '../lib/musicMode'
 import { usePerfMode } from '../lib/perfMode'
+import AccessKeySheet from '../components/AccessKeySheet'
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
@@ -131,6 +135,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [memberNote, setMemberNote] = useState('')
   const [realmLogs, setRealmLogs] = useState([])
   const [holders, setHolders] = useState([])
+  const [accessSheet, setAccessSheet] = useState(null)
+  const [accessBusy, setAccessBusy] = useState(false)
   const [savingId, setSavingId] = useState(null)
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
@@ -384,6 +390,59 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
       await loadHolders(chatId)
     } catch (err) {
       setError(err.message || 'Назначить не удалось')
+    }
+  }
+
+  const lookHolderKey = async (person) => {
+    setAccessBusy(true)
+    setAccessSheet({ person, step: 'look', key: '', error: '', copy: '' })
+    try {
+      const data = await showGroupKey(person.userId)
+      const entryKey = data?.entryKey || ''
+      setAccessSheet({
+        person,
+        step: 'look',
+        key: entryKey,
+        error: '',
+        copy: entryKey
+          ? ''
+          : 'Копии этого ключа нет: он выдан до того, как панель стала его хранить. Отключите доступ и выдайте новый — тогда ключ останется у вас.',
+      })
+    } catch (err) {
+      setAccessSheet({
+        person,
+        step: 'look',
+        key: '',
+        error: err?.message || 'Ключ не открылся',
+        copy: '',
+      })
+    } finally {
+      setAccessBusy(false)
+    }
+  }
+
+  const confirmHolderAccess = async () => {
+    if (!accessSheet || accessSheet.step === 'shown' || accessSheet.step === 'look') return
+    const person = accessSheet.person
+    setAccessBusy(true)
+    setAccessSheet((current) => (current ? { ...current, error: '' } : current))
+    try {
+      if (accessSheet.step === 'off') {
+        await disableGroupAccess(person.userId)
+        setAccessSheet(null)
+      } else {
+        const data = await reissueGroupKey(person.userId)
+        const entryKey = data?.entryKey || ''
+        if (!entryKey) throw new Error('Сервер не вернул ключ')
+        setAccessSheet((current) => (current ? { ...current, step: 'shown', key: entryKey, error: '' } : current))
+      }
+    } catch (err) {
+      setAccessSheet((current) => (
+        current ? { ...current, error: err?.message || 'Не вышло' } : current
+      ))
+    } finally {
+      setAccessBusy(false)
+      if (chatId) loadHolders(chatId).catch(() => {})
     }
   }
 
@@ -703,19 +762,69 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               </form>
               <div className="staff-ga-seats">
                 <h3 className="realm-h">Сейчас на должностях</h3>
-                <p className="realm-copy">Снятие оставляет человека в группе без должности и убирает префикс в чате.</p>
+                <p className="realm-copy">Отключение закрывает кабинет и гасит старый ключ. Должность остаётся. Снятие убирает должность и префикс, из чата человека не исключает.{portrait?.isProjectCreator ? ' Действующий ключ другого человека открывается кнопкой «Ключ».' : ''}</p>
                 {holders.length === 0 && <p className="realm-copy">В этой группе должностей ни у кого нет.</p>}
                 <ul className="realm-list">
-                  {holders.map((person) => (
-                    <li key={person.userId} className="realm-row staff-ga-person">
+                  {holders.map((person) => {
+                    const isSelf = portrait?.userId != null && person.userId === portrait.userId
+                    return (
+                    <li key={person.userId} className={`realm-row staff-ga-person${person.accessOff ? ' is-access-off' : ''}`}>
                       <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
-                      <span>{person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}</span>
-                      <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => dismissHolder(person)}>
-                        Снять должность
-                      </button>
+                      <span>
+                        {person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}
+                        {person.accessOff ? ' · доступ выключен' : ''}
+                      </span>
+                      <div className="staff-ga-actions">
+                        {portrait?.isProjectCreator && !isSelf && !person.accessOff && (
+                          <button
+                            type="button"
+                            className="sec-btn sec-btn-ghost sec-btn-sm"
+                            disabled={accessBusy}
+                            onClick={() => lookHolderKey(person)}
+                          >
+                            Ключ
+                          </button>
+                        )}
+                        {!isSelf && !person.accessOff && (
+                          <button
+                            type="button"
+                            className="sec-btn sec-btn-ghost sec-btn-sm"
+                            disabled={accessBusy}
+                            onClick={() => setAccessSheet({ person, step: 'off', key: '', error: '' })}
+                          >
+                            Отключить
+                          </button>
+                        )}
+                        {!isSelf && person.accessOff && (
+                          <button
+                            type="button"
+                            className="sec-btn sec-btn-sm sec-btn-success"
+                            disabled={accessBusy}
+                            onClick={() => setAccessSheet({ person, step: 'key', key: '', error: '' })}
+                          >
+                            Выдать ключ
+                          </button>
+                        )}
+                        <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => dismissHolder(person)}>
+                          Снять должность
+                        </button>
+                      </div>
                     </li>
-                  ))}
+                    )
+                  })}
                 </ul>
+                <AccessKeySheet
+                  open={Boolean(accessSheet)}
+                  name={accessSheet?.person?.name || (accessSheet ? String(accessSheet.person.userId) : '')}
+                  kind="group"
+                  step={accessSheet?.step || 'off'}
+                  busy={accessBusy}
+                  error={accessSheet?.error || ''}
+                  issuedKey={accessSheet?.key || ''}
+                  copy={accessSheet?.copy || ''}
+                  onClose={() => { if (!accessBusy) setAccessSheet(null) }}
+                  onConfirm={confirmHolderAccess}
+                />
               </div>
               {termOpen && spamPick && (
                 <FocusWindow

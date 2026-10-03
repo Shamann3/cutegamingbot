@@ -743,6 +743,16 @@ CREATE INDEX IF NOT EXISTS staff_actions_proof_media_idx
     ON staff_actions (proof_media_id)
     WHERE proof_media_id IS NOT NULL;
 
+-- Байты фото-доказательства. file_id Telegram живёт только у бота, который его
+-- принял, и со временем перестаёт скачиваться. Копия лежит здесь, панель
+-- показывает её и без повторного запроса в Telegram.
+CREATE TABLE IF NOT EXISTS staff_proof_blobs (
+    file_id TEXT PRIMARY KEY,
+    body BYTEA NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Жалобы на сотрудников (от персонала или от игроков)
 CREATE TABLE IF NOT EXISTS staff_complaints (
     id BIGSERIAL PRIMARY KEY,

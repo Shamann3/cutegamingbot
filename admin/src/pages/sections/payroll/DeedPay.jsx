@@ -245,7 +245,15 @@ function DeedCard({ card, leaving = '' }) {
     <article key={card.id} className={`staff-member-row deed-card${motion}`}>
       <div className="deed-face">
         {card.hasProof && card.proofMediaId
-          ? <TgPhoto fileId={card.proofMediaId} className="deed-photo" />
+          ? (
+            <TgPhoto
+              fileId={card.proofMediaId}
+              className="deed-photo"
+              lazy={false}
+              alt="Фото-доказательство"
+              style={{ width: '100%', height: '18rem', maxHeight: '22rem', objectFit: 'cover', borderRadius: 16 }}
+            />
+          )
           : card.targetPhoto
             ? <img className="deed-photo" src={card.targetPhoto} alt="" />
             : (

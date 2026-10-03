@@ -1656,6 +1656,8 @@ async def _log_warn_action(
             target_user_id, target_name, reason, proof_media_id, chat_id, mode,
             _proof_owner_token(proof_media_id),
           )
+          from bot.admins.proof_blob import schedule_proof_save
+          schedule_proof_save(proof_media_id)
         else:
           await conn.execute(
             """

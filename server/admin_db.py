@@ -573,6 +573,21 @@ async def reissue_member_key(user_id: int) -> str | None:
     return plain if changed else None
 
 
+async def member_login_key(user_id: int) -> str | None:
+    """Личный ключ сотрудника. None — такого аккаунта нет. Пустая строка — ключ погашен."""
+    row = await db.pool.fetchrow(
+        """
+        SELECT login_key
+        FROM admin_accounts
+        WHERE user_id = $1 AND role <> 'applicant'
+        """,
+        int(user_id),
+    )
+    if not row:
+        return None
+    return str(row["login_key"] or "")
+
+
 async def unsuspend_member(user_id: int, reviewer_id: int) -> bool:
     """Возвращает отстранённого сотрудника к работе (status active, роль не тронута)."""
     result = await db.pool.execute(

@@ -380,6 +380,7 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT '';
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_ready BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS entry_key TEXT NOT NULL DEFAULT '';
         CREATE TABLE IF NOT EXISTS epsilon_realm_log (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -418,13 +419,14 @@ async def _issue_key(user_id: int) -> str:
     plain, hashed = _new_key()
     await db.pool.execute(
         """
-        INSERT INTO epsilon_group_keys (user_id, key_hash)
-        VALUES ($1, $2)
+        INSERT INTO epsilon_group_keys (user_id, key_hash, entry_key)
+        VALUES ($1, $2, $3)
         ON CONFLICT (user_id) DO UPDATE
-        SET key_hash = EXCLUDED.key_hash, disabled = FALSE, updated_at = NOW()
+        SET key_hash = EXCLUDED.key_hash, entry_key = EXCLUDED.entry_key, disabled = FALSE, updated_at = NOW()
         """,
         int(user_id),
         hashed,
+        plain,
     )
     return plain
 
@@ -1419,7 +1421,7 @@ async def group_access_off(body: AccessBody, user_id: int = Depends(get_any_tele
         INSERT INTO epsilon_group_keys (user_id, key_hash, disabled)
         VALUES ($1, $2, TRUE)
         ON CONFLICT (user_id) DO UPDATE
-        SET key_hash = EXCLUDED.key_hash, disabled = TRUE, updated_at = NOW()
+        SET key_hash = EXCLUDED.key_hash, entry_key = '', disabled = TRUE, updated_at = NOW()
         """,
         int(body.user_id),
         hashed,
@@ -1447,6 +1449,43 @@ async def group_access_key(body: AccessBody, user_id: int = Depends(get_any_tele
     plain = await _issue_key(int(body.user_id))
     await _realm_log(chat_id, int(body.user_id), "access_key", "Выдан новый ключ кабинета", int(user_id))
     return {"ok": True, "entryKey": plain}
+
+
+@router.post("/access/own")
+async def group_access_own(user_id: int = Depends(get_any_telegram_user_id)):
+    """Ключ создателя для входа в панель администратора. Показывается один раз."""
+    _require_creator(user_id)
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        "SELECT disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(user_id),
+    )
+    if row and not row["disabled"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Ключ кабинета уже действует. При входе в панель администратора нужен он",
+        )
+    plain = await _issue_key(int(user_id))
+    return {"ok": True, "entryKey": plain}
+
+
+@router.post("/access/show")
+async def group_access_show(body: AccessBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Действующий ключ кабинета другого человека. Только создатель проекта."""
+    from admin_soft_restart import is_project_creator
+
+    if not is_project_creator(int(user_id)):
+        raise HTTPException(status_code=403, detail="Ключи видит только создатель проекта")
+    if int(body.user_id) == int(user_id):
+        raise HTTPException(status_code=400, detail="Свой ключ здесь не показывается")
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        "SELECT entry_key, disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(body.user_id),
+    )
+    if not row or row["disabled"]:
+        return {"ok": True, "entryKey": ""}
+    return {"ok": True, "entryKey": str(row["entry_key"] or "")}
 
 
 @router.post("/prefix")
@@ -2010,8 +2049,6 @@ async def group_rules():
 @router.post("/key/check")
 async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
-    if _is_creator(user_id):
-        return {"ok": True, "needCode": False}
     row = await _key_row(int(user_id), body.key)
     secret = str(row["totp_secret"] or "").strip()
     ready = bool(row["totp_ready"])
@@ -2040,8 +2077,6 @@ async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram
 @router.post("/key/enter")
 async def group_key_enter(body: KeyEnterBody, user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
-    if _is_creator(user_id):
-        return {"ok": True}
     row = await _key_row(int(user_id), body.key)
     secret = str(row["totp_secret"] or "").strip()
     if not secret or not verify_totp(secret, body.totp):

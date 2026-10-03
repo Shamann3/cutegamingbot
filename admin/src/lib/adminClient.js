@@ -1037,6 +1037,20 @@ export async function reissueStaffKey(memberId) {
 
 
 
+export async function showStaffKey(memberId) {
+
+  return adminRequest(`/staff/members/${memberId}/show-key`, {
+
+    method: 'POST',
+
+    body: {},
+
+  })
+
+}
+
+
+
 export async function changeMemberRole(memberId, role, reason = '') {
 
   return adminRequest(`/staff/members/${memberId}/role`, {
@@ -2403,6 +2417,14 @@ export async function disableGroupAccess(userId) {
 
 export async function reissueGroupKey(userId) {
   return adminFetch('/group-realm/access/key', { method: 'POST', body: { user_id: userId } })
+}
+
+export async function issueOwnGroupKey() {
+  return adminFetch('/group-realm/access/own', { method: 'POST', body: {} })
+}
+
+export async function showGroupKey(userId) {
+  return adminFetch('/group-realm/access/show', { method: 'POST', body: { user_id: userId } })
 }
 
 export async function fetchRealmLogs(chatId) {

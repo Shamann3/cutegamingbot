@@ -45,4 +45,22 @@ describe('AccessKeySheet', () => {
     expect(writeText).toHaveBeenCalledWith('fresh-key')
     expect(await screen.findByRole('button', { name: 'Скопировано' })).toBeTruthy()
   })
+
+  it('opens a stored key again for the creator', () => {
+    render(
+      <AccessKeySheet
+        open
+        name="Матвей"
+        kind="group"
+        step="look"
+        issuedKey="kept-key"
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Ключ' })).toBeTruthy()
+    expect(screen.getByText('kept-key')).toBeTruthy()
+    expect(screen.getByText('Этот ключ сейчас действует. Его можно открыть снова.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Выдать ключ' })).toBeNull()
+  })
 })

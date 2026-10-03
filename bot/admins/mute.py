@@ -4113,6 +4113,8 @@ async def _apply_mute_db(
           _proof_owner_token(proof_media_id),
         )
         action_id = row["id"] if row else None
+        from bot.admins.proof_blob import schedule_proof_save
+        schedule_proof_save(proof_media_id)
         MuteDebug.log(
           "DB", "mute saved",
           target=target_user_id, until=str(mute_until), chat_id=chat_id,

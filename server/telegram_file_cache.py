@@ -126,10 +126,17 @@ def cache_put(file_id: str, size: str, data: bytes, content_type: str = "image/j
 
 
 async def download_telegram_file(file_id: str) -> tuple[bytes, str]:
-    """Скачивает оригинал из Telegram. Результат кладёт на диск."""
+    """Отдаёт оригинал: сначала копию из базы, иначе один раз качает Telegram и сохраняет её."""
+    from proof_blobs import load_proof_blob, save_proof_blob, sniff_image_type
+
     cached = cache_get(file_id, "full")
-    if cached:
+    if cached and sniff_image_type(cached[0], cached[1]):
         return cached
+
+    stored = await load_proof_blob(file_id)
+    if stored:
+        cache_put(file_id, "full", stored[0], stored[1])
+        return stored
 
     import aiohttp
     from admin_moderation import candidate_tokens_for_file
@@ -172,9 +179,13 @@ async def download_telegram_file(file_id: str) -> tuple[bytes, str]:
                 continue
             if not content:
                 continue
+            kind = sniff_image_type(content, content_type)
+            if not kind:
+                continue
             _TOKEN_HIT[file_id] = token
-            cache_put(file_id, "full", content, content_type)
-            return content, content_type
+            await save_proof_blob(file_id, content, kind)
+            cache_put(file_id, "full", content, kind)
+            return content, kind
 
     if last_gone:
         raise FileNotFoundError("gone")
