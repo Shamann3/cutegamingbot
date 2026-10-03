@@ -14,6 +14,12 @@ function when(iso) {
   }
 }
 
+const APP_STATUS = {
+  pending: 'На рассмотрении',
+  rejected: 'Отклонена',
+  approved: 'Принята',
+}
+
 export default function GroupApplicationsPane({ onOpenUser = null }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +97,7 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
   return (
     <div className="sec-tab-body staff-apps staff-apps-group">
       <p className="staff-hint">
-        Это заявки в кабинет официальной группы. Сверху — имя человека, как оно записано у игроков. «Открыть в Игроках» показывает его карточку: баланс, предметы и историю. Заявка не делает его сотрудником проекта.
+        Здесь все заявки в кабинет. Сначала те, что ждут решения. Если человек уже на должности, заявка нужна только для ключа. «Открыть в Игроках» показывает его карточку. Заявка не делает его сотрудником проекта.
       </p>
       {error && <p className="sec-error" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
@@ -105,7 +111,7 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
       </button>
       {loading && items.length === 0 && <p className="sec-loading">Загрузка заявок…</p>}
       {!loading && items.length === 0 && !error && (
-        <p className="sec-empty">Заявок на администратора группы нет.</p>
+        <p className="sec-empty">Заявок в панель администратора нет.</p>
       )}
       <ul className="staff-app-list">
         {items.map((item) => {
@@ -118,8 +124,14 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
             </div>
             <p className="staff-app-meta">
               {person.username ? <><CopyableUsername value={person.username} />{' · '}</> : null}
-              {item.position} · ранг {item.rank}{item.at ? ` · ${when(item.at)}` : ''}
+              {item.position} · ранг {item.rank} · {APP_STATUS[item.status] || item.status || 'На рассмотрении'}{item.at ? ` · ${when(item.at)}` : ''}
             </p>
+            {item.alreadySeated && (item.status || 'pending') === 'pending' && (
+              <p className="staff-app-meta">Уже на должности. Заявка нужна, чтобы выдать ключ.</p>
+            )}
+            {item.note && (item.status || 'pending') !== 'pending' && (
+              <p className="staff-app-meta">{item.note}</p>
+            )}
             <p className="staff-app-meta"><CopyableId value={item.userId} label="id игрока" /></p>
             <p className="staff-app-body">{item.body}</p>
             <div className="staff-app-actions">
@@ -128,19 +140,23 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
                   Открыть в Игроках
                 </button>
               )}
-              <button type="button" className="sec-btn sec-btn-sm" disabled={busyId === item.id} onClick={() => approve(item)}>
-                {busyId === item.id ? '…' : 'Одобрить'}
-              </button>
-              <button
-                type="button"
-                className="sec-btn sec-btn-ghost sec-btn-sm"
-                disabled={busyId === item.id}
-                onClick={() => { setRejectId(item.id); setNote(''); setError('') }}
-              >
-                Отказать
-              </button>
+              {(item.status || 'pending') === 'pending' && (
+                <>
+                  <button type="button" className="sec-btn sec-btn-sm" disabled={busyId === item.id} onClick={() => approve(item)}>
+                    {busyId === item.id ? '…' : 'Одобрить'}
+                  </button>
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-ghost sec-btn-sm"
+                    disabled={busyId === item.id}
+                    onClick={() => { setRejectId(item.id); setNote(''); setError('') }}
+                  >
+                    Отказать
+                  </button>
+                </>
+              )}
             </div>
-            {rejectId === item.id && (
+            {rejectId === item.id && (item.status || 'pending') === 'pending' && (
               <form className="staff-app-reject" onSubmit={(event) => { event.preventDefault(); reject(item) }}>
                 <label>
                   Причина отказа

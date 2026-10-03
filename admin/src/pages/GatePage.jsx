@@ -45,7 +45,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [checking, setChecking] = useState(true)
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
-  const [hold, setHold] = useState(false)
+  const [hold, setHold] = useState('')
   const [still] = useState(detectStillGate)
   const { lightMode, setLightMode } = usePerfMode()
   const sparse = lightMode && !still
@@ -87,7 +87,11 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
 
   const groupDetail = portrait.groupCanEnter
     ? <>Дальше нужен ключ кабинета <CuteBrand />.</>
-    : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
+    : portrait.groupApplicationStatus === 'pending'
+      ? 'Заявка уже у создателя. Ключ придёт после одобрения.'
+      : portrait.groupHoldsSeat
+        ? 'Должность уже есть. Ключ выдаётся только после заявки. Нажмите и отправьте её.'
+        : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
 
   const pressStaff = () => {
     if (portrait.staffCanEnter) {
@@ -95,15 +99,22 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
       return
     }
     if (portrait.applicationStatus === 'pending') {
-      setHold(true)
+      setHold('staff')
       return
     }
     onStaffApply()
   }
 
   const pressGroup = () => {
-    if (portrait.groupCanEnter) onGroupEnter(portrait)
-    else onGroupApply()
+    if (error || !portrait.groupCanEnter) {
+      if (!error && portrait.groupApplicationStatus === 'pending') {
+        setHold('group')
+        return
+      }
+      onGroupApply()
+      return
+    }
+    onGroupEnter(portrait)
   }
 
   return (
@@ -138,8 +149,12 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         {hold ? (
           <div className="gate-hold" role="status">
             <h2 className="gate-title">Заявка уже у создателя</h2>
-            <p className="gate-lead">Вход откроется после одобрения. Повторно отправлять её не нужно.</p>
-            <button type="button" className="gate-text" onClick={() => setHold(false)}>К выбору панели</button>
+            <p className="gate-lead">
+              {hold === 'group'
+                ? 'Ключ придёт после одобрения. Повторно отправлять заявку не нужно.'
+                : 'Вход откроется после одобрения. Повторно отправлять её не нужно.'}
+            </p>
+            <button type="button" className="gate-text" onClick={() => setHold('')}>К выбору панели</button>
           </div>
         ) : (
           <div className="gate-doors" aria-busy={checking || undefined}>
@@ -153,8 +168,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             />
             <Door
               title="Панель администратора"
-              detail={portrait.groupCanEnter ? groupDetail : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>}
-              mark={portrait.groupCanEnter ? 'Войти' : 'Заявка'}
+              detail={groupDetail}
+              mark={portrait.groupCanEnter ? 'Войти' : !error && portrait.groupApplicationStatus === 'pending' ? 'Ждёт' : 'Заявка'}
               open
               onClick={pressGroup}
               order={5}

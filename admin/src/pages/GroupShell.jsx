@@ -862,17 +862,25 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                   </li>
                 ))}
               </ul>
+              <h3 className="realm-h">Заявки</h3>
+              <p className="realm-copy">Все заявки в панель. Сначала те, что ждут решения. Если человек уже на должности, заявка нужна для ключа.</p>
+              {apps.length === 0 && <p className="realm-copy">Заявок пока нет.</p>}
               <ul className="realm-list">
                 {apps.map((item) => {
                   const person = applicationPerson(item)
+                  const waiting = (item.status || 'pending') === 'pending'
+                  const status = item.status === 'approved' ? 'Принята' : item.status === 'rejected' ? 'Отклонена' : 'На рассмотрении'
                   return (
                   <li key={item.id} className="realm-row">
                     <strong>{person.title}{person.username ? ` · @${person.username}` : ''}</strong>
-                    <span>{item.position} · id {item.userId}</span>
-                    <span>
-                      <button type="button" onClick={() => decide(item, true)}>Одобрить</button>
-                      <button type="button" onClick={() => decide(item, false)}>Отказать</button>
-                    </span>
+                    <span>{item.group ? `${item.group} · ` : ''}{item.position} · {status} · id {item.userId}</span>
+                    {item.alreadySeated && waiting && <span>Уже на должности. Заявка нужна, чтобы выдать ключ.</span>}
+                    {waiting && (
+                      <span>
+                        <button type="button" onClick={() => decide(item, true)}>Одобрить</button>
+                        <button type="button" onClick={() => decide(item, false)}>Отказать</button>
+                      </span>
+                    )}
                   </li>
                   )
                 })}

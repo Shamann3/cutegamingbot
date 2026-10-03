@@ -310,7 +310,10 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                 <ChoiceSheet
                   prompt="Выберите, на какую именно должность вы рассчитываете"
                   value={positionId}
-                  options={roles.map((role) => ({ id: role.positionId, label: role.position }))}
+                  options={roles.map((role) => ({
+                    id: role.positionId,
+                    label: role.held ? `${role.position} · ваша должность` : role.position,
+                  }))}
                   open={sheet === 'position'}
                   onOpen={() => setSheet('position')}
                   onClose={() => setSheet(null)}
@@ -326,6 +329,9 @@ export default function GroupApplyPage({ onBack, preview = false }) {
 
             <div className={`auth-reveal-slot${positionId ? ' is-open' : ''}`} aria-hidden={positionId ? undefined : true}>
               <div className="auth-reveal-inner">
+                {chosen?.held && (
+                  <p className="realm-copy">Эта должность уже ваша. Заявка нужна, чтобы создатель выдал ключ.</p>
+                )}
                 {chosen && (
                   <p className="realm-copy">
                     Права: {(chosen.rights || []).map((right) => RIGHT_LABEL[right] || right).join(', ')}

@@ -415,6 +415,46 @@ def _new_key() -> tuple[str, str]:
     return plain, _hash_key(plain)
 
 
+async def cabinet_entry(user_id: int) -> dict:
+    """Есть ли живой ключ, должность и последняя заявка. Сбой базы дверь не открывает."""
+    empty = {"hasKey": False, "holdsSeat": False, "applicationStatus": None}
+    try:
+        await ensure_tables()
+        row = await db.pool.fetchrow(
+            """
+            SELECT
+              EXISTS (
+                SELECT 1 FROM epsilon_group_keys
+                WHERE user_id = $1 AND NOT disabled AND key_hash <> ''
+              ) AS has_key,
+              EXISTS (
+                SELECT 1
+                FROM epsilon_seats s
+                JOIN epsilon_official_groups g ON g.chat_id = s.chat_id AND g.is_official
+                JOIN epsilon_positions p ON p.id = s.position_id AND p.kind = 'post'
+                WHERE s.user_id = $1
+                  AND (s.term_end IS NULL OR s.term_end > NOW())
+              ) AS holds_seat,
+              (
+                SELECT status FROM epsilon_group_applications
+                WHERE user_id = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+              ) AS application_status
+            """,
+            int(user_id),
+        )
+    except Exception:
+        return empty
+    if not row:
+        return empty
+    return {
+        "hasKey": bool(row["has_key"]),
+        "holdsSeat": bool(row["holds_seat"]) and not _is_creator(int(user_id)),
+        "applicationStatus": row["application_status"] or None,
+    }
+
+
 async def _issue_key(user_id: int) -> str:
     plain, hashed = _new_key()
     await db.pool.execute(
@@ -839,12 +879,18 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
     rows = await db.pool.fetch(
         """
-        SELECT g.chat_id, g.title, g.username, p.id AS position_id, p.title AS position, p.rank, p.rights
+        SELECT g.chat_id, g.title, g.username, p.id AS position_id, p.title AS position, p.rank, p.rights,
+               (s.user_id IS NOT NULL) AS held
         FROM epsilon_official_groups g
         JOIN epsilon_positions p ON p.chat_id = g.chat_id
-        WHERE g.is_official AND p.accepting AND p.rank < 5 AND p.kind = 'post'
+        LEFT JOIN epsilon_seats s
+          ON s.chat_id = p.chat_id AND s.position_id = p.id AND s.user_id = $1
+         AND (s.term_end IS NULL OR s.term_end > NOW())
+        WHERE g.is_official AND p.rank < 5 AND p.kind = 'post'
+          AND (p.accepting OR s.user_id IS NOT NULL)
         ORDER BY g.title, p.rank DESC
-        """
+        """,
+        int(user_id),
     )
     mine = await db.pool.fetch(
         """
@@ -875,6 +921,7 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
                 "positionId": int(r["position_id"]),
                 "position": r["position"],
                 "rank": int(r["rank"]),
+                "held": bool(r["held"]),
                 "rights": _rights(r["rights"]),
             }
             for r in rows
@@ -903,7 +950,7 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
         raise HTTPException(status_code=400, detail="Сначала отметьте, что вы знаете правила")
     pos = await db.pool.fetchrow(
         """
-        SELECT p.id, p.rank, p.accepting, g.is_official
+        SELECT p.id, p.rank, p.accepting, p.kind, g.is_official
         FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id
         WHERE p.id = $1 AND p.chat_id = $2
@@ -911,15 +958,30 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
         int(body.position_id),
         int(body.chat_id),
     )
-    if not pos or not pos["is_official"] or not pos["accepting"] or int(pos["rank"]) >= 5:
-        raise HTTPException(status_code=400, detail="На эту должность набор закрыт")
-    seat = await db.pool.fetchval(
-        "SELECT 1 FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
+    seat = await db.pool.fetchrow(
+        """
+        SELECT position_id FROM epsilon_seats
+        WHERE user_id = $1 AND chat_id = $2
+          AND (term_end IS NULL OR term_end > NOW())
+        """,
         int(user_id),
         int(body.chat_id),
     )
-    if seat:
-        raise HTTPException(status_code=409, detail="Вы уже администратор этой группы")
+    holds_this = bool(seat) and int(seat["position_id"]) == int(body.position_id)
+    if (
+        not pos
+        or not pos["is_official"]
+        or int(pos["rank"]) >= 5
+        or (pos["kind"] or KIND_POST) != KIND_POST
+        or (not pos["accepting"] and not holds_this)
+    ):
+        raise HTTPException(status_code=400, detail="На эту должность набор закрыт")
+    entry = await cabinet_entry(int(user_id))
+    if entry["hasKey"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Ключ кабинета уже есть. Откройте панель администратора и введите его.",
+        )
     pending = await db.pool.fetchval(
         """
         SELECT 1 FROM epsilon_group_applications
@@ -959,7 +1021,10 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
     )
     from staff_notify import notify_owners
 
-    notify_owners("Новая заявка в панель администратора. Она в разделе «Заявки».")
+    if seat:
+        notify_owners("Новая заявка в панель администратора. Человек уже на должности, заявка нужна для ключа. Она в разделе «Заявки».")
+    else:
+        notify_owners("Новая заявка в панель администратора. Она в разделе «Заявки».")
     return {"ok": True, "id": int(app_id)}
 
 
@@ -1598,14 +1663,18 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
         """
         SELECT a.id, a.user_id, a.chat_id, a.position_id, a.body, a.status, a.review_note, a.created_at,
                g.title AS group_title, p.title AS position, p.rank,
-               u.username, u.display_name, u.first_name
+               u.username, u.display_name, u.first_name,
+               EXISTS (
+                 SELECT 1 FROM epsilon_seats s
+                 WHERE s.user_id = a.user_id AND s.chat_id = a.chat_id
+                   AND (s.term_end IS NULL OR s.term_end > NOW())
+               ) AS already_seated
         FROM epsilon_group_applications a
-        JOIN epsilon_official_groups g ON g.chat_id = a.chat_id
-        JOIN epsilon_positions p ON p.id = a.position_id
+        LEFT JOIN epsilon_official_groups g ON g.chat_id = a.chat_id
+        LEFT JOIN epsilon_positions p ON p.id = a.position_id
         LEFT JOIN users u ON u.user_id = a.user_id
-        WHERE a.status = 'pending'
-        ORDER BY a.created_at
-        LIMIT 50
+        ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
+        LIMIT 80
         """
     )
     return {
@@ -1616,11 +1685,14 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
                 "chatId": int(r["chat_id"]),
                 "positionId": int(r["position_id"]),
                 "group": r["group_title"] or str(r["chat_id"]),
-                "position": r["position"],
-                "rank": int(r["rank"]),
+                "position": r["position"] or "должность",
+                "rank": int(r["rank"]) if r["rank"] is not None else 0,
                 "name": (r["display_name"] or r["first_name"] or "").strip(),
                 "username": (r["username"] or "").strip(),
                 "body": r["body"],
+                "status": r["status"] or "pending",
+                "note": r["review_note"] or "",
+                "alreadySeated": bool(r["already_seated"]),
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
             }
             for r in rows
@@ -2112,7 +2184,7 @@ async def _key_row(user_id: int, key: str):
     if not row:
         raise HTTPException(
             status_code=403,
-            detail="Личный ключ ещё не выдан. Откройте панель из бота или попросите создателя назначить вас снова",
+            detail="Личного ключа ещё нет. Вернитесь и отправьте заявку — после одобрения ключ придёт в бота.",
         )
     if row["disabled"]:
         raise HTTPException(

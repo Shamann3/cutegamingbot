@@ -970,9 +970,11 @@ async def admin_auth_status(
     staff_roles = {"owner", "senior_admin", "junior_admin", "moderator"}
     staff_can_enter = is_owner or (account_status == "active" and role in staff_roles)
     groups: list[dict] = []
+    entry = {"hasKey": False, "holdsSeat": False, "applicationStatus": None}
     try:
-        from group_realm import seats_for
+        from group_realm import cabinet_entry, seats_for
         groups = await seats_for(user_id)
+        entry = await cabinet_entry(user_id)
     except Exception:
         groups = []
 
@@ -986,7 +988,9 @@ async def admin_auth_status(
         "isOwner": is_owner,
         "isProjectCreator": sr_is_creator(user_id),
         "staffCanEnter": staff_can_enter,
-        "groupCanEnter": is_owner or len(groups) > 0,
+        "groupCanEnter": is_owner or bool(entry["hasKey"]),
+        "groupHoldsSeat": bool(entry["holdsSeat"]),
+        "groupApplicationStatus": entry["applicationStatus"],
         "groups": groups,
     }
 

@@ -16,6 +16,8 @@ export function portraitFrom(status) {
     isProjectCreator: Boolean(status?.isProjectCreator),
     userId: status?.userId ?? null,
     applicationStatus: status?.applicationStatus || null,
+    groupHoldsSeat: Boolean(status?.groupHoldsSeat),
+    groupApplicationStatus: status?.groupApplicationStatus || null,
     accountStatus,
   }
 }
