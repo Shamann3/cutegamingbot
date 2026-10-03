@@ -144,6 +144,8 @@ _QUIET_PATTERNS = (
     "can't parse entities",
     "there is no caption in the message to edit",
     "there is no text in the message to edit",
+    "wrong file_id",
+    "wrong file identifier",
 )
 
 # Edit уже в нужном виде: для Telegram это BadRequest, для нас - успех.
@@ -243,6 +245,9 @@ def is_quiet_mode() -> bool:
 
 
 def _is_network_error(error: Exception) -> bool:
+    # «file is temporarily unavailable» — это отказ Telegram по file_id, не обрыв сети.
+    if isinstance(error, (TelegramBadRequest, TelegramForbiddenError)):
+        return False
     if isinstance(error, TelegramNetworkError):
         return True
     name = type(error).__name__

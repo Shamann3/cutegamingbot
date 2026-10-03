@@ -4,7 +4,8 @@ import GroupApplyPage from './GroupApplyPage'
 
 vi.mock('../lib/adminClient', async (importOriginal) => ({
   ...(await importOriginal()),
-  fetchGroupRules: vi.fn(() => Promise.reject(Object.assign(new Error('API не отвечает'), { status: 500 }))),
+  fetchGroupOpen: vi.fn(() => Promise.reject(new Error('API не отвечает'))),
+  fetchGroupRules: vi.fn(() => Promise.reject(new Error('API не отвечает'))),
 }))
 
 vi.mock('../components/AccentAura', () => ({ default: () => null }))
@@ -36,5 +37,15 @@ describe('GroupApplyPage', () => {
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
     fireEvent.click(screen.getByRole('checkbox', { name: 'Я знаю правила' }))
     expect(screen.getByRole('button', { name: 'Отправить заявку' })).toBeTruthy()
+  })
+
+  it('без ответа сервера показывает правила и не пишет про API', async () => {
+    render(<GroupApplyPage onBack={() => {}} />)
+    expect(await screen.findByRole('link', { name: 'Канал с правилами' })).toBeTruthy()
+    expect(screen.getByText('Прочтите правила')).toBeTruthy()
+    expect(screen.getByText('Вы ознакомлены с правилами проекта?')).toBeTruthy()
+    expect(screen.getByText('При открытии правил нужно будет перезайти в панель и написать заявку заново.')).toBeTruthy()
+    expect(screen.queryByText('API не отвечает')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Повторить' })).toBeNull()
   })
 })

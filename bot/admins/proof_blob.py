@@ -39,6 +39,14 @@ async def _ensure(conn) -> None:
         )
         """
     )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS staff_proof_misses (
+            file_id TEXT PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
 
 
 async def _store(file_id: str, data: bytes) -> bool:
@@ -62,33 +70,85 @@ async def _store(file_id: str, data: bytes) -> bool:
     return True
 
 
+class _ProofGone(Exception):
+    """Telegram больше не отдаёт этот file_id. Повтор ничего не изменит."""
+
+
+def _is_gone(description: str) -> bool:
+    text = (description or "").lower()
+    return "wrong file" in text or "file identifier" in text or "temporarily unavailable" in text
+
+
 async def _download(file_id: str) -> bytes:
+    """Один запрос getFile. Без aiogram: тот пишет трейсбек и трижды повторяет отказ."""
+    import aiohttp
     from main import bot1
 
-    tg_file = await bot1.get_file(file_id)
-    path = getattr(tg_file, "file_path", None) if tg_file else None
-    if not path:
-        return b""
-    buf = await bot1.download_file(path)
-    if buf is None:
-        return b""
-    if isinstance(buf, (bytes, bytearray)):
-        return bytes(buf)
-    data = buf.read()
-    return bytes(data or b"")
+    token = getattr(bot1, "token", "") or ""
+    if not token:
+        raise _ProofGone("no token")
+    timeout = aiohttp.ClientTimeout(total=20)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(
+            f"https://api.telegram.org/bot{token}/getFile",
+            params={"file_id": file_id},
+        ) as resp:
+            payload = await resp.json(content_type=None)
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            desc = ""
+            if isinstance(payload, dict):
+                desc = str(payload.get("description") or "")
+            if _is_gone(desc):
+                raise _ProofGone(desc)
+            raise RuntimeError("getFile failed")
+        path = str((payload.get("result") or {}).get("file_path") or "")
+        if not path:
+            raise _ProofGone("no path")
+        async with session.get(f"https://api.telegram.org/file/bot{token}/{path}") as img:
+            if img.status != 200:
+                raise _ProofGone(f"status {img.status}")
+            return await img.read()
 
 
-async def save_proof_now(file_id: str) -> bool:
+async def _remember_miss(file_id: str) -> None:
+    try:
+        from main import db
+
+        async with db.pool.acquire() as conn:
+            await _ensure(conn)
+            await conn.execute(
+                """
+                INSERT INTO staff_proof_misses (file_id)
+                VALUES ($1)
+                ON CONFLICT (file_id) DO NOTHING
+                """,
+                file_id,
+            )
+    except Exception:
+        logger.warning("proof miss was not saved")
+
+
+async def save_proof_now(file_id: str, *, remember_miss: bool = False) -> bool:
     key = (file_id or "").strip()
     if not key or _failed.get(key, 0) >= 3:
         return False
     try:
         data = await _download(key)
-        if await _store(key, data):
-            _failed.pop(key, None)
-            return True
+    except _ProofGone:
+        if remember_miss:
+            _failed[key] = 3
+            await _remember_miss(key)
+            logger.info("proof photo is not in Telegram anymore")
+        else:
+            _failed[key] = _failed.get(key, 0) + 1
+        return False
     except Exception:
-        logger.exception("proof blob save failed")
+        _failed[key] = _failed.get(key, 0) + 1
+        logger.warning("proof blob save failed")
+        return False
+    if await _store(key, data):
+        _failed.pop(key, None)
+        return True
     _failed[key] = _failed.get(key, 0) + 1
     return False
 
@@ -101,7 +161,14 @@ def schedule_proof_save(file_id: str) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    loop.create_task(save_proof_now(key))
+
+    async def _run() -> None:
+        if await save_proof_now(key):
+            return
+        await asyncio.sleep(2)
+        await save_proof_now(key, remember_miss=True)
+
+    loop.create_task(_run())
 
 
 async def _backfill() -> None:
@@ -122,6 +189,10 @@ async def _backfill() -> None:
                         SELECT 1 FROM staff_proof_blobs b
                         WHERE b.file_id = s.proof_media_id
                       )
+                      AND NOT EXISTS (
+                        SELECT 1 FROM staff_proof_misses m
+                        WHERE m.file_id = s.proof_media_id
+                      )
                     ORDER BY s.id DESC
                     LIMIT 6
                     """
@@ -138,7 +209,7 @@ async def _backfill() -> None:
         if not pending:
             return
         for key in pending:
-            await save_proof_now(key)
+            await save_proof_now(key, remember_miss=True)
             await asyncio.sleep(0.4)
         await asyncio.sleep(1.5)
 

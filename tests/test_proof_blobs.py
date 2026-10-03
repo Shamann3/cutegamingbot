@@ -28,6 +28,12 @@ def test_photo_proxy_serves_the_saved_copy_first():
 
     bot = (root / "bot" / "admins" / "proof_blob.py").read_text(encoding="utf-8")
     assert "staff_proof_blobs" in bot
+    assert "staff_proof_misses" in bot
     assert "schedule_proof_save" in bot
+    assert "bot1.get_file" not in bot
+    logger_src = (root / "bot" / "utils" / "telegram_api_logger.py").read_text(encoding="utf-8")
+    net = logger_src[logger_src.index("def _is_network_error"):logger_src.index("def _lookup_message_content_kind")]
+    assert "TelegramBadRequest" in net
+    assert "wrong file_id" in logger_src
     for name in ("ban.py", "mute.py", "kick.py", "warn.py"):
         assert "schedule_proof_save" in (root / "bot" / "admins" / name).read_text(encoding="utf-8")

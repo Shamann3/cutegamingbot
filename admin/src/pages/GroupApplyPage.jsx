@@ -58,6 +58,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const personal = accentIsPersonal(loadStoredAccent())
   const [loading, setLoading] = useState(!preview)
   const [error, setError] = useState('')
+  const [listReady, setListReady] = useState(preview)
   const [positions, setPositions] = useState([])
   const [mine, setMine] = useState([])
   const [chatId, setChatId] = useState(null)
@@ -70,27 +71,35 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const [sending, setSending] = useState(false)
   const [done, setDone] = useState(false)
 
-  const load = () => {
-    setLoading(true)
-    setError('')
-    fetchGroupOpen()
-      .then((data) => {
-        setPositions(Array.isArray(data?.positions) ? data.positions : [])
-        setMine(Array.isArray(data?.mine) ? data.mine : [])
-      })
-      .catch((err) => setError(err.message || 'Список групп не открылся'))
-      .finally(() => setLoading(false))
-  }
-
   useEffect(() => {
     if (preview) {
       setPositions(PREVIEW_POSITIONS)
       setLoading(false)
+      setListReady(true)
       setError('')
       return undefined
     }
-    load()
-    return undefined
+    let cancelled = false
+    const pull = () => {
+      fetchGroupOpen()
+        .then((data) => {
+          if (cancelled) return
+          setPositions(Array.isArray(data?.positions) ? data.positions : [])
+          setMine(Array.isArray(data?.mine) ? data.mine : [])
+          setListReady(true)
+          setLoading(false)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setLoading(false)
+        })
+    }
+    pull()
+    const timer = window.setInterval(pull, 8000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [preview])
 
   const text = body.trim()
@@ -162,7 +171,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       })
       setDone(true)
     } catch (err) {
-      setError(err.message || 'Заявка не отправилась')
+      const message = String(err?.message || '')
+      setError(message && message !== 'API не отвечает' ? message : 'Заявка не отправилась. Нажмите ещё раз.')
     } finally {
       setSending(false)
     }
@@ -180,13 +190,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
         )}
 
         {loading && <p className="auth-checking">Сверяем набор…</p>}
-        {error && (
-          <div className="gate-recover" role="alert">
-            <p className="gate-status gate-status-error">{error}</p>
-            {!done && chats.length === 0 && (
-              <button type="button" className="gate-text" onClick={load}>Повторить</button>
-            )}
-          </div>
+        {error && !done && (
+          <p className="gate-status gate-status-error" role="alert">{error}</p>
         )}
 
         {!loading && done && (
@@ -197,12 +202,33 @@ export default function GroupApplyPage({ onBack, preview = false }) {
           </p>
         )}
 
-        {!loading && !done && chats.length === 0 && !error && (
+        {!done && listReady && chats.length === 0 && (
           <p className="gate-status">Набор закрыт. Создатель ещё не открыл группу.</p>
         )}
 
-        {!loading && !done && chats.length > 0 && (
+        {!done && (chats.length > 0 || !listReady) && (
           <form className="auth-form auth-step" onSubmit={submit}>
+            <div className="apply-rules">
+              <p className="apply-rules-title">Прочтите правила</p>
+              <a className="auth-btn auth-btn-primary" href={RULES_CHANNEL} target="_blank" rel="noreferrer">
+                Канал с правилами
+              </a>
+              <p className="apply-rules-note">
+                При открытии правил нужно будет перезайти в панель и написать заявку заново.
+              </p>
+              <p className="apply-rules-ask">Вы ознакомлены с правилами проекта?</p>
+              <label className="apply-rules-check">
+                <input
+                  type="checkbox"
+                  checked={rulesKnown}
+                  onChange={(event) => {
+                    setRulesKnown(event.target.checked)
+                    setError('')
+                  }}
+                />
+                <span>Я знаю правила</span>
+              </label>
+            </div>
             <ChoiceSheet
               prompt="Выберите группу, в которой вы хотите работать"
               value={chatId}
@@ -254,29 +280,6 @@ export default function GroupApplyPage({ onBack, preview = false }) {
               <div className="auth-reveal-inner">
                 <div className="apply-step" ref={nextRef}>
                   {!enough && <p className="apply-hint">{symbolsLeft(MIN_BODY - text.length)}</p>}
-                  {enough && (
-                    <div className="apply-rules">
-                      <p className="apply-rules-title">Прочтите правила</p>
-                      <a className="auth-btn auth-btn-primary" href={RULES_CHANNEL} target="_blank" rel="noreferrer">
-                        Канал с правилами
-                      </a>
-                      <p className="apply-rules-note">
-                        При открытии правил нужно будет перезайти в панель и написать заявку заново.
-                      </p>
-                      <p className="apply-rules-ask">Вы ознакомлены с правилами проекта?</p>
-                      <label className="apply-rules-check">
-                        <input
-                          type="checkbox"
-                          checked={rulesKnown}
-                          onChange={(event) => {
-                            setRulesKnown(event.target.checked)
-                            setError('')
-                          }}
-                        />
-                        <span>Я знаю правила</span>
-                      </label>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

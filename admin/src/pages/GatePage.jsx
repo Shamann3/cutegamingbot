@@ -153,10 +153,10 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             />
             <Door
               title="Панель администратора"
-              detail={error ? 'Ключ кабинета группы.' : groupDetail}
-              mark={portrait.groupCanEnter || error ? 'Войти' : 'Заявка'}
-              open={portrait.groupCanEnter || Boolean(error)}
-              onClick={error ? () => onGroupEnter(portrait) : pressGroup}
+              detail={portrait.groupCanEnter ? groupDetail : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>}
+              mark={portrait.groupCanEnter ? 'Войти' : 'Заявка'}
+              open
+              onClick={pressGroup}
               order={5}
             />
           </div>
