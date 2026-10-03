@@ -17,6 +17,21 @@ from pydantic import BaseModel, Field
 from admin_auth import get_any_telegram_user_id
 from admin_soft_restart import is_project_creator
 from db import db
+from deed_sort import (
+    CREATOR_ORDER_SQL,
+    ADMIN_ORDER_SQL,
+    VERDICT_LABELS,
+    VERDICT_WEAK,
+    VERDICTS,
+    creator_ready_sql,
+    ensure_deed_sorts,
+    evidence_band,
+    reviewer_roster_sql,
+    reviewer_totals_sql,
+    self_can_sort,
+    unclear_join_sql,
+)
+from human_actor import human_actor_sql
 
 router = APIRouter(prefix="/deed-pay", tags=["deed-pay"])
 
@@ -48,6 +63,35 @@ SORTS = {
     "action": "s.action_type ASC, s.created_at DESC, s.id DESC",
 }
 _READY = False
+
+UNDO_MINUTES = 10
+
+UNDO_REVIEW_SQL = f"""
+DELETE FROM epsilon_deed_reviews
+WHERE action_id = $1
+  AND reviewer_id = $2
+  AND reviewed_at > NOW() - INTERVAL '{UNDO_MINUTES} minutes'
+RETURNING status
+"""
+
+UNDO_SORT_SQL = f"""
+DELETE FROM epsilon_deed_sorts ds
+WHERE ds.action_id = $1
+  AND ds.sorter_id = $2
+  AND ds.sorted_at > NOW() - INTERVAL '{UNDO_MINUTES} minutes'
+  AND NOT EXISTS (SELECT 1 FROM epsilon_deed_reviews v WHERE v.action_id = ds.action_id)
+RETURNING ds.verdict
+"""
+
+UNDO_UNCLEAR_SQL = f"""
+DELETE FROM epsilon_deed_unclear du
+WHERE du.action_id = $1
+  AND du.sorter_id = $2
+  AND du.marked_at > NOW() - INTERVAL '{UNDO_MINUTES} minutes'
+  AND NOT EXISTS (SELECT 1 FROM epsilon_deed_reviews v WHERE v.action_id = du.action_id)
+  AND NOT EXISTS (SELECT 1 FROM epsilon_deed_sorts ds WHERE ds.action_id = du.action_id)
+RETURNING 'weak'::text AS verdict
+"""
 
 
 def milestones_for(confirmed: int, every_n: int) -> int:
@@ -144,6 +188,7 @@ async def ensure_deed_tables() -> None:
             """,
             action, title, every_n, reward,
         )
+    await ensure_deed_sorts()
     _READY = True
 
 
@@ -164,10 +209,23 @@ def _person(row, prefix: str) -> str:
     return f"ID {raw}" if raw else ""
 
 
+def _unclear_names(row) -> list[str]:
+    return [str(name).strip() for name in (row.get("unclear_names") or []) if str(name or "").strip()]
+
+
+def _verdict_of(row) -> str:
+    """Точный ответ, а если его нет и кто-то ответил «непонятно» — weak."""
+    verdict = (row.get("sort_verdict") or "").strip()
+    if verdict:
+        return verdict
+    return VERDICT_WEAK if int(row.get("unclear_n") or 0) > 0 else ""
+
+
 def _card(row, history: list[dict]) -> dict[str, Any]:
     action = row["action_type"]
     scope = row["scope"] or ("chat" if row["chat_id"] else "all")
     minutes = row["duration_minutes"]
+    verdict = _verdict_of(row)
     return {
         "id": int(row["id"]),
         "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
@@ -193,10 +251,17 @@ def _card(row, history: list[dict]) -> dict[str, Any]:
         "everyN": int(row["every_n"] or 0),
         "rewardKut": int(row["reward_kut"] or 0),
         "rateEnabled": bool(row["rate_enabled"]),
+        "sortVerdict": verdict or None,
+        "sortLabel": VERDICT_LABELS.get(verdict, ""),
+        "sorterName": (row.get("sorter_name") or "").strip() if row.get("sort_verdict") else "",
+        "unclearCount": int(row.get("unclear_n") or 0),
+        "unclearNames": _unclear_names(row),
+        "direct": not verdict,
+        "band": evidence_band(bool(row.get("proof_media_id")), row.get("reason") or ""),
     }
 
 
-_CARD_SQL = """
+_CARD_SQL = f"""
     s.id, s.created_at, s.admin_user_id, s.admin_name, s.action_type,
     s.target_player_id, s.target_name, s.reason, s.evidence,
     s.proof_media_id, s.duration_minutes, s.chat_id, s.scope,
@@ -208,10 +273,15 @@ _CARD_SQL = """
     au.first_name AS admin_first,
     r.title AS rate_title,
     r.every_n, r.reward_kut, r.enabled AS rate_enabled,
+    ds.verdict AS sort_verdict,
+    COALESCE(su.first_name, su.username, '') AS sorter_name,
+    dq.n AS unclear_n,
+    dq.names AS unclear_names,
     (
         SELECT COUNT(*)::int FROM staff_actions h
         WHERE h.target_player_id = s.target_player_id
           AND h.action_type IN ('ban', 'mute', 'kick', 'warn', 'unban', 'unmute', 'unwarn')
+          AND {human_actor_sql("h")}
     ) AS archive_count
 """
 
@@ -234,11 +304,12 @@ async def _history(target_id: int | None) -> list[dict]:
     if not target_id:
         return []
     rows = await db.pool.fetch(
-        """
+        f"""
         SELECT id, created_at, action_type, reason, admin_name
         FROM staff_actions
         WHERE target_player_id = $1
           AND action_type IN ('ban', 'mute', 'kick', 'warn', 'unban', 'unmute', 'unwarn')
+          AND {human_actor_sql()}
         ORDER BY created_at DESC, id DESC
         LIMIT 5
         """,
@@ -349,11 +420,17 @@ class RatesBody(BaseModel):
     items: list[RateBody]
 
 
-def _filters(action: str, admin_id: int) -> tuple[str, list[Any]]:
+class SortBody(BaseModel):
+    verdict: str = Field(default="", max_length=16)
+
+
+def _filters(action: str, admin_id: int, sorter_id: int = 0) -> tuple[str, list[Any]]:
     params: list[Any] = [list(PUNISH)]
     parts = [
         "v.action_id IS NULL",
         "s.action_type = ANY($1::text[])",
+        human_actor_sql("s"),
+        creator_ready_sql("s"),
     ]
     picked = action.strip().lower()
     if picked in PUNISH:
@@ -362,7 +439,71 @@ def _filters(action: str, admin_id: int) -> tuple[str, list[Any]]:
     if admin_id:
         params.append(int(admin_id))
         parts.append(f"s.admin_user_id = ${len(params)}")
+    if sorter_id:
+        params.append(int(sorter_id))
+        parts.append(_by_sorter(len(params), "s.id"))
     return " AND ".join(parts), params
+
+
+def _by_sorter(slot: int, action_id_sql: str) -> str:
+    """Точный ответ этого человека или его «непонятно»."""
+    return (
+        f"(ds.sorter_id = ${slot} OR EXISTS ("
+        f"SELECT 1 FROM epsilon_deed_unclear mark "
+        f"WHERE mark.action_id = {action_id_sql} AND mark.sorter_id = ${slot}))"
+    )
+
+
+def _reviewer_name(row) -> str:
+    name = (row["name"] or "").strip()
+    username = (row["username"] or "").strip().lstrip("@")
+    if name and username:
+        return f"{name} (@{username})"
+    if name:
+        return name
+    if username:
+        return f"@{username}"
+    return f"ID {int(row['id'])}"
+
+
+def _reviewer(row) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "name": _reviewer_name(row),
+        "title": (row["title"] or "").strip(),
+        "reviewed": int(row["reviewed"] or 0),
+        "clear": int(row["clear_n"] or 0),
+        "wrong": int(row["wrong_n"] or 0),
+        "weak": int(row["weak_n"] or 0),
+        "kept": int(row["kept_n"] or 0),
+        "dropped": int(row["dropped_n"] or 0),
+        "waiting": int(row["open_n"] or 0),
+        "lastAt": row["last_at"].isoformat() if row["last_at"] else None,
+    }
+
+
+@router.get("/reviewers")
+async def deed_reviewers(user_id: int = Depends(get_any_telegram_user_id)):
+    """Сколько наказаний пересмотрел каждый администратор, и чем это кончилось."""
+    _require_creator(user_id)
+    from group_realm import ensure_tables
+
+    await ensure_tables()
+    await ensure_deed_tables()
+    rows = await db.pool.fetch(reviewer_roster_sql())
+    fate = await db.pool.fetchrow(reviewer_totals_sql())
+    people = [_reviewer(row) for row in rows]
+    totals = {
+        "admins": len(people),
+        "reviewed": sum(item["reviewed"] for item in people),
+        "clear": sum(item["clear"] for item in people),
+        "wrong": sum(item["wrong"] for item in people),
+        "weak": sum(item["weak"] for item in people),
+        "kept": int(fate["kept_n"] or 0) if fate else 0,
+        "dropped": int(fate["dropped_n"] or 0) if fate else 0,
+        "waiting": int(fate["open_n"] or 0) if fate else 0,
+    }
+    return {"people": people, "totals": totals}
 
 
 @router.get("/queue")
@@ -370,43 +511,53 @@ async def deed_queue(
     sort: str = Query(default="new"),
     action: str = Query(default=""),
     adminId: int = Query(default=0),
+    sorterId: int = Query(default=0),
     user_id: int = Depends(get_any_telegram_user_id),
 ):
     _require_creator(user_id)
     await ensure_deed_tables()
-    where, params = _filters(action, adminId)
+    where, params = _filters(action, adminId, sorterId)
+    unclear = unclear_join_sql("s")
     waiting = int(await db.pool.fetchval(
         f"""
         SELECT COUNT(*)::int
         FROM staff_actions s
         LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+        {unclear}
         WHERE {where}
         """,
         *params,
     ) or 0)
+    admin_where, admin_params = _filters(action, 0)
     admins = await db.pool.fetch(
         f"""
         SELECT s.admin_user_id AS id, MAX(s.admin_name) AS name, COUNT(*)::int AS n
         FROM staff_actions s
         LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
-        WHERE v.action_id IS NULL AND s.action_type = ANY($1::text[])
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+        {unclear}
+        WHERE {admin_where}
         GROUP BY s.admin_user_id
         ORDER BY n DESC
         LIMIT 40
         """,
-        list(PUNISH),
+        *admin_params,
     )
     row = await db.pool.fetchrow(
         f"""
         SELECT {_CARD_SQL}
         FROM staff_actions s
         LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+        LEFT JOIN users su ON su.user_id = ds.sorter_id
+        {unclear}
         LEFT JOIN chat c ON c.chat_id = s.chat_id
         LEFT JOIN users tu ON tu.user_id = s.target_player_id
         LEFT JOIN users au ON au.user_id = s.admin_user_id
         LEFT JOIN epsilon_deed_rates r ON r.action_type = s.action_type
         WHERE {where}
-        ORDER BY {_sort(sort)}
+        ORDER BY {CREATOR_ORDER_SQL}
         LIMIT 1
         """,
         *params,
@@ -449,7 +600,7 @@ async def _decide(action_id: int, reviewer_id: int, status: str) -> dict:
                 action_id, status, reviewer_id,
             )
             if not inserted:
-                raise HTTPException(status_code=409, detail="Это наказание уже разобрано")
+                raise HTTPException(status_code=409, detail="Это наказание уже решено")
             if status == "kept":
                 await _sync_owed(conn)
     from admin_audit import log_admin_action
@@ -473,6 +624,197 @@ async def deed_keep(action_id: int, user_id: int = Depends(get_any_telegram_user
 async def deed_drop(action_id: int, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     return await _decide(action_id, user_id, "dropped")
+
+
+@router.post("/queue/{action_id}/undo")
+async def deed_undo(action_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    """Создатель возвращает своё последнее решение, пока выплата не ушла."""
+    _require_creator(user_id)
+    await ensure_deed_tables()
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            gone = await conn.fetchrow(UNDO_REVIEW_SQL, int(action_id), int(user_id))
+            if not gone:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Вернуть можно только своё решение за последние {UNDO_MINUTES} минут",
+                )
+            if gone["status"] == "kept":
+                await _sync_owed(conn)
+    from admin_audit import log_admin_action
+    await log_admin_action(
+        user_id,
+        "deed_undo",
+        target_type="staff_action",
+        target_id=str(action_id),
+        details={"status": gone["status"]},
+    )
+    return {"ok": True, "id": int(action_id), "status": gone["status"]}
+
+
+def _work_where() -> str:
+    """Чужое наказание без точного ответа, которое этот человек ещё не смотрел.
+
+    «Непонятно» от другого администратора дело не закрывает.
+    """
+    return " AND ".join([
+        "v.action_id IS NULL",
+        "ds.action_id IS NULL",
+        "s.action_type = ANY($1::text[])",
+        human_actor_sql("s"),
+        self_can_sort("s", "$2"),
+        "NOT EXISTS (SELECT 1 FROM epsilon_deed_unclear mine WHERE mine.action_id = s.id AND mine.sorter_id = $2)",
+    ])
+
+
+async def _work_card(where: str, params: list) -> dict | None:
+    row = await db.pool.fetchrow(
+        f"""
+        SELECT {_CARD_SQL}
+        FROM staff_actions s
+        LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+        LEFT JOIN users su ON su.user_id = ds.sorter_id
+        {unclear_join_sql("s")}
+        LEFT JOIN chat c ON c.chat_id = s.chat_id
+        LEFT JOIN users tu ON tu.user_id = s.target_player_id
+        LEFT JOIN users au ON au.user_id = s.admin_user_id
+        LEFT JOIN epsilon_deed_rates r ON r.action_type = s.action_type
+        WHERE {where}
+        ORDER BY {ADMIN_ORDER_SQL}
+        LIMIT 1
+        """,
+        *params,
+    )
+    if not row:
+        return None
+    card = _card(_name_fields(row), await _history(row["target_player_id"]))
+    # Администратор видит только, что коллега не смог решить, без имени.
+    card["unclearNames"] = []
+    return card
+
+
+@router.get("/work")
+async def deed_work(user_id: int = Depends(get_any_telegram_user_id)):
+    if is_project_creator(user_id):
+        raise HTTPException(status_code=403, detail="Создатель решает то, что уже проверили администраторы")
+    from group_realm import ensure_tables
+
+    await ensure_tables()
+    await ensure_deed_tables()
+    where = _work_where()
+    params: list = [list(PUNISH), int(user_id)]
+    waiting = int(await db.pool.fetchval(
+        f"""
+        SELECT COUNT(*)::int
+        FROM staff_actions s
+        LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+        WHERE {where}
+        """,
+        *params,
+    ) or 0)
+    return {"waiting": waiting, "card": await _work_card(where, params)}
+
+
+@router.post("/work/{action_id}")
+async def deed_work_sort(
+    action_id: int,
+    body: SortBody,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    if is_project_creator(user_id):
+        raise HTTPException(status_code=403, detail="Создатель решает то, что уже проверили администраторы")
+    verdict = (body.verdict or "").strip().lower()
+    if verdict not in VERDICTS:
+        raise HTTPException(status_code=400, detail="Выберите ответ: подходит, не подходит или непонятно")
+    from group_realm import ensure_tables
+
+    await ensure_tables()
+    await ensure_deed_tables()
+    where = _work_where()
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                f"""
+                SELECT s.id, s.admin_user_id
+                FROM staff_actions s
+                LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
+                LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
+                WHERE s.id = $3 AND {where}
+                """,
+                list(PUNISH),
+                int(user_id),
+                int(action_id),
+            )
+            if not row:
+                owner = await conn.fetchrow(
+                    "SELECT admin_user_id FROM staff_actions WHERE id = $1",
+                    int(action_id),
+                )
+                if owner and int(owner["admin_user_id"] or 0) == int(user_id):
+                    raise HTTPException(status_code=403, detail="Своё наказание проверяет другой администратор")
+                raise HTTPException(status_code=409, detail="На это наказание уже ответили")
+            if verdict == VERDICT_WEAK:
+                inserted = await conn.fetchrow(
+                    """
+                    INSERT INTO epsilon_deed_unclear (action_id, sorter_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT (action_id, sorter_id) DO NOTHING
+                    RETURNING action_id
+                    """,
+                    int(action_id),
+                    int(user_id),
+                )
+            else:
+                inserted = await conn.fetchrow(
+                    """
+                    INSERT INTO epsilon_deed_sorts (action_id, verdict, sorter_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (action_id) DO NOTHING
+                    RETURNING action_id
+                    """,
+                    int(action_id),
+                    verdict,
+                    int(user_id),
+                )
+            if not inserted:
+                raise HTTPException(status_code=409, detail="На это наказание уже ответили")
+    return {"ok": True, "id": int(action_id), "verdict": verdict, "label": VERDICT_LABELS[verdict]}
+
+
+@router.post("/work/{action_id}/undo")
+async def deed_work_undo(action_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    """Администратор снимает свой ответ, пока создатель его не решил."""
+    if is_project_creator(user_id):
+        raise HTTPException(status_code=403, detail="Создатель решает то, что уже проверили администраторы")
+    await ensure_deed_tables()
+    gone = await db.pool.fetchrow(UNDO_SORT_SQL, int(action_id), int(user_id))
+    if not gone:
+        gone = await db.pool.fetchrow(UNDO_UNCLEAR_SQL, int(action_id), int(user_id))
+    if not gone:
+        decided = await db.pool.fetchval(
+            "SELECT 1 FROM epsilon_deed_reviews WHERE action_id = $1",
+            int(action_id),
+        )
+        if decided:
+            raise HTTPException(status_code=409, detail="Создатель уже решил это наказание")
+        answered = await db.pool.fetchval(
+            """
+            SELECT 1 FROM epsilon_deed_sorts ds
+            WHERE ds.action_id = $1 AND ds.sorter_id <> $2
+              AND EXISTS (SELECT 1 FROM epsilon_deed_unclear du WHERE du.action_id = $1 AND du.sorter_id = $2)
+            """,
+            int(action_id),
+            int(user_id),
+        )
+        if answered:
+            raise HTTPException(status_code=409, detail="Другой администратор уже ответил на это наказание")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Вернуть можно только свой ответ за последние {UNDO_MINUTES} минут",
+        )
+    return {"ok": True, "id": int(action_id), "verdict": gone["verdict"]}
 
 
 @router.get("/rates")
@@ -536,11 +878,12 @@ async def deed_collect(user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_deed_tables()
     rows = await db.pool.fetch(
-        """
+        f"""
         SELECT action_type, COUNT(*)::int AS n
         FROM staff_actions
         WHERE action_type = ANY($1::text[])
           AND created_at >= NOW() - INTERVAL '90 days'
+          AND {human_actor_sql()}
         GROUP BY action_type
         """,
         list(PUNISH),
@@ -673,6 +1016,7 @@ async def deed_done(
     sort: str = Query(default="new"),
     action: str = Query(default=""),
     adminId: int = Query(default=0),
+    sorterId: int = Query(default=0),
     status: str = Query(default=""),
     user_id: int = Depends(get_any_telegram_user_id),
 ):
@@ -685,7 +1029,7 @@ async def deed_done(
         "action": "s.action_type ASC, v.reviewed_at DESC",
     }.get(sort, "v.reviewed_at DESC, v.action_id DESC")
     params: list[Any] = []
-    parts = ["1=1"]
+    parts = ["1=1", human_actor_sql("s")]
     if action.strip().lower() in PUNISH:
         params.append(action.strip().lower())
         parts.append(f"s.action_type = ${len(params)}")
@@ -695,36 +1039,52 @@ async def deed_done(
     if status in ("kept", "dropped"):
         params.append(status)
         parts.append(f"v.status = ${len(params)}")
+    if sorterId:
+        params.append(int(sorterId))
+        parts.append(_by_sorter(len(params), "v.action_id"))
     rows = await db.pool.fetch(
         f"""
         SELECT v.action_id, v.status, v.reviewed_at,
                s.action_type, s.admin_user_id, s.admin_name, s.target_name,
-               s.reason, s.created_at
+               s.reason, s.created_at, s.proof_media_id,
+               ds.verdict AS sort_verdict,
+               COALESCE(su.first_name, su.username, '') AS sorter_name,
+               dq.n AS unclear_n,
+               dq.names AS unclear_names
         FROM epsilon_deed_reviews v
         JOIN staff_actions s ON s.id = v.action_id
+        LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = v.action_id
+        LEFT JOIN users su ON su.user_id = ds.sorter_id
+        {unclear_join_sql("s")}
         WHERE {' AND '.join(parts)}
         ORDER BY {order}
         LIMIT 40
         """,
         *params,
     )
-    return {
-        "items": [
-            {
-                "id": int(r["action_id"]),
-                "status": r["status"],
-                "reviewedAt": r["reviewed_at"].isoformat() if r["reviewed_at"] else None,
-                "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
-                "actionType": r["action_type"],
-                "actionLabel": LABELS.get(r["action_type"], r["action_type"]),
-                "adminId": int(r["admin_user_id"] or 0),
-                "adminName": r["admin_name"] or "",
-                "targetName": r["target_name"] or "",
-                "reason": r["reason"] or "",
-            }
-            for r in rows
-        ]
-    }
+    items = []
+    for r in rows:
+        row = dict(r)
+        verdict = _verdict_of(row)
+        items.append({
+            "id": int(row["action_id"]),
+            "status": row["status"],
+            "reviewedAt": row["reviewed_at"].isoformat() if row["reviewed_at"] else None,
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+            "actionType": row["action_type"],
+            "actionLabel": LABELS.get(row["action_type"], row["action_type"]),
+            "adminId": int(row["admin_user_id"] or 0),
+            "adminName": row["admin_name"] or "",
+            "targetName": row["target_name"] or "",
+            "reason": row["reason"] or "",
+            "hasProof": bool(row["proof_media_id"]),
+            "proofMediaId": row["proof_media_id"] or None,
+            "sortVerdict": verdict or None,
+            "sortLabel": VERDICT_LABELS.get(verdict, ""),
+            "sorterName": (row["sorter_name"] or "").strip() if row["sort_verdict"] else "",
+            "unclearNames": _unclear_names(row),
+        })
+    return {"items": items}
 
 
 async def _take_technical(conn, amount: int) -> list[dict]:

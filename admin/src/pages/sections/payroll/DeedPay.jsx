@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import TgPhoto from '../../../components/TgPhoto'
+import PhotoLook from '../../../components/PhotoLook'
+import { BAND_LABEL } from '../../../lib/deedSort'
 import {
   collectDeedRates,
   dropDeed,
@@ -13,13 +14,6 @@ import {
   payDeed,
   saveDeedRates,
 } from '../../../lib/adminClient'
-
-const SORTS = [
-  { id: 'new', label: 'Сначала новые' },
-  { id: 'old', label: 'Сначала старые' },
-  { id: 'admin', label: 'По администратору' },
-  { id: 'action', label: 'По наказанию' },
-]
 
 const ACTIONS = [
   { id: '', label: 'Все' },
@@ -87,7 +81,7 @@ function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
-function DeedPayouts() {
+export function DeedPayouts() {
   const [items, setItems] = useState([])
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState(0)
@@ -171,7 +165,7 @@ export function DeedMine({ isProjectCreator = false }) {
   }
 
   if (!data) {
-    return <p className="staff-hint">{error || 'Считаем подтверждённые дела…'}</p>
+    return <p className="staff-hint">{error || 'Считаем засчитанные наказания…'}</p>
   }
 
   const lines = data?.lines || []
@@ -185,7 +179,7 @@ export function DeedMine({ isProjectCreator = false }) {
         {owed > 0
           ? 'Эта сумма уже набрана. Создатель отпускает выплату, и кут приходит из технических групп.'
           : next
-            ? `Ещё ${countPhrase(next.left, next.title)} — и ${money(next.rewardKut)}. Каждое дело создатель смотрит сам.`
+            ? `Ещё ${countPhrase(next.left, next.title)} — и ${money(next.rewardKut)}. Засчитываются наказания, которые подтвердил создатель.`
             : 'Когда создатель включит оплату за наказания и поставит сумму, здесь будет видно, сколько кут даёт каждое действие.'}
       </p>
       {error && <p className="staff-hint">{error}</p>}
@@ -212,7 +206,7 @@ export function DeedMine({ isProjectCreator = false }) {
                   ? `До ${money(line.rewardKut)} осталось ${countPhrase(line.left, line.title)}.`
                   : line.rewardKut > 0
                     ? 'Норма набрана, выплата ждёт создателя.'
-                    : 'Сумма не поставлена: дела можно разбирать, выплата не откроется.'}
+                    : 'Сумма за этот тип пока не назначена, поэтому выплаты по нему нет.'}
               </p>
             </article>
           )
@@ -246,12 +240,10 @@ function DeedCard({ card, leaving = '' }) {
       <div className="deed-face">
         {card.hasProof && card.proofMediaId
           ? (
-            <TgPhoto
+            <PhotoLook
               fileId={card.proofMediaId}
-              className="deed-photo"
-              lazy={false}
+              eager
               alt="Фото-доказательство"
-              style={{ width: '100%', height: '18rem', maxHeight: '22rem', objectFit: 'cover', borderRadius: 16 }}
             />
           )
           : card.targetPhoto
@@ -270,6 +262,15 @@ function DeedCard({ card, leaving = '' }) {
           {place ? ` · ${place}` : ''}
         </p>
         <p className="deed-reason">{card.reason || 'Причина в архиве не записана'}</p>
+        {card.direct && <p className="work-band">Некому было разобрать. Решение сразу ваше.</p>}
+        {card.sortLabel && (
+          <p className="work-band">
+            Разобрал администратор: {card.sortLabel}{card.sorterName ? ` · ${card.sorterName}` : ''}
+          </p>
+        )}
+        {!card.direct && !card.sortLabel && card.band && (
+          <p className="work-band">{BAND_LABEL[card.band]}</p>
+        )}
         {card.evidence && <p className="staff-answer-a">Доказательство: {card.evidence}</p>}
         <p className="staff-answer-a">
           В архиве этого игрока {card.archiveCount} записей.
@@ -293,7 +294,7 @@ function DeedCard({ card, leaving = '' }) {
   )
 }
 
-function DeedRates() {
+export function DeedRates() {
   const [items, setItems] = useState([])
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
@@ -329,7 +330,7 @@ function DeedRates() {
       }))
       const data = await saveDeedRates(clean)
       setItems(data.items || [])
-      setNotice('Нормы сохранены. Уже подтверждённые дела пересчитаны.')
+      setNotice('Нормы сохранены. Уже засчитанные наказания пересчитаны.')
     } catch (err) {
       setError(messageOf(err))
     } finally {
@@ -358,7 +359,7 @@ function DeedRates() {
   return (
     <div className="deed-rates">
       <p className="deed-lead">
-        Задание платит, только когда вы его включили и поставили число. Сбор смотрит архив и предлагает типы, которые администраторы уже делают. Сам он сумму не включает.
+        Здесь вы решаете, сколько кут администратор получает за наказания, которые вы отправили в зарплату. Норма платит, только когда она включена и у неё есть сумма. Кнопка «Собрать задания из архива» найдёт типы наказаний, которые уже выдают, — сумму она не ставит.
       </p>
       {error && <p className="staff-hint">{error}</p>}
       {notice && <p className="staff-hint">{notice}</p>}
@@ -379,7 +380,7 @@ function DeedRates() {
               <p className="staff-answer-a">Включено, сумма 0: администратор увидит норму, деньги не начислятся.</p>
             )}
             <label className="deed-field">
-              <span>Сколько дел</span>
+              <span>Сколько наказаний</span>
               <input className="panel-users-input" inputMode="numeric" value={item.everyN} onChange={(event) => patch(item.actionType, 'everyN', Number(event.target.value.replace(/[^\d]/g, '')) || 0)} />
             </label>
             <label className="deed-field">
@@ -410,7 +411,6 @@ function DeedRates() {
 
 export default function DeedPay({ isProjectCreator = false }) {
   const [view, setView] = useState(isProjectCreator ? 'review' : 'mine')
-  const [sort, setSort] = useState('new')
   const [action, setAction] = useState('')
   const [adminId, setAdminId] = useState(0)
   const [queue, setQueue] = useState(null)
@@ -424,22 +424,31 @@ export default function DeedPay({ isProjectCreator = false }) {
     if (!isProjectCreator || isPanelPreviewMode()) return
     setError('')
     try {
-      const [next, history] = await Promise.all([
-        fetchDeedQueue({ sort, action, adminId }),
-        fetchDeedDone({ sort, action, adminId }),
-      ])
-      setQueue(next)
-      setDone(history.items || [])
+      const nextPromise = fetchDeedQueue({ action, adminId })
+      const historyPromise = fetchDeedDone({ action, adminId })
+      try {
+        const next = await nextPromise
+        setQueue(next)
+        setError('')
+      } catch (err) {
+        setError(messageOf(err))
+      }
+      try {
+        const history = await historyPromise
+        setDone(history.items || [])
+      } catch {
+        setDone([])
+      }
     } catch (err) {
       setError(messageOf(err))
     }
-  }, [isProjectCreator, sort, action, adminId])
+  }, [isProjectCreator, action, adminId])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     setFlash('')
-  }, [sort, action, adminId])
+  }, [action, adminId])
 
   const decide = useCallback(async (kind) => {
     const id = queue?.card?.id
@@ -470,6 +479,7 @@ export default function DeedPay({ isProjectCreator = false }) {
   useEffect(() => {
     if (view !== 'review' || !isProjectCreator) return undefined
     const onKey = (event) => {
+      if (document.querySelector('.photo-look')) return
       const tag = event.target?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
       if (event.key === 'ArrowLeft') {
@@ -522,16 +532,12 @@ export default function DeedPay({ isProjectCreator = false }) {
             <>
               <p className="deed-sum">Ждёт {queue?.waiting ?? '…'}</p>
               <p className="deed-lead">
-                Одна карточка из архива. Слева дело не входит в оплату, справа входит. Стрелки на клавиатуре делают то же самое.
+                Сначала принятые, потом неверные, потом те, что невозможно решить.
+                Если разобрать было некому, карточка приходит сразу.
+                В зарплату входит только то, что вы смахнули вправо.
+                Фото открывается целиком. Стрелки на клавиатуре: влево отклонить, вправо принять.
               </p>
               {flash && <p className="deed-flash" role="status">{flash}</p>}
-              <div className="deed-filters" role="group" aria-label="Сортировка">
-                {SORTS.map((item) => (
-                  <button key={item.id} type="button" className={`sec-btn sec-btn-sm${sort === item.id ? '' : ' sec-btn-ghost'}`} onClick={() => setSort(item.id)}>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
               <div className="deed-filters" role="group" aria-label="Тип наказания">
                 {ACTIONS.map((item) => (
                   <button key={item.id || 'all'} type="button" className={`sec-btn sec-btn-sm${action === item.id ? '' : ' sec-btn-ghost'}`} onClick={() => setAction(item.id)}>
@@ -551,7 +557,6 @@ export default function DeedPay({ isProjectCreator = false }) {
                 </label>
               )}
               {error && <p className="staff-hint">{error}</p>}
-              <DeedPayouts />
               {!queue && !error && <p className="staff-hint">Открываем очередь…</p>}
               {queue && !card && !error && <p className="staff-hint">Новых наказаний с таким фильтром нет.</p>}
               {card && <DeedCard card={card} leaving={leaving} />}
@@ -567,6 +572,7 @@ export default function DeedPay({ isProjectCreator = false }) {
                   </button>
                 </div>
               )}
+              <DeedPayouts />
               {done.length > 0 && (
                 <div className="deed-lines">
                   <h3 className="staff-punish-title">Что уже решено</h3>

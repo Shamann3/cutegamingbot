@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import TgPhoto from '../../components/TgPhoto'
+import PhotoLook from '../../components/PhotoLook'
 import {
   deleteModerationLog, fetchAppealMessages, fetchAppeals, fetchModerationLogs,
   setAdminUserBanned,
@@ -9,6 +10,7 @@ import {
   takeAppeal, uploadAppealPhoto,
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import { payLabel, sortLabel } from '../../lib/deedSort'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
@@ -312,7 +314,7 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
               <div className="case-block-title">📷 Доказательство</div>
               <div className="case-proof-box">
                 {item.hasProof && item.proofMediaId
-                  ? <TgPhoto fileId={item.proofMediaId} onClick className="case-proof-img" />
+                  ? <PhotoLook fileId={item.proofMediaId} eager alt="Фото доказательства" />
                   : <span className="case-no-proof">Не прикреплено</span>}
               </div>
             </div>
@@ -509,12 +511,14 @@ function ActionCard({ item, onClick }) {
       }
       {item.hasProof && item.proofMediaId && (
         <div className="arc-card-proof">
-          <TgPhoto fileId={item.proofMediaId} style={{ width:'100%', maxHeight:110, objectFit:'cover', borderRadius:8, cursor:'pointer' }} />
+          <TgPhoto fileId={item.proofMediaId} style={{ width:'100%', maxHeight:200, objectFit:'contain', borderRadius:8 }} />
         </div>
       )}
       <div className="arc-card-tags">
         {item.durationMinutes && <span className="arc-card-tag arc-card-tag-dur">⏱ {fmtDuration(item.durationMinutes)}</span>}
         {item.hasProof && <span className="arc-card-tag arc-card-tag-proof">📷 Фото</span>}
+        {sortLabel(item.sortVerdict) && <span className="arc-card-tag">{sortLabel(item.sortVerdict)}</span>}
+        {payLabel(item.payStatus) && <span className="arc-card-tag">{payLabel(item.payStatus)}</span>}
         <button
           type="button"
           className="arc-open-btn"
@@ -1027,7 +1031,7 @@ export default function ModerationSection({
         <div className="arc-header-row">
           <div className="arc-title-block">
             <div className="arc-title">Главный Архив</div>
-            <div className="arc-subtitle">Наказания всего проекта и официальных групп. Фото доказательства видно в деле. {total.toLocaleString('ru-RU')} записей</div>
+            <div className="arc-subtitle">Наказания людей во всём проекте. Записи самого бота скрыты. Фото в деле открывается целиком. {total.toLocaleString('ru-RU')} записей</div>
           </div>
           {liveCount > 0 && (
             <button className="arc-live" onClick={() => { setLiveCount(0); load() }}>

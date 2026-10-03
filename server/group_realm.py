@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -18,10 +20,11 @@ from admin_auth import (
     build_otpauth_uri,
     generate_totp_secret,
     get_any_telegram_user_id,
+    get_optional_telegram_user_id,
     totp_qr_data_url,
     verify_totp,
 )
-from config import owner_user_ids
+from config import ADMIN_JWT_SECRET, owner_user_ids
 from db import db
 
 router = APIRouter(prefix="/group-realm", tags=["group-realm"])
@@ -145,6 +148,8 @@ def cabinet_pages(rights: list[str] | set[str], *, creator: bool = False) -> lis
     """
     have = set(rights or [])
     pages = ["overview"]
+    if creator or "view_archive" in have:
+        pages.append("work")
     sees_activity = (
         creator
         or "view_members" in have
@@ -865,12 +870,18 @@ class ActBody(BaseModel):
 
 class KeyBody(BaseModel):
     key: str = Field(min_length=8, max_length=200)
+    finish: bool = False
     model_config = {"extra": "forbid"}
 
 
 class KeyEnterBody(BaseModel):
     key: str = Field(min_length=8, max_length=200)
     totp: str = Field(min_length=6, max_length=16)
+    model_config = {"extra": "forbid"}
+
+
+class PassBody(BaseModel):
+    entryPass: str = Field(min_length=20, max_length=500)
     model_config = {"extra": "forbid"}
 
 
@@ -2134,10 +2145,77 @@ async def group_rules():
     return {"messages": rules["messages"]}
 
 
-@router.post("/key/check")
-async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram_user_id)):
+_GROUP_ENTRY_SECONDS = 30 * 24 * 3600
+
+
+def _issue_group_pass(user_id: int, key_hash: str) -> tuple[str, int]:
+    """Пропуск в кабинет. Привязан к текущему ключу: новый ключ гасит старый пропуск."""
+    if not ADMIN_JWT_SECRET:
+        raise HTTPException(status_code=500, detail="Вход не сохранился. Напишите ключ ещё раз.")
+    iat = int(time.time())
+    exp = iat + _GROUP_ENTRY_SECONDS
+    stamp = str(key_hash)[:16]
+    body = f"g.{int(user_id)}.{iat}.{exp}.{stamp}"
+    sig = hmac.new(ADMIN_JWT_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}", exp
+
+
+def _read_group_pass(token: str) -> tuple[int, str] | None:
+    parts = str(token or "").split(".")
+    if len(parts) != 6 or parts[0] != "g":
+        return None
+    _, user_part, iat_part, exp_part, stamp, sig = parts
+    if len(stamp) != 16:
+        return None
+    body = f"g.{user_part}.{iat_part}.{exp_part}.{stamp}"
+    try:
+        user_id = int(user_part)
+        exp = int(exp_part)
+    except ValueError:
+        return None
+    if user_id <= 0 or exp < int(time.time()) or not ADMIN_JWT_SECRET:
+        return None
+    expected = hmac.new(ADMIN_JWT_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, sig):
+        return None
+    return user_id, stamp
+
+
+async def _pass_key_hash(user_id: int, stamp: str) -> str:
+    row = await db.pool.fetchrow(
+        "SELECT key_hash, disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(user_id),
+    )
+    if not row or row["disabled"]:
+        raise HTTPException(status_code=403, detail="Ключ кабинета уже другой. Напишите новый.")
+    current = str(row["key_hash"] or "")
+    if len(current) < 16 or not secrets.compare_digest(current[:16], stamp):
+        raise HTTPException(status_code=403, detail="Ключ кабинета уже другой. Напишите новый.")
+    return current
+
+
+async def _open_key(key: str, user_id: int | None) -> tuple[int, Any]:
+    """Известный человек сверяется со своим ключом. Неизвестный называется самим ключом."""
     await ensure_tables()
-    row = await _key_row(int(user_id), body.key)
+    if user_id:
+        return int(user_id), await _key_row(int(user_id), key)
+    hashed = _hash_key(key.strip())
+    row = await db.pool.fetchrow(
+        """
+        SELECT user_id, key_hash, totp_secret, totp_ready, disabled
+        FROM epsilon_group_keys
+        WHERE key_hash = $1
+        """,
+        hashed,
+    )
+    if not row or row["disabled"] or not secrets.compare_digest(hashed, str(row["key_hash"] or "")):
+        raise HTTPException(status_code=403, detail="Ключ не подошёл")
+    return int(row["user_id"]), row
+
+
+@router.post("/key/check")
+async def group_key_check(body: KeyBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+    owner_id, row = await _open_key(body.key, user_id)
     secret = str(row["totp_secret"] or "").strip()
     ready = bool(row["totp_ready"])
     if not secret:
@@ -2148,13 +2226,20 @@ async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram
             SET totp_secret = $2, totp_ready = FALSE, updated_at = NOW()
             WHERE user_id = $1
             """,
-            int(user_id),
+            int(owner_id),
             secret,
         )
         ready = False
-    payload = {"ok": True, "needCode": True}
-    if not ready:
-        uri = build_otpauth_uri(secret, account_name=f"group-{int(user_id)}")
+    need_code = True
+    payload = {"ok": True, "needCode": need_code}
+    if body.finish and ready:
+        need_code = False
+        payload["needCode"] = need_code
+        entry_pass, exp = _issue_group_pass(owner_id, str(row["key_hash"]))
+        payload["entryPass"] = entry_pass
+        payload["exp"] = exp
+    elif not ready:
+        uri = build_otpauth_uri(secret, account_name=f"group-{int(owner_id)}")
         payload["setup"] = {
             "qrDataUrl": totp_qr_data_url(uri),
             "totpSecret": secret,
@@ -2163,17 +2248,31 @@ async def group_key_check(body: KeyBody, user_id: int = Depends(get_any_telegram
 
 
 @router.post("/key/enter")
-async def group_key_enter(body: KeyEnterBody, user_id: int = Depends(get_any_telegram_user_id)):
-    await ensure_tables()
-    row = await _key_row(int(user_id), body.key)
+async def group_key_enter(body: KeyEnterBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+    owner_id, row = await _open_key(body.key, user_id)
     secret = str(row["totp_secret"] or "").strip()
     if not secret or not verify_totp(secret, body.totp):
         raise HTTPException(status_code=403, detail="Код не подошёл")
     await db.pool.execute(
         "UPDATE epsilon_group_keys SET totp_ready = TRUE, updated_at = NOW() WHERE user_id = $1",
-        int(user_id),
+        int(owner_id),
     )
-    return {"ok": True}
+    entry_pass, exp = _issue_group_pass(owner_id, str(row["key_hash"]))
+    return {"ok": True, "entryPass": entry_pass, "exp": exp}
+
+
+@router.post("/key/resume")
+async def group_key_resume(body: PassBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+    parsed = _read_group_pass(body.entryPass)
+    if not parsed:
+        raise HTTPException(status_code=401, detail="Вход не узнан. Напишите ключ ещё раз.")
+    pass_user, stamp = parsed
+    if user_id is not None and int(user_id) != int(pass_user):
+        raise HTTPException(status_code=401, detail="Это вход другого человека. Напишите ключ ещё раз.")
+    await ensure_tables()
+    key_hash = await _pass_key_hash(pass_user, stamp)
+    entry_pass, exp = _issue_group_pass(pass_user, key_hash)
+    return {"ok": True, "entryPass": entry_pass, "exp": exp}
 
 
 async def _key_row(user_id: int, key: str):

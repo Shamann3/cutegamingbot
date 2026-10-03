@@ -573,3 +573,25 @@ def test_wrong_word_writes_a_new_captcha_and_pass_posts_html():
     assert notice.sent[0]["text"] == PASS_HTML
     assert notice.sent[0]["parse_mode"] == "HTML"
     assert notice.sent[0]["message_thread_id"] == 9
+
+
+def test_captcha_holds_a_bot_that_writes():
+    from bot.funcs.group_captcha import captcha_applies_to
+    import pathlib
+
+    human = type("U", (), {"id": 5, "is_bot": False})()
+    foreign = type("U", (), {"id": 99, "is_bot": True})()
+    own = type("U", (), {"id": 42, "is_bot": True})()
+    anonymous = type("U", (), {"id": 1087968824, "is_bot": True})()
+    assert captcha_applies_to(human) is True
+    assert captcha_applies_to(foreign) is True
+    assert captcha_applies_to(own, self_id=42) is False
+    assert captcha_applies_to(anonymous) is False
+    assert captcha_applies_to(type("U", (), {"id": 0, "is_bot": True})()) is False
+    source = pathlib.Path("bot/handlers/group_captcha.py").read_text(encoding="utf-8")
+    assert "if not user or user.is_bot" not in source
+    gate = source.split("class CaptchaGateMiddleware", 1)[1].split("class CaptchaCallbackGateMiddleware", 1)[0]
+    assert "captcha_applies_to" in gate
+    assert "_bot_is_chat_admin" in gate
+    assert "is_bot" in gate
+

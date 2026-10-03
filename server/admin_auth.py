@@ -373,6 +373,31 @@ async def get_any_telegram_user_id(
     return user_id
 
 
+async def get_optional_telegram_user_id(
+    request: Request,
+    x_telegram_init_data: str | None = Header(None, alias="X-Telegram-Init-Data"),
+    x_dev_user_id: str | None = Header(None, alias="X-Dev-User-Id"),
+) -> int | None:
+    """Кто входит, если это уже понятно. Пусто — личность ещё не известна, её назовёт ключ."""
+    if not ADMIN_ENABLED:
+        raise HTTPException(status_code=503, detail="Admin panel отключён")
+
+    if x_telegram_init_data:
+        user_id, _user = _validate_admin_init_data(x_telegram_init_data, request)
+    elif PRODUCTION or not ALLOW_DEV_AUTH or not x_dev_user_id or not _is_local_client(request):
+        return None
+    else:
+        try:
+            user_id = int(x_dev_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Неверный dev user id")
+        if user_id <= 0:
+            raise HTTPException(status_code=400, detail="Неверный dev user id")
+
+    request.state.user_id = user_id
+    return user_id
+
+
 def _get_client_ip(request: Request) -> str:
     forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
     return forwarded[:64] if forwarded else (request.client.host if request.client else "unknown")

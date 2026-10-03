@@ -102,14 +102,15 @@ def test_staff_post_key_stays_on_the_same_title():
 
 
 def test_cabinet_pages_follow_the_two_lists():
-    assert cabinet_pages(["view_archive"]) == ["overview", "archive", "more"]
+    assert cabinet_pages(["view_archive"]) == ["overview", "work", "archive", "more"]
     people = cabinet_pages(["punish_mute"])
     assert "activity" in people
     assert "archive" not in people
+    assert "work" not in people
     assert "rights" not in people
     assert "analytics" not in people
     assert "activity" in cabinet_pages(["view_analytics"])
-    full = ["overview", "activity", "archive", "rights", "more"]
+    full = ["overview", "work", "activity", "archive", "rights", "more"]
     assert cabinet_pages([], creator=True) == full
     assert cabinet_pages(ALL_RIGHTS) == full
 

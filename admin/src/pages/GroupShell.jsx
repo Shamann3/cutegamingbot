@@ -19,12 +19,16 @@ import {
   deleteGroupPosition,
   saveGroupPosition,
   searchGroupsStudio,
+  fetchDeedQueue,
+  fetchDeedWork,
 } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs } from '../lib/panelPreview'
 import { DeedMine } from './sections/payroll/DeedPay'
+import { CreatorDeck } from './sections/payroll/CreatorPay'
+import WorkDesk from './sections/payroll/WorkDesk'
 import FirstRun, { groupSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
@@ -91,12 +95,32 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const personal = accentIsPersonal(loadStoredAccent())
   const metric = useMetricSheet()
   const isCreator = Boolean(portrait?.isOwner)
+  const isProjectCreator = Boolean(portrait?.isProjectCreator)
   const groups = portrait?.groups || []
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
   const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
   const tabs = useMemo(() => groupCabinetTabs(rights, isCreator), [rights, isCreator])
   const [tab, setTab] = useState('overview')
+  const [workCount, setWorkCount] = useState(0)
+  const workBoot = useRef(false)
+  const shownTabs = useMemo(() => tabs.map((item) => (
+    item.id === 'work' && workCount > 0 ? { ...item, label: `Работа · ${workCount}` } : item
+  )), [tabs, workCount])
+  useEffect(() => {
+    if (preview) return undefined
+    if (!tabs.some((item) => item.id === 'work') || workBoot.current) return undefined
+    workBoot.current = true
+    let alive = true
+    const job = isProjectCreator ? fetchDeedQueue({}) : fetchDeedWork()
+    job.then((data) => {
+      if (!alive) return
+      const waiting = Number(data?.waiting) || 0
+      setWorkCount(waiting)
+      if (waiting > 0) setTab('work')
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [preview, isProjectCreator, tabs])
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
@@ -160,18 +184,18 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   useEffect(() => {
     applyAccentToDocument(accent)
   }, [accent])
-  const navSections = useMemo(() => tabs.map((item) => ({
+  const navSections = useMemo(() => shownTabs.map((item) => ({
     id: item.id,
     label: item.label,
     labelRu: item.label,
-    group: item.id === 'activity' || item.id === 'archive'
+    group: item.id === 'activity' || item.id === 'archive' || item.id === 'work'
       ? 'people'
       : item.id === 'rights' || item.id === 'pay'
         ? 'team'
         : item.id === 'more' || item.id === 'switches'
           ? 'system'
           : 'overview',
-  })), [tabs])
+  })), [shownTabs])
   useDrawerSwipe({
     enabled: false,
     open: railOpen,
@@ -673,7 +697,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           )}
           <header className="nika-head">
             <div className="nika-head-copy">
-              <h1>{tabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
+              <h1>{shownTabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
             </div>
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
               <b className={`grp-role-badge is-${roleClass}`}>{roleLabel}</b>
@@ -963,6 +987,15 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
             </section>
           )}
 
+          {!chapter && activeTab === 'work' && (
+            <section>
+              <h2 className="realm-h">Работа</h2>
+              {isProjectCreator
+                ? <CreatorDeck onCount={setWorkCount} />
+                : <WorkDesk onCount={setWorkCount} />}
+            </section>
+          )}
+
           {!chapter && activeTab === 'activity' && (
             <section>
               <h2 className="realm-h">Активность</h2>
@@ -977,7 +1010,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               <p className="realm-copy">
                 Официальная группа Кьюта.
                 {current?.position ? ` Ваша должность: ${current.position}.` : ''}
-                {' '}Наказания и снятие — здесь, с обязательной причиной.
+                {' '}Наказания и снятие — здесь, с обязательной причиной. Записи самого бота сюда не входят.
               </p>
               {mods && (
                 <p className="realm-copy">
@@ -1078,7 +1111,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               <p className="realm-copy">
                 Куты за наказания, которые создатель подтвердил. Недельная зарплата команды считается отдельно.
               </p>
-              <DeedMine isProjectCreator={isCreator} />
+              <DeedMine isProjectCreator={isProjectCreator} />
             </section>
           )}
 

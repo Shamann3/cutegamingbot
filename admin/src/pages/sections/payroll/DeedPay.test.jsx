@@ -31,7 +31,7 @@ describe('DeedMine', () => {
   it('does not show a zero balance before the answer arrives', () => {
     vi.mocked(fetchDeedMine).mockReturnValue(new Promise(() => {}))
     render(<DeedMine />)
-    expect(screen.getByText('Считаем подтверждённые дела…')).toBeTruthy()
+    expect(screen.getByText('Считаем засчитанные наказания…')).toBeTruthy()
     expect(screen.queryByText('0 кут')).toBeNull()
   })
 

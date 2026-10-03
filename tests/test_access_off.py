@@ -40,13 +40,21 @@ def test_admin_door_asks_for_the_cabinet_key():
     start = app.index("const openGroup")
     chunk = app[start:app.index("if (screen === 'group-apply')")]
     assert "setScreen('group-key')" in chunk
+    assert "readGroupEntry()" in chunk
+    assert "setScreen('group-resume')" in chunk
     assert "hasTelegramInitData()" not in chunk
     realm = _text("server/group_realm.py")
     check = realm[realm.index("async def group_key_check"):realm.index("async def group_key_enter")]
-    assert "_key_row" in check
-    assert "needCode\": False" not in check
-    enter = realm[realm.index("async def group_key_enter"):realm.index("async def _key_row")]
-    assert "_key_row" in enter
+    assert "_open_key" in check
+    assert 'needCode": False' not in check
+    enter = realm[realm.index("async def group_key_enter"):realm.index("async def group_key_resume")]
+    assert "_open_key" in enter
+    assert "entryPass" in enter
+    resume = realm[realm.index("async def group_key_resume"):realm.index("async def _key_row")]
+    assert "_pass_key_hash" in resume
+    assert "Вход не узнан" in resume
+    opened = realm[realm.index("async def _open_key"):realm.index("async def group_key_check")]
+    assert "_key_row" in opened
 
 
 def test_group_access_off_kills_the_old_key_and_keeps_the_seat():

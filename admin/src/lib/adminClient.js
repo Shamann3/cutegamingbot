@@ -2107,11 +2107,32 @@ export async function postModerationUnban(userId, reason = '') {
   return adminRequest(`/moderation/unban/${userId}`, { method: 'POST', body })
 }
 
-export async function fetchDeedQueue({ sort = 'new', action = '', adminId = 0 } = {}) {
+export async function fetchDeedQueue({ sort = 'new', action = '', adminId = 0, sorterId = 0 } = {}) {
   const p = new URLSearchParams({ sort })
   if (action) p.set('action', action)
   if (adminId) p.set('adminId', String(adminId))
+  if (sorterId) p.set('sorterId', String(sorterId))
   return adminRequest(`/deed-pay/queue?${p}`)
+}
+
+export async function fetchDeedReviewers() {
+  return adminRequest('/deed-pay/reviewers')
+}
+
+export async function fetchDeedWork() {
+  return adminRequest('/deed-pay/work')
+}
+
+export async function sortDeed(actionId, verdict) {
+  return adminRequest(`/deed-pay/work/${actionId}`, { method: 'POST', body: { verdict } })
+}
+
+export async function unsortDeed(actionId) {
+  return adminRequest(`/deed-pay/work/${actionId}/undo`, { method: 'POST', body: {} })
+}
+
+export async function undoDeed(actionId) {
+  return adminRequest(`/deed-pay/queue/${actionId}/undo`, { method: 'POST', body: {} })
 }
 
 export async function keepDeed(actionId) {
@@ -2142,10 +2163,11 @@ export async function fetchDeedPayouts() {
   return adminRequest('/deed-pay/payouts')
 }
 
-export async function fetchDeedDone({ sort = 'new', action = '', adminId = 0, status = '' } = {}) {
+export async function fetchDeedDone({ sort = 'new', action = '', adminId = 0, sorterId = 0, status = '' } = {}) {
   const p = new URLSearchParams({ sort })
   if (action) p.set('action', action)
   if (adminId) p.set('adminId', String(adminId))
+  if (sorterId) p.set('sorterId', String(sorterId))
   if (status) p.set('status', status)
   return adminRequest(`/deed-pay/done?${p}`)
 }
@@ -2504,12 +2526,42 @@ export async function groupRealmAct(body) {
   return adminFetch('/group-realm/act', { method: 'POST', body })
 }
 
-export async function checkGroupKey(key) {
-  return adminFetch('/group-realm/key/check', { method: 'POST', body: { key } })
+const GROUP_ENTRY_KEY = 'epsilon.group.entry'
+let _groupEntryMemory = ''
+
+export function readGroupEntry() {
+  if (_groupEntryMemory) return _groupEntryMemory
+  try {
+    _groupEntryMemory = localStorage.getItem(GROUP_ENTRY_KEY) || ''
+  } catch {
+    _groupEntryMemory = ''
+  }
+  return _groupEntryMemory
+}
+
+export function rememberGroupEntry(token) {
+  const value = String(token || '')
+  _groupEntryMemory = value
+  try {
+    if (value) localStorage.setItem(GROUP_ENTRY_KEY, value)
+    else localStorage.removeItem(GROUP_ENTRY_KEY)
+  } catch { /* память уже держит пропуск */ }
+}
+
+export function clearGroupEntry() {
+  rememberGroupEntry('')
+}
+
+export async function checkGroupKey(key, { finish = false } = {}) {
+  return adminFetch('/group-realm/key/check', { method: 'POST', body: { key, finish } })
 }
 
 export async function enterGroupKey(key, totp) {
   return adminFetch('/group-realm/key/enter', { method: 'POST', body: { key, totp } })
+}
+
+export async function resumeGroupEntry(entryPass) {
+  return adminFetch('/group-realm/key/resume', { method: 'POST', body: { entryPass } })
 }
 
 export async function fetchRightsBoard() {

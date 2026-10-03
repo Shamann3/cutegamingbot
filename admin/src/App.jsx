@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAdminDisplayName } from './lib/displayName'
-import { hasTelegramInitData, isAdminSessionValid, logoutAdmin } from './lib/adminClient'
+import { hasTelegramInitData, isAdminSessionValid, logoutAdmin, readGroupEntry } from './lib/adminClient'
 import { initAdminTelegram } from './lib/telegram'
 import AuthPage from './pages/AuthPage'
 import PanelShell from './pages/PanelShell'
@@ -12,6 +12,7 @@ import { primeDashboardStats } from './lib/dashboardPrefetch'
 import GroupApplyPage from './pages/GroupApplyPage'
 import GroupShell from './pages/GroupShell'
 import GroupKeyPage from './pages/GroupKeyPage'
+import GroupResume from './pages/GroupResume'
 
 const SPLASH_SEEN_KEY = 'epsilon_boot_splash_seen'
 
@@ -35,6 +36,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login')
   const [groupPortrait, setGroupPortrait] = useState(null)
   const [applyPreview, setApplyPreview] = useState(false)
+  const [groupAgain, setGroupAgain] = useState('')
   const [channel, setChannel] = useState(null)
   const channelNext = useRef('gate')
 
@@ -97,6 +99,18 @@ export default function App() {
 
   const openGroup = useCallback((portrait) => {
     setGroupPortrait(portrait || null)
+    setGroupAgain('')
+    if (!readGroupEntry()) {
+      setScreen('group-key')
+      return
+    }
+    setScreen('group-resume')
+  }, [])
+
+  const passGroup = useCallback(() => openChannel('group', 'group'), [openChannel])
+
+  const askGroupKey = useCallback((message) => {
+    setGroupAgain(message || '')
     setScreen('group-key')
   }, [])
 
@@ -146,9 +160,20 @@ export default function App() {
     )
   }
 
+  if (screen === 'group-resume') {
+    return (
+      <GroupResume
+        onBack={() => setScreen('gate')}
+        onPassed={passGroup}
+        onAskKey={askGroupKey}
+      />
+    )
+  }
+
   if (screen === 'group-key') {
     return (
       <GroupKeyPage
+        again={groupAgain}
         onBack={() => setScreen('gate')}
         onPassed={() => openChannel('group', 'group')}
         onPreview={() => {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import FocusWindow from './FocusWindow'
-import TgPhoto from './TgPhoto'
+import PhotoLook from './PhotoLook'
+import { payLabel, sortLabel } from '../lib/deedSort'
 import UserLookupPreview from './UserLookupPreview'
 import OpenUserLink from './OpenUserLink'
 
@@ -255,6 +256,8 @@ export default function GroupArchive({
                     <span>В архиве {repeats.get(Number(row.target_user_id))} раз</span>
                   )}
                   {row.hasProof && <span>Есть фото</span>}
+                  {sortLabel(row.sortVerdict) && <span>{sortLabel(row.sortVerdict)}</span>}
+                  {payLabel(row.payStatus) && <span>{payLabel(row.payStatus)}</span>}
                   <span>{open ? 'Скрыть' : 'Открыть'}</span>
                 </span>
               </button>
@@ -296,7 +299,7 @@ export default function GroupArchive({
                     )}
                   </div>
                   {row.proofMediaId
-                    ? <TgPhoto fileId={row.proofMediaId} className="g-arc-proof" />
+                    ? <PhotoLook fileId={row.proofMediaId} eager alt="Фото доказательства" />
                     : <p className="realm-copy">Фото доказательства нет.</p>}
                 </FocusWindow>
               )}

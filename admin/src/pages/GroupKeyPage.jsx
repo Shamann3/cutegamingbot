@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { checkGroupKey, enterGroupKey } from '../lib/adminClient'
+import { checkGroupKey, enterGroupKey, rememberGroupEntry } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import EntryFrame from '../components/EntryFrame'
 import KeyField from '../components/KeyField'
 
-export default function GroupKeyPage({ onBack, onPassed, onPreview }) {
+export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }) {
   const personal = accentIsPersonal(loadStoredAccent())
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
@@ -84,11 +84,16 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview }) {
     setBusy(true)
     setError('')
     try {
-      if (needCode) {
-        await enterGroupKey(key.trim(), totp)
-      } else {
-        await checkGroupKey(key.trim())
+      const data = needCode
+        ? await enterGroupKey(key.trim(), totp)
+        : await checkGroupKey(key.trim(), { finish: true })
+      if (!needCode && data?.needCode) {
+        setNeedCode(true)
+        setSetup(data.setup || null)
+        setTotp('')
+        return
       }
+      if (data?.entryPass) rememberGroupEntry(data.entryPass)
       onPassed()
     } catch (err) {
       setVerified(false)
@@ -103,7 +108,7 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview }) {
   return (
     <EntryFrame
       title="Панель администратора"
-      lead="Напишите ключ. Поле кода откроется само, когда ключ подойдёт."
+      lead={again ? 'Прошлый вход не подошёл. Напишите ключ ещё раз.' : 'Напишите ключ. Поле кода откроется само, когда ключ подойдёт.'}
       personal={personal}
       onBack={onBack}
     >

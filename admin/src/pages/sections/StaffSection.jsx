@@ -58,6 +58,7 @@ import UserLookupPreview from '../../components/UserLookupPreview'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../../config/applicationQuestions'
 import PayrollSalariesTab from './payroll/SalariesTab'
 import DeedPay from './payroll/DeedPay'
+import CreatorPay from './payroll/CreatorPay'
 import PayrollBonusesTab from './payroll/BonusesTab'
 import PayrollSettingsTab from './payroll/SettingsTab'
 import PayrollMySalaryTab from './payroll/MySalaryTab'
@@ -2096,7 +2097,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
   const workTabs = useMemo(() => {
     const list = []
     if (perms.has('manage_staff')) list.push({ id: 'members', label: 'Люди' })
-    if (perms.has('set_salary')) list.push({ id: 'salaries', label: 'Зарплаты' })
+    if (perms.has('set_salary') && !isProjectCreator) list.push({ id: 'salaries', label: 'Зарплаты' })
     if (perms.has('set_salary')) list.push({ id: 'bonuses', label: 'Премии' })
     if (perms.has('pay_salary')) list.push({ id: 'ledger', label: 'Реестр' })
     if (isOwner) list.push({ id: 'payoutsettings', label: 'Настройки выплат' })
@@ -2106,13 +2107,10 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (perms.has('manage_staff')) list.push({ id: 'questions', label: 'Анкета' })
     if (role && role !== 'owner') list.push({ id: 'mysalary', label: 'Моя зарплата' })
     if (role && role !== 'owner') list.push({ id: 'mycomplaints', label: 'Жалобы на меня' })
-    if (isProjectCreator || (role && role !== 'applicant')) {
+    if (!isProjectCreator && role && role !== 'applicant') {
       list.unshift({ id: 'deeds', label: 'За дело' })
     }
     const filtered = filterSectionTabs('staff', list, panelTabs)
-    if (isProjectCreator && !filtered.some((item) => item.id === 'deeds')) {
-      filtered.unshift({ id: 'deeds', label: 'За дело' })
-    }
     return filtered
   }, [perms, role, isOwner, panelTabs, isProjectCreator])
 
@@ -2126,6 +2124,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (canPreview) staff.push({ id: 'view', label: 'Копия панели' })
     if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
     if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
+    if (isProjectCreator) staff.push({ id: 'pay', label: 'Зарплаты' })
     if (isProjectCreator) staff.push({ id: 'stats', label: 'Статистика' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
@@ -2205,6 +2204,12 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
       )}
 
       <div className="staff-desk-main">
+          {onStaff && activeId === 'pay' && (
+            <CreatorPay
+              showPayroll={perms.has('set_salary')}
+              payroll={<PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />}
+            />
+          )}
           {onStaff && activeId === 'access' && (
             <StaffAccessPane isProjectCreator={isProjectCreator} onOpenPreview={onOpenPreview} />
           )}
@@ -2228,7 +2233,9 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
               </nav>
               {activeWork === 'deeds' && <DeedPay isProjectCreator={isProjectCreator} />}
               {activeWork === 'members' && <MembersTab canAssignRoles={perms.has('assign_roles')} isOwner={isOwner} myUserId={myUserId} canManageStaff={perms.has('manage_staff')} isProjectCreator={isProjectCreator} />}
-              {activeWork === 'salaries' && <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />}
+              {activeWork === 'salaries' && (
+                <PayrollSalariesTab isOwner={isOwner} canPay={perms.has('pay_salary')} myUserId={myUserId} />
+              )}
               {activeWork === 'bonuses' && <PayrollBonusesTab isOwner={isOwner} canPay={perms.has('pay_salary')} />}
               {activeWork === 'ledger' && <LedgerTab isProjectCreator={isProjectCreator} />}
               {activeWork === 'payoutsettings' && <PayrollSettingsTab />}

@@ -38,6 +38,24 @@ DISABLE_ALERT = (
 )
 PASS_ALERT = "Капча пройдена успешно!"
 PASS_HTML = "<tg-emoji emoji-id='5348423147647414077'>🤩</tg-emoji> <b>Капча пройдена успешно!</b>"
+
+# Служебные отправители Telegram: анонимный админ, пересланный канал, сам Telegram.
+# Чужой бот, который пишет в группу, сюда не входит — его ловит капча.
+_SERVICE_SENDER_IDS = frozenset({777000, 1087968824, 136817688})
+
+
+def captcha_applies_to(user, *, self_id: int = 0) -> bool:
+    """True — этому отправителю нужна капча, в том числе чужому боту."""
+    uid = int(getattr(user, "id", 0) or 0)
+    if uid <= 0:
+        return False
+    if self_id and uid == int(self_id):
+        return False
+    if uid in _SERVICE_SENDER_IDS:
+        return False
+    return True
+
+
 PASS_EMOJI_ID = "5348423147647414077"
 NEXT_ALERT = "Верно. Теперь нажмите вторую кнопку"
 GATE_ALERT = (

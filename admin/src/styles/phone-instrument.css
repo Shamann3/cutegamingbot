@@ -4793,9 +4793,9 @@ html[data-viewport="phone"] .panel-shell .realm-main .deed-mine .staff-member-ro
 .deed-photo {
   display: block;
   width: 100%;
-  height: 18rem;
-  max-height: 22rem;
-  object-fit: cover;
+  height: auto;
+  max-height: min(78vh, 52rem);
+  object-fit: contain;
   border-radius: 16px;
   background: var(--e-plate-2, rgba(24, 24, 28, 0.5));
 }

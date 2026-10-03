@@ -41,8 +41,11 @@ _ACK_TIMEOUT = 1.1
 _click_busy: set = set()
 _creator_cache: Dict[int, Tuple[int, float]] = {}
 _staff_cache: Dict[Tuple[int, int], Tuple[str, float]] = {}
+_bot_admin_cache: Dict[Tuple[int, int], Tuple[bool, float]] = {}
 _STAFF_TTL = 180.0
 _CREATOR_TTL = 900.0
+_BOT_ADMIN_TTL = 600.0
+_BOT_ADMIN_MISS_TTL = 20.0
 
 
 async def _ack(callback: CallbackQuery, text: str = "", *, alert: bool = False) -> None:
@@ -76,6 +79,34 @@ def _lock(chat_id: int, user_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _locks[key] = lock
     return lock
+
+
+async def _bot_is_chat_admin(bot, chat_id: int, user_id: int) -> bool:
+    """Бот-администратор группы пишет легально. Остальные боты идут в капчу."""
+    if bot is None:
+        return False
+    key = (int(chat_id), int(user_id))
+    now = time.monotonic()
+    hit = _bot_admin_cache.get(key)
+    if hit is not None and now < hit[1]:
+        return hit[0]
+    allowed = False
+    confirmed = False
+    try:
+        member = await asyncio.wait_for(
+            bot.get_chat_member(int(chat_id), int(user_id)),
+            timeout=0.8,
+        )
+        status = str(getattr(member, "status", "") or "")
+        allowed = status in {"administrator", "creator"}
+        confirmed = True
+    except Exception:
+        log.info("captcha bot rank unknown chat=%s user=%s", chat_id, user_id)
+    if len(_bot_admin_cache) > 2000:
+        _bot_admin_cache.clear()
+    ttl = _BOT_ADMIN_TTL if confirmed else _BOT_ADMIN_MISS_TTL
+    _bot_admin_cache[key] = (allowed, now + ttl)
+    return allowed
 
 
 def _pool():
@@ -452,10 +483,16 @@ async def maybe_prompt_captcha(
     chat: Any = None,
     extra_meta: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Показать капчу, если человек ещё не проходил её в этой группе. True — карточка нужна."""
+    """Показать капчу, если человек или чужой бот ещё не проходил её в этой группе."""
     uid = int(getattr(user, "id", 0) or 0)
-    if uid <= 0 or getattr(user, "is_bot", False):
+    self_id = int(getattr(bot, "id", 0) or 0)
+    if not gc.captcha_applies_to(user, self_id=self_id):
         return False
+    if getattr(user, "is_bot", False):
+        if trigger != "message":
+            return False
+        if await _bot_is_chat_admin(bot, int(chat_id), uid):
+            return False
     pool = _pool()
     if pool is None:
         print("[CAPTCHA] skip: db pool is None")
@@ -662,7 +699,11 @@ class CaptchaGateMiddleware(BaseMiddleware):
         if getattr(message, "migrate_to_chat_id", None) or getattr(message, "migrate_from_chat_id", None):
             return await handler(event, data)
         user = message.from_user
-        if not user or user.is_bot:
+        bot = data.get("bot") or message.bot
+        self_id = int(getattr(bot, "id", 0) or 0)
+        if not user or not gc.captcha_applies_to(user, self_id=self_id):
+            return await handler(event, data)
+        if getattr(user, "is_bot", False) and await _bot_is_chat_admin(bot, int(chat.id), int(user.id)):
             return await handler(event, data)
         try:
             needed = await asyncio.wait_for(
@@ -677,8 +718,7 @@ class CaptchaGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         if not needed:
             return await handler(event, data)
-        bot = data.get("bot") or message.bot
-        answered = await _try_text_captcha(bot, message, chat, user)
+        answered = False if getattr(user, "is_bot", False) else await _try_text_captcha(bot, message, chat, user)
         if answered:
             return None
         extra = _message_extra(message)
@@ -718,7 +758,11 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
         if not chat or chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
             return await handler(event, data)
         user = callback.from_user
-        if not user or user.is_bot:
+        bot = data.get("bot") or getattr(callback, "bot", None)
+        self_id = int(getattr(bot, "id", 0) or 0)
+        if not user or not gc.captcha_applies_to(user, self_id=self_id):
+            return await handler(event, data)
+        if getattr(user, "is_bot", False) and await _bot_is_chat_admin(bot, int(chat.id), int(user.id)):
             return await handler(event, data)
         cached = gc.cached_passed(int(chat.id), int(user.id))
         if cached is True:

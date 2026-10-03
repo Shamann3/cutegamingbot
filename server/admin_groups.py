@@ -12,6 +12,7 @@ import aiohttp
 
 from config import BOT_TOKEN
 from db import db
+from human_actor import human_actor_sql
 
 _TME_RE = re.compile(
     r"(?:https?://)?(?:t\.me|telegram\.me)/(?:c/)?(?:joinchat/|\+)?([A-Za-z0-9_/+-]+)",
@@ -419,7 +420,7 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
     try:
         since = datetime.now() - timedelta(days=30)
         row = await db.pool.fetchrow(
-            """
+            f"""
             SELECT
               count(*) FILTER (WHERE action_type = 'mute')::int AS mutes,
               count(*) FILTER (WHERE action_type = 'unmute')::int AS unmutes,
@@ -431,6 +432,7 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
               count(*)::int AS actions_total
             FROM staff_actions
             WHERE chat_id = $1
+              AND {human_actor_sql()}
             """,
             int(chat_id),
             since,
@@ -441,14 +443,18 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
     except Exception:
         pass
     try:
+        from deed_sort import ensure_deed_sorts, verdict_of_sql
+        await ensure_deed_sorts()
         rows = await db.pool.fetch(
-            """
+            f"""
             SELECT s.id, s.created_at, s.action_type, s.target_player_id, s.admin_name, s.reason,
                    s.proof_media_id, s.evidence,
-                   u.first_name AS target_name, u.username AS target_username
+                   u.first_name AS target_name, u.username AS target_username,
+                   {verdict_of_sql("s.id")} AS sort_verdict
             FROM staff_actions s
             LEFT JOIN users u ON u.user_id = s.target_player_id
             WHERE s.chat_id = $1
+              AND {human_actor_sql("s")}
             ORDER BY s.created_at DESC NULLS LAST
             LIMIT 40
             """,
@@ -466,6 +472,7 @@ async def _moderation_counts(chat_id: int) -> Dict[str, Any]:
                 "evidence": (r["evidence"] or "")[:300],
                 "hasProof": bool(r["proof_media_id"]),
                 "proofMediaId": r["proof_media_id"] or None,
+                "sortVerdict": r["sort_verdict"] if "sort_verdict" in r.keys() else None,
             }
             for r in rows
         ]

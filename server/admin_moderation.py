@@ -9,6 +9,7 @@ import aiohttp
 
 from config import BOT_TOKEN
 from db import db
+from human_actor import human_actor_sql
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,8 @@ def _action_row(row) -> dict:
         "hasProof": bool(row["proof_media_id"]),
         "proofMediaId": row["proof_media_id"] or None,
         "durationMinutes": row["duration_minutes"],
+        "sortVerdict": row["sort_verdict"] if "sort_verdict" in row.keys() else None,
+        "payStatus": row["pay_status"] if "pay_status" in row.keys() else None,
     }
 
 
@@ -97,7 +100,7 @@ async def list_moderation_logs(
     type_ph = ", ".join(f"${i}" for i in range(idx, idx + len(types)))
     params.extend(types)
     idx += len(types)
-    conditions: list[str] = [f"action_type IN ({type_ph})"]
+    conditions: list[str] = [f"action_type IN ({type_ph})", human_actor_sql()]
 
     if player_id and player_id > 0:
         conditions.append(f"target_player_id = ${idx}")
@@ -112,12 +115,23 @@ async def list_moderation_logs(
     order = "action_type ASC, created_at DESC, id DESC" if sort_by == "type" else "created_at DESC, id DESC"
 
     where = " AND ".join(conditions)
+    try:
+        from deed_sort import ensure_deed_sorts, verdict_of_sql
+        await ensure_deed_sorts()
+        verdict_sql = f"""
+            ,
+            {verdict_of_sql("staff_actions.id")} AS sort_verdict,
+            (SELECT dr.status FROM epsilon_deed_reviews dr WHERE dr.action_id = staff_actions.id) AS pay_status
+        """
+    except Exception:
+        logger.exception("deed sort ensure failed")
+        verdict_sql = ""
     total = int(await db.pool.fetchval(f"SELECT COUNT(*)::int FROM staff_actions WHERE {where}", *params) or 0)
 
     params.extend([limit, offset])
     rows = await db.pool.fetch(
         f"""
-        SELECT {_ACTION_COLUMNS}
+        SELECT {_ACTION_COLUMNS}{verdict_sql}
         FROM staff_actions
         WHERE {where}
         ORDER BY {order}

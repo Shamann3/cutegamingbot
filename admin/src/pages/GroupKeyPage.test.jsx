@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupKeyPage from './GroupKeyPage'
-import { checkGroupKey, enterGroupKey } from '../lib/adminClient'
+import { checkGroupKey, enterGroupKey, readGroupEntry, clearGroupEntry } from '../lib/adminClient'
 
 vi.mock('../lib/adminClient', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -25,6 +25,7 @@ describe('GroupKeyPage', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    clearGroupEntry()
   })
 
   it('прячет кнопку кабинета, пока ключ не сошёлся', async () => {
@@ -56,7 +57,7 @@ describe('GroupKeyPage', () => {
 
   it('после ключа просит код из приложения', async () => {
     vi.mocked(checkGroupKey).mockResolvedValue({ ok: true, needCode: true })
-    vi.mocked(enterGroupKey).mockResolvedValue({ ok: true })
+    vi.mocked(enterGroupKey).mockResolvedValue({ ok: true, entryPass: 'g.kept.pass' })
     const onPassed = vi.fn()
     render(<GroupKeyPage onBack={() => {}} onPassed={onPassed} onPreview={() => {}} />)
 
@@ -70,5 +71,6 @@ describe('GroupKeyPage', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(enterGroupKey).toHaveBeenCalledWith('right-key-123', '123456')
     expect(onPassed).toHaveBeenCalledTimes(1)
+    expect(readGroupEntry()).toBe('g.kept.pass')
   })
 })
