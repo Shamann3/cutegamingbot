@@ -4,6 +4,7 @@ from stat_lens import (
     anchor_day,
     copy_bounds,
     gained,
+    hold_destination,
     period_bounds,
     phase,
     plan_period_total,
@@ -32,6 +33,14 @@ def test_people_see_zero_inside_the_window_and_the_sum_after():
     assert seen_number(1040, 1000, "after") == 1040
     assert gained(1040, 1000) == 40
     assert seen_number(5, None, "after") == 5
+
+
+def test_games_during_a_copy_go_to_the_side_ledger_until_the_date():
+    start, end = date(2026, 10, 1), date(2026, 10, 7)
+    assert hold_destination(date(2026, 9, 30), start, end) == "main"
+    assert hold_destination(date(2026, 10, 3), start, end) == "hold"
+    assert hold_destination(date(2026, 10, 8), start, end) == "fold"
+    assert hold_destination(date(2026, 10, 3), None, None) == "main"
 
 
 def test_lift_date_hides_until_then_and_then_sums():

@@ -49,7 +49,7 @@ METRICS: dict[str, dict[str, Any]] = {
     "players": {
         "id": "players",
         "title": "Лучшие игроки",
-        "blurb": "День, неделя, месяц, год и всё время. Копия сохраняет каждый топ и прячет его до выбранной даты. Игры в это время пишутся как обычно. С даты людям видна сумма копии и того, что наиграли.",
+        "blurb": "День, неделя, месяц, год и всё время. Копия сохраняет каждый топ. До выбранной даты люди видят пустую статистику, а новые игры пишутся в отдельный счётчик. С даты этот счётчик прибавляется к тому, что было до копии.",
         "needsGroup": False,
         "periods": ["day", "week", "month", "year", "all"],
         "fields": [
@@ -262,6 +262,51 @@ def _catalog() -> dict:
     return {"metrics": metrics}
 
 
+async def _release_players_copy(today: date) -> None:
+    """Если срок копии уже кончился, сложить отдельный счётчик с основной статистикой."""
+    from bot.funcs.players_hold import public_players_gate
+    from bot.funcs.stat_veil import forget_season_cache
+
+    async with db.pool.acquire() as connection:
+        async with connection.transaction():
+            _hidden, folded, _lift = await public_players_gate(connection, today)
+    if folded:
+        forget_season_cache()
+
+
+async def _attach_held(rows_out: list, period: str, today: date, stage: str) -> None:
+    from bot.funcs.players_hold import held_totals
+
+    if period == "all":
+        held = await held_totals(db.pool)
+    else:
+        start, end = period_bounds(period, today)
+        held = await held_totals(db.pool, start=start, end=end)
+    seen_ids = set()
+    for item in rows_out:
+        extra = held.get(int(item["userId"])) or {}
+        item["held"] = int(extra.get("games") or 0)
+        item["heldWins"] = int(extra.get("wins") or 0)
+        item["heldLosses"] = int(extra.get("losses") or 0)
+        seen_ids.add(int(item["userId"]))
+    for uid, extra in held.items():
+        games = int(extra.get("games") or 0)
+        if uid in seen_ids or games <= 0:
+            continue
+        rows_out.append({
+            "place": len(rows_out) + 1,
+            "userId": uid,
+            "raw": 0,
+            "seen": seen_number(0, None, stage),
+            "wins": 0,
+            "losses": 0,
+            "games": 0,
+            "held": games,
+            "heldWins": int(extra.get("wins") or 0),
+            "heldLosses": int(extra.get("losses") or 0),
+        })
+
+
 async def _season_row(metric: str, chat_id: int):
     return await db.pool.fetchrow(
         """
@@ -302,10 +347,10 @@ def _season_payload(row, today: date) -> dict | None:
             "before": f"Копия уже снята. До {lift_label} люди видят обычные числа.",
             "zero": (
                 f"До {lift_label} в чате пустые топы: день, неделя, месяц, год и всё время. "
-                f"Игры в это время пишутся в базу. С {lift_label} людям видна сумма копии и того, что наиграли."
+                f"Новые игры пишутся в отдельный счётчик. С {lift_label} он прибавится к статистике, которая была до копии."
             ),
             "after": (
-                f"С {lift_label} в чате сумма: сохранённая копия и всё, что наиграли, пока копия была включена."
+                f"С {lift_label} отдельный счётчик сложен со статистикой до копии. В чате видна общая сумма."
             ),
         }
     else:
@@ -630,6 +675,8 @@ async def stat_board(
     name = _period(spec, period)
     scope = _scope_chat(spec, chat_id)
     today = _today()
+    if spec["id"] == "players":
+        await _release_players_copy(today)
     chat = await _require_chat(scope) if spec["needsGroup"] else None
     season = await _season_row(spec["season"], scope)
     stage = phase(today, season["zero_from"], season["zero_until"]) if season else "off"
@@ -691,6 +738,8 @@ async def stat_board(
                 "raw": raw,
                 "seen": seen_number(raw, copied.get(uid), stage),
             })
+    if spec["id"] == "players":
+        await _attach_held(rows_out, name, today, stage)
     names = await _names([item["userId"] for item in rows_out])
     for item in rows_out:
         who = names.get(item["userId"], {})
@@ -732,6 +781,8 @@ async def stat_person(
         await _require_chat(scope)
     person = await _require_user(user_id)
     today = _today()
+    if spec["id"] == "players":
+        await _release_players_copy(today)
     season = await _season_row(spec["season"], scope)
     stage = phase(today, season["zero_from"], season["zero_until"]) if season else "off"
     fields = []
@@ -750,8 +801,26 @@ async def stat_person(
             loss_copy = await _one_copy("players_losses", 0, int(user_id))
         elif season:
             copied_period = await _one_copy(f"players_{name}", 0, int(user_id))
-        fields.append({"key": "wins", "label": "Победы", **_apply_seen(wins, win_copy, view)})
-        fields.append({"key": "losses", "label": "Проигрыши", **_apply_seen(losses, loss_copy, view)})
+        from bot.funcs.players_hold import held_totals
+
+        if name == "all":
+            held_one = await held_totals(db.pool)
+        else:
+            held_start, held_end = period_bounds(name, today)
+            held_one = await held_totals(db.pool, start=held_start, end=held_end)
+        held = held_one.get(int(user_id)) or {}
+        fields.append({
+            "key": "wins",
+            "label": "Победы",
+            "held": int(held.get("wins") or 0),
+            **_apply_seen(wins, win_copy, view),
+        })
+        fields.append({
+            "key": "losses",
+            "label": "Проигрыши",
+            "held": int(held.get("losses") or 0),
+            **_apply_seen(losses, loss_copy, view),
+        })
         copied_games = None
         if name == "all" and (win_copy is not None or loss_copy is not None):
             copied_games = int(win_copy or 0) + int(loss_copy or 0)
@@ -760,6 +829,7 @@ async def stat_person(
         fields.append({
             "key": "games",
             "label": "В топе сыграно",
+            "held": int(held.get("games") or 0),
             **_apply_seen(games, copied_games, view),
         })
     else:
@@ -1052,6 +1122,10 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
     try:
         async with db.pool.acquire() as connection:
             async with connection.transaction():
+                if spec["id"] == "players":
+                    from bot.funcs.players_hold import fold_held_games_now
+
+                    await fold_held_games_now(connection)
                 await connection.execute(
                     "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
                     f"{spec['season']}%",
@@ -1098,6 +1172,9 @@ async def stat_season_copy(body: SeasonBody, user_id: int = Depends(get_any_tele
             frozen_games = int(counted["games"] or 0) if counted else 0
     except Exception as exc:
         print(f"[stat_board] ответ копии {spec['id']}: {exc}")
+    from bot.funcs.stat_veil import forget_season_cache
+
+    forget_season_cache()
     await log_admin_action(
         int(user_id),
         "stat_copy",
@@ -1185,16 +1262,24 @@ async def stat_season_clear(body: SeasonBody, user_id: int = Depends(get_any_tel
     await ensure_tables()
     spec = _metric(body.metric)
     scope = _scope_chat(spec, body.chat_id)
-    await db.pool.execute(
-        "DELETE FROM epsilon_stat_season WHERE metric = $1 AND chat_id = $2",
-        spec["season"],
-        scope,
-    )
-    await db.pool.execute(
-        "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
-        f"{spec['season']}%",
-        scope,
-    )
+    from bot.funcs.players_hold import fold_held_games_now
+    from bot.funcs.stat_veil import forget_season_cache
+
+    async with db.pool.acquire() as connection:
+        async with connection.transaction():
+            if spec["id"] == "players":
+                await fold_held_games_now(connection)
+            await connection.execute(
+                "DELETE FROM epsilon_stat_season WHERE metric = $1 AND chat_id = $2",
+                spec["season"],
+                scope,
+            )
+            await connection.execute(
+                "DELETE FROM epsilon_stat_snapshot WHERE metric LIKE $1 AND chat_id = $2",
+                f"{spec['season']}%",
+                scope,
+            )
+    forget_season_cache()
     await log_admin_action(
         int(user_id),
         "stat_copy_clear",

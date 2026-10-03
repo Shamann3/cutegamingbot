@@ -8577,7 +8577,8 @@ class Database:
 
         period='all' — победы плюс проигрыши.
         Иначе сумма user_games_day за [start, end].
-        Пока копия включена, любой срок для людей пустой. Счётчики при этом пишутся как обычно.
+        Пока копия включена, любой срок для людей пустой.
+        Новые игры в это время пишутся в отдельный счётчик и прибавляются к основной статистике, когда срок кончится.
         Место совпадает с порядком games DESC, user_id ASC.
         """
         empty = {"rows": [], "place": None, "viewer_games": 0}
@@ -8598,31 +8599,24 @@ class Database:
         try:
             async with self.pool.acquire() as connection:
                 today = _msk_today()
-                season = None
                 try:
-                    season = await connection.fetchrow(
-                        """
-                        SELECT zero_from, zero_until
-                        FROM epsilon_stat_season
-                        WHERE metric = 'players' AND chat_id = 0
-                        """
-                    )
+                    from bot.funcs.players_hold import public_players_gate
+                    from bot.funcs.stat_veil import forget_season_cache
+
+                    async with connection.transaction():
+                        hidden, folded, lift = await public_players_gate(connection, today)
+                    if folded:
+                        forget_season_cache()
+                    if hidden:
+                        return {
+                            "rows": [],
+                            "place": None,
+                            "viewer_games": 0,
+                            "copyHidden": True,
+                            "liftLabel": lift.strftime("%d.%m.%Y") if lift else "",
+                        }
                 except Exception as e:
                     print(f"[user_games_day] копия игр: {e}")
-                if (
-                    season
-                    and season["zero_from"] is not None
-                    and season["zero_until"] is not None
-                    and season["zero_from"] <= today <= season["zero_until"]
-                ):
-                    lift = season["zero_until"] + timedelta(days=1)
-                    return {
-                        "rows": [],
-                        "place": None,
-                        "viewer_games": 0,
-                        "copyHidden": True,
-                        "liftLabel": lift.strftime("%d.%m.%Y"),
-                    }
                 if str(period or "all") == "all" or start is None or end is None:
                     rows = await connection.fetch(
                         """
@@ -8811,10 +8805,27 @@ class Database:
             if result:
                 print(
                     f"[update_user_wins] ✅ Найден пользователь: wins={result [ 'wins' ]}, refcheckgame={result [ 'refcheckgame' ]}")
-                new_wins = (result [ 'wins' ] or 0) + increment
-                print(f"[update_user_wins] ✏️ Обновляю wins: {result [ 'wins' ]} -> {new_wins}")
-                await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
-                await self._note_games_played(connection, user_id, increment)
+                recorded = False
+                try:
+                    async with connection.transaction():
+                        from bot.funcs.players_hold import add_held_game, game_goes_to_hold
+
+                        if await game_goes_to_hold(connection, _msk_today()):
+                            await add_held_game(connection, int(user_id), _msk_today(), wins=int(increment))
+                            print(
+                                f"[update_user_wins] копия статистики: +{increment} в отдельный счётчик user_id={user_id}")
+                        else:
+                            new_wins = (result [ 'wins' ] or 0) + increment
+                            print(f"[update_user_wins] ✏️ Обновляю wins: {result [ 'wins' ]} -> {new_wins}")
+                            await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
+                            await self._note_games_played(connection, user_id, increment)
+                    recorded = True
+                except Exception as e:
+                    print(f"[update_user_wins] отдельный счётчик не записался, пишу в основную статистику: {e}")
+                if not recorded:
+                    new_wins = (result [ 'wins' ] or 0) + increment
+                    await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
+                    await self._note_games_played(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_wins] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")
@@ -9028,10 +9039,27 @@ class Database:
             if result:
                 print(
                     f"[update_user_loose] ✅ Найден пользователь: loose={result [ 'loose' ]}, refcheckgame={result [ 'refcheckgame' ]}")
-                new_loose = (result [ 'loose' ] or 0) + increment
-                print(f"[update_user_loose] ✏️ Обновляю loose: {result [ 'loose' ]} -> {new_loose}")
-                await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
-                await self._note_games_played(connection, user_id, increment)
+                recorded = False
+                try:
+                    async with connection.transaction():
+                        from bot.funcs.players_hold import add_held_game, game_goes_to_hold
+
+                        if await game_goes_to_hold(connection, _msk_today()):
+                            await add_held_game(connection, int(user_id), _msk_today(), loose=int(increment))
+                            print(
+                                f"[update_user_loose] копия статистики: +{increment} в отдельный счётчик user_id={user_id}")
+                        else:
+                            new_loose = (result [ 'loose' ] or 0) + increment
+                            print(f"[update_user_loose] ✏️ Обновляю loose: {result [ 'loose' ]} -> {new_loose}")
+                            await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
+                            await self._note_games_played(connection, user_id, increment)
+                    recorded = True
+                except Exception as e:
+                    print(f"[update_user_loose] отдельный счётчик не записался, пишу в основную статистику: {e}")
+                if not recorded:
+                    new_loose = (result [ 'loose' ] or 0) + increment
+                    await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
+                    await self._note_games_played(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_loose] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")

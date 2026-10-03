@@ -1,8 +1,8 @@
 """Как люди видят топ после копии статистики.
 
 До окна — число из базы.
-Внутри окна — ноль.
-После окна — копия плюс всё, что прибавилось с момента копии.
+Внутри окна — ноль. Новые игры лучших игроков лежат в отдельном счётчике.
+После окна отдельный счётчик уже сложен с основной статистикой, поэтому людям видно это число.
 """
 from __future__ import annotations
 
@@ -40,6 +40,21 @@ def anchor_day(kind: str, today: date) -> date:
     if start <= today <= end:
         return today
     return end
+
+
+def hold_destination(today: date, zero_from: date | None, zero_until: date | None) -> str:
+    """Куда писать новую игру лучших игроков: main, hold или fold.
+
+    hold — срок копии ещё идёт, игру кладём в отдельный счётчик.
+    fold — срок кончился, сначала сложить отдельный счётчик с основной статистикой.
+    main — копии нет, игра сразу в основную статистику.
+    """
+    stage = phase(today, zero_from, zero_until)
+    if stage == "zero":
+        return "hold"
+    if stage == "after":
+        return "fold"
+    return "main"
 
 
 def phase(today: date, zero_from: date | None, zero_until: date | None) -> str:

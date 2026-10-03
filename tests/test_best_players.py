@@ -146,5 +146,7 @@ def test_dispatch_wires_phrases():
     assert "is_best_players_command(message.text)" in top_py
     assert 'c.data == "bestplayers"' in top_py
     db_py = (ROOT / "bot" / "db_create" / "db.py").read_text(encoding="utf-8")
-    assert db_py.count("_note_games_played(connection, user_id, increment)") == 2
+    assert db_py.count("_note_games_played(connection, user_id, increment)") == 4
+    assert db_py.count("await game_goes_to_hold(") == 2
+    assert "epsilon_players_hold" in (ROOT / "bot" / "funcs" / "players_hold.py").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS user_games_day" in db_py
