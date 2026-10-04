@@ -219,6 +219,18 @@ def test_project_sort_order_is_fixed():
     assert "key_hash" in seat
 
 
+def test_two_workers_create_the_cash_table_without_crashing():
+    import inspect
+
+    from deed_pay import ensure_deed_tables
+
+    src = inspect.getsource(ensure_deed_tables)
+    assert "pg_advisory_xact_lock" in src
+    assert "epsilon_deed_tables" in src
+    assert "UniqueViolationError" in src
+    assert "DeadlockDetectedError" in src
+
+
 def test_norms_shrink_to_the_technical_purse_and_keep_a_reserve():
     from datetime import date
 

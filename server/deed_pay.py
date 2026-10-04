@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from asyncpg.exceptions import DeadlockDetectedError, UniqueViolationError
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -344,10 +345,29 @@ async def _require_staff(user_id: int) -> None:
 
 
 async def ensure_deed_tables() -> None:
+    """Схема одна на все воркеры. Без замка два процесса создают одну таблицу
+    и один из них падает: тип epsilon_deed_tune уже есть."""
     global _READY
     if _READY:
         return
-    await db.pool.execute(
+    async with db.pool.acquire() as conn:
+        for attempt in range(2):
+            try:
+                async with conn.transaction():
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext('epsilon_deed_tables'))"
+                    )
+                    await _install_deed_tables(conn)
+                break
+            except (UniqueViolationError, DeadlockDetectedError):
+                if attempt:
+                    raise
+    await ensure_deed_sorts()
+    _READY = True
+
+
+async def _install_deed_tables(conn) -> None:
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS epsilon_deed_rates (
             action_type TEXT PRIMARY KEY,
@@ -359,7 +379,7 @@ async def ensure_deed_tables() -> None:
         )
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS epsilon_deed_reviews (
             action_id BIGINT PRIMARY KEY,
@@ -369,13 +389,13 @@ async def ensure_deed_tables() -> None:
         )
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         ALTER TABLE epsilon_deed_reviews
             ADD COLUMN IF NOT EXISTS credits_set BOOLEAN NOT NULL DEFAULT FALSE
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS epsilon_deed_credits (
             action_id BIGINT NOT NULL,
@@ -385,13 +405,13 @@ async def ensure_deed_tables() -> None:
         )
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         CREATE INDEX IF NOT EXISTS epsilon_deed_credits_user_idx
             ON epsilon_deed_credits (user_id, role)
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS epsilon_deed_payouts (
             id BIGSERIAL PRIMARY KEY,
@@ -407,7 +427,7 @@ async def ensure_deed_tables() -> None:
         )
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS epsilon_deed_tune (
             id INT PRIMARY KEY,
@@ -422,7 +442,7 @@ async def ensure_deed_tables() -> None:
         )
         """
     )
-    await db.pool.execute(
+    await conn.execute(
         """
         INSERT INTO epsilon_deed_tune (id, auto)
         VALUES (1, TRUE)
@@ -430,7 +450,7 @@ async def ensure_deed_tables() -> None:
         """
     )
     for action, title, every_n, reward in SEED:
-        await db.pool.execute(
+        await conn.execute(
             """
             INSERT INTO epsilon_deed_rates (action_type, title, every_n, reward_kut, purse, enabled)
             VALUES ($1, $2, $3, $4, 'tech', TRUE)
@@ -439,7 +459,7 @@ async def ensure_deed_tables() -> None:
             action, title, every_n, reward,
         )
     for action, title in CHECK_RATES:
-        await db.pool.execute(
+        await conn.execute(
             """
             INSERT INTO epsilon_deed_rates (action_type, title, every_n, reward_kut, purse, enabled)
             VALUES ($1, $2, 100, 0, 'tech', FALSE)
@@ -447,8 +467,6 @@ async def ensure_deed_tables() -> None:
             """,
             action, title,
         )
-    await ensure_deed_sorts()
-    _READY = True
 
 
 def _person(row, prefix: str) -> str:

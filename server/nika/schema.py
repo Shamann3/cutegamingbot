@@ -24,6 +24,8 @@ DROP и никакого DDL в горячем пути. Функция идем
 
 from __future__ import annotations
 
+from asyncpg.exceptions import DeadlockDetectedError, UniqueViolationError
+
 from nika.ids import GROWTH_FUND_OWNER_NOTIFY_USER_ID, PROFIT_JAR_CHAT_ID
 
 # Первая группа под Никой - решение владельца. Сид одноразовый (ON CONFLICT DO
@@ -321,34 +323,44 @@ async def ensure_nika_schema(db) -> None:
 
     caps = suggest_caps(FIRST_MANAGED_TARGET)
     owner_id = int(GROWTH_FUND_OWNER_NOTIFY_USER_ID or 0) or None
+    forbidden = {int(cid) for cid, _ in SOURCE_LADDER}
+    forbidden.add(int(PROFIT_JAR_CHAT_ID))
     async with db.pool.acquire() as conn:
-        await conn.execute(_DDL)
+        # Два воркера на старте берут одну и ту же таблицу и встают в deadlock.
+        # Замок выстраивает их в очередь, повтор закрывает гонку CREATE TYPE.
+        for attempt in range(2):
+            try:
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock(hashtext('nika_schema'))")
+                    await conn.execute(_DDL)
+                    await conn.execute(
+                        _SEED_FIRST_GROUP,
+                        int(FIRST_MANAGED_CHAT_ID),
+                        int(FIRST_MANAGED_TARGET),
+                        int(caps["max_transfer"]),
+                        int(caps["max_daily_topup"]),
+                    )
+                    await conn.execute(
+                        """
+                        UPDATE nika_settings
+                        SET owner_alert_user_id = COALESCE(owner_alert_user_id, $1)
+                        WHERE id = 1
+                        """,
+                        owner_id,
+                    )
+                    # Кассы сами себя не обслуживают: долив из копилки в копилку
+                    # или из кассы игр в кассу игр — это не баланс группы.
+                    await conn.execute(
+                        "DELETE FROM nika_group_settings WHERE chat_id = ANY($1::bigint[])",
+                        sorted(forbidden),
+                    )
+                break
+            except (UniqueViolationError, DeadlockDetectedError):
+                if attempt:
+                    raise
         try:
             await conn.execute(_LEDGER_INDEX_SQL)
         except Exception as exc:
             # Таблицы комиссий может ещё не быть на свежей базе — индекс
             # не обязателен для работы Ники, тик просто посчитает 0 событий.
             print(f"[NIKA][SCHEMA] ledger index skip: {type(exc).__name__}: {exc}")
-        await conn.execute(
-            _SEED_FIRST_GROUP,
-            int(FIRST_MANAGED_CHAT_ID),
-            int(FIRST_MANAGED_TARGET),
-            int(caps["max_transfer"]),
-            int(caps["max_daily_topup"]),
-        )
-        await conn.execute(
-            """
-            UPDATE nika_settings
-            SET owner_alert_user_id = COALESCE(owner_alert_user_id, $1)
-            WHERE id = 1
-            """,
-            owner_id,
-        )
-        # Кассы сами себя не обслуживают: долив из копилки в копилку
-        # или из кассы игр в кассу игр — это не баланс группы.
-        forbidden = {int(cid) for cid, _ in SOURCE_LADDER}
-        forbidden.add(int(PROFIT_JAR_CHAT_ID))
-        await conn.execute(
-            "DELETE FROM nika_group_settings WHERE chat_id = ANY($1::bigint[])",
-            sorted(forbidden),
-        )

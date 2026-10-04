@@ -245,7 +245,18 @@ def test_forecast_tick_paused_and_topup():
     assert "закроет цель" in instant["summary"] or "заберёт все" in instant["summary"]
 
 
+class _FakeTx:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
 class _FakeConn:
+    def transaction(self):
+        return _FakeTx()
+
     async def execute(self, *_args, **_kwargs):
         return "OK"
 
