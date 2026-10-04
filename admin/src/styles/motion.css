@@ -2852,4 +2852,73 @@ body.perf-light .purse-days .act-bars button > i {
   overflow: hidden;
 }
 
+/* Главные вкладки — одна группа в центре полосы. Шестерёнка остаётся у края и центр не сдвигает. */
+html.is-desktop .panel-shell > .phone-dock,
+html[data-viewport="desktop"] .panel-shell > .phone-dock {
+  justify-content: center !important;
+  padding-left: 64px !important;
+  padding-right: 64px !important;
+}
+
+html.is-phone .panel-shell > .phone-dock,
+html[data-viewport="phone"] .panel-shell > .phone-dock {
+  justify-content: center !important;
+}
+
+html.is-phone .panel-shell > .phone-dock > .phone-dock-menu,
+html[data-viewport="phone"] .panel-shell > .phone-dock > .phone-dock-menu {
+  display: none !important;
+}
+
+html.is-phone .panel-shell > .phone-dock.is-crowded .phone-dock-scroll,
+html[data-viewport="phone"] .panel-shell > .phone-dock.is-crowded .phone-dock-scroll,
+html.is-desktop .panel-shell > .phone-dock.is-crowded .phone-dock-scroll,
+html[data-viewport="desktop"] .panel-shell > .phone-dock.is-crowded .phone-dock-scroll {
+  gap: 0 !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock .phone-dock-scroll,
+html[data-viewport="desktop"] .panel-shell > .phone-dock .phone-dock-scroll,
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll,
+html.is-desktop .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted,
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted,
+html[data-viewport="desktop"] .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll.is-pivoted {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  gap: 6px !important;
+  grid-template-columns: none !important;
+  overflow: hidden !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock .phone-dock-scroll > button,
+html[data-viewport="desktop"] .panel-shell > .phone-dock .phone-dock-scroll > button,
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll > button,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll > button {
+  flex: 1 1 76px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 76px !important;
+  padding-left: 2px !important;
+  padding-right: 2px !important;
+}
+
+html.is-desktop .panel-shell > .phone-dock .phone-dock-scroll > button .phone-dock-label,
+html[data-viewport="desktop"] .panel-shell > .phone-dock .phone-dock-scroll > button .phone-dock-label,
+html.is-phone .panel-shell > .phone-dock .phone-dock-scroll > button .phone-dock-label,
+html[data-viewport="phone"] .panel-shell > .phone-dock .phone-dock-scroll > button .phone-dock-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
 

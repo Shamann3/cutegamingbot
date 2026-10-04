@@ -26,7 +26,7 @@ function shortLabel(text) {
   return word.length > 12 ? `${word.slice(0, 11)}…` : word
 }
 
-/** Нижняя полоса в стиле CryptoBot: вкладки + меню (ползунки) справа на телефоне / слева на ПК. */
+/** Нижняя полоса: главные вкладки одной группой по центру, настройки отдельно у края. */
 export default function PhoneDock({
   sections = [],
   activeSection,
@@ -40,10 +40,6 @@ export default function PhoneDock({
   const reduce = useReducedMotion()
   const current = sections.find((item) => item.id === activeSection)
   const currentLabel = current?.labelRu || current?.label || 'Вкладки'
-  const pivotAt = sections.findIndex((item) => item.id === 'moderation')
-  const leftTabs = pivotAt >= 0 ? sections.slice(0, pivotAt) : sections
-  const pivotTab = pivotAt >= 0 ? sections[pivotAt] : null
-  const rightTabs = pivotAt >= 0 ? sections.slice(pivotAt + 1) : []
 
   const renderTab = useCallback((item) => {
     const Icon = NAV_ICONS[item.id] || FallbackIcon
@@ -103,16 +99,6 @@ export default function PhoneDock({
           <span>Вкладки</span>
           <b>{currentLabel}</b>
         </button>
-      ) : pivotTab ? (
-        <div className="phone-dock-scroll is-pivoted">
-          <div className="phone-dock-side is-left">
-            {leftTabs.map((item) => renderTab(item))}
-          </div>
-          <div className="phone-dock-pivot">{renderTab(pivotTab)}</div>
-          <div className="phone-dock-side is-right">
-            {rightTabs.map((item) => renderTab(item))}
-          </div>
-        </div>
       ) : (
         <div className="phone-dock-scroll">
           {sections.map((item) => renderTab(item))}
