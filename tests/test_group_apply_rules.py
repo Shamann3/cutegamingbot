@@ -21,7 +21,7 @@ def test_application_needs_the_rules_mark_not_a_channel_scrape():
     assert "has_key" in status
     routes = (ROOT / "server/admin_routes.py").read_text(encoding="utf-8")
     door = routes[routes.index("async def admin_auth_status"):routes.index("async def admin_register_start")]
-    assert 'groupCanEnter": is_owner or bool(entry["hasKey"])' in door
+    assert 'groupCanEnter": creator or is_owner or bool(entry["hasKey"])' in door
     assert "groupHoldsSeat" in door
     assert "len(groups)" not in door
     decide = src[src.index("async def group_decide"):src.index("async def load_activity")]

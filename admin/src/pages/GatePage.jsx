@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchAdminAuthStatus } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
-import { portraitFrom } from '../lib/gateRecovery'
+import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
 import AccentPalette from '../components/AccentPalette'
 import MatrixRain from '../components/MatrixRain'
@@ -18,13 +18,15 @@ function detectStillGate() {
   return (navigator.hardwareConcurrency || 4) <= 2
 }
 
-function Door({ title, detail, mark, open, onClick, order = 0 }) {
+function Door({ title, detail, mark, open, onClick, order = 0, busy = false }) {
   return (
     <button
       type="button"
       className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}`}
       style={{ '--rise': order }}
       onClick={onClick}
+      disabled={busy}
+      aria-busy={busy || undefined}
     >
       <span className="gate-door-sheen" aria-hidden="true" />
       <span className="gate-door-title">{title}</span>
@@ -46,10 +48,13 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
   const [hold, setHold] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
   const [still] = useState(detectStillGate)
   const { lightMode, setLightMode } = usePerfMode()
   const sparse = lightMode && !still
   const requestId = useRef(0)
+  const flight = useRef(Promise.resolve(GUEST_PORTRAIT))
   const paletteRef = useRef(null)
 
   const load = useCallback(() => {
@@ -57,20 +62,27 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
     requestId.current = id
     setChecking(true)
     setError('')
-    fetchAdminAuthStatus()
+    const job = fetchAdminAuthStatus()
       .then((status) => {
-        if (requestId.current !== id) return
-        setPortrait(portraitFrom(status))
+        const face = portraitFrom(status)
+        if (requestId.current !== id) return face
+        setPortrait(face)
+        rememberPortrait(face)
+        return face
       })
       .catch((err) => {
-        if (requestId.current !== id) return
-        // Двери остаются с гостевым портретом — не прячем карточки.
-        setPortrait(GUEST_PORTRAIT)
-        setError(err.message || 'Не удалось сверить доступ')
+        if (requestId.current === id) {
+          // Двери остаются с гостевым портретом — не прячем карточки.
+          setPortrait(GUEST_PORTRAIT)
+          rememberPortrait(GUEST_PORTRAIT)
+          setError(err.message || 'Не удалось сверить доступ')
+        }
+        return null
       })
       .finally(() => {
         if (requestId.current === id) setChecking(false)
       })
+    flight.current = job
   }, [])
 
   useEffect(() => load(), [load])
@@ -79,42 +91,95 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   // Тап, которым её закрыли, не нажимает дверь под пальцем.
   useOutsideDismiss(colorOpen, [paletteRef], () => setColorOpen(false))
 
-  const staffDetail = portrait.staffCanEnter
-    ? 'Команда проекта. Нажмите, чтобы войти.'
-    : portrait.applicationStatus === 'pending'
-      ? 'Заявка уже отправлена. Ждём решение.'
-      : 'Вы ещё не в команде. Нажмите — откроется заявка.'
+  const staffKnown = portrait.isProjectCreator || portrait.staffCanEnter
+  const staffDetail = checking && !staffKnown
+    ? 'Сверяем, открыт ли вход.'
+    : staffKnown
+      ? 'Команда проекта. Нажмите, чтобы войти.'
+      : portrait.applicationStatus === 'pending'
+        ? 'Заявка уже отправлена. Ждём решение.'
+        : 'Вы ещё не в команде. Нажмите — откроется заявка.'
 
-  const groupDetail = portrait.groupCanEnter
-    ? <>Дальше нужен ключ кабинета <CuteBrand />.</>
-    : portrait.groupApplicationStatus === 'pending'
-      ? 'Заявка уже у создателя. Ключ придёт после одобрения.'
-      : portrait.groupHoldsSeat
-        ? 'Должность уже есть. Ключ выдаётся только после заявки. Нажмите и отправьте её.'
-        : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
+  const groupDetail = checking && !portrait.isProjectCreator && !portrait.groupCanEnter
+    ? 'Сверяем, открыт ли кабинет.'
+    : portrait.isProjectCreator
+      ? 'Кабинет групп. Нажмите — откроется сразу.'
+      : portrait.groupCanEnter
+        ? <>Дальше нужен ключ кабинета <CuteBrand />.</>
+        : portrait.groupApplicationStatus === 'pending'
+          ? 'Заявка уже у создателя. Ключ придёт после одобрения.'
+          : portrait.groupHoldsSeat
+            ? 'Должность уже есть. Ключ выдаётся только после заявки. Нажмите и отправьте её.'
+            : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
 
-  const pressStaff = () => {
-    if (portrait.staffCanEnter) {
-      onStaffEnter()
-      return
-    }
-    if (portrait.applicationStatus === 'pending') {
-      setHold('staff')
-      return
-    }
-    onStaffApply()
-  }
-
-  const pressGroup = () => {
-    if (error || !portrait.groupCanEnter) {
-      if (!error && portrait.groupApplicationStatus === 'pending') {
-        setHold('group')
+  const pressStaff = async () => {
+    if (busy) return
+    setNote('')
+    setBusy(true)
+    try {
+      let face = portrait
+      if (checking) {
+        try {
+          face = await flight.current
+        } catch {
+          face = null
+        }
+        if (!face) {
+          onStaffEnter()
+          return
+        }
+      }
+      if (!(face?.isProjectCreator || face?.staffCanEnter)) {
+        if (face?.applicationStatus === 'pending') {
+          setHold('staff')
+          return
+        }
+        onStaffApply()
         return
       }
-      onGroupApply()
-      return
+      try {
+        await onStaffEnter(face)
+      } catch (err) {
+        setNote(err?.message || 'Панель не открылась. Нажмите ещё раз.')
+      }
+    } finally {
+      setBusy(false)
     }
-    onGroupEnter(portrait)
+  }
+
+  const pressGroup = async () => {
+    if (busy) return
+    setNote('')
+    setBusy(true)
+    try {
+      let face = portrait
+      if (checking) {
+        try {
+          face = await flight.current
+        } catch {
+          face = null
+        }
+        if (!face) {
+          onGroupApply()
+          return
+        }
+      }
+      if (face?.isProjectCreator) {
+        onGroupEnter(face)
+        return
+      }
+      if (error || !face?.groupCanEnter) {
+        if (!error && face?.groupApplicationStatus === 'pending') {
+          setHold('group')
+          return
+        }
+        onGroupApply()
+        return
+      }
+      onGroupEnter(face)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -146,6 +211,10 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           </div>
         )}
 
+        {note && !hold && (
+          <p className="gate-status gate-status-error" role="alert">{note}</p>
+        )}
+
         {hold ? (
           <div className="gate-hold" role="status">
             <h2 className="gate-title">Заявка уже у создателя</h2>
@@ -161,17 +230,19 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             <Door
               title="Панель сотрудника"
               detail={error ? 'Ключ, затем код из приложения.' : staffDetail}
-              mark={portrait.applicationStatus === 'pending' && !error ? 'Ждёт' : portrait.staffCanEnter || error ? 'Войти' : 'Заявка'}
-              open={portrait.staffCanEnter || Boolean(error)}
+              mark={checking && !staffKnown && !error ? '…' : portrait.applicationStatus === 'pending' && !error && !portrait.isProjectCreator ? 'Ждёт' : staffKnown || error ? 'Войти' : 'Заявка'}
+              open={staffKnown || Boolean(error)}
               onClick={error ? onStaffEnter : pressStaff}
+              busy={busy}
               order={4}
             />
             <Door
               title="Панель администратора"
               detail={groupDetail}
-              mark={portrait.groupCanEnter ? 'Войти' : !error && portrait.groupApplicationStatus === 'pending' ? 'Ждёт' : 'Заявка'}
+              mark={checking && !portrait.isProjectCreator && !portrait.groupCanEnter ? '…' : portrait.groupCanEnter || portrait.isProjectCreator ? 'Войти' : !error && portrait.groupApplicationStatus === 'pending' ? 'Ждёт' : 'Заявка'}
               open
               onClick={pressGroup}
+              busy={busy}
               order={5}
             />
           </div>

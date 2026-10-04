@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { clearGroupEntry, readGroupEntry, rememberGroupEntry, resumeGroupEntry } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import { rememberedPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
 
 function broken(err) {
@@ -13,6 +14,10 @@ export default function GroupResume({ onBack, onPassed, onAskKey }) {
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    if (rememberedPortrait()?.isProjectCreator) {
+      onPassed()
+      return undefined
+    }
     let alive = true
     const pass = readGroupEntry()
     if (!pass) {

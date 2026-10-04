@@ -22,6 +22,17 @@ export function portraitFrom(status) {
   }
 }
 
+let rememberedPortraitValue = null
+
+/** Последняя сверенная личность. Нужна, чтобы ключ не мелькнул на следующем экране. */
+export function rememberPortrait(portrait) {
+  rememberedPortraitValue = portrait || null
+}
+
+export function rememberedPortrait() {
+  return rememberedPortraitValue
+}
+
 /** Срок наказания в секундах. null — срок нельзя отправлять. */
 export function punishmentHours(raw) {
   const n = Number(String(raw ?? '').trim().replace(',', '.'))

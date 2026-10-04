@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getAdminDisplayName } from './lib/displayName'
-import { hasTelegramInitData, isAdminSessionValid, logoutAdmin, readGroupEntry } from './lib/adminClient'
+import { enterAsCreator, hasTelegramInitData, isAdminSessionValid, logoutAdmin, readGroupEntry, setAdminToken } from './lib/adminClient'
 import { initAdminTelegram } from './lib/telegram'
 import AuthPage from './pages/AuthPage'
 import PanelShell from './pages/PanelShell'
@@ -82,7 +82,22 @@ export default function App() {
     setScreen('channel')
   }, [])
 
-  const openStaff = useCallback(() => {
+  const openStaff = useCallback(async (fromGate) => {
+    if (fromGate?.isProjectCreator) {
+      try {
+        const data = await enterAsCreator()
+        if (!data?.token) throw new Error('Панель не открылась. Нажмите ещё раз.')
+        setAdminToken(data.token)
+      } catch (err) {
+        if (!isAdminSessionValid()) {
+          const text = String(err?.message || '')
+          throw new Error(text && !/ключ/i.test(text) ? text : 'Панель не открылась. Нажмите ещё раз.')
+        }
+      }
+      primeDashboardStats()
+      openChannel('staff', 'panel')
+      return
+    }
     if (isAdminSessionValid() || hasTelegramInitData()) {
       primeDashboardStats()
       openChannel('staff', 'panel')
@@ -100,19 +115,27 @@ export default function App() {
   const openGroup = useCallback((portrait) => {
     setGroupPortrait(portrait || null)
     setGroupAgain('')
+    if (portrait?.isProjectCreator) {
+      openChannel('group', 'group')
+      return
+    }
     if (!readGroupEntry()) {
       setScreen('group-key')
       return
     }
     setScreen('group-resume')
-  }, [])
+  }, [openChannel])
 
   const passGroup = useCallback(() => openChannel('group', 'group'), [openChannel])
 
   const askGroupKey = useCallback((message) => {
+    if (groupPortrait?.isProjectCreator) {
+      openChannel('group', 'group')
+      return
+    }
     setGroupAgain(message || '')
     setScreen('group-key')
-  }, [])
+  }, [groupPortrait, openChannel])
 
   if (screen === 'boot') {
     return (

@@ -492,6 +492,12 @@ export async function loginAdmin(loginKey, totp) {
 
 
 
+export async function enterAsCreator() {
+  return adminRequest('/auth/creator', { method: 'POST', body: {} })
+}
+
+
+
 export async function fetchAdminMe() {
 
   return adminRequest('/auth/me')

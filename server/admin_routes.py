@@ -985,8 +985,9 @@ async def admin_auth_status(
     role = account["role"] if account else None
     account_status = account["status"] if account else None
     is_owner = user_id in owner_user_ids()
+    creator = sr_is_creator(user_id)
     staff_roles = {"owner", "senior_admin", "junior_admin", "moderator"}
-    staff_can_enter = is_owner or (account_status == "active" and role in staff_roles)
+    staff_can_enter = creator or is_owner or (account_status == "active" and role in staff_roles)
     groups: list[dict] = []
     entry = {"hasKey": False, "holdsSeat": False, "applicationStatus": None}
     try:
@@ -1004,9 +1005,9 @@ async def admin_auth_status(
         "status": account_status,
         "applicationStatus": application["status"] if application else None,
         "isOwner": is_owner,
-        "isProjectCreator": sr_is_creator(user_id),
+        "isProjectCreator": creator,
         "staffCanEnter": staff_can_enter,
-        "groupCanEnter": is_owner or bool(entry["hasKey"]),
+        "groupCanEnter": creator or is_owner or bool(entry["hasKey"]),
         "groupHoldsSeat": bool(entry["holdsSeat"]),
         "groupApplicationStatus": entry["applicationStatus"],
         "groups": groups,
@@ -1358,6 +1359,38 @@ async def admin_login(
         user_id, "login",
         target_type="session",
         target_label="Вход в панель",
+        ip=_get_client_ip(request),
+    )
+    return {
+        "ok": True,
+        "token": token,
+        "expiresAt": exp,
+        "sessionMinutes": get_admin_session_minutes_cached(),
+        "authenticated": True,
+    }
+
+
+@router.post("/auth/creator")
+async def admin_creator_enter(
+    request: Request,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    """Создатель проекта уже назван сессией Telegram. Ключ и код у него не спрашиваются."""
+    from admin_auth_rate_limit import enforce_admin_auth_rate_limit
+    from admin_soft_restart import is_project_creator
+
+    enforce_admin_auth_rate_limit(request)
+    if is_plain_user(user_id) or not is_project_creator(int(user_id)):
+        raise HTTPException(status_code=403, detail="Этот вход только у создателя проекта")
+    token, exp = issue_admin_token(int(user_id))
+    try:
+        await store_session_fingerprint(int(user_id), request)
+    except Exception:
+        pass
+    await log_admin_action(
+        int(user_id), "login",
+        target_type="session",
+        target_label="Вход создателя без ключа",
         ip=_get_client_ip(request),
     )
     return {

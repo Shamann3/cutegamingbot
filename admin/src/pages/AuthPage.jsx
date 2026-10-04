@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   confirmAdminRegistration,
+  enterAsCreator,
   fetchAdminAuthStatus,
   fetchAdminMe,
   hasTelegramInitData,
@@ -16,6 +17,7 @@ import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
 import EntryFrame from '../components/EntryFrame'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
+import { portraitFrom, rememberPortrait, rememberedPortrait } from '../lib/gateRecovery'
 
 function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
@@ -35,6 +37,29 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
   const [keyType, setKeyType] = useState(null)
   const modeRef = useRef(initialMode === 'register' ? 'register' : 'login')
   const personal = fortress && accentIsPersonal(loadStoredAccent())
+  const [creatorEntry, setCreatorEntry] = useState(() => (
+    initialMode !== 'register' && Boolean(rememberedPortrait()?.isProjectCreator)
+  ))
+
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
+
+  const openAsCreator = useCallback(() => {
+    setCreatorEntry(true)
+    setError('')
+    enterAsCreator()
+      .then((data) => {
+        if (!mounted.current) return
+        if (!data?.token) throw new Error('Панель не открылась. Вернитесь и нажмите ещё раз.')
+        setAdminToken(data.token)
+        onAuthenticated()
+      })
+      .catch((err) => {
+        if (!mounted.current) return
+        const text = String(err?.message || '')
+        setError(text && !/ключ/i.test(text) ? text : 'Панель не открылась. Вернитесь и нажмите ещё раз.')
+      })
+  }, [onAuthenticated])
 
   const switchMode = useCallback((nextMode) => {
     if (nextMode !== modeRef.current) {
@@ -50,12 +75,22 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     // Если сюда вернулись из-за разрыва сессии — покажем причину красным (заметно),
     // чтобы точно понять, какой запрос и почему вернул 401.
     const endedReason = takeSessionEndedReason()
-    if (endedReason) setError(endedReason)
+    if (endedReason && !rememberedPortrait()?.isProjectCreator) setError(endedReason)
+
+    if (modeRef.current === 'login' && rememberedPortrait()?.isProjectCreator) {
+      openAsCreator()
+      return () => { cancelled = true }
+    }
 
     fetchAdminAuthStatus()
       .then((status) => {
         if (cancelled) return
         setRegistered(Boolean(status.registered))
+        if (status.isProjectCreator && modeRef.current === 'login') {
+          rememberPortrait(portraitFrom(status))
+          openAsCreator()
+          return
+        }
         // Кандидат с уже поданной заявкой — сразу экран ожидания в «Регистрации».
         if (status.status === 'pending' && status.applicationStatus === 'pending') {
           setRegStage('waiting')
@@ -68,7 +103,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [openAsCreator])
 
   const handleLogin = useCallback(
     async ({ loginKey, totp }) => {
@@ -257,11 +292,11 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
   return (
     <EntryFrame
       title="Панель сотрудника"
-      lead="Вход по ключу. Если ключа нет — вкладка «Регистрация»."
+      lead={creatorEntry ? 'Вход открывается сразу.' : 'Вход по ключу. Если ключа нет — вкладка «Регистрация».'}
       personal={personal && fortress}
       onBack={onBack}
     >
-        <AuthTabs mode={mode} onChange={handleTabChange} />
+        {!creatorEntry && <AuthTabs mode={mode} onChange={handleTabChange} />}
 
         {success && (
           <p className="auth-message auth-message-success auth-success-pop" role="status">
@@ -274,7 +309,20 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
             className={`auth-form-wrap ${slideClass}`}
             key={formKey}
           >
-            {mode === 'login' ? (
+            {mode === 'login' && creatorEntry ? (
+              <div className="auth-form">
+                <p className="auth-checking">
+                  <span className="auth-spinner" aria-hidden="true" />
+                  Открываем панель…
+                </p>
+                {error && <p className="auth-message auth-message-error" role="alert">{error}</p>}
+                {error && (
+                  <button type="button" className="auth-btn auth-btn-primary" onClick={openAsCreator}>
+                    Открыть ещё раз
+                  </button>
+                )}
+              </div>
+            ) : mode === 'login' ? (
               <LoginForm
                 onSubmit={handleLogin}
                 loading={loading}

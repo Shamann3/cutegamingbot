@@ -42,7 +42,18 @@ def test_admin_door_asks_for_the_cabinet_key():
     assert "setScreen('group-key')" in chunk
     assert "readGroupEntry()" in chunk
     assert "setScreen('group-resume')" in chunk
+    assert "isProjectCreator" in chunk
+    assert chunk.index("isProjectCreator") < chunk.index("setScreen('group-key')")
     assert "hasTelegramInitData()" not in chunk
+    staff = app[app.index("const openStaff"):app.index("const openGroup")]
+    assert "isProjectCreator" in staff
+    assert "enterAsCreator" in staff
+    routes = _text("server/admin_routes.py")
+    creator = routes[routes.index("async def admin_creator_enter"):routes.index("async def admin_refresh_session")]
+    assert "is_project_creator" in creator
+    assert "_resolve_login_key_ok" not in creator
+    assert "verify_totp" not in creator
+    assert "issue_admin_token" in creator
     realm = _text("server/group_realm.py")
     check = realm[realm.index("async def group_key_check"):realm.index("async def group_key_enter")]
     assert "_open_key" in check
