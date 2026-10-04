@@ -45,6 +45,7 @@ export const PANEL_SECTION_TABS = {
   ],
   moderation: [
     { id: 'archive', label: 'Архив', blurb: 'Архив модерационных действий.' },
+    { id: 'check', label: 'Проверка', blurb: 'Один сотрудник проверяет наказание после администратора группы. Уже проверенное другим не показывается.', selfOnly: true },
     { id: 'appeals', label: 'Апелляции', blurb: 'Разбор апелляций по банам.' },
     { id: 'stats', label: 'Статистика', blurb: 'Статистика модераторов.' },
   ],

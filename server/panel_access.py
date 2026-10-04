@@ -177,6 +177,7 @@ SECTION_TABS: dict[str, list[dict]] = {
     ],
     "moderation": [
         {"id": "archive", "label": "Архив"},
+        {"id": "check", "label": "Проверка", "selfOnly": True},
         {"id": "appeals", "label": "Апелляции", "perm": "manage_appeals"},
         {"id": "stats", "label": "Статистика"},
     ],

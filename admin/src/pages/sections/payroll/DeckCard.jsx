@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import PhotoLook from '../../../components/PhotoLook'
+import { loadTgPhotoUrl } from '../../../components/TgPhoto'
 
 export const FLY_MS = 420
 
@@ -26,6 +27,24 @@ export function motionQuiet() {
 
 export function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+/** Следующее фото качается, пока человек смотрит текущую карточку. */
+export function useWarmProof(fileId) {
+  useEffect(() => {
+    if (!fileId) return undefined
+    loadTgPhotoUrl(fileId, 'full').catch(() => {})
+    return undefined
+  }, [fileId])
+}
+
+/** Пустая колода сама спрашивает новую карточку, не дёргая ту, что уже в руках. */
+export function useRefill(queue, load) {
+  useEffect(() => {
+    if (!queue || queue.card) return undefined
+    const timer = window.setTimeout(() => { load() }, 15000)
+    return () => window.clearTimeout(timer)
+  }, [queue, load])
 }
 
 /** Сообщение под кнопками докручивается в кадр, если ушло под нижнее меню телефона. */

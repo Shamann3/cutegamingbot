@@ -51,7 +51,7 @@ describe('WorkDesk', () => {
     expect(screen.getByText('наказания ждут вашей проверки')).toBeTruthy()
     expect(screen.getByText('Фото нет, есть причина')).toBeTruthy()
     expect(screen.getByRole('button', { name: /^Подходит/ }).className).toContain('is-clear')
-    expect(screen.getByRole('button', { name: /^Не подходит/ }).className).toContain('is-wrong')
+    expect(screen.getByRole('button', { name: /^Наказание выдано неправильно/ }).className).toContain('is-wrong')
     expect(screen.getByRole('button', { name: /^Непонятно/ }).className).toContain('is-weak')
   })
 
@@ -59,13 +59,13 @@ describe('WorkDesk', () => {
     vi.mocked(fetchDeedWork)
       .mockResolvedValueOnce({ waiting: 1, card })
       .mockResolvedValueOnce({ waiting: 0, card: null })
-    vi.mocked(sortDeed).mockResolvedValue({ ok: true })
+    vi.mocked(sortDeed).mockResolvedValue({ ok: true, next: 'staff' })
     vi.mocked(isPanelPreviewMode).mockReturnValue(false)
     render(<WorkDesk />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^Подходит/ }))
     expect(await screen.findByText(EMPTY)).toBeTruthy()
-    expect(screen.getByText(/^Подходит\. Отправлено создателю/)).toBeTruthy()
+    expect(screen.getByText(/^Подходит\. Сотрудник проекта/)).toBeTruthy()
     expect(sortDeed).toHaveBeenCalledWith(7, 'clear')
   })
 
@@ -78,7 +78,7 @@ describe('WorkDesk', () => {
     vi.mocked(unsortDeed).mockResolvedValue({ ok: true })
     render(<WorkDesk />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /^Не подходит/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Наказание выдано неправильно/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Вернуть' }))
     expect(sortDeed).toHaveBeenCalledWith(7, 'wrong')
     expect(await screen.findByText('Ответ отменён. Карточка снова перед вами.')).toBeTruthy()
@@ -86,22 +86,17 @@ describe('WorkDesk', () => {
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
   })
 
-  it('passes an unclear card on to the others and the creator', async () => {
+  it('passes an unclear card to the next stage and hides it from other admins', async () => {
     vi.mocked(fetchDeedWork)
       .mockResolvedValueOnce({ waiting: 1, card })
       .mockResolvedValue({ waiting: 0, card: null })
-    vi.mocked(sortDeed).mockResolvedValue({ ok: true })
+    vi.mocked(sortDeed).mockResolvedValue({ ok: true, next: 'staff' })
     render(<WorkDesk />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^Непонятно/ }))
-    expect(await screen.findByText(/его посмотрят другие администраторы и создатель/)).toBeTruthy()
+    expect(await screen.findByText(/Карточка ушла сотруднику проекта/)).toBeTruthy()
+    expect(screen.getByText(/Другие администраторы её уже не увидят/)).toBeTruthy()
     expect(sortDeed).toHaveBeenCalledWith(7, 'weak')
-  })
-
-  it('tells that colleagues could not decide this card', async () => {
-    vi.mocked(fetchDeedWork).mockResolvedValue({ waiting: 1, card: { ...card, unclearCount: 2 } })
-    render(<WorkDesk />)
-    expect(await screen.findByText('2 администратора не смогли решить. Нужен ваш взгляд.')).toBeTruthy()
   })
 
   it('leaves arrow keys alone while someone types', async () => {

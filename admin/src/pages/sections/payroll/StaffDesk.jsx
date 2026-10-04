@@ -1,42 +1,35 @@
 import { useCallback, useEffect, useState } from 'react'
 import CountUp from '../../../components/CountUp'
-import { fetchDeedWork, isPanelPreviewMode, sortDeed, unsortDeed } from '../../../lib/adminClient'
-import { BAND_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
+import { fetchStaffWork, isPanelPreviewMode, sortStaffDeed, unsortStaffDeed } from '../../../lib/adminClient'
+import { VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
 
 const CHOICES = [
-  { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'можно просить снять', side: 'left' },
-  { id: 'weak', label: VERDICT_BUTTON.weak, stamp: 'Непонятно', hint: 'передать дальше по цепочке', side: 'down' },
+  { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'создатель увидит ваш ответ', side: 'left' },
+  { id: 'weak', label: VERDICT_BUTTON.weak, stamp: 'Непонятно', hint: 'передать создателю', side: 'down' },
   { id: 'clear', label: VERDICT_BUTTON.clear, stamp: 'Подходит', hint: 'доказательство на месте', side: 'right' },
 ]
 
 const BY_SIDE = { left: CHOICES[0], down: CHOICES[1], right: CHOICES[2] }
-
 const STAMPS = CHOICES.map((choice) => ({ side: choice.side, label: choice.stamp }))
 
-function doneText(choice, next) {
-  const staff = next !== 'creator'
-  if (choice === 'clear') {
-    return staff
-      ? 'Подходит. Сотрудник проекта увидит ваш ответ и проверит следом.'
-      : 'Подходит. Сотрудников проекта сейчас нет, поэтому карточка сразу у создателя.'
-  }
-  if (choice === 'wrong') {
-    return staff
-      ? 'Наказание выдано неправильно. Сотрудник увидит это и сможет подать заявку на разблокировку.'
-      : 'Наказание выдано неправильно. Сотрудников проекта нет, поэтому это сразу увидит создатель.'
-  }
-  return staff
-    ? 'Непонятно. Карточка ушла сотруднику проекта, затем её увидит создатель. Другие администраторы её уже не увидят.'
-    : 'Непонятно. Сотрудников проекта нет, поэтому карточку сразу увидит создатель.'
+function adminStep(card) {
+  return (card?.chain || []).find((step) => step.role === 'admin') || null
+}
+
+function doneText(choice, lift) {
+  if (lift) return 'Заявка на разблокировку ушла создателю. Он снимет наказание или оставит его.'
+  if (choice === 'clear') return 'Подходит. Создатель увидит ваш ответ и ответ администратора.'
+  if (choice === 'wrong') return 'Наказание выдано неправильно. Создатель увидит это и решит сам. Заявку на снятие вы не подавали.'
+  return 'Непонятно. Карточка ушла создателю. Другие сотрудники её уже не увидят.'
 }
 
 function messageOf(error) {
   return error?.message || 'Не удалось открыть проверку'
 }
 
-export default function WorkDesk({ onCount }) {
+export default function StaffDesk({ onCount }) {
   const [queue, setQueue] = useState(null)
   const [error, setError] = useState('')
   const [flash, setFlash] = useState(null)
@@ -47,7 +40,7 @@ export default function WorkDesk({ onCount }) {
   const load = useCallback(async () => {
     if (isPanelPreviewMode()) return
     try {
-      const data = await fetchDeedWork()
+      const data = await fetchStaffWork()
       setQueue(data)
       setError('')
       onCount?.(Number(data?.waiting) || 0)
@@ -62,42 +55,42 @@ export default function WorkDesk({ onCount }) {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
+  const prior = adminStep(card)
   const toastRef = useToastInView(flash?.key)
   const swipe = useSwipeDeck({
-    onSwipe: (side) => choose(BY_SIDE[side]),
+    onSwipe: (side) => choose(BY_SIDE[side], false),
     disabled: busy || Boolean(fly) || !card,
     cardKey: card?.id ?? null,
   })
   const { reset } = swipe
 
-  const run = useCallback(async (id, choice) => {
+  const run = useCallback(async (id, choice, lift) => {
     setBusy(true)
     setError('')
     setBack(null)
-    if (!motionQuiet()) {
+    if (!lift && !motionQuiet()) {
       setFly({ id, side: choice.side })
       await wait(FLY_MS)
     }
     let failure = ''
-    let next = 'staff'
     try {
-      const result = await sortDeed(id, choice.id)
-      next = result?.next || 'staff'
+      await sortStaffDeed(id, choice?.id || 'wrong', lift)
     } catch (err) {
       failure = messageOf(err)
       reset()
     }
     await load()
     if (failure) setError(failure)
-    else setFlash({ key: Date.now(), text: doneText(choice.id, next), undoId: id, side: choice.side })
+    else setFlash({ key: Date.now(), text: doneText(choice?.id, lift), undoId: id, side: choice?.side || 'left' })
     setFly(null)
     setBusy(false)
   }, [load, reset])
 
-  const choose = useCallback((choice) => {
+  const choose = useCallback((choice, lift = false) => {
     const id = card?.id
-    if (!id || !choice || busy || fly) return false
-    run(id, choice)
+    if (!id || busy || fly) return false
+    if (!lift && !choice) return false
+    run(id, choice, lift)
     return true
   }, [card, busy, fly, run])
 
@@ -108,7 +101,7 @@ export default function WorkDesk({ onCount }) {
     setError('')
     let failure = ''
     try {
-      await unsortDeed(last.undoId)
+      await unsortStaffDeed(last.undoId)
       setBack({ id: last.undoId, side: last.side })
     } catch (err) {
       failure = messageOf(err)
@@ -133,20 +126,31 @@ export default function WorkDesk({ onCount }) {
         undo()
         return
       }
-      if (choose(BY_SIDE[key])) event.preventDefault()
+      if (choose(BY_SIDE[key], false)) event.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [choose, undo, flash])
 
   if (isPanelPreviewMode()) {
-    return <p className="realm-copy">В копии панели наказания не проверяют. Это делается в настоящем кабинете.</p>
+    return <p className="staff-hint">В копии панели наказания не проверяют. Это делается в настоящей панели.</p>
   }
 
   const locked = busy || Boolean(fly)
   const waiting = Number(queue?.waiting) || 0
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
+  const priorWrong = prior?.verdict === 'wrong'
+  const band = prior
+    ? `${prior.name}: ${(prior.label || '').toLowerCase()}`
+    : 'Администратор не проверял'
+  const note = priorWrong
+    ? `${prior.name} проверил это наказание и указал, что оно выдано неправильно.`
+    : prior?.verdict === 'weak'
+      ? `${prior.name} не смог решить. Теперь решение за вами, затем за создателем.`
+      : prior
+        ? 'Сверьте доказательство с тем, что уже ответил администратор.'
+        : 'Проверять администратору было некому. Вы первый, дальше карточку увидит создатель.'
 
   const notes = (
     <>
@@ -175,24 +179,24 @@ export default function WorkDesk({ onCount }) {
             </div>
           )}
           <p className="deed-lead">
-            Здесь чужие наказания. Посмотрите доказательство и ответьте. Дальше карточку проверит один сотрудник проекта, затем создатель.
+            Администратор группы уже посмотрел это наказание — его ответ на карточке. Проверьте, всё ли верно. Дальше карточку увидит создатель.
           </p>
           <p className="deck-why">
-            Каждую карточку берёт один администратор, после ответа её не видят остальные. Оплата за проверку появится, если создатель согласится с вашим ответом. Свои наказания проверяет кто-то другой, поэтому их здесь нет.
+            Каждую карточку берёт один сотрудник, остальные её не видят. Оплата появится, если создатель согласится с вашим ответом.
           </p>
           {!card && notes}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
           {queue && !card && !error && waiting > 0 && (
-            <p className="work-empty">Остальные карточки сейчас смотрят другие администраторы. Если они не ответят, карточки вернутся сюда.</p>
+            <p className="work-empty">Остальные карточки сейчас смотрят другие сотрудники. Если они не ответят, карточки вернутся сюда.</p>
           )}
           {queue && !card && !error && waiting === 0 && (
-            <p className="work-empty">Сейчас проверять нечего. Новые наказания коллег появятся здесь.</p>
+            <p className="work-empty">Сейчас проверять нечего. Сюда приходят наказания, которые уже посмотрел администратор группы.</p>
           )}
           {card && (
             <p className="work-keys">
               Потяните карточку: вправо — подходит, влево — выдано неправильно, вниз — непонятно.
               {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
-              <span className="deck-keys-only"> На клавиатуре: → подходит, ← выдано неправильно, ↓ непонятно, Ctrl+Z — вернуть ответ.</span>
+              <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
             </p>
           )}
         </div>
@@ -200,7 +204,9 @@ export default function WorkDesk({ onCount }) {
           <div className="deck-col">
             <DeckCard
               card={card}
-              band={BAND_LABEL[card.band] || 'Наказание'}
+              band={band}
+              tone={prior?.verdict || ''}
+              note={note}
               stamps={STAMPS}
               depth={Math.max(0, Math.min(2, waiting - 1))}
               fly={flySide}
@@ -214,7 +220,7 @@ export default function WorkDesk({ onCount }) {
                   type="button"
                   className={`sec-btn sec-btn-ghost deck-btn is-${choice.id} work-${choice.id}`}
                   disabled={locked}
-                  onClick={() => choose(choice)}
+                  onClick={() => choose(choice, false)}
                 >
                   <span>
                     {choice.side === 'left' && <span className="deck-arrow" aria-hidden="true">←</span>}
@@ -225,6 +231,21 @@ export default function WorkDesk({ onCount }) {
                   <small>{choice.hint}</small>
                 </button>
               ))}
+            </div>
+            <div className={`lift-ask${priorWrong ? ' is-hot' : ''}`}>
+              <button
+                type="button"
+                className="sec-btn sec-btn-ghost deck-btn is-ask"
+                disabled={locked}
+                onClick={() => choose(CHOICES[0], true)}
+              >
+                <span>Подать заявку на разблокировку</span>
+                <small>
+                  {priorWrong
+                    ? 'администратор уже указал, что наказание выдано неправильно'
+                    : 'если человек наказан зря. Создатель снимет наказание или отклонит заявку'}
+                </small>
+              </button>
             </div>
             {notes}
           </div>

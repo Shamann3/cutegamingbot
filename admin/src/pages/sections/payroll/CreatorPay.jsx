@@ -8,42 +8,26 @@ import {
   fetchDeedReviewers,
   isPanelPreviewMode,
   keepDeed,
+  liftDeed,
+  rejectLiftDeed,
   undoDeed,
 } from '../../../lib/adminClient'
-import { SORT_LABEL, admins, checkedBy, payLabel, waitCaption } from '../../../lib/deedSort'
+import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { FLY_MS, motionQuiet, useToastInView, wait, when } from './DeckCard'
+import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
+import PurseDesk from './PurseDesk'
 
 const STAMPS = [
   { side: 'right', label: 'В зарплату' },
   { side: 'left', label: 'Мимо' },
 ]
 
-const KEEP_TEXT = 'В зарплату. Засчитано тому, кто выдал наказание.'
-const DROP_TEXT = 'Мимо. В зарплату не пошло, в архиве наказание осталось.'
+const KEEP_TEXT = 'В зарплату. Засчитано тем, у кого стояла галочка и чей ответ совпал.'
+const DROP_TEXT = 'Мимо. Засчитаны проверки «неправильно», у которых стояла галочка. В архиве наказание осталось.'
 
 function messageOf(error) {
   return error?.message || 'Не удалось открыть зарплаты'
-}
-
-function bandOf(card) {
-  const names = (card.unclearNames || []).filter(Boolean)
-  if (card.sortVerdict === 'clear' || card.sortVerdict === 'wrong') {
-    return {
-      band: `${card.sorterName || 'Администратор'}: ${SORT_LABEL[card.sortVerdict].toLowerCase()}`,
-      tone: card.sortVerdict,
-      note: names.length ? `До этого не смогли решить: ${names.join(', ')}` : '',
-    }
-  }
-  if (card.sortVerdict === 'weak') {
-    return {
-      band: names.length ? `Не смогли решить: ${names.join(', ')}` : 'Не смогли решить',
-      tone: 'weak',
-      note: 'Пока оно ждёт вас, его могут проверить и другие администраторы.',
-    }
-  }
-  return { band: 'Некому было проверить', tone: '', note: 'Решение сразу за вами.' }
 }
 
 export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }) {
@@ -53,6 +37,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   const [busy, setBusy] = useState(false)
   const [fly, setFly] = useState(null)
   const [back, setBack] = useState(null)
+  const [off, setOff] = useState(() => new Set())
 
   const load = useCallback(async () => {
     if (isPanelPreviewMode()) return
@@ -70,38 +55,46 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   useEffect(() => {
     setFlash(null)
     setBack(null)
+    setOff(new Set())
     load()
   }, [load])
 
   const card = queue?.card
   const toastRef = useToastInView(flash?.key)
+  const salaryOpen = Boolean(card) && !card.reviewStatus
+  useRefill(queue, load)
+  useWarmProof(queue?.nextProofMediaId)
   const swipe = useSwipeDeck({
     onSwipe: (side) => decide(side === 'right' ? 'keep' : 'drop'),
-    disabled: busy || Boolean(fly) || !card,
+    disabled: busy || Boolean(fly) || !salaryOpen,
     cardKey: card?.id ?? null,
   })
   const { reset } = swipe
 
-  const run = useCallback(async (id, kind) => {
+  const run = useCallback(async (id, kind, credits, stays) => {
     const side = kind === 'keep' ? 'right' : 'left'
     setBusy(true)
     setError('')
     setBack(null)
-    if (!motionQuiet()) {
+    if (!stays && !motionQuiet()) {
       setFly({ id, side })
       await wait(FLY_MS)
     }
     let failure = ''
+    let liftOpen = false
     try {
-      if (kind === 'keep') await keepDeed(id)
-      else await dropDeed(id)
+      const result = kind === 'keep' ? await keepDeed(id, credits) : await dropDeed(id, credits)
+      liftOpen = Boolean(result?.liftOpen)
     } catch (err) {
       failure = messageOf(err)
       reset()
     }
     await load()
     if (failure) setError(failure)
-    else setFlash({ key: Date.now(), text: kind === 'keep' ? KEEP_TEXT : DROP_TEXT, undoId: id, side, kind })
+    else {
+      const tail = liftOpen ? ' Осталась заявка на разблокировку.' : ''
+      setFlash({ key: Date.now(), text: (kind === 'keep' ? KEEP_TEXT : DROP_TEXT) + tail, undoId: id, side, kind })
+    }
     setFly(null)
     setBusy(false)
     if (!failure) onDecided?.()
@@ -109,10 +102,10 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
 
   const decide = useCallback((kind) => {
     const id = card?.id
-    if (!id || busy || fly) return false
-    run(id, kind)
+    if (!id || busy || fly || card.reviewStatus) return false
+    run(id, kind, chosenCredits(card, kind, off), card.lift?.status === 'pending')
     return true
-  }, [card, busy, fly, run])
+  }, [card, busy, fly, off, run])
 
   const undo = useCallback(async () => {
     const last = flash
@@ -143,6 +136,33 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
     if (!failure) onDecided?.()
   }, [flash, busy, fly, load, onDecided])
 
+  const settleLift = useCallback(async (kind) => {
+    const id = card?.id
+    if (!id || busy || fly) return
+    setBusy(true)
+    setError('')
+    let failure = ''
+    try {
+      if (kind === 'lift') await liftDeed(id)
+      else await rejectLiftDeed(id)
+    } catch (err) {
+      failure = messageOf(err)
+    }
+    await load()
+    if (failure) setError(failure)
+    else {
+      setFlash({
+        key: Date.now(),
+        text: kind === 'lift'
+          ? 'Наказание снято. Игроку отправлено сообщение, что после проверки его сняли.'
+          : 'Заявка отклонена. Наказание остаётся.',
+        undoId: 0,
+      })
+    }
+    setBusy(false)
+    if (!failure) onDecided?.()
+  }, [card, busy, fly, load, onDecided])
+
   useEffect(() => {
     const onKey = (event) => {
       const key = deckKey(event)
@@ -168,7 +188,15 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   const waiting = Number(queue?.waiting) || 0
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
-  const label = card ? bandOf(card) : null
+  const label = card ? openingOf(card) : null
+  const toggleCredit = (key) => {
+    setOff((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const notes = (
     <>
@@ -198,13 +226,13 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
         <p className="deed-lead">
           {focusName
             ? `Показаны только проверки: ${focusName}.`
-            : 'Сначала идут наказания с ответом «подходит», затем «не подходит», затем «непонятно», в конце — те, что некому было проверить.'}
+            : 'Сначала заявки на разблокировку, затем карточки, где оба ответили одинаково, потом спорные и «непонятно».'}
         </p>
         {!card && notes}
         {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
         {queue && !card && !error && (
           <p className="work-empty">
-            {focusName ? 'Здесь пусто. Нажмите «Все администраторы», чтобы увидеть остальные проверки.' : 'Сейчас решать нечего.'}
+            {focusName ? 'Здесь пусто. Нажмите «Все, кто проверяет», чтобы увидеть остальные карточки.' : 'Сейчас решать нечего.'}
           </p>
         )}
       </div>
@@ -222,20 +250,88 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
             swipe={swipe}
           />
           <p className="tinder-hint deck-copy">
-            Потяните карточку: вправо — в зарплату, влево — мимо.
+            Галочка стоит у каждого. Снимите её, если этому человеку платить не нужно. Вправо засчитывает «подходит» и того, кто выдал. Влево засчитывает «неправильно».
             {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
             <span className="deck-keys-only"> На клавиатуре: → в зарплату, ← мимо, Ctrl+Z — вернуть решение.</span>
           </p>
-          <div className="deed-choice tinder-choice">
-            <button type="button" className="sec-btn sec-btn-ghost deck-btn is-wrong deed-no" disabled={locked} onClick={() => decide('drop')}>
-              <span><span className="deck-arrow" aria-hidden="true">←</span>Мимо</span>
-              <small>в зарплату не пойдёт</small>
-            </button>
-            <button type="button" className="sec-btn sec-btn-ghost deck-btn is-clear deed-yes" disabled={locked} onClick={() => decide('keep')}>
-              <span>В зарплату<span className="deck-arrow" aria-hidden="true">→</span></span>
-              <small>тому, кто выдал наказание</small>
-            </button>
-          </div>
+          {(card.credits || []).length > 0 && (
+            <ul className="credit-list">
+              {card.credits.map((person) => {
+                const key = `${person.role}:${person.userId}`
+                const never = person.payable === 'never'
+                const on = !never && !off.has(key)
+                return (
+                  <li key={key} className={never ? 'is-never' : ''}>
+                    <label>
+                      {never ? (
+                        <i className="credit-dot" aria-hidden="true" />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          disabled={locked || !salaryOpen}
+                          onChange={() => toggleCredit(key)}
+                        />
+                      )}
+                      <span>
+                        <strong>{person.name}</strong>
+                        <small>{creditHint(person)}</small>
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {card.lift?.status === 'pending' && (
+            <div className="lift-box">
+              <p>
+                {card.lift.by} просит снять это наказание. Снятие и зарплата решаются отдельно: влево наказание не снимает.
+                {card.lift.canLift
+                  ? ' «Разблокировать» снимет ровно то, что выдали, и напишет игроку.'
+                  : ''}
+              </p>
+              {card.lift.blocked && <p className="lift-block">{card.lift.blocked}</p>}
+              <div className="deed-choice tinder-choice">
+                <button
+                  type="button"
+                  className="sec-btn sec-btn-ghost deck-btn is-wrong"
+                  disabled={locked}
+                  onClick={() => settleLift('reject')}
+                >
+                  <span>Отклонить заявку</span>
+                  <small>наказание останется</small>
+                </button>
+                {card.lift.canLift && (
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-ghost deck-btn is-clear"
+                    disabled={locked}
+                    onClick={() => settleLift('lift')}
+                  >
+                    <span>Разблокировать</span>
+                    <small>снять и написать игроку</small>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {salaryOpen ? (
+            <div className="deed-choice tinder-choice">
+              <button type="button" className="sec-btn sec-btn-ghost deck-btn is-wrong deed-no" disabled={locked} onClick={() => decide('drop')}>
+                <span><span className="deck-arrow" aria-hidden="true">←</span>Мимо</span>
+                <small>тем, кто сказал «неправильно»</small>
+              </button>
+              <button type="button" className="sec-btn sec-btn-ghost deck-btn is-clear deed-yes" disabled={locked} onClick={() => decide('keep')}>
+                <span>В зарплату<span className="deck-arrow" aria-hidden="true">→</span></span>
+                <small>тому, кто выдал, и кто сказал «подходит»</small>
+              </button>
+            </div>
+          ) : (
+            <p className="deck-note deck-copy">
+              Зарплата уже решена: {card.reviewStatus === 'kept' ? 'в зарплату' : 'мимо'}.
+            </p>
+          )}
           {notes}
         </div>
       )}
@@ -298,8 +394,8 @@ function People({ people, totals, sorterId, onPick }) {
       >
         <CountUp className="pay-person-count" value={totals?.reviewed || 0} />
         <span className="pay-person-label">проверок всего</span>
-        <strong>Все администраторы</strong>
-        <span className="pay-person-title">В списке {admins(totals?.admins || 0)}</span>
+        <strong>Все, кто проверяет</strong>
+        <span className="pay-person-title">В списке {peopleCount(totals?.admins || 0)}</span>
         <Bar person={totals || {}} delay={120} />
         <Legend person={totals || {}} />
         <Fate person={totals || {}} />
@@ -401,7 +497,7 @@ function DoneList({ sorterId, focusName, tick }) {
                   Выдал {item.adminName || 'администратор'} · {when(item.createdAt)}
                 </p>
                 <p className="staff-card-date">
-                  {checkedBy(item)} · решено {when(item.reviewedAt)}
+                  {chainLine(item)} · решено {when(item.reviewedAt)}
                 </p>
                 {item.reason && <p className="done-reason">{item.reason}</p>}
               </div>
@@ -445,6 +541,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
     { id: 'check', label: 'Проверка' },
     { id: 'done', label: 'Решённые' },
     { id: 'rates', label: 'Нормы' },
+    { id: 'cash', label: 'Касса' },
     { id: 'payouts', label: 'К выплате' },
   ]
   if (showPayroll) views.push({ id: 'payroll', label: 'Оклады' })
@@ -472,19 +569,19 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
         <>
           <div className="deck-copy">
             <p className="deed-lead">
-              Администраторы заранее проверяют чужие наказания, поэтому к вам они приходят с готовым ответом — остаётся решить одним жестом.
+              Наказание проходит администратора группы и сотрудника проекта. Галочка стоит у каждого: снимите её, если этому человеку платить не нужно. Вправо засчитывает того, кто выдал, и кто сказал «подходит». Влево засчитывает тех, кто сказал «неправильно».
             </p>
             <p className="deck-why">
-              Нажмите на человека, чтобы смотреть только его проверки. В зарплату идёт только то, что вы отправили вправо.
+              Нажмите на человека, чтобы смотреть только его проверки. Одну карточку проверяют двое, не больше: один администратор и один сотрудник.
             </p>
           </div>
           {error && <p className="staff-hint deck-copy" role="alert">{error}</p>}
           {!roster && !error && <p className="staff-hint deck-copy">Считаем проверки…</p>}
           {roster && !roster.people?.length && (
             <p className="work-empty deck-copy">
-              Проверять чужие наказания пока некому. Включите должности право «Архив» в разделе
-              «Стафф → Администраторы → Должности» — у этих людей появится вкладка «Работа», и наказания
-              начнут приходить к вам уже проверенными.
+              Проверять пока некому. Администраторам групп нужно право «Архив» в разделе
+              «Стафф → Администраторы → Должности» — у них появится вкладка «Работа».
+              Сотрудники проекта проверяют следом во вкладке «Архив → Проверка».
             </p>
           )}
           <div className="pay-check">
@@ -500,6 +597,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
         </>
       )}
       {view === 'rates' && <DeedRates />}
+      {view === 'cash' && <PurseDesk />}
       {view === 'payouts' && <DeedPayouts />}
       {view === 'payroll' && showPayroll && payroll}
     </div>

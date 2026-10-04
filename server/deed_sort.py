@@ -1,17 +1,14 @@
-"""Общая проверка наказаний.
+"""Цепочка проверки наказаний.
 
-Первый проход делает другой администратор архива: «подходит», «не подходит»
-или «непонятно». Создатель видит уже проверенную очередь, и только его решение
-входит в зарплату.
+Один администратор группы отвечает первым. Ответ — любой, включая
+«непонятно», — закрывает этап: остальные администраторы эту карточку
+больше не видят. Дальше её берёт один сотрудник проекта, затем создатель.
 
-«Подходит» и «не подходит» закрывают первый проход. «Непонятно» его не закрывает:
-наказание остаётся у остальных администраторов и сразу приходит создателю.
-Кто первым ответит точно или решит сам создатель, тот и закрывает дело.
+Если на этапе некому проверять, карточка перескакивает дальше сама.
+Заявка на разблокировку остаётся у создателя, пока он её не решит.
 
-Порядок первого прохода: с фото, затем с причиной, пустые в конце.
-Внутри стопки старые раньше новых.
-Порядок второго прохода: подходит, не подходит, непонятно, затем те,
-которые было некому проверить.
+В зарплату попадает тот, чей ответ совпал с решением создателя.
+«Непонятно» — это не ответ, за него не платят.
 """
 
 from __future__ import annotations
@@ -25,9 +22,23 @@ VERDICTS = (VERDICT_CLEAR, VERDICT_WRONG, VERDICT_WEAK)
 
 VERDICT_LABELS = {
     VERDICT_CLEAR: "Подходит",
-    VERDICT_WRONG: "Не подходит",
+    VERDICT_WRONG: "Наказание выдано неправильно",
     VERDICT_WEAK: "Непонятно",
 }
+
+STAGE_ADMIN = "admin"
+STAGE_STAFF = "staff"
+CLAIM_SECONDS = 75
+
+CHECK_ADMIN = "check_admin"
+CHECK_STAFF = "check_staff"
+CHECK_RATES = (
+    (CHECK_ADMIN, "Проверки администраторов"),
+    (CHECK_STAFF, "Проверки сотрудников"),
+)
+
+STAFF_ROLES = ("senior_admin", "junior_admin", "moderator")
+CREDIT_ROLES = ("issue", "admin", "staff")
 
 BAND_PHOTO = "photo"
 BAND_REASON = "reason"
@@ -51,17 +62,40 @@ CREATE TABLE IF NOT EXISTS epsilon_deed_unclear (
 )
 """
 
-# Раньше «непонятно» закрывало дело для всех. Такие пометки переезжают
-# в общий список «непонятно», и дело снова видят остальные администраторы.
-MOVE_OLD_UNCLEAR_SQL = """
-WITH old AS (
-  DELETE FROM epsilon_deed_sorts
-  WHERE verdict = 'weak'
-  RETURNING action_id, sorter_id, sorted_at
+# Раньше «непонятно» не закрывало этап и копилось отдельно.
+# Теперь у карточки один ответ: берём самый ранний и закрываем им этап.
+FOLD_UNCLEAR_SQL = """
+INSERT INTO epsilon_deed_sorts (action_id, verdict, sorter_id, sorted_at)
+SELECT DISTINCT ON (u.action_id) u.action_id, 'weak', u.sorter_id, u.marked_at
+FROM epsilon_deed_unclear u
+WHERE NOT EXISTS (
+    SELECT 1 FROM epsilon_deed_sorts s WHERE s.action_id = u.action_id
 )
-INSERT INTO epsilon_deed_unclear (action_id, sorter_id, marked_at)
-SELECT action_id, sorter_id, sorted_at FROM old
-ON CONFLICT (action_id, sorter_id) DO NOTHING
+ORDER BY u.action_id, u.marked_at ASC
+ON CONFLICT (action_id) DO NOTHING
+"""
+
+CREATE_STAFF_SQL = """
+CREATE TABLE IF NOT EXISTS epsilon_deed_staff (
+    action_id BIGINT PRIMARY KEY,
+    verdict TEXT NOT NULL,
+    lift_ask BOOLEAN NOT NULL DEFAULT FALSE,
+    lift_status TEXT,
+    staff_id BIGINT NOT NULL,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    lift_decided_at TIMESTAMPTZ,
+    lift_decided_by BIGINT
+)
+"""
+
+CREATE_CLAIMS_SQL = """
+CREATE TABLE IF NOT EXISTS epsilon_deed_claims (
+    action_id BIGINT NOT NULL,
+    stage TEXT NOT NULL,
+    user_id BIGINT NOT NULL,
+    until_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (action_id, stage)
+)
 """
 
 ADMIN_ORDER_SQL = """
@@ -74,12 +108,19 @@ s.created_at ASC NULLS LAST,
 s.id ASC
 """
 
+# Сначала живая заявка на разблокировку: человек может быть наказан зря.
+# Потом согласие обоих, потом спор, потом «непонятно», в конце пропуски.
 CREATOR_ORDER_SQL = """
 CASE
-  WHEN ds.verdict = 'clear' THEN 0
-  WHEN ds.verdict = 'wrong' THEN 1
-  WHEN ds.verdict = 'weak' OR COALESCE(dq.n, 0) > 0 THEN 2
-  ELSE 3
+  WHEN COALESCE(st.lift_ask, FALSE) AND st.lift_status = 'pending' THEN 0
+  WHEN ds.verdict = 'clear' AND st.verdict = 'clear' THEN 1
+  WHEN ds.verdict = 'wrong' AND st.verdict = 'wrong' THEN 2
+  WHEN ds.verdict IN ('clear', 'wrong') AND st.verdict IN ('clear', 'wrong')
+       AND ds.verdict <> st.verdict THEN 3
+  WHEN ds.verdict = 'weak' OR st.verdict = 'weak' THEN 4
+  WHEN ds.verdict = 'clear' OR st.verdict = 'clear' THEN 1
+  WHEN ds.verdict = 'wrong' OR st.verdict = 'wrong' THEN 2
+  ELSE 5
 END,
 s.created_at ASC NULLS LAST,
 s.id ASC
@@ -98,45 +139,108 @@ def evidence_band(has_proof: bool, reason: str) -> str:
 
 def creator_rank(verdict: str | None) -> int:
     return {
-        VERDICT_CLEAR: 0,
-        VERDICT_WRONG: 1,
-        VERDICT_WEAK: 2,
-    }.get(str(verdict or ""), 3)
+        VERDICT_CLEAR: 1,
+        VERDICT_WRONG: 2,
+        VERDICT_WEAK: 4,
+    }.get(str(verdict or ""), 5)
 
 
-def unclear_join_sql(action: str = "s") -> str:
-    """Кто уже ответил «непонятно» на это наказание: dq.n и dq.names."""
-    return f"""
-    LEFT JOIN LATERAL (
-      SELECT
-        COUNT(*)::int AS n,
-        COALESCE(
-          array_agg(
-            COALESCE(NULLIF(btrim(uu.first_name), ''), NULLIF(btrim(uu.username), ''), 'ID ' || du.sorter_id::text)
-            ORDER BY du.marked_at
-          ),
-          ARRAY[]::text[]
-        ) AS names
-      FROM epsilon_deed_unclear du
-      LEFT JOIN users uu ON uu.user_id = du.sorter_id
-      WHERE du.action_id = {action}.id
-    ) dq ON TRUE
+def pick_credits(
+    status: str,
+    people: list[tuple[str, int, str]],
+    asked: set[tuple[str, int]] | None,
+) -> list[tuple[str, int]]:
+    """Кого засчитать. asked is None — всех, чей ответ совпал. Пустой набор — никого."""
+    eligible = [
+        (role, int(user_id))
+        for role, user_id, verdict in people
+        if int(user_id or 0) > 0 and credit_eligible(status, role, verdict or "")
+    ]
+    if asked is None:
+        return eligible
+    return [pair for pair in eligible if pair in asked]
+
+
+def credit_eligible(status: str, role: str, verdict: str) -> bool:
+    """Совпал ли ответ человека с решением создателя.
+
+    Выдавшему платят только когда наказание признано верным.
+    Проверившему — когда его «подходит» или «неправильно» совпало.
+    «Непонятно» не совпадает ни с чем.
     """
+    if role == "issue":
+        return status == "kept"
+    if verdict == VERDICT_CLEAR:
+        return status == "kept"
+    if verdict == VERDICT_WRONG:
+        return status == "dropped"
+    return False
+
+
+def lift_actions(action_type: str, scope: str | None) -> tuple[str, ...] | None:
+    """Чем снять ровно то, что выдали. None — снять нельзя (кик)."""
+    action = (action_type or "").strip().lower()
+    span = (scope or "chat").strip().lower() or "chat"
+    if span not in ("chat", "all", "full"):
+        span = "chat"
+    table = {
+        ("ban", "chat"): ("unban",),
+        ("ban", "all"): ("unbanall",),
+        ("ban", "full"): ("unbanall", "bot_unban"),
+        ("mute", "chat"): ("unmute",),
+        ("mute", "all"): ("unmuteall",),
+        ("mute", "full"): ("unmuteall",),
+        ("warn", "chat"): ("unwarn_chat",),
+        ("warn", "all"): ("unwarn_all",),
+        ("warn", "full"): ("unwarn_all",),
+    }
+    if action == "kick":
+        return None
+    return table.get((action, span))
+
+
+def can_apply_lift(
+    action_type: str,
+    scope: str | None,
+    chat_id: int | None,
+    target_id: int | None,
+) -> tuple[bool, str]:
+    if not target_id:
+        return False, "В архиве нет игрока, снять наказание некого."
+    actions = lift_actions(action_type, scope)
+    if not actions:
+        if (action_type or "").strip().lower() == "kick":
+            return False, "Кик уже выполнен: вернуть человека в группу нельзя."
+        return False, "Такое наказание снять нельзя."
+    span = (scope or "chat").strip().lower() or "chat"
+    needs_chat = span == "chat" and any(
+        name in actions for name in ("unban", "unmute", "unwarn_chat")
+    )
+    if needs_chat and not chat_id:
+        return False, "В архиве не записана группа, поэтому снять наказание в ней нельзя."
+    return True, ""
 
 
 def verdict_of_sql(action_id_sql: str) -> str:
-    """Пометка для архива: точный ответ, а если его нет — «непонятно»."""
-    return f"""COALESCE(
-      (SELECT ds.verdict FROM epsilon_deed_sorts ds WHERE ds.action_id = {action_id_sql}),
-      (SELECT 'weak'::text FROM epsilon_deed_unclear du WHERE du.action_id = {action_id_sql} LIMIT 1)
-    )"""
+    """Ответ администратора группы для архива. Один на карточку."""
+    return (
+        f"(SELECT ds.verdict FROM epsilon_deed_sorts ds "
+        f"WHERE ds.action_id = {action_id_sql})"
+    )
 
 
-def _owner_ids_sql() -> str:
-    from config import owner_user_ids
+def _blocked_ids_sql() -> str:
+    from config import PROJECT_CREATOR_ID, owner_user_ids
 
-    ids = [int(item) for item in owner_user_ids()] or [0]
-    return ", ".join(str(item) for item in ids)
+    ids = {int(item) for item in owner_user_ids()}
+    ids.add(int(PROJECT_CREATOR_ID))
+    if not ids:
+        ids.add(0)
+    return ", ".join(str(item) for item in sorted(ids))
+
+
+def _role_list_sql() -> str:
+    return ", ".join(f"'{role}'" for role in STAFF_ROLES)
 
 
 def _live_archive_seat(seat: str, position: str) -> str:
@@ -154,15 +258,15 @@ def _live_archive_seat(seat: str, position: str) -> str:
 
 
 def other_sorter_exists(action: str = "s") -> str:
-    """Есть другой администратор архива, который может проверить это дело."""
-    owners = _owner_ids_sql()
+    """Есть другой администратор архива, который может взять эту карточку."""
+    blocked = _blocked_ids_sql()
     return f"""
       EXISTS (
         SELECT 1
         FROM epsilon_seats o
         JOIN epsilon_positions p ON p.id = o.position_id
         WHERE o.user_id <> COALESCE({action}.admin_user_id, 0)
-          AND o.user_id NOT IN ({owners})
+          AND o.user_id NOT IN ({blocked})
           AND {_live_archive_seat("o", "p")}
           AND (
             (COALESCE({action}.chat_id, 0) <> 0 AND o.chat_id = {action}.chat_id)
@@ -174,7 +278,7 @@ def other_sorter_exists(action: str = "s") -> str:
 
 def self_can_sort(action: str = "s", user_sql: str = "$2") -> str:
     """Этот человек проверяет чужое дело в своей группе."""
-    owners = _owner_ids_sql()
+    blocked = _blocked_ids_sql()
     return f"""
       EXISTS (
         SELECT 1
@@ -182,7 +286,7 @@ def self_can_sort(action: str = "s", user_sql: str = "$2") -> str:
         JOIN epsilon_positions mp ON mp.id = me.position_id
         WHERE me.user_id = {user_sql}
           AND me.user_id <> COALESCE({action}.admin_user_id, 0)
-          AND me.user_id NOT IN ({owners})
+          AND me.user_id NOT IN ({blocked})
           AND {_live_archive_seat("me", "mp")}
           AND (
             (COALESCE({action}.chat_id, 0) <> 0 AND me.chat_id = {action}.chat_id)
@@ -192,21 +296,96 @@ def self_can_sort(action: str = "s", user_sql: str = "$2") -> str:
     """
 
 
-def creator_ready_sql(action: str = "s") -> str:
-    """Создателю: уже проверенное, «непонятно» или то, что проверить некому.
-
-    В запросе должны быть ds (точный ответ) и dq из unclear_join_sql.
+def self_is_staff(user_sql: str = "$2") -> str:
+    roles = _role_list_sql()
+    blocked = _blocked_ids_sql()
+    return f"""
+      EXISTS (
+        SELECT 1 FROM admin_accounts me
+        WHERE me.user_id = {user_sql}
+          AND me.user_id NOT IN ({blocked})
+          AND me.status = 'active'
+          AND me.role IN ({roles})
+      )
     """
-    return f"(ds.action_id IS NOT NULL OR COALESCE(dq.n, 0) > 0 OR NOT ({other_sorter_exists(action)}))"
 
 
-_MARKS_SQL = """
+def staff_available_sql(action: str = "s") -> str:
+    """Есть сотрудник, который ещё не проверял эту карточку.
+
+    В запросе нужен ds: тот, кто уже ответил как администратор, второй раз
+    не считается. Создатель и владелец на этом этапе не работают.
+    """
+    roles = _role_list_sql()
+    blocked = _blocked_ids_sql()
+    return f"""
+      EXISTS (
+        SELECT 1 FROM admin_accounts me
+        WHERE me.status = 'active'
+          AND me.role IN ({roles})
+          AND me.user_id NOT IN ({blocked})
+          AND me.user_id <> COALESCE({action}.admin_user_id, 0)
+          AND me.user_id <> COALESCE(ds.sorter_id, 0)
+      )
+    """
+
+
+def claim_free_sql(stage: str, user_sql: str, action: str = "s") -> str:
+    """Карточку уже держит другой человек этого же этапа — не показываем."""
+    if stage not in (STAGE_ADMIN, STAGE_STAFF):
+        raise ValueError("unknown stage")
+    return f"""
+      NOT EXISTS (
+        SELECT 1 FROM epsilon_deed_claims cl
+        WHERE cl.action_id = {action}.id
+          AND cl.stage = '{stage}'
+          AND cl.user_id <> {user_sql}
+          AND cl.until_at > NOW()
+      )
+    """
+
+
+def admin_stage_done_sql(action: str = "s") -> str:
+    return f"(ds.action_id IS NOT NULL OR NOT ({other_sorter_exists(action)}))"
+
+
+def staff_stage_done_sql(action: str = "s") -> str:
+    return f"(st.action_id IS NOT NULL OR NOT ({staff_available_sql(action)}))"
+
+
+def creator_waiting_sql() -> str:
+    return """(
+      v.action_id IS NULL
+      OR (COALESCE(st.lift_ask, FALSE) AND st.lift_status = 'pending')
+    )"""
+
+
+def creator_ready_sql(action: str = "s") -> str:
+    """Создателю: оба предыдущих этапа закрыты, либо их было некому пройти.
+
+    Заявка на разблокировку остаётся, даже если зарплата уже записана.
+    В запросе нужны v, ds и st.
+    """
+    return f"""(
+      {creator_waiting_sql()}
+      AND (
+        v.action_id IS NOT NULL
+        OR (
+          {admin_stage_done_sql(action)}
+          AND {staff_stage_done_sql(action)}
+        )
+      )
+    )"""
+
+
+def _marks_sql() -> str:
+    return """
     marks AS (
-      SELECT action_id, sorter_id, verdict, sorted_at AS at
+      SELECT action_id, sorter_id AS user_id, verdict, sorted_at AS at
       FROM epsilon_deed_sorts
       UNION ALL
-      SELECT action_id, sorter_id, 'weak' AS verdict, marked_at AS at
-      FROM epsilon_deed_unclear
+      SELECT action_id, staff_id AS user_id, verdict, checked_at AS at
+      FROM epsilon_deed_staff
     )"""
 
 
@@ -221,26 +400,40 @@ def _marks_from_sql() -> str:
 
 
 def reviewer_roster_sql() -> str:
-    """Все, кто может проверять чужие наказания, и сколько каждый уже проверил.
+    """Кто проверяет чужие наказания, и сколько каждый уже ответил.
 
-    Живой кабинет с правом архива остаётся в списке даже с нулём.
-    Кто проверял раньше и место потерял, тоже остаётся: его ответы уже в архиве.
+    Живой кабинет с правом архива и живой сотрудник проекта остаются в списке
+    даже с нулём. Кто отвечал раньше и место потерял, тоже остаётся.
     """
-    owners = _owner_ids_sql()
+    blocked = _blocked_ids_sql()
+    roles = _role_list_sql()
     live = _live_archive_seat("o", "p")
     return f"""
-    WITH live AS (
+    WITH live_admin AS (
       SELECT o.user_id, MAX(p.title) AS title
       FROM epsilon_seats o
       JOIN epsilon_positions p ON p.id = o.position_id
-      WHERE o.user_id NOT IN ({owners})
+      WHERE o.user_id NOT IN ({blocked})
         AND {live}
       GROUP BY o.user_id
     ),
-    {_MARKS_SQL},
+    live_staff AS (
+      SELECT a.user_id,
+             CASE a.role
+               WHEN 'senior_admin' THEN 'Старший администратор'
+               WHEN 'junior_admin' THEN 'Младший администратор'
+               WHEN 'moderator' THEN 'Модератор'
+               ELSE ''
+             END AS title
+      FROM admin_accounts a
+      WHERE a.status = 'active'
+        AND a.role IN ({roles})
+        AND a.user_id NOT IN ({blocked})
+    ),
+    {_marks_sql()},
     stats AS (
       SELECT
-        m.sorter_id,
+        m.user_id AS sorter_id,
         COUNT(*)::int AS reviewed,
         COUNT(*) FILTER (WHERE m.verdict = 'clear')::int AS clear_n,
         COUNT(*) FILTER (WHERE m.verdict = 'wrong')::int AS wrong_n,
@@ -250,13 +443,13 @@ def reviewer_roster_sql() -> str:
         COUNT(*) FILTER (WHERE dr.action_id IS NULL)::int AS open_n,
         MAX(m.at) AS last_at
       {_marks_from_sql()}
-      GROUP BY m.sorter_id
+      GROUP BY m.user_id
     )
     SELECT
       people.user_id AS id,
       COALESCE(NULLIF(btrim(u.first_name), ''), NULLIF(btrim(u.username), ''), '') AS name,
       COALESCE(u.username, '') AS username,
-      COALESCE(live.title, '') AS title,
+      COALESCE(NULLIF(live_admin.title, ''), live_staff.title, '') AS title,
       COALESCE(stats.reviewed, 0) AS reviewed,
       COALESCE(stats.clear_n, 0) AS clear_n,
       COALESCE(stats.wrong_n, 0) AS wrong_n,
@@ -266,31 +459,34 @@ def reviewer_roster_sql() -> str:
       COALESCE(stats.open_n, 0) AS open_n,
       stats.last_at
     FROM (
-      SELECT user_id FROM live
+      SELECT user_id FROM live_admin
+      UNION
+      SELECT user_id FROM live_staff
       UNION
       SELECT sorter_id AS user_id FROM stats
     ) people
-    LEFT JOIN live ON live.user_id = people.user_id
+    LEFT JOIN live_admin ON live_admin.user_id = people.user_id
+    LEFT JOIN live_staff ON live_staff.user_id = people.user_id
     LEFT JOIN stats ON stats.sorter_id = people.user_id
     LEFT JOIN users u ON u.user_id = people.user_id
     WHERE people.user_id IS NOT NULL
       AND people.user_id <> 0
-      AND people.user_id NOT IN ({owners})
+      AND people.user_id NOT IN ({blocked})
     ORDER BY COALESCE(stats.reviewed, 0) DESC, stats.last_at DESC NULLS LAST, people.user_id ASC
     """
 
 
 def reviewer_totals_sql() -> str:
-    """Итог по всем: одно наказание считается один раз, даже если его смотрели двое."""
-    owners = _owner_ids_sql()
+    """Итог по карточкам: одно наказание считается один раз."""
+    blocked = _blocked_ids_sql()
     return f"""
-    WITH {_MARKS_SQL.strip()}
+    WITH {_marks_sql().strip()}
     SELECT
       COUNT(DISTINCT m.action_id) FILTER (WHERE dr.status = 'kept')::int AS kept_n,
       COUNT(DISTINCT m.action_id) FILTER (WHERE dr.status = 'dropped')::int AS dropped_n,
       COUNT(DISTINCT m.action_id) FILTER (WHERE dr.action_id IS NULL)::int AS open_n
     {_marks_from_sql()}
-      AND m.sorter_id NOT IN ({owners})
+      AND m.user_id NOT IN ({blocked})
     """
 
 
@@ -305,5 +501,25 @@ async def ensure_deed_sorts() -> None:
             await conn.execute("SELECT pg_advisory_xact_lock(hashtext('epsilon_deed_sorts'))")
             await conn.execute(CREATE_SORTS_SQL)
             await conn.execute(CREATE_UNCLEAR_SQL)
-            await conn.execute(MOVE_OLD_UNCLEAR_SQL)
+            await conn.execute(FOLD_UNCLEAR_SQL)
+            await conn.execute(CREATE_STAFF_SQL)
+            await conn.execute(CREATE_CLAIMS_SQL)
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS epsilon_deed_sorts_sorter_idx
+                    ON epsilon_deed_sorts (sorter_id, sorted_at DESC)
+                """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS epsilon_deed_staff_staff_idx
+                    ON epsilon_deed_staff (staff_id, checked_at DESC)
+                """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS epsilon_deed_claims_until_idx
+                    ON epsilon_deed_claims (stage, until_at)
+                """
+            )
     _READY = True

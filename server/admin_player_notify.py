@@ -105,5 +105,23 @@ def notify_unbanned(user_id: int) -> None:
     _send(user_id, "<b><tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> Блокировка снята\nМожно снова играть.</b>")
 
 
+_LIFTED_KIND = {
+    "ban": "блокировку",
+    "mute": "мут",
+    "warn": "предупреждение",
+}
+
+
+def notify_punishment_lifted(user_id: int, *, action_type: str) -> None:
+    """Игроку после того, как создатель снял наказание по заявке."""
+    kind = _LIFTED_KIND.get((action_type or "").strip().lower(), "наказание")
+    _send(
+        user_id,
+        "<b><tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> Наказание снято</b>\n"
+        f"После проверки сняли {kind}.\n"
+        "<blockquote><b>Можно снова пользоваться чатом.</b></blockquote>",
+    )
+
+
 def notify_onboarding_reset(user_id: int) -> None:
     _send(user_id, "<b><tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> Обучение сброшено\nПри следующем входе пройдёте его заново.</b>")

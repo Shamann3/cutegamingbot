@@ -98,11 +98,11 @@ def test_roster_ignores_deleted_and_bot_records():
         assert "'ban', 'mute', 'kick', 'warn'" in sql
 
 
-def test_unclear_stays_open_for_other_admins_and_reaches_creator_at_once():
-    from deed_pay import UNDO_UNCLEAR_SQL, _work_where
+def test_one_answer_closes_the_stage_and_moves_the_card_on():
+    from deed_pay import UNDO_SORT_SQL, UNDO_STAFF_SQL, _staff_where, _work_where
     from deed_sort import (
         CREATOR_ORDER_SQL,
-        MOVE_OLD_UNCLEAR_SQL,
+        FOLD_UNCLEAR_SQL,
         creator_ready_sql,
         reviewer_roster_sql,
         reviewer_totals_sql,
@@ -110,52 +110,93 @@ def test_unclear_stays_open_for_other_admins_and_reaches_creator_at_once():
     )
 
     work = _work_where()
+    staff = _staff_where()
     assert "ds.action_id IS NULL" in work
-    assert "mine.sorter_id = $2" in work
-    assert "dq.n" not in work
-    assert "COALESCE(dq.n, 0) > 0" in creator_ready_sql()
-    assert CREATOR_ORDER_SQL.index("'wrong'") < CREATOR_ORDER_SQL.index("dq.n") < CREATOR_ORDER_SQL.index("ELSE 3")
-    assert "sorter_id = $2" in UNDO_UNCLEAR_SQL
-    assert "INTERVAL '10 minutes'" in UNDO_UNCLEAR_SQL
-    assert "epsilon_deed_reviews" in UNDO_UNCLEAR_SQL
-    assert "epsilon_deed_sorts" in UNDO_UNCLEAR_SQL
-    assert "DELETE FROM epsilon_deed_sorts" in MOVE_OLD_UNCLEAR_SQL
-    assert "INSERT INTO epsilon_deed_unclear" in MOVE_OLD_UNCLEAR_SQL
+    assert "epsilon_deed_claims" in work
+    assert "epsilon_deed_unclear" not in work
+    assert "st.action_id IS NULL" in staff
+    assert "admin_accounts" in staff
+    assert "senior_admin" in staff
+    ready = creator_ready_sql()
+    assert "lift_status = 'pending'" in ready
+    assert "admin_accounts" in ready
+    assert CREATOR_ORDER_SQL.index("lift_status = 'pending'") < CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'")
+    assert CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'") < CREATOR_ORDER_SQL.index("ds.verdict = 'wrong' AND st.verdict = 'wrong'")
+    assert "epsilon_deed_staff" in UNDO_SORT_SQL
+    assert "INTERVAL '10 minutes'" in UNDO_SORT_SQL
+    assert "lift_status IS NULL" in UNDO_STAFF_SQL
+    assert "INSERT INTO epsilon_deed_sorts" in FOLD_UNCLEAR_SQL
+    assert "DELETE FROM epsilon_deed_sorts" not in FOLD_UNCLEAR_SQL
     roster = reviewer_roster_sql()
-    assert "UNION ALL" in roster
-    assert "epsilon_deed_unclear" in roster
+    assert "UNION" in roster
+    assert "epsilon_deed_staff" in roster
+    assert "view_archive" in roster
+    assert "cutegamingbot" in roster
+    assert "JOIN staff_actions" in roster
     assert "COUNT(DISTINCT m.action_id)" in reviewer_totals_sql()
     archive = verdict_of_sql("s.id")
-    assert "epsilon_deed_sorts" in archive and "epsilon_deed_unclear" in archive
+    assert "epsilon_deed_sorts" in archive
+    assert "epsilon_deed_unclear" not in archive
 
 
-def test_card_shows_unclear_without_a_precise_answer():
-    from deed_pay import _by_sorter, _card, _verdict_of
+def test_card_carries_the_chain_the_credits_and_the_lift():
+    from deed_pay import CHECK_COUNT_SQL, ISSUE_COUNT_SQL, _by_person, _card
 
-    assert _verdict_of({"sort_verdict": None, "unclear_n": 2}) == "weak"
-    assert _verdict_of({"sort_verdict": "clear", "unclear_n": 1}) == "clear"
-    assert _verdict_of({}) == ""
     row = {
-        "id": 7, "action_type": "mute", "scope": "chat", "chat_id": -1001, "duration_minutes": 60,
+        "id": 7, "action_type": "ban", "scope": "chat", "chat_id": -1001, "duration_minutes": 60,
         "created_at": None, "chat_title": "Кьют Чат", "admin_user_id": 3, "admin_name": "Пётр",
         "target_player_id": 9, "target_name": "Дима", "target_photo": None, "reason": "спам",
-        "evidence": "", "proof_media_id": "file", "archive_count": 1, "rate_title": "Муты",
+        "evidence": "", "proof_media_id": "file", "archive_count": 1, "rate_title": "Баны",
         "every_n": 50, "reward_kut": 80, "rate_enabled": True,
-        "sort_verdict": None, "sorter_name": "", "unclear_n": 2, "unclear_names": ["Анна", "Олег"],
+        "sort_verdict": "wrong", "sorter_id": 4, "sorter_name": "Анна",
+        "staff_verdict": "wrong", "staff_id": 8, "staff_name": "Игорь",
+        "lift_ask": True, "lift_status": "pending", "review_status": None,
     }
     card = _card(row, [])
-    assert card["sortVerdict"] == "weak"
-    assert card["sortLabel"] == "Непонятно"
-    assert card["unclearCount"] == 2
-    assert card["unclearNames"] == ["Анна", "Олег"]
     assert card["direct"] is False
-    assert card["sorterName"] == ""
-    direct = _card({**row, "unclear_n": 0, "unclear_names": []}, [])
+    assert [step["role"] for step in card["chain"]] == ["admin", "staff"]
+    assert card["chain"][0]["label"] == "Наказание выдано неправильно"
+    assert card["lift"]["canLift"] is True
+    assert card["lift"]["status"] == "pending"
+    payable = {item["role"]: item["payable"] for item in card["credits"]}
+    assert payable == {"issue": "keep", "admin": "drop", "staff": "drop"}
+    direct = _card({
+        **row,
+        "sort_verdict": "", "sorter_name": "", "staff_verdict": "", "staff_name": "",
+        "lift_ask": False, "lift_status": None,
+    }, [])
     assert direct["direct"] is True
-    assert direct["sortVerdict"] is None
-    sorter = _by_sorter(3, "s.id")
-    assert "ds.sorter_id = $3" in sorter
-    assert "mark.sorter_id = $3" in sorter
+    assert direct["chain"] == []
+    assert direct["lift"] is None
+    person = _by_person(2, "s.id")
+    assert "ds.sorter_id = $2" in person
+    assert "mark.staff_id = $2" in person
+    assert "credits_set" in ISSUE_COUNT_SQL
+    assert "epsilon_deed_credits" in CHECK_COUNT_SQL
+
+
+def test_pay_follows_the_matching_answer_and_a_kick_cannot_be_lifted():
+    from deed_sort import can_apply_lift, credit_eligible, lift_actions, pick_credits
+
+    people = [("issue", 3, ""), ("admin", 4, "clear"), ("staff", 8, "wrong"), ("admin", 5, "weak")]
+    assert pick_credits("kept", people, None) == [("issue", 3), ("admin", 4)]
+    assert pick_credits("dropped", people, None) == [("staff", 8)]
+    assert pick_credits("kept", people, set()) == []
+    assert pick_credits("dropped", people, {("staff", 8)}) == [("staff", 8)]
+    assert credit_eligible("kept", "admin", "weak") is False
+    assert credit_eligible("dropped", "issue", "") is False
+    assert lift_actions("ban", "chat") == ("unban",)
+    assert lift_actions("ban", "full") == ("unbanall", "bot_unban")
+    assert lift_actions("mute", "all") == ("unmuteall",)
+    assert lift_actions("warn", "chat") == ("unwarn_chat",)
+    assert lift_actions("kick", "chat") is None
+    ok, why = can_apply_lift("kick", "chat", -100, 9)
+    assert ok is False
+    assert "Кик" in why
+    ok, why = can_apply_lift("ban", "chat", 0, 9)
+    assert ok is False
+    assert "группа" in why
+    assert can_apply_lift("ban", "chat", -100, 9) == (True, "")
 
 
 def test_project_sort_order_is_fixed():
@@ -164,9 +205,9 @@ def test_project_sort_order_is_fixed():
     assert evidence_band(True, "") == "photo"
     assert evidence_band(False, "спам") == "reason"
     assert evidence_band(False, "  ") == "empty"
-    assert [creator_rank(name) for name in ("clear", "wrong", "weak", None)] == [0, 1, 2, 3]
+    assert [creator_rank(name) for name in ("clear", "wrong", "weak", None)] == [1, 2, 4, 5]
     assert VERDICT_LABELS["clear"] == "Подходит"
-    assert VERDICT_LABELS["wrong"] == "Не подходит"
+    assert VERDICT_LABELS["wrong"] == "Наказание выдано неправильно"
     assert VERDICT_LABELS["weak"] == "Непонятно"
     assert CREATOR_ORDER_SQL.index("clear") < CREATOR_ORDER_SQL.index("wrong") < CREATOR_ORDER_SQL.index("weak")
     assert "proof_media_id" in ADMIN_ORDER_SQL
@@ -176,3 +217,53 @@ def test_project_sort_order_is_fixed():
     assert "view_archive" in seat
     assert "me.user_id <>" in seat
     assert "key_hash" in seat
+
+
+def test_norms_shrink_to_the_technical_purse_and_keep_a_reserve():
+    from datetime import date
+
+    from deed_pay import DAYS_SQL, PAID_SPLIT_SQL, PURSE_SQL
+    from deed_tune import fill_days, plan_tune, unit_text, week_room
+
+    room = week_room(100_000, 0)
+    assert room["reserve"] == 40_000
+    assert room["budget"] == 15_000
+    assert week_room(100_000, 20_000)["budget"] == 0
+
+    full = plan_tune(1_000_000, 0, {}, [], set(), groups=12)
+    by = {item["action"]: item for item in full["updates"]}
+    assert by["ban"]["reward"] == 200 and by["ban"]["enabled"] is True
+    assert by["check_admin"]["reward"] == 40 and by["check_admin"]["enabled"] is True
+    assert by["check_staff"]["reward"] == 60
+    assert "полные нормы" in full["note"]
+    assert "Выплатить" in full["note"]
+
+    tight = plan_tune(100_000, 0, {"ban": 10_000}, [
+        {"action": "ban", "every_n": 100, "reward": 200, "purse": "tech", "enabled": True, "title": "Баны"},
+    ], set(), groups=4)
+    ban = next(item for item in tight["updates"] if item["action"] == "ban")
+    assert ban["reward"] < 200
+    assert ban["every_n"] == 100
+    assert "ужаты" in tight["note"]
+
+    empty = plan_tune(0, 0, {"ban": 10}, [
+        {"action": "ban", "every_n": 100, "reward": 200, "purse": "tech", "enabled": True, "title": "Баны"},
+    ], {"ban"}, groups=0)
+    assert all(item["action"] != "ban" for item in empty["updates"])
+    assert empty["held"] == ["ban"]
+
+    manual = plan_tune(1_000_000, 0, {}, [
+        {"action": "ban", "every_n": 100, "reward": 10, "purse": "manual", "enabled": True, "title": "Баны"},
+    ], set())
+    assert all(item["action"] != "ban" for item in manual["updates"])
+
+    assert unit_text(100, 200) == "2"
+    assert unit_text(50, 80) == "1,6"
+    assert unit_text(100, 40) == "0,4"
+    days = fill_days([{"day": date(2026, 10, 4), "issue": 5, "admin": 1, "staff": 1}], date(2026, 10, 4))
+    assert len(days) == 14
+    assert days[-1] == {"day": "2026-10-04", "issue": 5, "admin": 1, "staff": 1}
+    assert days[0]["issue"] == 0
+    assert "is_technical" in PURSE_SQL
+    assert "purse = 'tech'" in PAID_SPLIT_SQL
+    assert "check_admin" in DAYS_SQL and "check_staff" in DAYS_SQL

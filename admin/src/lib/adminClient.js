@@ -2123,8 +2123,24 @@ export async function fetchDeedWork() {
   return adminRequest('/deed-pay/work')
 }
 
+export async function fetchStaffWorkCount() {
+  return adminRequest('/deed-pay/staff/count')
+}
+
+export async function fetchStaffWork() {
+  return adminRequest('/deed-pay/staff')
+}
+
 export async function sortDeed(actionId, verdict) {
   return adminRequest(`/deed-pay/work/${actionId}`, { method: 'POST', body: { verdict } })
+}
+
+export async function sortStaffDeed(actionId, verdict, lift = false) {
+  return adminRequest(`/deed-pay/staff/${actionId}`, { method: 'POST', body: { verdict, lift } })
+}
+
+export async function unsortStaffDeed(actionId) {
+  return adminRequest(`/deed-pay/staff/${actionId}/undo`, { method: 'POST', body: {} })
 }
 
 export async function unsortDeed(actionId) {
@@ -2135,12 +2151,22 @@ export async function undoDeed(actionId) {
   return adminRequest(`/deed-pay/queue/${actionId}/undo`, { method: 'POST', body: {} })
 }
 
-export async function keepDeed(actionId) {
-  return adminRequest(`/deed-pay/queue/${actionId}/keep`, { method: 'POST', body: {} })
+export async function keepDeed(actionId, credits = null) {
+  const body = credits == null ? {} : { credits }
+  return adminRequest(`/deed-pay/queue/${actionId}/keep`, { method: 'POST', body })
 }
 
-export async function dropDeed(actionId) {
-  return adminRequest(`/deed-pay/queue/${actionId}/drop`, { method: 'POST', body: {} })
+export async function dropDeed(actionId, credits = null) {
+  const body = credits == null ? {} : { credits }
+  return adminRequest(`/deed-pay/queue/${actionId}/drop`, { method: 'POST', body })
+}
+
+export async function liftDeed(actionId) {
+  return adminRequest(`/deed-pay/queue/${actionId}/lift`, { method: 'POST', body: {} })
+}
+
+export async function rejectLiftDeed(actionId) {
+  return adminRequest(`/deed-pay/queue/${actionId}/lift-reject`, { method: 'POST', body: {} })
 }
 
 export async function fetchDeedRates() {
@@ -2153,6 +2179,14 @@ export async function saveDeedRates(items) {
 
 export async function collectDeedRates() {
   return adminRequest('/deed-pay/rates/collect', { method: 'POST', body: {} })
+}
+
+export async function fetchDeedAnalytics() {
+  return adminRequest('/deed-pay/analytics')
+}
+
+export async function tuneDeedRates({ auto = true, now = true } = {}) {
+  return adminRequest('/deed-pay/rates/tune', { method: 'POST', body: { auto, now } })
 }
 
 export async function fetchDeedMine() {

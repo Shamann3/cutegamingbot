@@ -4,6 +4,7 @@ import TgPhoto from '../../components/TgPhoto'
 import PhotoLook from '../../components/PhotoLook'
 import {
   deleteModerationLog, fetchAppealMessages, fetchAppeals, fetchModerationLogs,
+  fetchStaffWorkCount,
   setAdminUserBanned,
   fetchModeratorStats, fetchPlayerModerationHistory,
   getAdminToken, postModerationUnban, resolveAppeal, sendAppealMessage,
@@ -11,6 +12,7 @@ import {
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import { payLabel, sortLabel } from '../../lib/deedSort'
+import StaffDesk from './payroll/StaffDesk'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
@@ -645,6 +647,7 @@ function StatsBar({ items, total }) {
 const PAGE_SIZE = 24
 const MAIN_TABS = [
   { id: 'archive',  label: 'Главный Архив' },
+  { id: 'check',    label: 'Проверка' },
   { id: 'appeals',  label: '📬 Апелляции' },
   { id: 'stats',    label: '📊 Статистика' },
 ]
@@ -941,9 +944,18 @@ export default function ModerationSection({
     if (isSuper) next.add('moderate_unban')
     return next
   }, [isSuper, permissions])
-  const mainTabs = useMemo(() => filterSectionTabs('moderation', MAIN_TABS, panelTabs), [panelTabs])
+  const mainTabs = useMemo(() => {
+    const list = filterSectionTabs('moderation', MAIN_TABS, panelTabs)
+    if (isProjectCreator || role === 'owner') return list.filter((tab) => tab.id !== 'check')
+    return list
+  }, [panelTabs, isProjectCreator, role])
   const [mainTab, setMainTab] = useState(mainTabs[0]?.id || 'archive')
+  const [checkCount, setCheckCount] = useState(0)
+  const checkBoot = useRef(false)
   const activeMainTab = mainTabs.some((t) => t.id === mainTab) ? mainTab : mainTabs[0]?.id
+  const shownTabs = mainTabs.map((tab) => (
+    tab.id === 'check' && checkCount > 0 ? { ...tab, label: `Проверка · ${checkCount}` } : tab
+  ))
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -976,6 +988,22 @@ export default function ModerationSection({
   }, [filterType, filterPlayer, filterChat, offset])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (checkBoot.current) return undefined
+    if (!mainTabs.some((tab) => tab.id === 'check')) return undefined
+    checkBoot.current = true
+    let alive = true
+    fetchStaffWorkCount()
+      .then((data) => {
+        if (!alive) return
+        const waiting = Number(data?.waiting) || 0
+        setCheckCount(waiting)
+        if (waiting > 0) setMainTab('check')
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [mainTabs])
 
   useEffect(() => {
     const token = getAdminToken()
@@ -1042,7 +1070,7 @@ export default function ModerationSection({
 
         {/* Главные табы */}
         <div className="arc-main-tabs">
-          {mainTabs.map(t => (
+          {shownTabs.map(t => (
             <button key={t.id} className={`arc-main-tab${activeMainTab===t.id?' arc-main-tab-on':''}`}
               onClick={() => setMainTab(t.id)}>{t.label}</button>
           ))}
@@ -1098,6 +1126,8 @@ export default function ModerationSection({
           </div>
         )}
       </div>
+
+      {activeMainTab === 'check' && <StaffDesk onCount={setCheckCount} />}
 
       {/* Апелляции */}
       {activeMainTab === 'appeals' && <AppealsTab role={role} />}
