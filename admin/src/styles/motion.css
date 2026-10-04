@@ -3323,4 +3323,203 @@ html[data-viewport="desktop"] .my-pay-lines {
   }
 }
 
+.grp-home {
+  display: grid;
+  gap: 1rem;
+}
+
+.grp-home > * {
+  animation: my-pay-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-home > *:nth-child(2) { animation-delay: 50ms; }
+.grp-home > *:nth-child(3) { animation-delay: 100ms; }
+
+.grp-shift {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.grp-overview-stats .dash-usage-card {
+  cursor: pointer;
+  width: 100%;
+}
+
+.grp-peak .act-bars button {
+  max-width: none;
+  min-width: 0;
+}
+
+.dash-bot-hero-more {
+  display: block;
+  margin-top: 0.28rem;
+}
+
+.grp-peak-days {
+  display: flex;
+  gap: 5px;
+  margin-top: 0.15rem;
+}
+
+.grp-peak-days span {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--e-text-2, #aeaeb2);
+  font-variant-numeric: tabular-nums;
+}
+
+.g-arc-acts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr));
+  gap: 0.45rem;
+}
+
+.g-arc-acts button {
+  min-height: 44px;
+  padding: 0.45rem 0.55rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111113;
+  color: var(--e-text, #fff);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
+
+.g-arc-acts button.is-on {
+  border-color: transparent;
+  background: var(--e-accent, #fff);
+  color: #111;
+}
+
+.g-arc-note {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.g-arc-actions {
+  margin-top: 0.75rem;
+}
+
+.g-arc-lift-open,
+.g-arc-lift-row .sec-btn {
+  width: 100%;
+}
+
+.g-arc-lift {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.g-arc-lift label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.86rem;
+}
+
+.g-arc-lift input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111113;
+  color: var(--e-text, #fff);
+  font: inherit;
+}
+
+.g-arc-lift-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr;
+  gap: 0.45rem;
+}
+
+.g-arc-tools {
+  display: flex;
+  margin-top: 0.35rem;
+}
+
+.g-arc-tools .sec-btn {
+  flex: 1 1 auto;
+}
+
+.act-board .realm-h {
+  margin-top: 0.85rem;
+}
+
+.act-person {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: 64px;
+  padding: 0.55rem 0.15rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act-person-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.act-person-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.act-person-main > span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.82rem;
+}
+
+.act-person-track {
+  display: block;
+  height: 4px;
+  margin-top: 0.35rem;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+.act-person-track > b {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--e-accent, #fff);
+  transition: width 640ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.act-person-stats {
+  margin-bottom: 0.4rem;
+}
+
+.focus-sheet-foot .sec-btn {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grp-home > *,
+  .act-people li,
+  .act-person-track > b {
+    animation: none;
+    transition: none;
+  }
+}
+
 

@@ -11,10 +11,10 @@ const LOOK = {
   mute: { label: 'Мут', color: '#f97316' },
   unmute: { label: 'Размут', color: '#2dd4bf' },
   kick: { label: 'Кик', color: '#a855f7' },
-  warn: { label: 'Варн', color: '#eab308' },
-  unwarn: { label: 'Разварн', color: '#84cc16' },
-  voice: { label: 'Голос', color: '#60a5fa' },
-  unvoice: { label: 'Голос снова', color: '#93c5fd' },
+  warn: { label: 'Предупреждение', color: '#eab308' },
+  unwarn: { label: 'Снято', color: '#84cc16' },
+  voice: { label: 'Без голоса', color: '#60a5fa' },
+  unvoice: { label: 'Голос вернули', color: '#93c5fd' },
 }
 
 const FAMILY = {
@@ -30,11 +30,42 @@ const FILTERS = [
   { id: 'mute', label: 'Муты' },
   { id: 'ban', label: 'Баны' },
   { id: 'kick', label: 'Кики' },
-  { id: 'warn', label: 'Варны' },
-  { id: 'near', label: 'Близко к блокировке' },
-  { id: 'far', label: 'Далеко от блокировки' },
+  { id: 'warn', label: 'Предупреждения' },
+  { id: 'near', label: 'Скоро бан' },
+  { id: 'far', label: 'Мало предупреждений' },
   { id: 'repeat', label: 'Повторные' },
 ]
+
+const FILTER_HINT = {
+  mute: 'Муты и снятые муты.',
+  ban: 'Баны и снятые баны.',
+  kick: 'Только кики. Кик из чата снять нельзя.',
+  warn: 'Предупреждения. Три активных в этом чате — бан.',
+  near: 'Два или три предупреждения. На третьем чат банит сам.',
+  far: 'Ноль или одно предупреждение.',
+  repeat: 'Кого в этом списке наказывали больше одного раза.',
+}
+
+function actVerb(id, label) {
+  const named = {
+    mute: 'Выдать мут',
+    unmute: 'Снять мут',
+    ban: 'Выдать бан',
+    unban: 'Снять бан',
+    kick: 'Кикнуть из чата',
+    warn: 'Выдать предупреждение',
+    voice: 'Забрать голос',
+    unvoice: 'Вернуть голос',
+  }
+  return named[id] || label || 'Выполнить'
+}
+
+function stuckNote(action) {
+  const key = String(action || '').toLowerCase()
+  if (key === 'warn') return 'Снять нельзя. Третье активное предупреждение в этом чате — бан.'
+  if (key === 'kick') return 'Кик снять нельзя: человека уже вывело из чата.'
+  return ''
+}
 
 function when(iso) {
   if (!iso) return '—'
@@ -76,6 +107,8 @@ export default function GroupArchive({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [liftId, setLiftId] = useState(null)
+  const [liftReason, setLiftReason] = useState('')
 
   useEffect(() => {
     if (seedQuery) setUserId(String(seedQuery))
@@ -132,11 +165,10 @@ export default function GroupArchive({
     }
   }
 
-  const quick = async (targetId, actId) => {
+  const lift = async (event, targetId, actId) => {
+    event.preventDefault()
     if (!onAct || !actId) return
-    const why = window.prompt('Причина (обязательно)')
-    if (why == null) return
-    if (!String(why).trim()) {
+    if (!liftReason.trim()) {
       setError('Нужна причина')
       return
     }
@@ -146,9 +178,12 @@ export default function GroupArchive({
       await onAct({
         userId: String(targetId),
         action: actId,
-        hours: actId === 'warn' ? '24' : null,
-        reason: String(why).trim(),
+        hours: null,
+        reason: liftReason.trim(),
       })
+      setLiftId(null)
+      setLiftReason('')
+      setOpenId(null)
     } catch (err) {
       setError(err.message || 'Не удалось выполнить')
     } finally {
@@ -172,20 +207,21 @@ export default function GroupArchive({
           </button>
         ))}
       </div>
+      {FILTER_HINT[filter] && <p className="realm-copy">{FILTER_HINT[filter]}</p>}
 
       {actions.length > 0 && (
         <form id="g-arc-punish" className="realm-form g-arc-punish" onSubmit={submit}>
-          <h3 className="realm-h">Наказать в этом чате</h3>
-          <p className="realm-copy">Id, @username, ссылка или имя. Причина обязательна.</p>
+          <h3 className="realm-h">Новое наказание</h3>
+          <p className="realm-copy">Найдите человека и выберите, что сделать. Без причины кнопка внизу не сработает.</p>
           <UserLookupPreview
             value={userId}
             onChange={setUserId}
             onResolved={(u) => setResolvedId(u ? Number(u.userId ?? u.user_id) : null)}
             onOpenUser={onOpenUser}
             placeholder="id, @name, t.me/… или имя"
-            label="Кто"
+            label="Кого наказать"
           />
-          <div className="realm-actions e-seg">
+          <div className="g-arc-acts" role="group" aria-label="Какое наказание">
             {actions.map((item) => (
               <button
                 key={item.id}
@@ -199,16 +235,16 @@ export default function GroupArchive({
           </div>
           {selected?.needsUntil && (
             <label>
-              Часы
-              <input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} />
+              Сколько часов держать
+              <input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="например, 1" />
             </label>
           )}
           <label>
             Причина
-            <input value={reason} onChange={(event) => setReason(event.target.value)} required />
+            <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="что человек сделал" required />
           </label>
-          <button type="submit" className="realm-back" disabled={busy}>
-            {busy ? 'Запись…' : 'Выполнить'}
+          <button type="submit" className="realm-back" disabled={busy || !selected}>
+            {busy ? 'Запись…' : actVerb(selected?.id, selected?.label)}
           </button>
         </form>
       )}
@@ -225,7 +261,6 @@ export default function GroupArchive({
           const look = lookFor(row.action)
           const id = row.id ?? `${row.at || index}`
           const open = openId === id
-          const player = row.targetName || (row.target_user_id ? `#${row.target_user_id}` : '—')
           const undo = undoAction(row.action)
           const canUndo = undo && actions.some((item) => item.id === undo.id)
           return (
@@ -244,7 +279,7 @@ export default function GroupArchive({
                   </span>
                   <span aria-hidden="true">→</span>
                   <span>
-                    <small>В чате</small>
+                    <small>Кому</small>
                     <OpenUserLink userId={row.target_user_id} name={row.targetName} onOpenUser={onOpenUser} />
                   </span>
                 </span>
@@ -258,9 +293,50 @@ export default function GroupArchive({
                   {row.hasProof && <span>Есть фото</span>}
                   {sortLabel(row.sortVerdict) && <span>{sortLabel(row.sortVerdict)}</span>}
                   {payLabel(row.payStatus) && <span>{payLabel(row.payStatus)}</span>}
-                  <span>{open ? 'Скрыть' : 'Открыть'}</span>
+                  <span>{open ? 'Скрыть' : 'Подробнее'}</span>
                 </span>
               </button>
+              {canUndo && undo.id !== 'warn' && row.target_user_id ? (
+                <div className="g-arc-actions">
+                  {liftId === id ? (
+                    <form className="g-arc-lift" onSubmit={(event) => lift(event, row.target_user_id, undo.id)}>
+                      <label>
+                        Причина снятия
+                        <input
+                          value={liftReason}
+                          onChange={(event) => setLiftReason(event.target.value)}
+                          placeholder="зачем снимаете"
+                          required
+                        />
+                      </label>
+                      <p className="realm-copy">Без текста снятие не уйдёт.</p>
+                      <div className="g-arc-lift-row">
+                        <button type="submit" className="sec-btn" disabled={busy}>
+                          {busy ? 'Снимаем…' : undo.label}
+                        </button>
+                        <button
+                          type="button"
+                          className="sec-btn sec-btn-ghost"
+                          onClick={() => { setLiftId(null); setLiftReason('') }}
+                        >
+                          Отмена
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      className="sec-btn g-arc-lift-open"
+                      disabled={busy}
+                      onClick={() => { setLiftId(id); setLiftReason(''); setOpenId(null) }}
+                    >
+                      {undo.label}
+                    </button>
+                  )}
+                </div>
+              ) : stuckNote(row.action) ? (
+                <p className="g-arc-note">{stuckNote(row.action)}</p>
+              ) : null}
               {open && (
                 <FocusWindow
                   title={look.label}
@@ -272,7 +348,7 @@ export default function GroupArchive({
                     {row.target_user_id && (
                       <button
                         type="button"
-                        className="realm-text-act"
+                        className="sec-btn sec-btn-ghost"
                         onClick={() => {
                           setOpenId(null)
                           setUserId(String(row.target_user_id))
@@ -284,17 +360,7 @@ export default function GroupArchive({
                           }, 40)
                         }}
                       >
-                        Наказать
-                      </button>
-                    )}
-                    {canUndo && row.target_user_id && (
-                      <button
-                        type="button"
-                        className="realm-back"
-                        disabled={busy}
-                        onClick={() => quick(row.target_user_id, undo.id)}
-                      >
-                        {undo.label}
+                        Наказать этого человека
                       </button>
                     )}
                   </div>

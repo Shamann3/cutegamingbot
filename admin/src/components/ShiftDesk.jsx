@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import CountUp from './CountUp'
 import { fetchGroupActivity } from '../lib/adminClient'
 import { compareTone } from '../lib/shiftDesk'
 
@@ -13,7 +14,7 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n))
 }
 
-export default function ShiftDesk({ chatId, canActivity }) {
+export default function ShiftDesk({ chatId, canActivity, onOpen }) {
   const [period, setPeriod] = useState('day')
   const [report, setReport] = useState(null)
   const [error, setError] = useState('')
@@ -36,13 +37,27 @@ export default function ShiftDesk({ chatId, canActivity }) {
   const tone = compareTone(current, previous)
   const toneClass = tone === 'good' ? 'is-good' : tone === 'bad' ? 'is-bad' : ''
 
+  const waiting = !report && !error
+  const closed = report?.available === false
+  const Hero = !waiting && !closed && onOpen ? 'button' : 'div'
+
+  const story = tone === 'good'
+    ? `Сообщений больше, чем ${meta.prev.toLowerCase()}: тогда было ${fmt(previous)}.`
+    : tone === 'bad'
+      ? `Сообщений меньше, чем ${meta.prev.toLowerCase()}: тогда было ${fmt(previous)}.`
+      : tone === 'same'
+        ? `Столько же сообщений, сколько ${meta.prev.toLowerCase()}: ${fmt(previous)}.`
+        : 'Сообщения этого чата.'
+
   return (
-    <section className="shift-desk">
-      <div className="realm-actions" aria-label="Период сообщений">
+    <section className="shift-desk grp-shift">
+      <div className="dash-period e-seg" role="tablist" aria-label="За какой срок показать сообщения">
         {PERIODS.map((item) => (
           <button
             key={item.id}
             type="button"
+            role="tab"
+            aria-selected={period === item.id}
             className={period === item.id ? 'is-on' : ''}
             onClick={() => setPeriod(item.id)}
           >
@@ -51,20 +66,31 @@ export default function ShiftDesk({ chatId, canActivity }) {
         ))}
       </div>
       {error && <p className="realm-alert" role="alert">{error}</p>}
-      {report?.available === false && (
-        <p className="realm-copy">Счётчик не открылся. Вместо живых цифр нули не ставятся.</p>
-      )}
-      <div className="act-figures act-bento">
-        <p className={toneClass}>
-          <strong>{fmt(current)}</strong>
-          <span>{meta.now}</span>
-        </p>
-        <p>
-          <strong>{fmt(previous)}</strong>
-          <span>{meta.prev}</span>
-        </p>
-      </div>
-      <p className="realm-copy">Зелёный — сообщений больше, чем в прошлый раз. Красный — меньше. Поровну цвет не меняется.</p>
+      <Hero
+        type={Hero === 'button' ? 'button' : undefined}
+        className={`dash-bot-hero${waiting ? ' is-collecting' : ''}${onOpen && !waiting && !closed ? ' metric-tile' : ''} ${toneClass}`.trim()}
+        aria-label={Hero === 'button' ? `${fmt(current)} сообщений. ${story}. Открыть, кто писал` : undefined}
+        onClick={Hero === 'button' ? onOpen : undefined}
+      >
+        {waiting && (
+          <span className="dash-collecting">
+            <span className="dash-collecting-main">Считаем сообщения</span>
+            <span className="dash-collecting-wait">этот чат</span>
+          </span>
+        )}
+        {closed && <span className="dash-bot-hero-sub">Счётчик не открылся. Нули вместо живых цифр не ставятся.</span>}
+        {!waiting && !closed && (
+          <>
+            <strong className="dash-bot-hero-value">
+              <CountUp value={current} duration={520} />
+            </strong>
+            <span className="dash-bot-hero-sub">
+              {story}
+              {onOpen ? <span className="dash-bot-hero-more">Нажмите цифру — откроется, кто писал.</span> : null}
+            </span>
+          </>
+        )}
+      </Hero>
     </section>
   )
 }

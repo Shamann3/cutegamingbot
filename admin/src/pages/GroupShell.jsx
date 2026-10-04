@@ -61,13 +61,13 @@ import AccessKeySheet from '../components/AccessKeySheet'
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
-  { id: 'unmute', label: 'Размут', right: 'punish_mute', needsUntil: false },
-  { id: 'voice', label: 'Голос', right: 'punish_voice', needsUntil: true },
-  { id: 'unvoice', label: 'Голос снова', right: 'punish_voice', needsUntil: false },
-  { id: 'kick', label: 'Кик', right: 'punish_kick', needsUntil: false },
-  { id: 'warn', label: 'Варн', right: 'punish_warn', needsUntil: true },
+  { id: 'unmute', label: 'Снять мут', right: 'punish_mute', needsUntil: false },
+  { id: 'voice', label: 'Забрать голос', right: 'punish_voice', needsUntil: true },
+  { id: 'unvoice', label: 'Вернуть голос', right: 'punish_voice', needsUntil: false },
+  { id: 'kick', label: 'Кикнуть', right: 'punish_kick', needsUntil: false },
+  { id: 'warn', label: 'Предупредить', right: 'punish_warn', needsUntil: true },
   { id: 'ban', label: 'Бан', right: 'punish_ban', needsUntil: true },
-  { id: 'unban', label: 'Разбан', right: 'punish_ban', needsUntil: false },
+  { id: 'unban', label: 'Снять бан', right: 'punish_ban', needsUntil: false },
 ]
 
 function fmt(n) {
@@ -292,9 +292,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
             messages: Number(point.messages) || 0,
             writers: Number(point.writers) || 0,
           }))
-          .filter((point) => point.messages > 0)
-          .sort((a, b) => b.messages - a.messages)
-          .slice(0, 3)
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)))
         setPeakHours(ranked)
       })
       .catch(() => {
@@ -943,67 +941,99 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           )}
 
           {!chapter && activeTab === 'overview' && (
-            <section>
-              <div className="act-bento grp-overview-stats">
-                <button type="button" className="is-on metric-tile" onClick={() => metric.open({
-                  id: 'grp-writers',
-                  title: 'Активные за 30 дней',
-                  value: fmt(summary?.writers30d ?? summary?.members),
-                  hint: 'Участники, которые писали в этот чат',
-                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
-                })}>
-                  <strong>{fmt(summary?.writers30d ?? summary?.members)}</strong>
-                  <span>активных за 30 дней</span>
-                </button>
-                <button type="button" className="metric-tile" onClick={() => metric.open({
-                  id: 'grp-messages',
-                  title: 'Сообщения за 30 дней',
-                  value: fmt(summary?.messages30d),
-                  hint: 'Все сообщения этого чата',
-                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
-                })}>
-                  <strong>{fmt(summary?.messages30d)}</strong>
-                  <span>сообщений за 30 дней</span>
-                </button>
-                <button type="button" className="metric-tile" onClick={() => metric.open({
-                  id: 'grp-members',
-                  title: 'Участники в учёте',
-                  value: fmt(summary?.members),
-                  hint: 'Сколько человек панель видит в этой группе',
-                  action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
-                })}>
-                  <strong>{fmt(summary?.members)}</strong>
-                  <span>участников в учёте</span>
-                </button>
+            <section className="grp-home">
+              <ShiftDesk
+                chatId={chatId}
+                canActivity={canActivity}
+                onOpen={canActivity ? () => pickTab('activity') : undefined}
+              />
+              <div className="dash-usage-stage">
+                <div className="dash-usage-grid grp-overview-stats">
+                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
+                    id: 'grp-writers',
+                    title: 'Писали за 30 дней',
+                    value: fmt(summary?.writers30d ?? summary?.members),
+                    hint: 'Сколько разных людей отправили хотя бы одно сообщение',
+                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                  })}>
+                    <span className="dash-usage-label">Писали</span>
+                    <strong className="dash-usage-value">{fmt(summary?.writers30d ?? summary?.members)}</strong>
+                    <span className="dash-usage-hint">человек за 30 дней</span>
+                  </button>
+                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
+                    id: 'grp-messages',
+                    title: 'Сообщения за 30 дней',
+                    value: fmt(summary?.messages30d),
+                    hint: 'Сколько сообщений ушло в этот чат',
+                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                  })}>
+                    <span className="dash-usage-label">Сообщения</span>
+                    <strong className="dash-usage-value">{fmt(summary?.messages30d)}</strong>
+                    <span className="dash-usage-hint">за 30 дней</span>
+                  </button>
+                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
+                    id: 'grp-members',
+                    title: 'Кого панель уже видела',
+                    value: fmt(summary?.members),
+                    hint: 'Это не полный список Telegram. Только люди, которые уже попадали в этот чат.',
+                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                  })}>
+                    <span className="dash-usage-label">Участники</span>
+                    <strong className="dash-usage-value">{fmt(summary?.members)}</strong>
+                    <span className="dash-usage-hint">кого панель уже видела</span>
+                  </button>
+                </div>
               </div>
-              {peakHours.length > 0 && (
+              {peakHours.some((point) => point.messages > 0) && (
                 <div className="grp-peak">
-                  <h3 className="realm-h">Пиковые дни</h3>
-                  <p className="realm-copy">Нажмите — откроется аналитика активности.</p>
-                  <div className="realm-actions e-seg">
-                    {peakHours.map((point) => (
-                      <button
-                        key={point.date}
-                        type="button"
-                        className="is-on metric-tile"
-                        onClick={() => metric.open({
-                          id: `grp-peak-${point.date}`,
-                          title: String(point.date),
-                          value: fmt(point.messages),
-                          unit: 'сообщений',
-                          hint: 'Пиковый день этого чата',
-                          action: canActivity ? { label: 'Открыть активность', run: () => pickTab('activity') } : null,
-                        })}
-                      >
-                        {point.date}: {fmt(point.messages)}
-                      </button>
-                    ))}
+                  <h3 className="realm-h">Сообщения за неделю</h3>
+                  <p className="realm-copy">Выше столбик — больше сообщений. Нажмите день, чтобы открыть, кто писал.</p>
+                  <div className="act-bars" role="list" aria-label="Сообщения по дням недели">
+                    {peakHours.map((point) => {
+                      const max = Math.max(...peakHours.map((item) => item.messages), 1)
+                      const value = point.messages
+                      const h = Math.max(6, Math.round((value / max) * 100))
+                      const level = value <= 0 ? 0 : value / max < 0.25 ? 1 : value / max < 0.5 ? 2 : value / max < 0.75 ? 3 : 4
+                      const parts = String(point.date || '').split('-')
+                      const stamp = parts.length >= 3 ? `${Number(parts[2])}.${parts[1]}` : ''
+                      return (
+                        <button
+                          key={point.date}
+                          type="button"
+                          role="listitem"
+                          data-level={level || undefined}
+                          title={`${stamp}: ${fmt(value)} сообщений`}
+                          aria-label={`${stamp}: ${fmt(value)} сообщений`}
+                          onClick={() => {
+                            if (canActivity) pickTab('activity')
+                            else metric.open({
+                              id: `grp-peak-${point.date}`,
+                              title: stamp || String(point.date),
+                              value: fmt(value),
+                              unit: 'сообщений',
+                              hint: 'Сообщения за этот день',
+                            })
+                          }}
+                        >
+                          <i style={{ height: `${value > 0 ? h : 6}%` }} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="grp-peak-days" aria-hidden="true">
+                    {peakHours.map((point) => {
+                      const parts = String(point.date || '').split('-')
+                      const stamp = parts.length >= 3 ? `${Number(parts[2])}.${parts[1]}` : ''
+                      return <span key={point.date}>{stamp}</span>
+                    })}
                   </div>
                 </div>
               )}
-              <ShiftDesk chatId={chatId} canActivity={canActivity} />
               {groups.length > 1 && (
-                <ul className="realm-list">
+                <>
+                  <h3 className="realm-h">Ваши группы</h3>
+                  <p className="realm-copy">Сейчас открыта отмеченная. Нажмите другую — кабинет переключится на неё.</p>
+                  <ul className="realm-list">
                   {groups.map((group) => (
                     <li key={group.chatId}>
                       <button type="button" className={group.chatId === chatId ? 'is-on' : ''} onClick={() => { setChapter(false); setChatId(group.chatId) }}>
@@ -1013,6 +1043,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                     </li>
                   ))}
                 </ul>
+                </>
               )}
             </section>
           )}
@@ -1030,8 +1061,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           {!chapter && activeTab === 'activity' && (
             <section>
               <h2 className="realm-h">Активность</h2>
-              <p className="realm-copy">Живые сообщения этого чата. Клетка — день или месяц. Наказать человека можно во вкладке «Архив».</p>
-              <ActivityBoard chatId={chatId} repeats={repeats} onOpenUser={(id) => setUserId(String(id))} />
+              <p className="realm-copy">Нажмите столбик — один день. Нажмите имя — карточка человека. Наказать его можно из этой карточки, во вкладке «Архив».</p>
+              <ActivityBoard
+                chatId={chatId}
+                repeats={repeats}
+                watch={mods?.watch || []}
+                canArchive={tabs.some((item) => item.id === 'archive')}
+                onOpenArchive={(id) => { setUserId(String(id)); pickTab('archive') }}
+              />
             </section>
           )}
 
@@ -1039,14 +1076,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
             <section>
               <h2 className="realm-h">Архив чата</h2>
               <p className="realm-copy">
-                Официальная группа Кьюта.
+                Наказания этого чата.
                 {current?.position ? ` Ваша должность: ${current.position}.` : ''}
-                {' '}Наказания и снятие — здесь, с обязательной причиной. Записи самого бота сюда не входят.
+                {' '}Снять бан или мут — кнопка на карточке. Новое наказание — форма ниже: без причины оно не уйдёт.
               </p>
               {mods && (
-                <p className="realm-copy">
-                  За 30 дней {fmt(mods.actions30d)} · муты {fmt(mods.mutes)} · баны {fmt(mods.bans)} · кики {fmt(mods.kicks)} · варны {fmt(mods.warns)}
-                </p>
+              <p className="realm-copy">
+                За 30 дней {fmt(mods.actions30d)} наказаний: муты {fmt(mods.mutes)}, баны {fmt(mods.bans)}, кики {fmt(mods.kicks)}, предупреждения {fmt(mods.warns)}.
+              </p>
               )}
               <GroupArchive
                 rows={mods?.recent || []}
