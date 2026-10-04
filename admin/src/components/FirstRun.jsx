@@ -36,6 +36,22 @@ export function staffSteps(phone) {
 }
 
 export function workLessonSteps(kind) {
+  if (kind === 'creator') {
+    return [
+      {
+        title: 'Вкладка «Работа»',
+        body: 'Она стоит рядом с «Главная» и «Архив». Здесь наказания, которые уже проверил администратор группы или сотрудник проекта. Второго ответа можно не ждать.',
+        target: '[data-coach="dock"] [data-section="work"]',
+        openSection: 'work',
+      },
+      {
+        title: 'Зарплата',
+        body: 'Вправо сразу отправляет в зарплату того, кто выдал, и кто сказал «подходит». Влево засчитывает «неправильно». Кто проверял — администратор или сотрудник — не важно.',
+        target: '.work-page',
+        openSection: 'work',
+      },
+    ]
+  }
   if (kind === 'group') {
     return [
       {

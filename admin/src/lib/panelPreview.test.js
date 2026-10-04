@@ -226,10 +226,10 @@ describe('work sits with the main tabs', () => {
     ])
   })
 
-  it('keeps the creator and the owner out of the staff check', () => {
+  it('gives the creator a work tab and keeps the owner out of the staff check', () => {
     const creator = visibleSections([], null, 'senior_admin', { isProjectCreator: true })
     const owner = visibleSections([], null, 'owner')
-    expect(creator.some((item) => item.id === 'work')).toBe(false)
+    expect(creator.some((item) => item.id === 'work')).toBe(true)
     expect(owner.some((item) => item.id === 'work')).toBe(false)
   })
 })

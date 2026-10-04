@@ -30,6 +30,7 @@ import { DeedMine } from './sections/payroll/DeedPay'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
 import FirstRun, { groupSteps, workLessonSteps, coachClosed, restartCoach } from '../components/FirstRun'
+import WorkLessonButton from '../components/WorkLessonButton'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
 import PhoneDock from '../components/PhoneDock'
@@ -118,9 +119,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     const job = isProjectCreator ? fetchDeedQueue({}) : fetchDeedWork()
     job.then((data) => {
       if (!alive) return
-      const waiting = Number(data?.waiting) || 0
-      setWorkCount(waiting)
-      if (waiting > 0 && tabs.some((item) => item.id === 'work')) setTab('work')
+      setWorkCount(Number(data?.waiting) || 0)
     }).catch(() => {})
     return () => { alive = false }
   }, [preview, isProjectCreator, tabs])
@@ -134,12 +133,20 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [coachRun, setCoachRun] = useState(0)
   const replayCoach = useCallback(() => {
     restartCoach('epsilon.onboard.group.v4')
-    restartCoach('epsilon.lesson.work.group.v1')
     setLesson(false)
     setCoachRun((n) => n + 1)
+    setTab('overview')
     setCoach(true)
     setRailOpen(false)
   }, [])
+  const workLessonKey = isProjectCreator ? 'epsilon.lesson.work.creator.v1' : 'epsilon.lesson.work.group.v1'
+  const openWorkLesson = useCallback(() => {
+    restartCoach(workLessonKey)
+    setCoach(false)
+    setLesson(true)
+    setTab('work')
+    setRailOpen(false)
+  }, [workLessonKey])
   const [railOpen, setRailOpen] = useState(false)
   const phone = useIsPhone()
   const viewport = useViewportMode()
@@ -184,11 +191,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const hasWork = tabs.some((item) => item.id === 'work')
-  useEffect(() => {
-    if (preview || coach || !hasWork || coachClosed('epsilon.lesson.work.group.v1')) return undefined
-    setLesson(true)
-    return undefined
-  }, [preview, coach, hasWork])
   const onCoachStep = useCallback((step) => {
     if (step?.openSection) setTab(step.openSection)
     if (phone) return
@@ -666,11 +668,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           onDone={() => setCoach(false)}
         />
       )}
-      {!coach && lesson && hasWork && !preview && (
+      {!coach && lesson && hasWork && (
         <FirstRun
           key={`work-${coachRun}`}
-          storageKey="epsilon.lesson.work.group.v1"
-          steps={workLessonSteps('group')}
+          storageKey={workLessonKey}
+          steps={workLessonSteps(isProjectCreator ? 'creator' : 'group')}
           layoutKey={railOpen ? 1 : 0}
           onStep={onCoachStep}
           onDone={() => setLesson(false)}
@@ -1014,11 +1016,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           )}
 
           {!chapter && activeTab === 'work' && (
-            <section>
+            <section className="work-page">
               <h2 className="realm-h">Работа</h2>
               {isProjectCreator
                 ? <CreatorDeck onCount={setWorkCount} />
                 : <WorkDesk onCount={setWorkCount} />}
+              <WorkLessonButton onClick={openWorkLesson} />
             </section>
           )}
 

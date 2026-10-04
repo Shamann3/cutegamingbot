@@ -7,6 +7,7 @@ import {
   fetchAdminMe,
   fetchPrOverview,
   fetchStaffPunishRights,
+  fetchDeedQueue,
   fetchStaffWorkCount,
   fetchSupportStats,
   fetchTiktokCounts,
@@ -65,6 +66,8 @@ import { useTabScroll } from '../lib/useTabScroll'
 import GroupGuardDesk from './sections/GroupGuardDesk'
 import FirstRun, { staffSteps, workLessonSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import StaffDesk from './sections/payroll/StaffDesk'
+import { CreatorDeck } from './sections/payroll/CreatorPay'
+import WorkLessonButton from '../components/WorkLessonButton'
 import PanelPreviewBar from '../components/PanelPreviewBar'
 import GroupShell from './GroupShell'
 import {
@@ -224,12 +227,22 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
 
   const replayCoach = useCallback(() => {
     restartCoach('epsilon.onboard.staff.v4')
-    restartCoach('epsilon.lesson.work.staff.v1')
     setLesson(false)
     setCoachRun((n) => n + 1)
+    setSection('dashboard')
     setCoach(true)
     setMobileNavOpen(false)
   }, [])
+  const workLessonKey = isProjectCreator && !preview
+    ? 'epsilon.lesson.work.creator.v1'
+    : 'epsilon.lesson.work.staff.v1'
+  const openWorkLesson = useCallback(() => {
+    restartCoach(workLessonKey)
+    setCoach(false)
+    setLesson(true)
+    setSection('work')
+    setMobileNavOpen(false)
+  }, [workLessonKey])
 
   const openPreview = useCallback((next) => {
     if (!isProjectCreator || !next) return
@@ -284,19 +297,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const showWork = navSections.some((item) => item.id === 'work')
 
   useEffect(() => {
-    if (preview || coach || !showWork || coachClosed('epsilon.lesson.work.staff.v1')) return undefined
-    setLesson(true)
-    return undefined
-  }, [preview, coach, showWork])
-
-  useEffect(() => {
-    if (!showWork || preview) return undefined
+    if (!showWork || preview || role == null) return undefined
     let alive = true
-    fetchStaffWorkCount()
+    const job = isProjectCreator ? fetchDeedQueue({}) : fetchStaffWorkCount()
+    job
       .then((data) => { if (alive) setWorkCount(Number(data?.waiting) || 0) })
       .catch(() => {})
     return () => { alive = false }
-  }, [showWork, preview])
+  }, [showWork, preview, role, isProjectCreator])
 
   const isMore = section === 'more'
 
@@ -465,11 +473,11 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           onDone={() => setCoach(false)}
         />
       )}
-      {!coach && lesson && showWork && !preview && (
+      {!coach && lesson && showWork && (
         <FirstRun
           key={`work-${coachRun}`}
-          storageKey="epsilon.lesson.work.staff.v1"
-          steps={workLessonSteps('staff')}
+          storageKey={workLessonKey}
+          steps={workLessonSteps(isProjectCreator && !preview ? 'creator' : 'staff')}
           onStep={onCoachStep}
           onDone={() => setLesson(false)}
         />
@@ -742,7 +750,10 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                   <h1>Работа</h1>
                 </div>
               </header>
-              <StaffDesk onCount={setWorkCount} />
+              {isProjectCreator && !preview
+                ? <CreatorDeck onCount={setWorkCount} />
+                : <StaffDesk onCount={setWorkCount} />}
+              <WorkLessonButton onClick={openWorkLesson} />
             </section>
           )}
           {isModeration && (

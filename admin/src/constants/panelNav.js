@@ -199,10 +199,11 @@ export function visibleSections(
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
-    if (s.id === 'work' && (creatorOk || role === 'owner')) return false
+    if (s.id === 'work' && role === 'owner' && !creatorOk) return false
     if (s.id === 'panelAccess') return false
     const staffForced = s.id === 'staff' && (creatorOk || perms.has('manage_panel_access'))
-    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
+    const creatorWork = s.id === 'work' && creatorOk
+    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !creatorWork && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission) && !staffForced) return false
     return true
   })
