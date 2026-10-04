@@ -118,20 +118,81 @@ export function staffPreviewNav(preview, projectCreatorId = null) {
   )
 }
 
-export function groupCabinetTabs(rights, isCreator = false) {
-  const set = rights instanceof Set ? rights : new Set(rights || [])
-  const has = (key) => isCreator || set.has(key)
+export const CABINET_PAGE_DEFS = [
+  { id: 'work', label: 'Работа', hint: 'Проверка наказаний. В нижней полосе, рядом с Главной.' },
+  { id: 'archive', label: 'Архив', hint: 'Карточки наказаний этой группы.' },
+  { id: 'activity', label: 'Активность', hint: 'Кто писал и сколько сообщений.' },
+  { id: 'rights', label: 'Права', hint: 'Должности младше своей. Новую создаёт только создатель.' },
+  { id: 'pay', label: 'Зарплата', hint: 'Кут за подтверждённые наказания.' },
+]
+
+const CABINET_PAGE_IDS = CABINET_PAGE_DEFS.map((item) => item.id)
+
+export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
+  if (isCreator) {
+    return [
+      { id: 'overview', label: 'Главная' },
+      { id: 'work', label: 'Работа' },
+      { id: 'archive', label: 'Архив' },
+      { id: 'activity', label: 'Активность' },
+      { id: 'rights', label: 'Права' },
+      { id: 'switches', label: 'Переключатели' },
+      { id: 'pay', label: 'Зарплата' },
+      { id: 'more', label: 'Ещё' },
+    ]
+  }
+  if (Number(rank) >= 5) {
+    return [
+      { id: 'overview', label: 'Главная' },
+      ...CABINET_PAGE_DEFS.map((item) => ({ id: item.id, label: item.label })),
+      { id: 'more', label: 'Ещё' },
+    ]
+  }
   const items = [{ id: 'overview', label: 'Главная' }]
+  if (Number(rank) > 0 && Array.isArray(pages)) {
+    const chosen = new Set(pages)
+    for (const item of CABINET_PAGE_DEFS) {
+      if (chosen.has(item.id)) items.push({ id: item.id, label: item.label })
+    }
+    items.push({ id: 'more', label: 'Ещё' })
+    return items
+  }
+  const set = rights instanceof Set ? rights : new Set(rights || [])
+  const has = (key) => set.has(key)
   if (has('view_archive')) items.push({ id: 'work', label: 'Работа' })
   if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('view_members') || has('view_analytics') || [...set].some((item) => item.startsWith('punish_'))) {
     items.push({ id: 'activity', label: 'Активность' })
   }
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
-  if (isCreator) items.push({ id: 'switches', label: 'Переключатели' })
   items.push({ id: 'pay', label: 'Зарплата' })
   items.push({ id: 'more', label: 'Ещё' })
   return items
+}
+
+export function derivedCabinetPageIds(rights) {
+  return groupCabinetTabs(rights, false)
+    .map((item) => item.id)
+    .filter((id) => CABINET_PAGE_IDS.includes(id))
+}
+
+export function cabinetPagesFor(row) {
+  if (Array.isArray(row?.pages)) {
+    const chosen = new Set(row.pages)
+    return CABINET_PAGE_IDS.filter((id) => chosen.has(id))
+  }
+  return derivedCabinetPageIds(row?.rights)
+}
+
+export function positionSaveBody(row) {
+  const body = {
+    title: String(row?.title || '').trim(),
+    rights: Array.isArray(row?.rights) ? row.rights : [],
+  }
+  const rank = Number(row?.rank) || 0
+  const frozen = rank <= 0 || rank >= 5 || row?.kind === 'spamblock' || row?.kind === 'member'
+  if (!frozen) body.pages = cabinetPagesFor(row)
+  return body
 }
 
 function seatGroup(group, post) {
@@ -142,6 +203,7 @@ function seatGroup(group, post) {
     position: post.title || post.position || '',
     rank: Number(post.rank) || 0,
     rights: Array.isArray(post.rights) ? post.rights : [],
+    ...(Array.isArray(post.pages) ? { pages: post.pages } : {}),
   }
 }
 

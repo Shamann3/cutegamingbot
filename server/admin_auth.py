@@ -69,6 +69,17 @@ from error_reporter import schedule_security_alert
 _DEV_CLIENT_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
+def may_see_proof(
+    *,
+    creator: bool = False,
+    owner: bool = False,
+    account_active: bool = False,
+    has_seat: bool = False,
+) -> bool:
+    """Фото наказания видит тот, кто и так открывает карточку: создатель, сотрудник или должность в группе."""
+    return bool(creator or owner or account_active or has_seat)
+
+
 def reject_if_plain_user(user_id: int) -> None:
     """Обычный игрок не открывает панель ни как создатель, ни как сотрудник."""
     from config import is_plain_user
@@ -482,6 +493,74 @@ async def store_session_fingerprint(user_id: int, request: Request) -> None:
         )
     except Exception:
         pass
+
+
+async def _proof_viewer_id(
+    request: Request,
+    x_telegram_init_data: str | None,
+    x_dev_user_id: str | None,
+) -> int:
+    """Кто просит фото: initData, токен сессии или локальный dev. Аккаунт сотрудника не обязателен."""
+    user_id: int | None = None
+    if x_telegram_init_data:
+        try:
+            user_id, _user = _validate_admin_init_data(x_telegram_init_data, request)
+        except HTTPException:
+            user_id = None
+    if user_id is None:
+        token = _bearer_token(request)
+        verified = verify_admin_token(token) if token else None
+        if verified is not None:
+            user_id = verified[0]
+    if user_id is None:
+        if PRODUCTION or not ALLOW_DEV_AUTH or not x_dev_user_id or not _is_local_client(request):
+            raise HTTPException(status_code=401, detail="Сессия истекла. Войдите снова")
+        try:
+            user_id = int(x_dev_user_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Неверный dev user id")
+        if user_id <= 0:
+            raise HTTPException(status_code=400, detail="Неверный dev user id")
+    reject_if_plain_user(user_id)
+    return user_id
+
+
+async def viewer_may_see_proof(user_id: int) -> bool:
+    from admin_soft_restart import is_project_creator
+    from config import owner_user_ids
+
+    if is_project_creator(user_id) or user_id in owner_user_ids():
+        return True
+    from db import db
+    from group_realm import seats_for
+
+    status = None
+    try:
+        status = await db.pool.fetchval(
+            "SELECT status FROM admin_accounts WHERE user_id = $1",
+            int(user_id),
+        )
+    except Exception:
+        status = None
+    if may_see_proof(account_active=status == "active"):
+        return True
+    try:
+        seats = await seats_for(int(user_id))
+    except Exception:
+        seats = []
+    return may_see_proof(has_seat=bool(seats))
+
+
+async def require_proof_viewer(
+    request: Request,
+    x_telegram_init_data: str | None = Header(None, alias="X-Telegram-Init-Data"),
+    x_dev_user_id: str | None = Header(None, alias="X-Dev-User-Id"),
+) -> int:
+    """Фото доказательства. Сотрудник панели и администратор группы с должностью."""
+    user_id = await _proof_viewer_id(request, x_telegram_init_data, x_dev_user_id)
+    if not await viewer_may_see_proof(user_id):
+        raise HTTPException(status_code=403, detail="Фото доказательства вам не открыто")
+    return user_id
 
 
 async def require_admin_session(

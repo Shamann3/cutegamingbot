@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { searchAdminUsers } from '../lib/adminClient'
+import { CABINET_PAGE_DEFS, cabinetPagesFor, groupCabinetTabs } from '../lib/panelPreview'
 import { PAGE_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
 import FocusWindow from './FocusWindow'
 import RightSwitch from './RightSwitch'
@@ -41,6 +43,13 @@ function rankCaption(row) {
   if (row.kind === 'spamblock') return 'Спам-блок · ранг 0 · без наказаний'
   if (row.kind === 'member' || Number(row.rank) <= 0) return 'Ранг 0 · как обычный участник'
   return `Ранг ${row.rank}`
+}
+
+function tabCaption(row) {
+  if (Number(row.rank) >= 5) return 'все вкладки'
+  const count = cabinetPagesFor(row).length
+  if (!count) return 'только главная'
+  return `${count} ${count === 1 ? 'вкладка' : count < 5 ? 'вкладки' : 'вкладок'}`
 }
 
 function toneOf(title, rank) {
@@ -104,7 +113,7 @@ export default function PositionEditor({
           >
             <span className="role-card-rank">{rankCaption(row)}</span>
             <strong>{row.title}</strong>
-            <span>{rights.size} прав · нажать, чтобы настроить</span>
+            <span>{tabCaption(row)} · {rights.size} прав · нажать, чтобы настроить</span>
           </button>
         )
       })}
@@ -303,7 +312,15 @@ function PositionSheet({
 }) {
   const frozen = row.kind === 'spamblock' || row.kind === 'member' || Number(row.rank) <= 0
   const locked = row.rank >= 5 || frozen
+  const reduce = useReducedMotion()
   const rights = new Set(row.rights || [])
+  const pageIds = cabinetPagesFor(row.rank >= 5 ? { ...row, pages: CABINET_PAGE_DEFS.map((item) => item.id) } : row)
+  const dock = groupCabinetTabs(
+    row.rights,
+    false,
+    locked ? undefined : pageIds,
+    row.rank,
+  )
   const pages = PAGE_RIGHTS.filter((item) => creator || item.id !== 'manage_positions')
   const peer = lowerRankPeer(drafts, row.rank)
   const compareSet = peer ? new Set(byId.get(peer.id)?.rights || peer.rights || []) : null
@@ -312,6 +329,14 @@ function PositionSheet({
     if (on) next.add(rightId)
     else next.delete(rightId)
     onPatch(row.id, { rights: [...next] })
+  }
+  const togglePage = (pageId, on) => {
+    const next = new Set(pageIds)
+    if (on) next.add(pageId)
+    else next.delete(pageId)
+    onPatch(row.id, {
+      pages: CABINET_PAGE_DEFS.map((item) => item.id).filter((id) => next.has(id)),
+    })
   }
   const [personText, setPersonText] = useState('')
   const [userId, setUserId] = useState(null)
@@ -416,11 +441,46 @@ function PositionSheet({
             ? 'Спам-блок. Наказаний нет и включить их нельзя. Срок задаётся при назначении.'
             : frozen
               ? 'Ранг 0. Только то, что и так может обычный участник: писать. Наказаний нет.'
-              : `Ранг ${row.rank}. Наказать можно только того, кто младше. Каждый переключатель ниже говорит, что именно откроется.`
+              : `Ранг ${row.rank}. Сначала вкладки нижней полосы, потом что можно делать внутри. Наказать можно только того, кто младше.`
       }
       onClose={onClose}
       footer={foot}
     >
+      <fieldset className="realm-rights-block cabinet-tabs" disabled={locked}>
+        <legend>Вкладки кабинета</legend>
+        <p className="realm-copy">
+          Главная и «Ещё» остаются. Остальное включается здесь и записывается при сохранении.
+          Выключенная вкладка пропадает из нижней полосы.
+        </p>
+        <ul className="cabinet-dock-preview" aria-live="polite" aria-label="Нижняя полоса этой должности">
+          <AnimatePresence initial={false}>
+            {dock.map((item) => (
+              <motion.li
+                key={item.id}
+                layout={!reduce}
+                initial={reduce ? false : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduce ? undefined : { opacity: 0, y: -6 }}
+                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {item.label}
+              </motion.li>
+            ))}
+          </AnimatePresence>
+        </ul>
+        <div className="cabinet-tab-list">
+          {CABINET_PAGE_DEFS.map((item) => (
+            <RightSwitch
+              key={item.id}
+              on={pageIds.includes(item.id)}
+              disabled={locked}
+              title={item.label}
+              hint={item.hint}
+              onChange={(next) => togglePage(item.id, next)}
+            />
+          ))}
+        </div>
+      </fieldset>
       {canManage && onAppoint && (
         <div className="role-sheet-foot">
           <h3 className="realm-h">Назначить эту должность</h3>
@@ -490,7 +550,7 @@ function PositionSheet({
           </p>
         )}
         <fieldset className="realm-rights-block" disabled={locked}>
-          <legend>Страницы кабинета</legend>
+          <legend>Что можно делать</legend>
           <RightList items={pages} rights={rights} locked={locked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
         <fieldset className="realm-rights-block" disabled={locked}>

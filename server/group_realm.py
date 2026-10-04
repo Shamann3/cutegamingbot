@@ -140,30 +140,77 @@ def action_right(action: str) -> str | None:
     return ACTION_RIGHT.get((action or "").strip().lower())
 
 
-def cabinet_pages(rights: list[str] | set[str], *, creator: bool = False) -> list[str]:
-    """Страницы кабинета группы, которые открывает набор прав.
+# Вкладки, которые создатель включает должности отдельно от наказаний.
+# Главная и «Ещё» есть всегда. Переключатели — только у создателя проекта.
+CONFIGURABLE_PAGES = ("work", "archive", "activity", "rights", "pay")
 
-    Обзор и «Ещё» есть всегда. «Активность» открывается от списка людей,
-    от цифр или от любого наказания.
+
+def normalize_pages(raw: Any) -> list[str] | None:
+    """Сохранённый список вкладок. None — список ещё не задавали, кабинет как раньше."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, list):
+        return None
+    chosen = {str(item) for item in raw}
+    return [key for key in CONFIGURABLE_PAGES if key in chosen]
+
+
+def cabinet_pages(
+    rights: list[str] | set[str],
+    *,
+    creator: bool = False,
+    pages: Any = None,
+    rank: int | None = None,
+) -> list[str]:
+    """Страницы кабинета группы.
+
+    Пока у должности нет своего списка, вкладки следуют правам: архив открывает
+    работу и архив, люди или наказание открывают активность. Сохранённый список
+    важнее прав. Обзор и «Ещё» не выключаются. Ранг 5 видит весь кабинет.
     """
+    if creator or (rank is not None and int(rank) >= 5):
+        return ["overview", "work", "activity", "archive", "rights", "more"]
+    stored = None if rank is not None and int(rank) <= 0 else normalize_pages(pages)
+    if stored is not None:
+        opened = ["overview"]
+        opened.extend(stored)
+        opened.append("more")
+        return opened
     have = set(rights or [])
-    pages = ["overview"]
-    if creator or "view_archive" in have:
-        pages.append("work")
+    opened = ["overview"]
+    if "view_archive" in have:
+        opened.append("work")
     sees_activity = (
-        creator
-        or "view_members" in have
+        "view_members" in have
         or "view_analytics" in have
         or any(str(item).startswith("punish_") for item in have)
     )
     if sees_activity:
-        pages.append("activity")
-    if creator or "view_archive" in have:
-        pages.append("archive")
-    if creator or "manage_positions" in have:
-        pages.append("rights")
-    pages.append("more")
-    return pages
+        opened.append("activity")
+    if "view_archive" in have:
+        opened.append("archive")
+    if "manage_positions" in have:
+        opened.append("rights")
+    opened.append("more")
+    return opened
+
+
+def seat_sees(groups: list[dict], page: str) -> bool:
+    """Хотя бы одна должность этого человека открывает вкладку."""
+    for group in groups or []:
+        opened = cabinet_pages(
+            group.get("rights") or [],
+            pages=group.get("pages"),
+            rank=int(group.get("rank") or 0),
+        )
+        if page in opened:
+            return True
+    return False
 
 
 def activity_window(period: str, today):
@@ -386,6 +433,7 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_ready BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS entry_key TEXT NOT NULL DEFAULT '';
+        ALTER TABLE epsilon_positions ADD COLUMN IF NOT EXISTS pages JSONB;
         CREATE TABLE IF NOT EXISTS epsilon_realm_log (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -637,6 +685,14 @@ def _rights(value: Any) -> list[str]:
     return [str(item) for item in raw if str(item) in allowed]
 
 
+def _row_pages(row) -> list[str] | None:
+    try:
+        raw = row["pages"]
+    except (KeyError, IndexError):
+        return None
+    return normalize_pages(raw)
+
+
 def _position_out(row) -> dict:
     kind = row["kind"] if row["kind"] in KINDS else KIND_POST
     rank = int(row["rank"])
@@ -647,6 +703,7 @@ def _position_out(row) -> dict:
         "kind": kind,
         "prefix": row["prefix"] or "",
         "rights": rights_for_kind(kind, rank, _rights(row["rights"]), creator=True),
+        "pages": _row_pages(row),
         "accepting": bool(row["accepting"]),
     }
 
@@ -739,7 +796,7 @@ async def seats_for(user_id: int) -> list[dict]:
         ]
     rows = await db.pool.fetch(
         """
-        SELECT s.chat_id, g.title, g.username, p.title AS position, p.rank, p.rights, p.kind
+        SELECT s.chat_id, g.title, g.username, p.title AS position, p.rank, p.rights, p.kind, p.pages
         FROM epsilon_seats s
         JOIN epsilon_official_groups g ON g.chat_id = s.chat_id AND g.is_official
         JOIN epsilon_positions p ON p.id = s.position_id
@@ -762,6 +819,7 @@ async def seats_for(user_id: int) -> list[dict]:
             "rank": int(r["rank"]),
             "kind": r["kind"] or KIND_POST,
             "rights": rights_for_kind(r["kind"] or KIND_POST, int(r["rank"]), _rights(r["rights"]), creator=False),
+            "pages": normalize_pages(r["pages"]),
         }
         for r in rows
     ]
@@ -817,6 +875,7 @@ class OfficialBody(BaseModel):
 class PositionEditBody(BaseModel):
     title: str = Field(min_length=2, max_length=40)
     rights: list[str] = Field(default_factory=list)
+    pages: list[str] | None = None
     model_config = {"extra": "forbid"}
 
 
@@ -1141,7 +1200,7 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     for group in groups:
         rows = await db.pool.fetch(
             """
-            SELECT id, title, rank, rights, accepting, kind, prefix
+            SELECT id, title, rank, rights, accepting, kind, prefix, pages
             FROM epsilon_positions
             WHERE chat_id = $1
             ORDER BY rank DESC, id
@@ -1163,6 +1222,7 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
                 "prefix": person.get("seatPrefix") or post["prefix"],
                 "termEnd": person.get("termEnd") or "",
                 "rights": post["rights"],
+                "pages": post.get("pages"),
             })
         payload.append({**group, "positions": positions, "seats": seats})
     return {"groups": payload}
@@ -1175,7 +1235,7 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
     await ensure_tables()
     rows = await db.pool.fetch(
         """
-        SELECT id, title, rank, rights, accepting, kind, prefix
+        SELECT id, title, rank, rights, accepting, kind, prefix, pages
         FROM epsilon_positions
         WHERE chat_id = $1
         ORDER BY rank DESC, id
@@ -1254,18 +1314,36 @@ async def edit_position(
         raise HTTPException(status_code=403, detail="Эту должность может менять только тот, кто старше неё")
     title = " ".join(body.title.split())
     kind = row["kind"] if row["kind"] in KINDS else KIND_POST
-    rights = rights_for_kind(kind, int(row["rank"]), body.rights, creator=actor["creator"])
-    await db.pool.execute(
-        """
-        UPDATE epsilon_positions
-        SET title = $2, rights = $3::jsonb
-        WHERE id = $1
-        """,
-        int(position_id),
-        title,
-        json.dumps(rights),
-    )
-    return {"ok": True, "id": int(position_id), "title": title, "rights": rights}
+    rank = int(row["rank"])
+    rights = rights_for_kind(kind, rank, body.rights, creator=actor["creator"])
+    locked = kind in (KIND_MEMBER, KIND_SPAMBLOCK) or rank <= 0 or rank >= 5
+    if locked or body.pages is None:
+        stored_pages = None
+        await db.pool.execute(
+            """
+            UPDATE epsilon_positions
+            SET title = $2, rights = $3::jsonb, pages = CASE WHEN $4 THEN NULL ELSE pages END
+            WHERE id = $1
+            """,
+            int(position_id),
+            title,
+            json.dumps(rights),
+            locked,
+        )
+    else:
+        stored_pages = normalize_pages(body.pages) or []
+        await db.pool.execute(
+            """
+            UPDATE epsilon_positions
+            SET title = $2, rights = $3::jsonb, pages = $4::jsonb
+            WHERE id = $1
+            """,
+            int(position_id),
+            title,
+            json.dumps(rights),
+            json.dumps(stored_pages),
+        )
+    return {"ok": True, "id": int(position_id), "title": title, "rights": rights, "pages": stored_pages}
 
 
 @router.delete("/positions/{position_id}")
@@ -1936,7 +2014,12 @@ async def group_activity(
     access = await _access(user_id, chat_id)
     if not access:
         raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
-    pages = cabinet_pages(access["rights"], creator=bool(access.get("isCreator")))
+    pages = cabinet_pages(
+        access.get("rights") or [],
+        creator=bool(access.get("isCreator")),
+        pages=access.get("pages"),
+        rank=int(access.get("rank") or 0),
+    )
     if "activity" not in pages:
         raise HTTPException(status_code=403, detail="Должность не открывает активность")
     from datetime import date

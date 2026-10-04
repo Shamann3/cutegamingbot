@@ -25,7 +25,7 @@ import {
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
 import { applicationPerson } from '../lib/applicationPerson'
-import { groupCabinetTabs } from '../lib/panelPreview'
+import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { DeedMine } from './sections/payroll/DeedPay'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
@@ -100,7 +100,10 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
   const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
-  const tabs = useMemo(() => groupCabinetTabs(rights, isCreator), [rights, isCreator])
+  const tabs = useMemo(
+    () => groupCabinetTabs(rights, isCreator, current?.pages, current?.rank),
+    [rights, isCreator, current],
+  )
   const [tab, setTab] = useState('overview')
   const [workCount, setWorkCount] = useState(0)
   const workBoot = useRef(false)
@@ -117,10 +120,13 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
       if (!alive) return
       const waiting = Number(data?.waiting) || 0
       setWorkCount(waiting)
-      if (waiting > 0) setTab('work')
+      if (waiting > 0 && tabs.some((item) => item.id === 'work')) setTab('work')
     }).catch(() => {})
     return () => { alive = false }
   }, [preview, isProjectCreator, tabs])
+  useEffect(() => {
+    if (!tabs.some((item) => item.id === tab)) setTab('overview')
+  }, [tabs, tab])
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
@@ -552,8 +558,8 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     setSavingId(row.id)
     setError('')
     try {
-      await saveGroupPosition(row.id, { title: row.title.trim(), rights: row.rights || [] })
-      setNotice(`Должность «${row.title.trim()}» сохранена`)
+      await saveGroupPosition(row.id, positionSaveBody(row))
+      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.`)
       await loadPositions(chatId)
     } catch (err) {
       setError(err.message || 'Должность не сохранилась')

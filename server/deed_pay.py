@@ -1131,6 +1131,7 @@ async def deed_work(user_id: int = Depends(get_any_telegram_user_id)):
 
     await ensure_tables()
     await ensure_deed_tables()
+    await _require_work_page(user_id)
     return await _open_deck(_work_where(), [list(PUNISH), int(user_id)], STAGE_ADMIN, user_id, ADMIN_ORDER_SQL)
 
 
@@ -1150,6 +1151,15 @@ async def deed_staff(user_id: int = Depends(get_any_telegram_user_id)):
     return await _open_deck(
         _staff_where(), [list(PUNISH), int(user_id)], STAGE_STAFF, user_id, ADMIN_ORDER_SQL,
     )
+
+
+async def _require_work_page(user_id: int) -> None:
+    """Колода администратора открыта только должности, у которой включена «Работа»."""
+    from group_realm import seat_sees, seats_for
+
+    groups = await seats_for(user_id)
+    if not seat_sees(groups, "work"):
+        raise HTTPException(status_code=403, detail="Должность не открывает работу")
 
 
 async def _stage_after_admin(action_id: int) -> str:
@@ -1179,6 +1189,7 @@ async def deed_work_sort(
 
     await ensure_tables()
     await ensure_deed_tables()
+    await _require_work_page(user_id)
     where = _work_where()
     async with db.pool.acquire() as conn:
         async with conn.transaction():

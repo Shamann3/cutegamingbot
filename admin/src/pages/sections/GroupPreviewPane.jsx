@@ -19,10 +19,10 @@ function punishLine(rights) {
   return names.length ? `Наказания: ${names.join(', ')}` : 'Наказаний нет'
 }
 
-function PageChips({ rights }) {
+function PageChips({ rights, pages, rank }) {
   return (
     <ul className="preview-chips" aria-label="Страницы кабинета">
-      {groupCabinetTabs(rights, false).map((item) => <li key={item.id}>{item.label}</li>)}
+      {groupCabinetTabs(rights, false, pages, rank).map((item) => <li key={item.id}>{item.label}</li>)}
     </ul>
   )
 }
@@ -136,7 +136,7 @@ export default function GroupPreviewPane({ onOpen }) {
                     <strong>{position.title}</strong>
                     <span>ранг {position.rank}</span>
                   </div>
-                  <PageChips rights={position.rights} />
+                  <PageChips rights={position.rights} pages={position.pages} rank={position.rank} />
                   <p className="preview-card-line">{punishLine(position.rights)}</p>
                   {seatsKnown && (
                     <p className="preview-card-line">

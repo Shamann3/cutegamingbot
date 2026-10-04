@@ -5,7 +5,7 @@ import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
 import RightSwitch from '../../components/RightSwitch'
 import UserLookupPreview from '../../components/UserLookupPreview'
-import { groupPositionPreview } from '../../lib/panelPreview'
+import { groupPositionPreview, positionSaveBody } from '../../lib/panelPreview'
 
 const STAFF_GROUP_LABELS = {
   overview: 'С чего начать',
@@ -244,8 +244,8 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
     setError('')
     setNotice('')
     try {
-      await saveGroupPosition(row.id, { title: row.title.trim(), rights: row.rights || [] })
-      setNotice(`Должность «${row.title.trim()}» сохранена`)
+      await saveGroupPosition(row.id, positionSaveBody(row))
+      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.`)
       await load()
     } catch (err) {
       setError(err.message || 'Должность не сохранилась')
@@ -325,7 +325,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
         <p className="pa-hint">Старший, младший и модератор уже есть. Новую должность добавляет только создатель проекта: вкладки и наказания у неё сначала выключены.</p>
       )}
       {office === 'group' && (
-        <p className="pa-hint">Новую должность создаёт только создатель проекта. Обычная сразу получает «Кто пишет», наказания включаются отдельно. «Обычный пользователь» — ранг 0, только писать. «Спам-блок» — тоже ранг 0, без наказаний; срок задаётся, когда человека назначают.</p>
+        <p className="pa-hint">Новую должность создаёт только создатель проекта. У каждой должности свои вкладки кабинета — тем же рядом переключателей, что и у сотрудников. Обычная сразу получает «Кто пишет», наказания включаются отдельно. У ранга 0 вкладки не настраиваются.</p>
       )}
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (

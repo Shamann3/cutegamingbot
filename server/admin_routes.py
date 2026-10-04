@@ -15,6 +15,7 @@ from admin_auth import (
     reject_if_plain_user,
     issue_admin_token,
     require_admin_session,
+    require_proof_viewer,
     totp_qr_data_url,
     totp_code_now,
     normalize_totp_code,
@@ -6605,7 +6606,7 @@ async def moderation_notify(request: Request):
 async def photo_proxy(
     file_id: str = Query(...),
     size: str = Query("full"),
-    _admin_id: int = Depends(require_admin_session),
+    _admin_id: int = Depends(require_proof_viewer),
 ):
     """Проксирует файл из Telegram через наш сервер — обходит CORS.
 

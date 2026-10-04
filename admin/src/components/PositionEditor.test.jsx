@@ -135,4 +135,23 @@ describe('PositionEditor', () => {
     await waitFor(() => expect(onAppoint).toHaveBeenCalled())
     expect(onAppoint.mock.calls[0][1].userId).toBe(99)
   })
+
+  it('saves the cabinet tabs the switches show', () => {
+    const onSave = vi.fn()
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        chatId={-100}
+        onSave={onSave}
+      />,
+    )
+    open('Модератор')
+    const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
+    expect(sw('Работа').getAttribute('aria-checked')).toBe('false')
+    expect(sw('Зарплата').getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(sw('Работа'))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
+    expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'activity', 'pay'])
+  })
 })

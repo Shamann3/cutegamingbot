@@ -59,7 +59,8 @@ function fail(code) {
 async function fetchAsObjectUrl(url) {
   const resp = await fetch(url, { headers: authHeaders(), credentials: 'same-origin' })
   if (resp.status === 410) throw fail('gone')
-  if (resp.status === 401 || resp.status === 403) throw fail('auth')
+  if (resp.status === 401) throw fail('auth')
+  if (resp.status === 403) throw fail('denied')
   if (!resp.ok) throw fail('fail')
   const type = resp.headers.get('content-type') || ''
   if (type.includes('text/html') || type.includes('application/json')) throw fail('fail')
@@ -148,7 +149,7 @@ export default function TgPhoto({
           return
         } catch (exc) {
           if (cancelled) return
-          const code = exc?.code === 'gone' || exc?.code === 'auth' ? exc.code : 'fail'
+          const code = exc?.code === 'gone' || exc?.code === 'auth' || exc?.code === 'denied' ? exc.code : 'fail'
           if (code !== 'fail' || attempt === 3) {
             setErr(code)
             return
@@ -194,7 +195,7 @@ export default function TgPhoto({
           retry()
         }}
       >
-        {err === 'gone' ? 'файл в Telegram исчез' : err === 'auth' ? 'нужен повторный вход' : 'не загрузилось · нажмите ещё раз'}
+        {err === 'gone' ? 'файл в Telegram исчез' : err === 'auth' ? 'нужен повторный вход' : err === 'denied' ? 'фото для этой должности закрыто' : 'не загрузилось · нажмите ещё раз'}
       </button>
     )
   }
