@@ -154,4 +154,23 @@ describe('PositionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
     expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'activity', 'pay'])
   })
+
+  it('lets the creator choose cabinet tabs for a spam block', () => {
+    const onSave = vi.fn()
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        chatId={-100}
+        onSave={onSave}
+      />,
+    )
+    open('Спам-блок')
+    const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
+    expect(sw('Работа').disabled).toBe(false)
+    expect(sw('Мут').disabled).toBe(true)
+    fireEvent.click(sw('Работа'))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
+    expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'pay'])
+  })
 })

@@ -116,7 +116,8 @@ def test_cabinet_pages_follow_the_two_lists():
     assert cabinet_pages(["view_archive"], pages=["pay"]) == ["overview", "pay", "more"]
     assert cabinet_pages(["view_archive"], pages=[]) == ["overview", "more"]
     assert "work" in cabinet_pages([], rank=5)
-    assert cabinet_pages(["view_archive"], pages=["work"], rank=0) == ["overview", "work", "archive", "more"]
+    assert cabinet_pages([], pages=["archive"], rank=5) == ["overview", "archive", "more"]
+    assert cabinet_pages(["view_archive"], pages=["work"], rank=0) == ["overview", "work", "more"]
 
 
 def test_activity_windows_cover_day_month_and_year():

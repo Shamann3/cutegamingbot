@@ -46,9 +46,9 @@ function rankCaption(row) {
 }
 
 function tabCaption(row) {
-  if (Number(row.rank) >= 5) return 'все вкладки'
   const count = cabinetPagesFor(row).length
   if (!count) return 'только главная'
+  if (count >= CABINET_PAGE_DEFS.length) return 'все вкладки'
   return `${count} ${count === 1 ? 'вкладка' : count < 5 ? 'вкладки' : 'вкладок'}`
 }
 
@@ -312,15 +312,11 @@ function PositionSheet({
 }) {
   const frozen = row.kind === 'spamblock' || row.kind === 'member' || Number(row.rank) <= 0
   const locked = row.rank >= 5 || frozen
+  const tabsLocked = creator ? false : locked
   const reduce = useReducedMotion()
   const rights = new Set(row.rights || [])
-  const pageIds = cabinetPagesFor(row.rank >= 5 ? { ...row, pages: CABINET_PAGE_DEFS.map((item) => item.id) } : row)
-  const dock = groupCabinetTabs(
-    row.rights,
-    false,
-    locked ? undefined : pageIds,
-    row.rank,
-  )
+  const pageIds = cabinetPagesFor(row)
+  const dock = groupCabinetTabs(row.rights, false, pageIds, row.rank)
   const pages = PAGE_RIGHTS.filter((item) => creator || item.id !== 'manage_positions')
   const peer = lowerRankPeer(drafts, row.rank)
   const compareSet = peer ? new Set(byId.get(peer.id)?.rights || peer.rights || []) : null
@@ -436,17 +432,17 @@ function PositionSheet({
       title={row.title || 'Должность'}
       subtitle={
         row.rank >= 5
-          ? 'Создатель группы. Права полные, снять их нельзя.'
+          ? 'Создатель группы. Права полные, снять их нельзя. Вкладки кабинета выбираете вы.'
           : row.kind === 'spamblock'
-            ? 'Спам-блок. Наказаний нет и включить их нельзя. Срок задаётся при назначении.'
+            ? 'Спам-блок. Наказаний нет и включить их нельзя. Вкладки кабинета выбираете вы. Срок задаётся при назначении.'
             : frozen
-              ? 'Ранг 0. Только то, что и так может обычный участник: писать. Наказаний нет.'
+              ? 'Ранг 0. Наказаний нет. Вкладки кабинета выбираете вы.'
               : `Ранг ${row.rank}. Сначала вкладки нижней полосы, потом что можно делать внутри. Наказать можно только того, кто младше.`
       }
       onClose={onClose}
       footer={foot}
     >
-      <fieldset className="realm-rights-block cabinet-tabs" disabled={locked}>
+      <fieldset className="realm-rights-block cabinet-tabs" disabled={tabsLocked}>
         <legend>Вкладки кабинета</legend>
         <p className="realm-copy">
           Главная и «Ещё» остаются. Остальное включается здесь и записывается при сохранении.
@@ -473,7 +469,7 @@ function PositionSheet({
             <RightSwitch
               key={item.id}
               on={pageIds.includes(item.id)}
-              disabled={locked}
+              disabled={tabsLocked}
               title={item.label}
               hint={item.hint}
               onChange={(next) => togglePage(item.id, next)}

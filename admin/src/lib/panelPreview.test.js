@@ -145,8 +145,12 @@ describe('group cabinet copy', () => {
       .toEqual(['overview', 'archive', 'more'])
     expect(groupCabinetTabs(['view_archive'], false, [], 2).map((item) => item.id))
       .toEqual(['overview', 'more'])
-    expect(groupCabinetTabs([], false, [], 5).map((item) => item.id))
+    expect(groupCabinetTabs([], false, null, 5).map((item) => item.id))
       .toEqual(['overview', 'work', 'archive', 'activity', 'rights', 'pay', 'more'])
+    expect(groupCabinetTabs([], false, ['work'], 0).map((item) => item.id))
+      .toEqual(['overview', 'work', 'more'])
+    expect(groupCabinetTabs([], false, ['archive'], 5).map((item) => item.id))
+      .toEqual(['overview', 'archive', 'more'])
   })
 
   it('never treats the top position as the project creator', () => {

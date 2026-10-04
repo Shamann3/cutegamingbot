@@ -141,21 +141,21 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
       { id: 'more', label: 'Ещё' },
     ]
   }
-  if (Number(rank) >= 5) {
-    return [
-      { id: 'overview', label: 'Главная' },
-      ...CABINET_PAGE_DEFS.map((item) => ({ id: item.id, label: item.label })),
-      { id: 'more', label: 'Ещё' },
-    ]
-  }
   const items = [{ id: 'overview', label: 'Главная' }]
-  if (Number(rank) > 0 && Array.isArray(pages)) {
+  if (Array.isArray(pages)) {
     const chosen = new Set(pages)
     for (const item of CABINET_PAGE_DEFS) {
       if (chosen.has(item.id)) items.push({ id: item.id, label: item.label })
     }
     items.push({ id: 'more', label: 'Ещё' })
     return items
+  }
+  if (Number(rank) >= 5) {
+    return [
+      { id: 'overview', label: 'Главная' },
+      ...CABINET_PAGE_DEFS.map((item) => ({ id: item.id, label: item.label })),
+      { id: 'more', label: 'Ещё' },
+    ]
   }
   const set = rights instanceof Set ? rights : new Set(rights || [])
   const has = (key) => set.has(key)
@@ -181,18 +181,16 @@ export function cabinetPagesFor(row) {
     const chosen = new Set(row.pages)
     return CABINET_PAGE_IDS.filter((id) => chosen.has(id))
   }
+  if (Number(row?.rank) >= 5) return [...CABINET_PAGE_IDS]
   return derivedCabinetPageIds(row?.rights)
 }
 
 export function positionSaveBody(row) {
-  const body = {
+  return {
     title: String(row?.title || '').trim(),
     rights: Array.isArray(row?.rights) ? row.rights : [],
+    pages: cabinetPagesFor(row),
   }
-  const rank = Number(row?.rank) || 0
-  const frozen = rank <= 0 || rank >= 5 || row?.kind === 'spamblock' || row?.kind === 'member'
-  if (!frozen) body.pages = cabinetPagesFor(row)
-  return body
 }
 
 function seatGroup(group, post) {

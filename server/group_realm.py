@@ -171,16 +171,19 @@ def cabinet_pages(
 
     Пока у должности нет своего списка, вкладки следуют правам: архив открывает
     работу и архив, люди или наказание открывают активность. Сохранённый список
-    важнее прав. Обзор и «Ещё» не выключаются. Ранг 5 видит весь кабинет.
+    важнее прав и ранга, в том числе у спам-блока и ранга 0. Обзор и «Ещё»
+    не выключаются. Ранг 5 без своего списка видит весь кабинет.
     """
-    if creator or (rank is not None and int(rank) >= 5):
+    if creator:
         return ["overview", "work", "activity", "archive", "rights", "more"]
-    stored = None if rank is not None and int(rank) <= 0 else normalize_pages(pages)
+    stored = normalize_pages(pages)
     if stored is not None:
         opened = ["overview"]
         opened.extend(stored)
         opened.append("more")
         return opened
+    if rank is not None and int(rank) >= 5:
+        return ["overview", "work", "activity", "archive", "rights", "more"]
     have = set(rights or [])
     opened = ["overview"]
     if "view_archive" in have:
@@ -1317,20 +1320,9 @@ async def edit_position(
     rank = int(row["rank"])
     rights = rights_for_kind(kind, rank, body.rights, creator=actor["creator"])
     locked = kind in (KIND_MEMBER, KIND_SPAMBLOCK) or rank <= 0 or rank >= 5
-    if locked or body.pages is None:
-        stored_pages = None
-        await db.pool.execute(
-            """
-            UPDATE epsilon_positions
-            SET title = $2, rights = $3::jsonb, pages = CASE WHEN $4 THEN NULL ELSE pages END
-            WHERE id = $1
-            """,
-            int(position_id),
-            title,
-            json.dumps(rights),
-            locked,
-        )
-    else:
+    # Создатель задаёт вкладки любой должности. Остальные не переписывают список
+    # у спам-блока, ранга 0 и создателя группы.
+    if body.pages is not None and (actor["creator"] or not locked):
         stored_pages = normalize_pages(body.pages) or []
         await db.pool.execute(
             """
@@ -1342,6 +1334,18 @@ async def edit_position(
             title,
             json.dumps(rights),
             json.dumps(stored_pages),
+        )
+    else:
+        stored_pages = None
+        await db.pool.execute(
+            """
+            UPDATE epsilon_positions
+            SET title = $2, rights = $3::jsonb
+            WHERE id = $1
+            """,
+            int(position_id),
+            title,
+            json.dumps(rights),
         )
     return {"ok": True, "id": int(position_id), "title": title, "rights": rights, "pages": stored_pages}
 
