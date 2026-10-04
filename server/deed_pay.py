@@ -21,7 +21,7 @@ from typing import Any
 
 from asyncpg.exceptions import DeadlockDetectedError, UniqueViolationError
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from admin_auth import get_any_telegram_user_id
 from deed_tune import IDEAL, bucket, fill_days, plan_tune, purse_moved, unit_text
@@ -865,10 +865,14 @@ class RatesBody(BaseModel):
 
 
 class SortBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     verdict: str = Field(default="", max_length=16)
 
 
 class StaffBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     verdict: str = Field(default="", max_length=16)
     lift: bool = False
 
@@ -880,6 +884,19 @@ class CreditIn(BaseModel):
 
 class DecideBody(BaseModel):
     credits: list[CreditIn] | None = None
+
+
+def _payable(pairs: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """Создатель только решает зарплату. Себе записать её нельзя."""
+    out: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for role, user_id in pairs:
+        person = int(user_id or 0)
+        if person <= 0 or is_project_creator(person) or (role, person) in seen:
+            continue
+        seen.add((role, person))
+        out.append((role, person))
+    return out
 
 
 def _asked_set(credits: list[CreditIn] | None) -> set[tuple[str, int]] | None:
@@ -1028,6 +1045,7 @@ async def deed_queue(
 
 
 async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tuple[str, int]] | None) -> dict:
+    _require_creator(reviewer_id)
     await ensure_deed_tables()
     async with db.pool.acquire() as conn:
         async with conn.transaction():
@@ -1050,7 +1068,7 @@ async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tupl
             )
             if existing:
                 raise HTTPException(status_code=409, detail="Это наказание уже решено")
-            chosen = pick_credits(status, _credit_people(src), asked)
+            chosen = _payable(pick_credits(status, _credit_people(src), asked))
             inserted = await conn.fetchrow(
                 """
                 INSERT INTO epsilon_deed_reviews (action_id, status, reviewer_id, credits_set)
@@ -1254,6 +1272,7 @@ async def deed_own_sort(
             status, credits = self_settle(verdict, int(src["admin_user_id"] or 0))
             if int(src["admin_user_id"] or 0) == int(user_id):
                 status, credits = "dropped", []
+            credits = _payable(credits)
             inserted = await conn.fetchrow(
                 """
                 INSERT INTO epsilon_deed_reviews
@@ -1966,6 +1985,90 @@ async def deed_mine(user_id: int = Depends(get_any_telegram_user_id)):
         "paidKut": paid_kut,
         "payouts": [_payout_row(r) for r in owed_rows],
     }
+
+
+def self_claim_gate(row, user_id: int) -> str | None:
+    """Пусто — человек может забрать свою техвыплату. Иначе причина отказа."""
+    if not row:
+        return "Выплаты нет"
+    if int(row["admin_id"] or 0) != int(user_id):
+        return "Это чужая зарплата"
+    if row["status"] != "owed":
+        return "Эта выплата уже закрыта"
+    purse = row["purse"] if row["purse"] in ("tech", "manual") else "tech"
+    if purse != "tech":
+        return "Эту сумму отдаёт создатель лично. Напишите ему и договоритесь."
+    if int(row["reward_kut"] or 0) <= 0:
+        return "Сумма нормы равна нулю"
+    return None
+
+
+@router.post("/mine/{payout_id}/claim")
+async def deed_claim(payout_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    """Норма уже засчитана создателем. Человек забирает только свою сумму из технических групп."""
+    await ensure_deed_tables()
+    audit_ev = None
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT id, admin_id, action_type, reward_kut, purse, status, milestone
+                FROM epsilon_deed_payouts
+                WHERE id = $1
+                FOR UPDATE
+                """,
+                int(payout_id),
+            )
+            why = self_claim_gate(row, user_id)
+            if why:
+                status = 404 if why == "Выплаты нет" else 403 if why == "Это чужая зарплата" else 409
+                raise HTTPException(status_code=status, detail=why)
+            reward = int(row["reward_kut"])
+            try:
+                taken = await _take_technical(conn, reward)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            from staff_payroll import credit_kut_with_audit
+            cause = (
+                "Зарплата за проверки"
+                if row["action_type"] in (CHECK_ADMIN, CHECK_STAFF)
+                else "Зарплата за подтверждённые наказания"
+            )
+            audit_ev = await credit_kut_with_audit(
+                conn, int(user_id), reward,
+                cause=cause,
+                event_type="deed_pay_kut",
+                details={
+                    "payoutId": int(row["id"]),
+                    "action": row["action_type"],
+                    "milestone": int(row["milestone"]),
+                    "fromTechnical": taken,
+                    "self": True,
+                },
+            )
+            note = "Кут с технических групп: " + ", ".join(
+                f"{item['amount']} из {item['chatId']}" for item in taken
+            )
+            await conn.execute(
+                """
+                UPDATE epsilon_deed_payouts
+                SET status = 'paid', paid_at = NOW(), note = $2
+                WHERE id = $1 AND admin_id = $3 AND status = 'owed'
+                """,
+                int(payout_id), note, int(user_id),
+            )
+    if audit_ev:
+        from staff_payroll import schedule_kut_audit
+        schedule_kut_audit(audit_ev)
+    from admin_audit import log_admin_action
+    await log_admin_action(
+        user_id,
+        "deed_claim",
+        target_type="deed_payout",
+        target_id=str(payout_id),
+        details={"reward": int(row["reward_kut"])},
+    )
+    return {"ok": True, "id": int(payout_id), "rewardKut": int(row["reward_kut"])}
 
 
 def _done_item(row) -> dict:

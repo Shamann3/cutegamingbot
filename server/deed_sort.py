@@ -154,12 +154,24 @@ def pick_credits(
     people: list[tuple[str, int, str]],
     asked: set[tuple[str, int]] | None,
 ) -> list[tuple[str, int]]:
-    """Кого засчитать. asked is None — всех, чей ответ совпал. Пустой набор — никого."""
-    eligible = [
-        (role, int(user_id))
-        for role, user_id, verdict in people
-        if int(user_id or 0) > 0 and credit_eligible(status, role, verdict or "")
-    ]
+    """Кого засчитать. asked is None — всех, чей ответ совпал. Пустой набор — никого.
+
+    Чужой id из запроса отбрасывается. Тот, кто выдал наказание, не получает
+    ещё и оплату за его проверку.
+    """
+    issuers = {
+        int(user_id)
+        for role, user_id, _verdict in people
+        if role == "issue" and int(user_id or 0) > 0
+    }
+    eligible: list[tuple[str, int]] = []
+    for role, user_id, verdict in people:
+        person = int(user_id or 0)
+        if person <= 0 or not credit_eligible(status, role, verdict or ""):
+            continue
+        if role != "issue" and person in issuers:
+            continue
+        eligible.append((role, person))
     if asked is None:
         return eligible
     return [pair for pair in eligible if pair in asked]

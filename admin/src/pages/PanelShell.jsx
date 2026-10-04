@@ -68,6 +68,8 @@ import FirstRun, { staffSteps, workLessonSteps, coachClosed, restartCoach } from
 import StaffDesk from './sections/payroll/StaffDesk'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkLessonButton from '../components/WorkLessonButton'
+import MySalary from './sections/payroll/MySalary'
+import KutRate from './sections/payroll/KutRate'
 import PanelPreviewBar from '../components/PanelPreviewBar'
 import GroupShell from './GroupShell'
 import {
@@ -433,6 +435,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isSupport = section === 'support'
   const isModeration = section === 'moderation'
   const isWork = section === 'work'
+  const isMyPay = section === 'myPay'
   const isChronicle  = section === 'chronicle'
   const isGroupGuard = section === 'groupGuard'
   const isSoftRestart = section === 'softRestart'
@@ -626,6 +629,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                   onReplayCoach={replayCoach}
                 />
               ) : null}
+              footer={showCreator ? <KutRate /> : null}
             />
           )}
 
@@ -756,6 +760,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               <WorkLessonButton onClick={openWorkLesson} />
             </section>
           )}
+          {isMyPay && (
+            <section className="grp-page nika-page realm-main my-pay-page">
+              <header className="nika-head">
+                <div className="nika-head-copy">
+                  <h1>Моя зарплата</h1>
+                </div>
+              </header>
+              <MySalary />
+            </section>
+          )}
           {isModeration && (
             <ModerationSection
               role={viewRole}
@@ -770,7 +784,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isGroupGuard && showCreator && <GroupGuardDesk />}
           {isSoftRestart && showCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isChronicle && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

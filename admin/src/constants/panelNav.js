@@ -10,6 +10,10 @@ export const PANEL_SECTIONS = [
     blurb: 'Проверка чужих наказаний. Карточку берёт один человек, свои сюда не попадают.',
   },
   {
+    id: 'myPay', label: 'Pay', labelRu: 'Моя зарплата', dockLabel: 'Зарплата', group: 'people',
+    blurb: 'Сколько наказаний осталось до следующей суммы и как забрать уже набранное.',
+  },
+  {
     id: 'groupGuard', label: 'Group guard', labelRu: 'Защита', group: 'official',
     creatorOnly: true,
     blurb: 'Общие правила официальных групп, свои правила чата и люди, которых бот не удаляет.',
@@ -203,7 +207,8 @@ export function visibleSections(
     if (s.id === 'panelAccess') return false
     const staffForced = s.id === 'staff' && (creatorOk || perms.has('manage_panel_access'))
     const creatorWork = s.id === 'work' && creatorOk
-    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !creatorWork && !allowedIds.has(s.id)) return false
+    const ownPay = s.id === 'myPay'
+    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !creatorWork && !ownPay && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission) && !staffForced) return false
     return true
   })
@@ -229,6 +234,7 @@ export function getSectionById(id) {
 export const DOCK_PRIMARY_IDS = [
   'dashboard',
   'work',
+  'myPay',
   'users',
   'moderation',
   'support',
@@ -250,7 +256,7 @@ export function splitDockSections(visible = []) {
   for (const id of DOCK_PRIMARY_IDS) {
     const item = byId.get(id)
     if (item) primary.push(item)
-    if (primary.length >= 4) break
+    if (primary.length >= 5) break
   }
   const primaryIds = new Set(primary.map((item) => item.id))
   const extras = visible.filter((item) => !primaryIds.has(item.id))

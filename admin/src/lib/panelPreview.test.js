@@ -89,7 +89,7 @@ describe('staff copy', () => {
       permissions: ['view_players'],
       staffPerms: ['mute'],
     })
-    expect(navIds(preview)).toEqual(['dashboard', 'users'])
+    expect(navIds(preview)).toEqual(['dashboard', 'myPay', 'users'])
   })
 
   it('opens «Стафф» for whoever may configure panel access, but never the access matrix itself', () => {
@@ -97,7 +97,7 @@ describe('staff copy', () => {
       roles: ROLES,
       rolePreview: { senior_admin: { sections: ['dashboard'], tabs: {}, permissions: ['manage_panel_access'] } },
     }
-    expect(navIds(staffRolePreview(data, 'senior_admin'))).toEqual(['dashboard', 'staff'])
+    expect(navIds(staffRolePreview(data, 'senior_admin'))).toEqual(['dashboard', 'myPay', 'staff'])
   })
 
   it('falls back to role defaults when the server is older', () => {
@@ -109,7 +109,7 @@ describe('staff copy', () => {
     expect(preview.permissions).toBeNull()
     expect(preview.staffPerms).toBeNull()
     expect(preview.tabs.staff).toEqual(['applications'])
-    expect(navIds(preview)).toEqual(['users', 'economy', 'staff'])
+    expect(navIds(preview)).toEqual(['myPay', 'users', 'economy', 'staff'])
   })
 
   it('copies one person with their own exceptions', () => {
@@ -125,7 +125,7 @@ describe('staff copy', () => {
     }
     const preview = staffMemberPreview(member, [])
     expect(preview).toMatchObject({ who: 'person', name: 'Иван', userId: 7, staffPerms: [] })
-    expect(navIds(preview, 42)).toEqual(['dashboard', 'users'])
+    expect(navIds(preview, 42)).toEqual(['dashboard', 'myPay', 'users'])
   })
 
   it('names a person without a first name by username, then by ID', () => {
@@ -138,19 +138,21 @@ describe('group cabinet copy', () => {
   it('shows the same cabinet pages the rights allow', () => {
     const ids = (rights, creator) => groupCabinetTabs(rights, creator).map((item) => item.id)
     expect(ids([])).toEqual(['overview', 'pay', 'more'])
-    expect(ids(['punish_mute'])).toEqual(['overview', 'activity', 'pay', 'more'])
-    expect(ids(new Set(['view_archive', 'manage_positions']))).toEqual(['overview', 'work', 'archive', 'rights', 'pay', 'more'])
-    expect(ids([], true)).toEqual(['overview', 'work', 'archive', 'activity', 'rights', 'switches', 'pay', 'more'])
+    expect(ids(['punish_mute'])).toEqual(['overview', 'pay', 'activity', 'more'])
+    expect(ids(new Set(['view_archive', 'manage_positions']))).toEqual(['overview', 'work', 'pay', 'archive', 'rights', 'more'])
+    expect(ids([], true)).toEqual(['overview', 'work', 'pay', 'archive', 'activity', 'rights', 'switches', 'more'])
+    expect(groupCabinetTabs(['view_archive'], false, ['archive'], 2).map((item) => item.label))
+      .toContain('Моя зарплата')
     expect(groupCabinetTabs(['view_archive'], false, ['archive'], 2).map((item) => item.id))
-      .toEqual(['overview', 'archive', 'more'])
+      .toEqual(['overview', 'pay', 'archive', 'more'])
     expect(groupCabinetTabs(['view_archive'], false, [], 2).map((item) => item.id))
-      .toEqual(['overview', 'more'])
+      .toEqual(['overview', 'pay', 'more'])
     expect(groupCabinetTabs([], false, null, 5).map((item) => item.id))
-      .toEqual(['overview', 'work', 'archive', 'activity', 'rights', 'pay', 'more'])
+      .toEqual(['overview', 'work', 'pay', 'archive', 'activity', 'rights', 'more'])
     expect(groupCabinetTabs([], false, ['work'], 0).map((item) => item.id))
-      .toEqual(['overview', 'work', 'more'])
+      .toEqual(['overview', 'work', 'pay', 'more'])
     expect(groupCabinetTabs([], false, ['archive'], 5).map((item) => item.id))
-      .toEqual(['overview', 'archive', 'more'])
+      .toEqual(['overview', 'pay', 'archive', 'more'])
   })
 
   it('never treats the top position as the project creator', () => {
@@ -222,7 +224,7 @@ describe('work sits with the main tabs', () => {
       'moderator',
     )
     expect(splitDockSections(visible).dock.map((item) => item.id)).toEqual([
-      'dashboard', 'work', 'users', 'moderation', 'more',
+      'dashboard', 'work', 'myPay', 'users', 'moderation', 'more',
     ])
   })
 

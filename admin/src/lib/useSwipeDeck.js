@@ -66,6 +66,7 @@ export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96
         /* старый webview без захвата указателя: карточка всё равно едет за пальцем */
       }
     }
+    if (event.cancelable) event.preventDefault()
     paint(stageRef.current, dragRef.current, dx, threshold, true)
   }, [threshold])
 

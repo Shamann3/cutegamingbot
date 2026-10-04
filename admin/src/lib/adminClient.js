@@ -2214,6 +2214,10 @@ export async function fetchDeedDone({ sort = 'new', action = '', adminId = 0, so
   return adminRequest(`/deed-pay/done?${p}`)
 }
 
+export async function claimDeed(payoutId) {
+  return adminRequest(`/deed-pay/mine/${payoutId}/claim`, { method: 'POST', body: {} })
+}
+
 export async function payDeed(payoutId) {
   return adminRequest(`/deed-pay/payouts/${payoutId}/pay`, { method: 'POST', body: {} })
 }

@@ -149,7 +149,7 @@ describe('PositionEditor', () => {
     open('Модератор')
     const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
     expect(sw('Работа').getAttribute('aria-checked')).toBe('false')
-    expect(sw('Зарплата').getAttribute('aria-checked')).toBe('true')
+    expect(sw('Моя зарплата').getAttribute('aria-checked')).toBe('true')
     fireEvent.click(sw('Работа'))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
     expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'activity', 'pay'])

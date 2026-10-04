@@ -201,6 +201,9 @@ def test_pay_follows_the_matching_answer_and_a_kick_cannot_be_lifted():
     assert pick_credits("dropped", people, None) == [("staff", 8)]
     assert pick_credits("kept", people, set()) == []
     assert pick_credits("dropped", people, {("staff", 8)}) == [("staff", 8)]
+    own = [("issue", 4, ""), ("admin", 4, "clear"), ("staff", 8, "wrong")]
+    assert pick_credits("kept", own, None) == [("issue", 4)]
+    assert pick_credits("kept", own, {("admin", 4), ("admin", 999), ("issue", 4)}) == [("issue", 4)]
     assert credit_eligible("kept", "admin", "weak") is False
     assert credit_eligible("dropped", "issue", "") is False
     assert lift_actions("ban", "chat") == ("unban",)
@@ -215,6 +218,57 @@ def test_pay_follows_the_matching_answer_and_a_kick_cannot_be_lifted():
     assert ok is False
     assert "группа" in why
     assert can_apply_lift("ban", "chat", -100, 9) == (True, "")
+
+
+def test_only_the_creator_can_write_salary_and_never_his_own():
+    import inspect
+
+    from admin_soft_restart import public_creator_id
+    from deed_pay import (
+        SortBody,
+        StaffBody,
+        _decide,
+        _payable,
+        deed_drop,
+        deed_keep,
+        deed_own_sort,
+        deed_pay,
+        deed_save_rates,
+        deed_staff_sort,
+        deed_tune_now,
+        deed_undo,
+        deed_work_sort,
+    )
+
+    for handler in (
+        deed_keep, deed_drop, deed_own_sort, deed_undo,
+        deed_save_rates, deed_tune_now, deed_pay,
+    ):
+        assert "_require_creator" in inspect.getsource(handler)
+    for handler in (deed_work_sort, deed_staff_sort):
+        source = inspect.getsource(handler)
+        assert "epsilon_deed_credits" not in source
+        assert "epsilon_deed_reviews" not in source
+    assert "credits" not in SortBody.model_fields
+    assert "credits" not in StaffBody.model_fields
+    assert SortBody.model_config.get("extra") == "forbid"
+    assert StaffBody.model_config.get("extra") == "forbid"
+    creator = public_creator_id()
+    assert _payable([("issue", creator), ("admin", 4), ("admin", 4)]) == [("admin", 4)]
+    assert "_require_creator" in inspect.getsource(_decide)
+    assert "_payable" in inspect.getsource(_decide)
+    assert "_payable" in inspect.getsource(deed_own_sort)
+
+
+def test_a_person_can_claim_only_their_own_ready_tech_payout():
+    from deed_pay import self_claim_gate
+
+    owed = {"admin_id": 4, "status": "owed", "purse": "tech", "reward_kut": 200}
+    assert self_claim_gate(owed, 4) is None
+    assert self_claim_gate(owed, 8) == "Это чужая зарплата"
+    assert self_claim_gate({**owed, "status": "paid"}, 4) == "Эта выплата уже закрыта"
+    assert "создатель" in self_claim_gate({**owed, "purse": "manual"}, 4)
+    assert self_claim_gate(None, 4) == "Выплаты нет"
 
 
 def test_project_sort_order_is_fixed():

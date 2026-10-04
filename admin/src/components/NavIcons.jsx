@@ -272,6 +272,14 @@ const Work = () => (
   </Icon>
 )
 
+const Pay = () => (
+  <Icon>
+    <rect x="3.5" y="6.5" width="17" height="11.5" rx="2" />
+    <path d="M3.5 10.5h17" />
+    <circle cx="15.5" cy="14.2" r="0.9" />
+  </Icon>
+)
+
 const More = () => (
   <Icon>
     <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
@@ -285,6 +293,8 @@ export const NAV_ICONS = {
   dashboard: Dashboard,
   overview: Dashboard,
   work: Work,
+  pay: Pay,
+  myPay: Pay,
   groupGuard: GroupGuard,
   activity: Activity,
   archive: Moderation,

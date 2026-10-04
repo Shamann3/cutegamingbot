@@ -132,12 +132,13 @@ describe('StaffPreviewPane', () => {
     const onOpen = vi.fn()
     render(<StaffPreviewPane onOpen={onOpen} />)
     const card = (await screen.findByText('Модератор')).closest('li')
-    expect(within(card).getByText('2 раздела')).toBeTruthy()
+    expect(within(card).getByText('3 раздела')).toBeTruthy()
     expect(within(card).getByText('Главная')).toBeTruthy()
+    expect(within(card).getByText('Моя зарплата')).toBeTruthy()
     expect(within(card).getByText('Игроки')).toBeTruthy()
     expect(within(card).getByText('Наказания: Мут')).toBeTruthy()
-    const empty = screen.getByText('Старший админ').closest('li')
-    expect(within(empty).getByText('Ни одного раздела — панель откроется пустой.')).toBeTruthy()
+    const senior = screen.getByText('Старший админ').closest('li')
+    expect(within(senior).getByText('Моя зарплата')).toBeTruthy()
 
     fireEvent.click(within(card).getByRole('button', { name: 'Войти в копию' }))
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({
@@ -154,7 +155,7 @@ describe('StaffPreviewPane', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Сотрудник · 1' }))
     const card = screen.getByText('Иван').closest('li')
     expect(within(card).getByText('@ivan · ID 7')).toBeTruthy()
-    expect(within(card).getByText('1 раздел · 1 личное исключение')).toBeTruthy()
+    expect(within(card).getByText('2 раздела · 1 личное исключение')).toBeTruthy()
 
     fireEvent.click(within(card).getByRole('button', { name: 'Войти как Иван' }))
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ who: 'person', userId: 7, name: 'Иван' }))

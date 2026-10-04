@@ -48,6 +48,9 @@ describe('StaffDesk', () => {
     expect(await screen.findByText('Анна: наказание выдано неправильно')).toBeTruthy()
     expect(screen.getByText(/указал, что оно выдано неправильно/)).toBeTruthy()
     expect(screen.getByRole('button', { name: /Подать заявку на разблокировку/ }).className).toContain('is-ask')
+    expect(screen.queryByRole('button', { name: /В зарплату/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Мимо/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Выплатить/ })).toBeNull()
   })
 
   it('sends a clear answer without asking to lift', async () => {

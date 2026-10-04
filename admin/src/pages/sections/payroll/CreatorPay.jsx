@@ -16,7 +16,7 @@ import {
 } from '../../../lib/adminClient'
 import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
+import DeckCard, { FLY_MS, motionQuiet, pinShellScroll, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
 import PurseDesk from './PurseDesk'
 import RateTune from './RateTune'
@@ -63,7 +63,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   }, [load])
 
   const card = queue?.card
-  const toastRef = useToastInView(flash?.key)
+  const toastRef = useToastInView()
   const salaryOpen = Boolean(card) && !card.reviewStatus
   useRefill(queue, load)
   useWarmProof(queue?.nextProofMediaId)
@@ -75,6 +75,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   const { reset } = swipe
 
   const run = useCallback(async (id, kind, credits, stays) => {
+    const release = pinShellScroll()
     const side = kind === 'keep' ? 'right' : 'left'
     setBusy(true)
     setError('')
@@ -100,6 +101,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
     }
     setFly(null)
     setBusy(false)
+    release()
     if (!failure) onDecided?.()
   }, [load, onDecided, reset])
 
@@ -113,6 +115,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   const undo = useCallback(async () => {
     const last = flash
     if (!last?.undoId || busy || fly) return
+    const release = pinShellScroll()
     setBusy(true)
     setError('')
     let failure = ''
@@ -136,6 +139,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
       })
     }
     setBusy(false)
+    release()
     if (!failure) onDecided?.()
   }, [flash, busy, fly, load, onDecided])
 
@@ -382,7 +386,7 @@ export function CreatorSelf() {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
-  const toastRef = useToastInView(flash?.key)
+  const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(SELF_BY_SIDE[side]),
     disabled: busy || Boolean(fly) || !card,
@@ -391,6 +395,7 @@ export function CreatorSelf() {
   const { reset } = swipe
 
   const run = useCallback(async (id, choice) => {
+    const release = pinShellScroll()
     setBusy(true)
     setError('')
     setBack(null)
@@ -412,6 +417,7 @@ export function CreatorSelf() {
     else setFlash({ key: Date.now(), text: selfText(choice.id, paid), undoId: id, side: choice.side })
     setFly(null)
     setBusy(false)
+    release()
   }, [load, reset])
 
   const choose = useCallback((choice) => {
@@ -424,6 +430,7 @@ export function CreatorSelf() {
   const undo = useCallback(async () => {
     const last = flash
     if (!last?.undoId || busy || fly) return
+    const release = pinShellScroll()
     setBusy(true)
     setError('')
     let failure = ''
@@ -441,6 +448,7 @@ export function CreatorSelf() {
       setFlash({ key: Date.now(), text: 'Ответ отменён и убран из зарплаты. Карточка снова перед вами.', undoId: 0 })
     }
     setBusy(false)
+    release()
   }, [flash, busy, fly, load])
 
   useEffect(() => {

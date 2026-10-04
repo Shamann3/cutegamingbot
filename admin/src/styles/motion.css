@@ -2359,6 +2359,11 @@ html[data-viewport="phone"] .deck-toast {
   touch-action: pan-y;
 }
 
+.tinder-stage.is-live,
+.tinder-stage.is-flying {
+  touch-action: none;
+}
+
 /* Карточка полупрозрачная, поэтому стопка под ней видна только краями снизу.
    Следующая карточка проявляется, когда верхнюю отводят в сторону. */
 .tinder-stage.depth-1,
@@ -3098,6 +3103,223 @@ html.is-coaching .work-lesson-bar {
   .work-lesson-btn:hover:not(:disabled),
   .work-lesson-btn:active:not(:disabled) {
     transform: none;
+  }
+}
+
+.panel-shell-main,
+.work-desk,
+.deck-col {
+  overflow-anchor: none;
+}
+
+.deck-toast {
+  position: fixed;
+  z-index: 36;
+  left: max(1rem, calc(50% - 20rem));
+  right: max(1rem, calc(50% - 20rem));
+  bottom: calc(8.25rem + env(safe-area-inset-bottom, 0px));
+  margin: 0;
+  scroll-margin: 0;
+}
+
+html.is-phone .deck-toast,
+html[data-viewport="phone"] .deck-toast {
+  bottom: calc(9.75rem + env(safe-area-inset-bottom, 0px));
+  scroll-margin: 0;
+}
+
+.my-pay-page {
+  padding-bottom: 5.5rem;
+}
+
+.my-pay {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.my-pay-ready {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.15rem 1.2rem 1.25rem;
+  border-radius: 18px;
+  background: var(--e-plate, #1c1c1e);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+  animation: my-pay-rise 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.my-pay-ready h2,
+.my-pay-next {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.my-pay-next {
+  margin-top: 0.4rem;
+}
+
+.my-pay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.my-pay-actions .sec-btn {
+  flex: 1 1 12rem;
+}
+
+.my-pay-owed {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--e-text-2, #aeaeb2);
+  font-variant-numeric: tabular-nums;
+}
+
+.my-pay-lines {
+  display: grid;
+  gap: 0.75rem;
+}
+
+html.is-desktop .my-pay-lines,
+html[data-viewport="desktop"] .my-pay-lines {
+  grid-template-columns: 1fr 1fr;
+}
+
+.my-pay-line {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.95rem 1rem 1rem;
+  border-radius: 18px;
+  background: var(--e-plate, #1c1c1e);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  animation: my-pay-rise 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.my-pay-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0.15rem 0 0.1rem;
+}
+
+.my-pay-count b {
+  font-size: 2.35rem;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text, #fff);
+}
+
+.my-pay-count span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.95rem;
+}
+
+.my-pay-line-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.my-pay-line h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.my-pay-line b,
+.my-pay-line p {
+  margin: 0;
+  color: var(--e-text-2, #aeaeb2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.my-pay-bar {
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.my-pay-bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--e-accent, #c8afff);
+  transition: width 720ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kut-rate {
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 22rem);
+  margin-top: 1.5rem;
+  padding: 1rem 1.1rem 1.15rem;
+  border-radius: 18px;
+  background: var(--e-plate, #1c1c1e);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+}
+
+.kut-rate h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.04em;
+}
+
+.kut-rate label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.kut-rate input {
+  width: 8rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #111113;
+  color: var(--e-text, #fff);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.kut-rate-out {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  animation: my-pay-rise 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.kut-rate-out strong {
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
+.kut-rate-out span,
+.kut-rate-note {
+  margin: 0;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+@keyframes my-pay-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-pay-ready,
+  .my-pay-line,
+  .my-pay-bar > span,
+  .kut-rate-out,
+  .deck-toast {
+    animation: none;
+    transition: none;
   }
 }
 

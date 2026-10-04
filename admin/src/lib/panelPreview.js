@@ -123,23 +123,31 @@ export const CABINET_PAGE_DEFS = [
   { id: 'archive', label: 'Архив', hint: 'Карточки наказаний этой группы.' },
   { id: 'activity', label: 'Активность', hint: 'Кто писал и сколько сообщений.' },
   { id: 'rights', label: 'Права', hint: 'Должности младше своей. Новую создаёт только создатель.' },
-  { id: 'pay', label: 'Зарплата', hint: 'Кут за подтверждённые наказания.' },
+  { id: 'pay', label: 'Моя зарплата', hint: 'Сколько дел осталось до суммы и как забрать уже набранное.' },
 ]
+
+function placePay(items) {
+  const rest = items.filter((item) => item.id !== 'pay' && item.id !== 'more')
+  const more = items.filter((item) => item.id === 'more')
+  const workAt = rest.findIndex((item) => item.id === 'work')
+  const next = rest.slice()
+  next.splice(workAt >= 0 ? workAt + 1 : Math.min(1, next.length), 0, { id: 'pay', label: 'Моя зарплата' })
+  return [...next, ...more]
+}
 
 const CABINET_PAGE_IDS = CABINET_PAGE_DEFS.map((item) => item.id)
 
 export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
   if (isCreator) {
-    return [
+    return placePay([
       { id: 'overview', label: 'Главная' },
       { id: 'work', label: 'Работа' },
       { id: 'archive', label: 'Архив' },
       { id: 'activity', label: 'Активность' },
       { id: 'rights', label: 'Права' },
       { id: 'switches', label: 'Переключатели' },
-      { id: 'pay', label: 'Зарплата' },
       { id: 'more', label: 'Ещё' },
-    ]
+    ])
   }
   const items = [{ id: 'overview', label: 'Главная' }]
   if (Array.isArray(pages)) {
@@ -148,14 +156,14 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
       if (chosen.has(item.id)) items.push({ id: item.id, label: item.label })
     }
     items.push({ id: 'more', label: 'Ещё' })
-    return items
+    return placePay(items)
   }
   if (Number(rank) >= 5) {
-    return [
+    return placePay([
       { id: 'overview', label: 'Главная' },
-      ...CABINET_PAGE_DEFS.map((item) => ({ id: item.id, label: item.label })),
+      ...CABINET_PAGE_DEFS.filter((item) => item.id !== 'pay').map((item) => ({ id: item.id, label: item.label })),
       { id: 'more', label: 'Ещё' },
-    ]
+    ])
   }
   const set = rights instanceof Set ? rights : new Set(rights || [])
   const has = (key) => set.has(key)
@@ -165,9 +173,8 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
     items.push({ id: 'activity', label: 'Активность' })
   }
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
-  items.push({ id: 'pay', label: 'Зарплата' })
   items.push({ id: 'more', label: 'Ещё' })
-  return items
+  return placePay(items)
 }
 
 export function derivedCabinetPageIds(rights) {

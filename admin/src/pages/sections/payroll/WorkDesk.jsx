@@ -3,7 +3,7 @@ import CountUp from '../../../components/CountUp'
 import { fetchDeedWork, isPanelPreviewMode, sortDeed, unsortDeed } from '../../../lib/adminClient'
 import { BAND_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
+import DeckCard, { FLY_MS, motionQuiet, pinShellScroll, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
 
 const CHOICES = [
   { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'можно просить снять', side: 'left' },
@@ -62,7 +62,7 @@ export default function WorkDesk({ onCount }) {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
-  const toastRef = useToastInView(flash?.key)
+  const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(BY_SIDE[side]),
     disabled: busy || Boolean(fly) || !card,
@@ -71,6 +71,7 @@ export default function WorkDesk({ onCount }) {
   const { reset } = swipe
 
   const run = useCallback(async (id, choice) => {
+    const release = pinShellScroll()
     setBusy(true)
     setError('')
     setBack(null)
@@ -92,6 +93,7 @@ export default function WorkDesk({ onCount }) {
     else setFlash({ key: Date.now(), text: doneText(choice.id, next), undoId: id, side: choice.side })
     setFly(null)
     setBusy(false)
+    release()
   }, [load, reset])
 
   const choose = useCallback((choice) => {
@@ -104,6 +106,7 @@ export default function WorkDesk({ onCount }) {
   const undo = useCallback(async () => {
     const last = flash
     if (!last?.undoId || busy || fly) return
+    const release = pinShellScroll()
     setBusy(true)
     setError('')
     let failure = ''
@@ -121,6 +124,7 @@ export default function WorkDesk({ onCount }) {
       setFlash({ key: Date.now(), text: 'Ответ отменён. Карточка снова перед вами.', undoId: 0 })
     }
     setBusy(false)
+    release()
   }, [flash, busy, fly, load])
 
   useEffect(() => {

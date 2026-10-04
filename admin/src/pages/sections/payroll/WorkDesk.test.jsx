@@ -53,6 +53,10 @@ describe('WorkDesk', () => {
     expect(screen.getByRole('button', { name: /^Подходит/ }).className).toContain('is-clear')
     expect(screen.getByRole('button', { name: /^Наказание выдано неправильно/ }).className).toContain('is-wrong')
     expect(screen.getByRole('button', { name: /^Непонятно/ }).className).toContain('is-weak')
+    expect(screen.queryByRole('button', { name: /В зарплату/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Мимо/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Сами/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Выплатить/ })).toBeNull()
   })
 
   it('sends a fitting answer and keeps the next card moving', async () => {

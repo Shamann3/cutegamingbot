@@ -62,6 +62,8 @@ describe('DeedMine', () => {
     render(<DeedMine />)
     expect(await screen.findByText('200 кут')).toBeTruthy()
     expect(screen.getByText(/Эта сумма уже набрана/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Выплатить/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /В зарплату/ })).toBeNull()
   })
 
   it('declines ban counts in Russian', async () => {

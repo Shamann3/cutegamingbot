@@ -45,7 +45,7 @@ export default function PhoneDock({
     const Icon = NAV_ICONS[item.id] || FallbackIcon
     const on = item.id === activeSection
     const count = Number(badges[item.id] || 0)
-    const mark = shortLabel(item.labelRu || item.label)
+    const mark = item.dockLabel || shortLabel(item.labelRu || item.label)
     return (
       <button
         key={item.id}

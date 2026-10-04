@@ -26,7 +26,8 @@ import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccen
 import { punishmentHours } from '../lib/gateRecovery'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
-import { DeedMine } from './sections/payroll/DeedPay'
+import MySalary from './sections/payroll/MySalary'
+import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
 import FirstRun, { groupSteps, workLessonSteps, coachClosed, restartCoach } from '../components/FirstRun'
@@ -213,6 +214,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         : item.id === 'more' || item.id === 'switches'
           ? 'system'
           : 'overview',
+    dockLabel: item.id === 'pay' ? 'Зарплата' : undefined,
   })), [shownTabs])
   useDrawerSwipe({
     enabled: false,
@@ -1136,11 +1138,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'pay' && (
             <section>
-              <h2 className="realm-h">Зарплата</h2>
-              <p className="realm-copy">
-                Куты за наказания, которые создатель подтвердил. Недельная зарплата команды считается отдельно.
-              </p>
-              <DeedMine isProjectCreator={isProjectCreator} />
+              <MySalary />
             </section>
           )}
 
@@ -1179,6 +1177,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                   onReplayCoach={replayCoach}
                 />
               )}
+              {isProjectCreator && <KutRate />}
             </section>
           )}
         </div>

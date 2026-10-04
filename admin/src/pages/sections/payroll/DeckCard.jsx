@@ -47,14 +47,23 @@ export function useRefill(queue, load) {
   }, [queue, load])
 }
 
-/** Сообщение под кнопками докручивается в кадр, если ушло под нижнее меню телефона. */
-export function useToastInView(flashKey) {
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!flashKey) return
-    ref.current?.scrollIntoView?.({ block: 'nearest', behavior: motionQuiet() ? 'auto' : 'smooth' })
-  }, [flashKey])
-  return ref
+/** После ответа карточка меняется, а экран остаётся на месте. */
+export function pinShellScroll() {
+  const main = document.querySelector('.panel-shell-main')
+  const top = main instanceof HTMLElement ? main.scrollTop : 0
+  const y = window.scrollY
+  const restore = () => {
+    if (main instanceof HTMLElement) main.scrollTop = top
+    if (window.scrollY !== y) window.scrollTo(0, y)
+  }
+  return () => {
+    restore()
+    window.requestAnimationFrame(restore)
+  }
+}
+
+export function useToastInView() {
+  return useRef(null)
 }
 
 export default function DeckCard({ card, band, tone = '', note = '', stamps, depth = 0, fly = '', back = '', swipe }) {
