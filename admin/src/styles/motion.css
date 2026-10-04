@@ -2819,4 +2819,37 @@ body.perf-light .purse-days .act-bars button > i {
   transition: none;
 }
 
+.rate-tune {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.85rem 0.85rem;
+  border-radius: 0.9rem;
+  background: var(--e-plate, rgba(14, 14, 16, 0.45));
+}
+
+.rate-tune .deed-lead {
+  margin: 0 0 0.65rem;
+}
+
+.rate-tune-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.rate-tune-row .deed-check {
+  margin: 0;
+}
+
+.rate-tune-row .sec-btn {
+  min-height: 44px;
+}
+
+.rate-tune.is-compact .deed-lead {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 

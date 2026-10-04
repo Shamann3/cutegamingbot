@@ -20,6 +20,8 @@ vi.mock('../../../lib/adminClient', async (importOriginal) => ({
   undoDeed: vi.fn(),
   liftDeed: vi.fn(),
   rejectLiftDeed: vi.fn(),
+  fetchDeedAnalytics: vi.fn(async () => ({ tune: { auto: true, note: 'Группы сами держат нормы.' } })),
+  tuneDeedRates: vi.fn(),
   isPanelPreviewMode: vi.fn(() => false),
 }))
 
@@ -91,6 +93,8 @@ describe('CreatorPay', () => {
     expect(screen.getByText('Бан · Игрок')).toBeTruthy()
     expect(screen.getByText('наказание ждёт вашего решения')).toBeTruthy()
     expect(screen.getByText('Анна (администратор): подходит').className).toContain('is-clear')
+    expect(await screen.findByRole('button', { name: 'Подстроить сейчас' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'Группы сами держат нормы' })).toBeTruthy()
   })
 
   it('colours the two decisions', async () => {

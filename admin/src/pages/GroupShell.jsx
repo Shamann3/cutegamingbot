@@ -29,7 +29,7 @@ import { groupCabinetTabs } from '../lib/panelPreview'
 import { DeedMine } from './sections/payroll/DeedPay'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
-import FirstRun, { groupSteps, coachClosed, restartCoach } from '../components/FirstRun'
+import FirstRun, { groupSteps, workLessonSteps, coachClosed, restartCoach } from '../components/FirstRun'
 import PanelSidebar from '../components/PanelSidebar'
 import { PanelPocketTools } from '../components/ExtrasHub'
 import PhoneDock from '../components/PhoneDock'
@@ -124,9 +124,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
+  const [lesson, setLesson] = useState(false)
   const [coachRun, setCoachRun] = useState(0)
   const replayCoach = useCallback(() => {
     restartCoach('epsilon.onboard.group.v4')
+    restartCoach('epsilon.lesson.work.group.v1')
+    setLesson(false)
     setCoachRun((n) => n + 1)
     setCoach(true)
     setRailOpen(false)
@@ -174,7 +177,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
 
   const closeRail = useCallback(() => setRailOpen(false), [])
+  const hasWork = tabs.some((item) => item.id === 'work')
+  useEffect(() => {
+    if (preview || coach || !hasWork || coachClosed('epsilon.lesson.work.group.v1')) return undefined
+    setLesson(true)
+    return undefined
+  }, [preview, coach, hasWork])
   const onCoachStep = useCallback((step) => {
+    if (step?.openSection) setTab(step.openSection)
     if (phone) return
     setRailOpen(Boolean(step?.openNav))
   }, [phone])
@@ -648,6 +658,16 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           layoutKey={railOpen ? 1 : 0}
           onStep={onCoachStep}
           onDone={() => setCoach(false)}
+        />
+      )}
+      {!coach && lesson && hasWork && !preview && (
+        <FirstRun
+          key={`work-${coachRun}`}
+          storageKey="epsilon.lesson.work.group.v1"
+          steps={workLessonSteps('group')}
+          layoutKey={railOpen ? 1 : 0}
+          onStep={onCoachStep}
+          onDone={() => setLesson(false)}
         />
       )}
       {!phone && <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />}

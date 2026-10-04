@@ -17,6 +17,7 @@ import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
 import PurseDesk from './PurseDesk'
+import RateTune from './RateTune'
 
 const STAMPS = [
   { side: 'right', label: 'В зарплату' },
@@ -563,6 +564,8 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
         ))}
       </nav>
 
+      {!preview && view !== 'cash' && view !== 'rates' && view !== 'payroll' && <RateTune compact />}
+
       {lens && preview && <p className="staff-hint deck-copy">В копии панели чужие проверки не открываются.</p>}
 
       {lens && !preview && (
@@ -580,8 +583,8 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
           {roster && !roster.people?.length && (
             <p className="work-empty deck-copy">
               Проверять пока некому. Администраторам групп нужно право «Архив» в разделе
-              «Стафф → Администраторы → Должности» — у них появится вкладка «Работа».
-              Сотрудники проекта проверяют следом во вкладке «Архив → Проверка».
+              «Стафф → Администраторы → Должности» — у них появится вкладка «Работа» рядом с «Главная».
+              Сотрудники проекта проверяют во вкладке «Работа» рядом с «Игроки» и «Архив».
             </p>
           )}
           <div className="pay-check">

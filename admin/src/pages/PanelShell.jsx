@@ -7,6 +7,7 @@ import {
   fetchAdminMe,
   fetchPrOverview,
   fetchStaffPunishRights,
+  fetchStaffWorkCount,
   fetchSupportStats,
   fetchTiktokCounts,
   logoutAdmin,
@@ -62,7 +63,8 @@ import { useViewportMode, useIsPhone } from '../lib/useIsDesktop'
 import useDrawerSwipe from '../lib/useDrawerSwipe'
 import { useTabScroll } from '../lib/useTabScroll'
 import GroupGuardDesk from './sections/GroupGuardDesk'
-import FirstRun, { staffSteps, coachClosed, restartCoach } from '../components/FirstRun'
+import FirstRun, { staffSteps, workLessonSteps, coachClosed, restartCoach } from '../components/FirstRun'
+import StaffDesk from './sections/payroll/StaffDesk'
 import PanelPreviewBar from '../components/PanelPreviewBar'
 import GroupShell from './GroupShell'
 import {
@@ -114,9 +116,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [staffEntry, setStaffEntry] = useState(null)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
+  const [lesson, setLesson] = useState(false)
+  const [workCount, setWorkCount] = useState(0)
   const [coachRun, setCoachRun] = useState(0)
   const [preview, setPreview] = useState(null)
   const onCoachStep = useCallback((step) => {
+    if (step?.openSection) setSection(step.openSection)
     if (phone) return
     setMobileNavOpen(Boolean(step?.openNav))
   }, [phone])
@@ -219,6 +224,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
 
   const replayCoach = useCallback(() => {
     restartCoach('epsilon.onboard.staff.v4')
+    restartCoach('epsilon.lesson.work.staff.v1')
+    setLesson(false)
     setCoachRun((n) => n + 1)
     setCoach(true)
     setMobileNavOpen(false)
@@ -274,6 +281,22 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     () => splitDockSections(navSections),
     [navSections],
   )
+  const showWork = navSections.some((item) => item.id === 'work')
+
+  useEffect(() => {
+    if (preview || coach || !showWork || coachClosed('epsilon.lesson.work.staff.v1')) return undefined
+    setLesson(true)
+    return undefined
+  }, [preview, coach, showWork])
+
+  useEffect(() => {
+    if (!showWork || preview) return undefined
+    let alive = true
+    fetchStaffWorkCount()
+      .then((data) => { if (alive) setWorkCount(Number(data?.waiting) || 0) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [showWork, preview])
 
   const isMore = section === 'more'
 
@@ -401,6 +424,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isStaff = section === 'staff'
   const isSupport = section === 'support'
   const isModeration = section === 'moderation'
+  const isWork = section === 'work'
   const isChronicle  = section === 'chronicle'
   const isGroupGuard = section === 'groupGuard'
   const isSoftRestart = section === 'softRestart'
@@ -439,6 +463,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           layoutKey={mobileNavOpen ? 1 : 0}
           onStep={onCoachStep}
           onDone={() => setCoach(false)}
+        />
+      )}
+      {!coach && lesson && showWork && !preview && (
+        <FirstRun
+          key={`work-${coachRun}`}
+          storageKey="epsilon.lesson.work.staff.v1"
+          steps={workLessonSteps('staff')}
+          onStep={onCoachStep}
+          onDone={() => setLesson(false)}
         />
       )}
       {/* Зарезервированная полоса под ✕ / меню Telegram + Dynamic Island */}
@@ -702,6 +735,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isSupport && <SupportSection />}
+          {isWork && showWork && (
+            <section className="grp-page nika-page realm-main work-page">
+              <header className="nika-head">
+                <div className="nika-head-copy">
+                  <h1>Работа</h1>
+                </div>
+              </header>
+              <StaffDesk onCount={setWorkCount} />
+            </section>
+          )}
           {isModeration && (
             <ModerationSection
               role={viewRole}
@@ -716,7 +759,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isGroupGuard && showCreator && <GroupGuardDesk />}
           {isSoftRestart && showCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isChronicle && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>
@@ -727,6 +770,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         onNavigate={handleNavigate}
         badges={{
           support: openTickets,
+          work: workCount,
           tiktok: tiktokPending,
           nika: nikaCrisisCount,
           prGroups: prPending,

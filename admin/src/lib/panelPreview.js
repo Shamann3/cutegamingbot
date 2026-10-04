@@ -123,10 +123,10 @@ export function groupCabinetTabs(rights, isCreator = false) {
   const has = (key) => isCreator || set.has(key)
   const items = [{ id: 'overview', label: 'Главная' }]
   if (has('view_archive')) items.push({ id: 'work', label: 'Работа' })
+  if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('view_members') || has('view_analytics') || [...set].some((item) => item.startsWith('punish_'))) {
     items.push({ id: 'activity', label: 'Активность' })
   }
-  if (has('view_archive')) items.push({ id: 'archive', label: 'Архив' })
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
   if (isCreator) items.push({ id: 'switches', label: 'Переключатели' })
   items.push({ id: 'pay', label: 'Зарплата' })

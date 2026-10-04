@@ -230,10 +230,11 @@ def verdict_of_sql(action_id_sql: str) -> str:
 
 
 def _blocked_ids_sql() -> str:
-    from config import PROJECT_CREATOR_ID, owner_user_ids
+    from config import PLAIN_USER_IDS, owner_user_ids, public_creator_id
 
     ids = {int(item) for item in owner_user_ids()}
-    ids.add(int(PROJECT_CREATOR_ID))
+    ids.add(int(public_creator_id()))
+    ids.update(int(item) for item in PLAIN_USER_IDS)
     if not ids:
         ids.add(0)
     return ", ".join(str(item) for item in sorted(ids))

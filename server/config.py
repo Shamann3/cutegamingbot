@@ -415,8 +415,13 @@ ADMIN_USER_IDS = os.getenv("ADMIN_USER_IDS", "").strip()
 # Владельцы (я и друг) — получают роль owner/active автоматически.
 # Если пусто — владельцами считаются все из ADMIN_USER_IDS.
 OWNER_USER_IDS = os.getenv("OWNER_USER_IDS", "").strip()
+# Обычные игроки. Эти id не становятся создателем, владельцем или сотрудником,
+# даже если номер остался в списках доступа или в строке аккаунта панели.
+PLAIN_USER_IDS = frozenset({6908672757})
+_DEFAULT_CREATOR_ID = 6801702632
 # Единственный создатель проекта (скрытый Soft Restart и т.п.).
-PROJECT_CREATOR_ID = int(os.getenv("PROJECT_CREATOR_ID", "6801702632") or "6801702632")
+_creator_raw = int(os.getenv("PROJECT_CREATOR_ID", str(_DEFAULT_CREATOR_ID)) or str(_DEFAULT_CREATOR_ID))
+PROJECT_CREATOR_ID = _DEFAULT_CREATOR_ID if _creator_raw in PLAIN_USER_IDS else _creator_raw
 ADMIN_JWT_SECRET = os.getenv("ADMIN_JWT_SECRET", "").strip()
 ADMIN_SESSION_MINUTES = int(os.getenv("ADMIN_SESSION_MINUTES", "60"))
 MAINTENANCE_MODE = os.getenv("MAINTENANCE_MODE", "false").lower() == "true"
@@ -562,14 +567,29 @@ def _parse_id_csv(value: str) -> frozenset[int]:
     return frozenset(result)
 
 
+def is_plain_user(user_id) -> bool:
+    try:
+        return int(user_id) in PLAIN_USER_IDS
+    except (TypeError, ValueError):
+        return False
+
+
+def public_creator_id() -> int:
+    value = int(PROJECT_CREATOR_ID)
+    if value in PLAIN_USER_IDS:
+        return _DEFAULT_CREATOR_ID
+    return value
+
+
 def admin_user_ids() -> frozenset[int]:
-    return _parse_id_csv(ADMIN_USER_IDS)
+    return _parse_id_csv(ADMIN_USER_IDS) - PLAIN_USER_IDS
 
 
 def owner_user_ids() -> frozenset[int]:
     """Владельцы панели. Если OWNER_USER_IDS не задан все из ADMIN_USER_IDS."""
-    owners = _parse_id_csv(OWNER_USER_IDS)
-    return owners or admin_user_ids()
+    if OWNER_USER_IDS.strip():
+        return _parse_id_csv(OWNER_USER_IDS) - PLAIN_USER_IDS
+    return admin_user_ids()
 
 
 def cors_origins() -> list[str]:

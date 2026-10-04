@@ -5,13 +5,14 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, field_validator
 
-from config import ADMIN_TOTP_VALID_WINDOW, PROJECT_CREATOR_ID, owner_user_ids
+from config import ADMIN_TOTP_VALID_WINDOW, is_plain_user, owner_user_ids, public_creator_id
 from admin_auth import (
     build_otpauth_uri,
     create_setup_token,
     generate_totp_secret,
     get_admin_user_id,
     get_any_telegram_user_id,
+    reject_if_plain_user,
     issue_admin_token,
     require_admin_session,
     totp_qr_data_url,
@@ -958,6 +959,22 @@ async def admin_auth_status(
     request: Request,
     user_id: int = Depends(get_any_telegram_user_id),
 ):
+    if is_plain_user(user_id):
+        return {
+            "registered": False,
+            "authenticated": False,
+            "userId": user_id,
+            "role": None,
+            "status": None,
+            "applicationStatus": None,
+            "isOwner": False,
+            "isProjectCreator": False,
+            "staffCanEnter": False,
+            "groupCanEnter": False,
+            "groupHoldsSeat": False,
+            "groupApplicationStatus": None,
+            "groups": [],
+        }
     account = await get_admin_account(user_id)
     auth_header = request.headers.get("Authorization", "")
     token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
@@ -1004,6 +1021,7 @@ async def admin_register_start(
     from admin_auth_rate_limit import enforce_admin_auth_rate_limit
 
     enforce_admin_auth_rate_limit(request)
+    reject_if_plain_user(user_id)
     await cleanup_expired_pending()
 
     # Проверяем сначала env-ключи, потом DB-инвайты
@@ -1063,6 +1081,7 @@ async def admin_register_reveal_code(
     from admin_auth_rate_limit import enforce_admin_auth_rate_limit
 
     enforce_admin_auth_rate_limit(request)
+    reject_if_plain_user(user_id)
 
     pending = await get_pending_registration(body.setupToken, user_id)
     if not pending:
@@ -1093,6 +1112,7 @@ async def admin_register_confirm(
     from admin_auth_rate_limit import enforce_admin_auth_rate_limit
 
     enforce_admin_auth_rate_limit(request)
+    reject_if_plain_user(user_id)
 
     pending = await get_pending_registration(body.setupToken, user_id)
     if not pending:
@@ -1365,7 +1385,7 @@ async def admin_me(user_id: int = Depends(require_active_admin)):
     account = await get_admin_account_security(user_id)
     if not account:
         raise HTTPException(status_code=403, detail="Админ-аккаунт не найден")
-    account["projectCreatorId"] = int(PROJECT_CREATOR_ID)
+    account["projectCreatorId"] = public_creator_id()
     account["isProjectCreator"] = sr_is_creator(user_id)
     from staff_panel_rights import actor_staff_perms
     perms = await actor_staff_perms(user_id)
@@ -1754,7 +1774,7 @@ async def staff_purge_member(
 
     blocked = purge_allowed(
         actor_is_creator=sr_is_creator(user_id),
-        target_is_creator=sr_is_creator(member_id) or int(member_id) == int(PROJECT_CREATOR_ID),
+        target_is_creator=sr_is_creator(member_id) or int(member_id) == public_creator_id(),
     )
     if blocked:
         raise HTTPException(status_code=403, detail=blocked)
@@ -1833,6 +1853,7 @@ async def staff_change_role(
     user_id: int = Depends(require_admin_permission("assign_roles")),
 ):
     role = body.role.strip()
+    reject_if_plain_user(member_id)
     from staff_posts import is_custom_role
     if role not in ASSIGNABLE_STAFF_ROLES and not await is_custom_role(role):
         raise HTTPException(status_code=400, detail="Недопустимая роль")

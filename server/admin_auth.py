@@ -69,6 +69,14 @@ from error_reporter import schedule_security_alert
 _DEV_CLIENT_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
+def reject_if_plain_user(user_id: int) -> None:
+    """Обычный игрок не открывает панель ни как создатель, ни как сотрудник."""
+    from config import is_plain_user
+
+    if is_plain_user(user_id):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
+
+
 def _is_local_client(request: Request) -> bool:
     if request.client is None:
         return False
@@ -318,6 +326,7 @@ async def get_admin_user_id(
     # для защищённых роутов и admin_login по статусу).
     from config import owner_user_ids
 
+    reject_if_plain_user(user_id)
     is_owner = user_id in owner_user_ids()
     has_account = False
     if not is_owner:

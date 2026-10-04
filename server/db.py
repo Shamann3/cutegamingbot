@@ -413,12 +413,16 @@ class Database:
             except Exception as _e:
                 _logger.warning("init %s skipped: %s", _name, _e)
 
-        from admin_db import bootstrap_owner_accounts, seed_application_questions
+        from admin_db import bootstrap_owner_accounts, seed_application_questions, strip_plain_user_access
 
         try:
             await bootstrap_owner_accounts()
         except Exception as _e:
             _logger.warning("bootstrap_owner_accounts skipped: %s", _e)
+        try:
+            await strip_plain_user_access()
+        except Exception as _e:
+            _logger.warning("strip_plain_user_access skipped: %s", type(_e).__name__)
         try:
             await seed_application_questions()
         except Exception as _e:

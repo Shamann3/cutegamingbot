@@ -6,6 +6,10 @@ export const PANEL_SECTIONS = [
     blurb: 'Обзор панели: статус сервера, быстрые метрики и входная точка.',
   },
   {
+    id: 'work', label: 'Work', labelRu: 'Работа', group: 'people',
+    blurb: 'Проверка чужих наказаний. Карточку берёт один человек, свои сюда не попадают.',
+  },
+  {
     id: 'groupGuard', label: 'Group guard', labelRu: 'Защита', group: 'official',
     creatorOnly: true,
     blurb: 'Общие правила официальных групп, свои правила чата и люди, которых бот не удаляет.',
@@ -145,6 +149,7 @@ export const PANEL_GROUPS = [
 
 export const SECTION_HINTS = {
   dashboard: 'Кто в игре и жив ли сервер',
+  work: 'Чужие наказания: ответить и передать дальше',
   groupGuard: 'Правила чатов и исключения',
   users: 'Найти человека и открыть карточку',
   accounts: 'Список аккаунтов',
@@ -194,6 +199,7 @@ export function visibleSections(
   return PANEL_SECTIONS.filter((s) => {
     if (s.ownerOnly && role !== 'owner') return false
     if (s.creatorOnly && !creatorOk) return false
+    if (s.id === 'work' && (creatorOk || role === 'owner')) return false
     if (s.id === 'panelAccess') return false
     const staffForced = s.id === 'staff' && (creatorOk || perms.has('manage_panel_access'))
     if (allowedIds && !staffForced && s.id !== 'groupGuard' && !allowedIds.has(s.id)) return false
@@ -221,6 +227,7 @@ export function getSectionById(id) {
 /** Главные вкладки дока (порядок важен). Остальное — в «Дополнительно». */
 export const DOCK_PRIMARY_IDS = [
   'dashboard',
+  'work',
   'users',
   'moderation',
   'support',

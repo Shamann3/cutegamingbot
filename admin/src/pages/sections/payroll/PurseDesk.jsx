@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import CountUp from '../../../components/CountUp'
 import { fetchDeedAnalytics, isPanelPreviewMode, tuneDeedRates } from '../../../lib/adminClient'
 import { motionQuiet } from './DeckCard'
+import { TuneControls } from './RateTune'
 
 const ORDER = ['ban', 'mute', 'kick', 'warn', 'check_admin', 'check_staff']
 
@@ -157,7 +158,12 @@ export default function PurseDesk() {
             : '14 дней. Нажмите столбец, чтобы увидеть день.'}
         </p>
       </div>
-      <p className="deed-lead">{data.tune?.note || (auto ? 'Нормы пока не подстраивались.' : 'Нормы сейчас ваши. Группы их не меняют.')}</p>
+      <TuneControls
+        auto={auto}
+        busy={busy}
+        note={data.tune?.note}
+        onApply={apply}
+      />
       <ul className="purse-rates">
         {rates.map((rate) => (
           <li key={rate.actionType}>
@@ -187,20 +193,6 @@ export default function PurseDesk() {
           ))}
         </div>
       )}
-      <label className="deed-check">
-        <input
-          type="checkbox"
-          checked={auto}
-          disabled={Boolean(busy)}
-          onChange={(event) => apply(event.target.checked, event.target.checked)}
-        />
-        <span>{auto ? 'Группы сами держат нормы' : 'Нормы зафиксированы вручную'}</span>
-      </label>
-      <div className="deed-choice">
-        <button type="button" className="sec-btn" disabled={Boolean(busy)} onClick={() => apply(true, true)}>
-          {busy === 'tune' ? 'Считаем группы…' : 'Подстроить сейчас'}
-        </button>
-      </div>
     </div>
   )
 }

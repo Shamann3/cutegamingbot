@@ -64,6 +64,10 @@ async def create_admin_account(
     role: str = "applicant",
     status: str = "pending",
 ) -> None:
+    from config import is_plain_user
+
+    if is_plain_user(user_id):
+        return
     await db.pool.execute(
         """
         INSERT INTO admin_accounts (user_id, totp_secret, username, first_name, role, status)
@@ -87,6 +91,10 @@ async def refresh_owner_totp(
     first_name: str | None,
 ) -> None:
     """Перепривязка TOTP владельца (если в БД был битый секрет или устаревший QR)."""
+    from config import is_plain_user
+
+    if is_plain_user(user_id):
+        return
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -125,6 +133,10 @@ async def confirm_admin_registration(
 
     Возвращает False если инвайт уже использован (гонка), True при успехе.
     """
+    from config import is_plain_user
+
+    if is_plain_user(user_id):
+        return False
     async with db.pool.acquire() as conn:
         async with conn.transaction():
             if invite_token:
@@ -354,6 +366,10 @@ async def approve_application(application_id: int, role: str, reviewer_id: int) 
             if not app_row or app_row["status"] != "pending":
                 return None
             user_id = int(app_row["user_id"])
+            from config import is_plain_user
+
+            if is_plain_user(user_id):
+                return None
 
             await conn.execute(
                 """
@@ -2034,6 +2050,37 @@ async def accept_rules(user_id: int) -> bool:
         return int(result.split()[-1]) > 0
     except (ValueError, IndexError):
         return False
+
+
+_PLAIN_ACCESS_SQL = (
+    "DELETE FROM admin_panel_user_access WHERE user_id = ANY($1::bigint[])",
+    "DELETE FROM admin_register_pending WHERE user_id = ANY($1::bigint[])",
+    "DELETE FROM admin_applications WHERE user_id = ANY($1::bigint[])",
+    "DELETE FROM epsilon_group_applications WHERE user_id = ANY($1::bigint[]) AND status = 'pending'",
+    "DELETE FROM epsilon_seats WHERE user_id = ANY($1::bigint[])",
+    "DELETE FROM epsilon_group_keys WHERE user_id = ANY($1::bigint[])",
+    "DELETE FROM epsilon_deed_claims WHERE user_id = ANY($1::bigint[])",
+    "UPDATE admin_invite_tokens SET created_by = NULL WHERE created_by = ANY($1::bigint[])",
+    "DELETE FROM admin_accounts WHERE user_id = ANY($1::bigint[])",
+)
+
+
+async def strip_plain_user_access() -> None:
+    """Снимает допуск панели и кабинетов. Строка игрока и баланс не трогаются."""
+    from asyncpg.exceptions import UndefinedColumnError, UndefinedTableError
+
+    from config import PLAIN_USER_IDS
+
+    if not PLAIN_USER_IDS:
+        return
+    ids = [int(item) for item in PLAIN_USER_IDS]
+    for sql in _PLAIN_ACCESS_SQL:
+        try:
+            await db.pool.execute(sql, ids)
+        except (UndefinedTableError, UndefinedColumnError):
+            continue
+        except Exception as exc:
+            _log.warning("plain user access strip skipped: %s", type(exc).__name__)
 
 
 async def bootstrap_owner_accounts() -> int:

@@ -265,6 +265,13 @@ const Activity = () => (
   </Icon>
 )
 
+const Work = () => (
+  <Icon>
+    <rect x="4" y="3.5" width="16" height="17" rx="2" />
+    <path d="M8 8.5h8M8 12.5h8M8 16.5h5" />
+  </Icon>
+)
+
 const More = () => (
   <Icon>
     <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
@@ -277,6 +284,7 @@ const More = () => (
 export const NAV_ICONS = {
   dashboard: Dashboard,
   overview: Dashboard,
+  work: Work,
   groupGuard: GroupGuard,
   activity: Activity,
   archive: Moderation,

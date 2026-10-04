@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { splitDockSections, visibleSections } from '../constants/panelNav'
 import {
   enabledPunish,
   groupCabinetTabs,
@@ -139,7 +140,7 @@ describe('group cabinet copy', () => {
     expect(ids([])).toEqual(['overview', 'pay', 'more'])
     expect(ids(['punish_mute'])).toEqual(['overview', 'activity', 'pay', 'more'])
     expect(ids(new Set(['view_archive', 'manage_positions']))).toEqual(['overview', 'work', 'archive', 'rights', 'pay', 'more'])
-    expect(ids([], true)).toEqual(['overview', 'work', 'activity', 'archive', 'rights', 'switches', 'pay', 'more'])
+    expect(ids([], true)).toEqual(['overview', 'work', 'archive', 'activity', 'rights', 'switches', 'pay', 'more'])
   })
 
   it('never treats the top position as the project creator', () => {
@@ -200,5 +201,25 @@ describe('copy strip and stand-in profile', () => {
     expect(previewStandIn({ who: 'role', roleLabel: 'Модератор' }))
       .toEqual({ displayName: 'Модератор', username: null, userId: null })
     expect(previewStandIn(null)).toBeNull()
+  })
+})
+
+describe('work sits with the main tabs', () => {
+  it('puts work on the dock beside home, players and the archive', () => {
+    const visible = visibleSections(
+      ['view_players'],
+      ['dashboard', 'work', 'users', 'moderation', 'support'],
+      'moderator',
+    )
+    expect(splitDockSections(visible).dock.map((item) => item.id)).toEqual([
+      'dashboard', 'work', 'users', 'moderation', 'more',
+    ])
+  })
+
+  it('keeps the creator and the owner out of the staff check', () => {
+    const creator = visibleSections([], null, 'senior_admin', { isProjectCreator: true })
+    const owner = visibleSections([], null, 'owner')
+    expect(creator.some((item) => item.id === 'work')).toBe(false)
+    expect(owner.some((item) => item.id === 'work')).toBe(false)
   })
 })

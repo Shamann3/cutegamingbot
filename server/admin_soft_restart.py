@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import PROJECT_CREATOR_ID
+from config import is_plain_user, public_creator_id
 from sr_schedule import (
     DEFAULT_CFG,
     mode_label,
@@ -152,7 +152,13 @@ PARAM_DOCS: Dict[str, Dict[str, Any]] = {
 
 
 def is_project_creator(user_id: int) -> bool:
-    return int(user_id) == int(PROJECT_CREATOR_ID)
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    if is_plain_user(uid):
+        return False
+    return uid == public_creator_id()
 
 
 def _data_roots() -> List[Path]:
@@ -505,7 +511,7 @@ async def overview() -> Dict[str, Any]:
         "status": status,
         "diagnostics": diagnostics,
         "guide": GUIDE,
-        "creatorId": int(PROJECT_CREATOR_ID),
+        "creatorId": public_creator_id(),
         "paramHelp": {k: v["short"] for k, v in PARAM_DOCS.items()},
         "paramDocs": PARAM_DOCS,
         "modeLabel": mode_label(str(cfg.get("mode") or "interval")),

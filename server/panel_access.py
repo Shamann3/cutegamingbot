@@ -24,6 +24,7 @@ from db import db
 # только для навигации (скрытие не режет чужие permission-гейты).
 PANEL_SECTION_DEFS: list[dict] = [
     {"id": "dashboard", "label": "Главная", "group": "overview", "permissions": []},
+    {"id": "work", "label": "Работа", "group": "people", "permissions": []},
     {"id": "users", "label": "Игроки", "group": "people", "permissions": ["view_players"]},
     {"id": "accounts", "label": "Пользователи", "group": "people", "permissions": ["view_accounts"]},
     {
@@ -533,9 +534,9 @@ async def resolve_account_access(
     if role == ROLE_OWNER:
         sections = list(ALL_SECTION_IDS)
         try:
-            from config import PROJECT_CREATOR_ID
+            from admin_soft_restart import is_project_creator
 
-            if int(user_id) != int(PROJECT_CREATOR_ID):
+            if not is_project_creator(int(user_id)):
                 sections = [
                     sid for sid in sections
                     if not SECTION_BY_ID.get(sid, {}).get("creatorOnly")

@@ -328,6 +328,10 @@ def _reject_creator_stage(user_id: int) -> None:
 
 
 async def _require_staff(user_id: int) -> None:
+    from config import is_plain_user
+
+    if is_plain_user(user_id):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
     _reject_creator_stage(user_id)
     row = await db.pool.fetchval(
         """

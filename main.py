@@ -35860,7 +35860,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
         BALANCE_CHECK_COMMANDS = {"проверка баланса" , "проверка балансов" , "все балансы" , "все балики" ,
             "балансы все" , }
-        BALANCE_CHECK_ADMIN_IDS = {6801702632, 6908672757}
+        BALANCE_CHECK_ADMIN_IDS = {6801702632}
         JERICHO_DEBUG_COMMANDS = {"jericho debug", "иерихон debug", "debug jericho", "джерико debug"}
 
         # =========================================================

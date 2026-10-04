@@ -24,7 +24,7 @@ from admin_auth import (
     totp_qr_data_url,
     verify_totp,
 )
-from config import ADMIN_JWT_SECRET, owner_user_ids
+from config import ADMIN_JWT_SECRET, is_plain_user, owner_user_ids
 from db import db
 
 router = APIRouter(prefix="/group-realm", tags=["group-realm"])
@@ -423,6 +423,8 @@ def _new_key() -> tuple[str, str]:
 async def cabinet_entry(user_id: int) -> dict:
     """Есть ли живой ключ, должность и последняя заявка. Сбой базы дверь не открывает."""
     empty = {"hasKey": False, "holdsSeat": False, "applicationStatus": None}
+    if is_plain_user(user_id):
+        return empty
     try:
         await ensure_tables()
         row = await db.pool.fetchrow(
@@ -709,6 +711,8 @@ async def _seed_positions(chat_id: int) -> None:
 
 async def seats_for(user_id: int) -> list[dict]:
     """Группы, куда этот человек может войти, и права должности."""
+    if is_plain_user(user_id):
+        return []
     try:
         await ensure_tables()
     except Exception:
@@ -788,6 +792,8 @@ async def _seat_rank(user_id: int, chat_id: int) -> int:
 
 
 async def _access(user_id: int, chat_id: int) -> dict | None:
+    if is_plain_user(user_id):
+        return None
     groups = await seats_for(user_id)
     for group in groups:
         if int(group["chatId"]) == int(chat_id):
@@ -887,6 +893,8 @@ class PassBody(BaseModel):
 
 @router.get("/open")
 async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
+    if is_plain_user(user_id):
+        return {"positions": [], "mine": []}
     await ensure_tables()
     rows = await db.pool.fetch(
         """
@@ -956,6 +964,8 @@ async def group_open(user_id: int = Depends(get_any_telegram_user_id)):
 
 @router.post("/apply")
 async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_user_id)):
+    if is_plain_user(user_id):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
     await ensure_tables()
     if not body.rules_read:
         raise HTTPException(status_code=400, detail="Сначала отметьте, что вы знаете правила")
@@ -1365,6 +1375,8 @@ async def drop_group_access(user_id: int) -> dict:
 @router.post("/appoint")
 async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
+    if is_plain_user(body.user_id):
+        raise HTTPException(status_code=403, detail="Этот человек остаётся обычным игроком")
     await ensure_tables()
     await sweep_expired_spamblocks()
     pos = await db.pool.fetchrow(
@@ -1725,6 +1737,8 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     )
     if not app or app["status"] != "pending":
         raise HTTPException(status_code=404, detail="Заявка уже решена или не найдена")
+    if body.approve and is_plain_user(int(app["user_id"])):
+        raise HTTPException(status_code=403, detail="Этот человек остаётся обычным игроком")
     note = body.note.strip()
     if not body.approve and not note:
         raise HTTPException(status_code=400, detail="Отказ пишется с причиной")
@@ -2197,6 +2211,8 @@ async def _pass_key_hash(user_id: int, stamp: str) -> str:
 async def _open_key(key: str, user_id: int | None) -> tuple[int, Any]:
     """Известный человек сверяется со своим ключом. Неизвестный называется самим ключом."""
     await ensure_tables()
+    if user_id and is_plain_user(user_id):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
     if user_id:
         return int(user_id), await _key_row(int(user_id), key)
     hashed = _hash_key(key.strip())
@@ -2210,6 +2226,8 @@ async def _open_key(key: str, user_id: int | None) -> tuple[int, Any]:
     )
     if not row or row["disabled"] or not secrets.compare_digest(hashed, str(row["key_hash"] or "")):
         raise HTTPException(status_code=403, detail="Ключ не подошёл")
+    if is_plain_user(int(row["user_id"])):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
     return int(row["user_id"]), row
 
 
@@ -2267,6 +2285,8 @@ async def group_key_resume(body: PassBody, user_id: int | None = Depends(get_opt
     if not parsed:
         raise HTTPException(status_code=401, detail="Вход не узнан. Напишите ключ ещё раз.")
     pass_user, stamp = parsed
+    if is_plain_user(pass_user):
+        raise HTTPException(status_code=403, detail="Нет доступа к панели")
     if user_id is not None and int(user_id) != int(pass_user):
         raise HTTPException(status_code=401, detail="Это вход другого человека. Напишите ключ ещё раз.")
     await ensure_tables()

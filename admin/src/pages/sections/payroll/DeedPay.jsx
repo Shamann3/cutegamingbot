@@ -14,6 +14,7 @@ import {
   payDeed,
   saveDeedRates,
 } from '../../../lib/adminClient'
+import RateTune from './RateTune'
 
 const ACTIONS = [
   { id: '', label: 'Все' },
@@ -305,6 +306,7 @@ export function DeedRates() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
+  const [tuneStamp, setTuneStamp] = useState(0)
 
   const load = useCallback(async () => {
     setError('')
@@ -335,7 +337,8 @@ export function DeedRates() {
       }))
       const data = await saveDeedRates(clean)
       setItems(data.items || [])
-      setNotice('Нормы сохранены. Автоподстройка выключена: эти числа останутся, пока в кассе не нажмёте «Подстроить сейчас».')
+      setNotice('Нормы сохранены. Автоподстройка выключена: эти числа останутся, пока здесь же не нажмёте «Подстроить сейчас».')
+      setTuneStamp((value) => value + 1)
     } catch (err) {
       setError(messageOf(err))
     } finally {
@@ -363,8 +366,9 @@ export function DeedRates() {
 
   return (
     <div className="deed-rates">
+      <RateTune stamp={tuneStamp} onDone={() => load()} />
       <p className="deed-lead">
-        Здесь вы решаете, сколько кут человек получает за работу, с которой вы согласились. Две нормы проверок — «Проверки администраторов» и «Проверки сотрудников» — выключены, пока вы не поставите сумму. Платят только тем, чей ответ совпал с вашим. Кнопка «Собрать задания из архива» найдёт типы наказаний, которые уже выдают, — сумму она не ставит.
+        Галочка отдаёт цены техническим группам. «Подстроить сейчас» ставит их сразу: за неделю не больше 15% кут групп, последние 40% не трогаются. Если сохранить числа вручную, группы их больше не меняют. Платят только тем, чей ответ совпал с вашим.
       </p>
       {error && <p className="staff-hint">{error}</p>}
       {notice && <p className="staff-hint">{notice}</p>}
