@@ -3,6 +3,7 @@ import CountUp from '../../../components/CountUp'
 import PhotoLook from '../../../components/PhotoLook'
 import {
   dropDeed,
+  fetchCreatorWork,
   fetchDeedDone,
   fetchDeedQueue,
   fetchDeedReviewers,
@@ -10,9 +11,10 @@ import {
   keepDeed,
   liftDeed,
   rejectLiftDeed,
+  sortCreatorDeed,
   undoDeed,
 } from '../../../lib/adminClient'
-import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, waitCaption } from '../../../lib/deedSort'
+import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, { FLY_MS, motionQuiet, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
@@ -227,7 +229,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
         <p className="deed-lead">
           {focusName
             ? `Показаны только проверки: ${focusName}.`
-            : 'Сначала заявки на разблокировку, затем карточки, где оба ответили одинаково, потом спорные и «непонятно».'}
+            : 'Сначала заявки на разблокировку. Дальше карточки, которые уже проверил администратор или сотрудник: второго ответа можно не ждать.'}
         </p>
         {!card && notes}
         {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
@@ -336,6 +338,218 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
           {notes}
         </div>
       )}
+    </div>
+  )
+}
+
+const SELF_CHOICES = [
+  { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'в зарплату никого', side: 'left' },
+  { id: 'weak', label: VERDICT_BUTTON.weak, stamp: 'Непонятно', hint: 'закрыть без оплаты', side: 'down' },
+  { id: 'clear', label: VERDICT_BUTTON.clear, stamp: 'В зарплату', hint: 'тому, кто выдал', side: 'right' },
+]
+
+const SELF_BY_SIDE = { left: SELF_CHOICES[0], down: SELF_CHOICES[1], right: SELF_CHOICES[2] }
+const SELF_STAMPS = SELF_CHOICES.map((choice) => ({ side: choice.side, label: choice.stamp }))
+
+function selfText(choice, paid) {
+  if (choice === 'clear' && paid) return 'Подходит. Сразу в зарплату тому, кто выдал — администратор это или сотрудник, роли не важны.'
+  if (choice === 'clear') return 'Подходит. В архиве нет того, кто выдал, поэтому в зарплату отправить некого.'
+  if (choice === 'wrong') return 'Наказание выдано неправильно. В зарплату никого не отправил, в архиве оно осталось.'
+  return 'Непонятно. Карточка закрыта, в зарплату никого не отправил.'
+}
+
+export function CreatorSelf() {
+  const [queue, setQueue] = useState(null)
+  const [error, setError] = useState('')
+  const [flash, setFlash] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [fly, setFly] = useState(null)
+  const [back, setBack] = useState(null)
+
+  const load = useCallback(async () => {
+    if (isPanelPreviewMode()) return
+    try {
+      const data = await fetchCreatorWork()
+      setQueue(data)
+      setError('')
+    } catch (err) {
+      setError(messageOf(err))
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+  useRefill(queue, load)
+  useWarmProof(queue?.nextProofMediaId)
+
+  const card = queue?.card
+  const toastRef = useToastInView(flash?.key)
+  const swipe = useSwipeDeck({
+    onSwipe: (side) => choose(SELF_BY_SIDE[side]),
+    disabled: busy || Boolean(fly) || !card,
+    cardKey: card?.id ?? null,
+  })
+  const { reset } = swipe
+
+  const run = useCallback(async (id, choice) => {
+    setBusy(true)
+    setError('')
+    setBack(null)
+    if (!motionQuiet()) {
+      setFly({ id, side: choice.side })
+      await wait(FLY_MS)
+    }
+    let failure = ''
+    let paid = false
+    try {
+      const result = await sortCreatorDeed(id, choice.id)
+      paid = Boolean(result?.paid)
+    } catch (err) {
+      failure = messageOf(err)
+      reset()
+    }
+    await load()
+    if (failure) setError(failure)
+    else setFlash({ key: Date.now(), text: selfText(choice.id, paid), undoId: id, side: choice.side })
+    setFly(null)
+    setBusy(false)
+  }, [load, reset])
+
+  const choose = useCallback((choice) => {
+    const id = card?.id
+    if (!id || busy || fly || !choice) return false
+    run(id, choice)
+    return true
+  }, [card, busy, fly, run])
+
+  const undo = useCallback(async () => {
+    const last = flash
+    if (!last?.undoId || busy || fly) return
+    setBusy(true)
+    setError('')
+    let failure = ''
+    try {
+      await undoDeed(last.undoId)
+      setBack({ id: last.undoId, side: last.side })
+    } catch (err) {
+      failure = messageOf(err)
+    }
+    await load()
+    if (failure) {
+      setError(failure)
+      setFlash({ ...last, undoId: 0 })
+    } else {
+      setFlash({ key: Date.now(), text: 'Ответ отменён и убран из зарплаты. Карточка снова перед вами.', undoId: 0 })
+    }
+    setBusy(false)
+  }, [flash, busy, fly, load])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      const key = deckKey(event)
+      if (!key) return
+      if (key === 'undo') {
+        if (!flash?.undoId) return
+        event.preventDefault()
+        undo()
+        return
+      }
+      if (choose(SELF_BY_SIDE[key])) event.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [choose, undo, flash])
+
+  if (isPanelPreviewMode()) {
+    return <p className="staff-hint">В копии панели наказания не проверяют. Это делается в настоящей панели.</p>
+  }
+
+  const locked = busy || Boolean(fly)
+  const waiting = Number(queue?.waiting) || 0
+  const flySide = fly && card && fly.id === card.id ? fly.side : ''
+  const backSide = back && card && back.id === card.id ? back.side : ''
+  const notes = (
+    <>
+      {flash && (
+        <p ref={toastRef} key={flash.key} className="deed-flash deck-toast" role="status">
+          <span>{flash.text}</span>
+          {flash.undoId ? (
+            <button type="button" className="sec-btn sec-btn-ghost deed-undo" disabled={locked} onClick={undo}>
+              Вернуть
+            </button>
+          ) : null}
+        </p>
+      )}
+      {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
+    </>
+  )
+
+  return (
+    <div className="work-desk">
+      <div className={`work-grid${card ? ' has-card' : ''}`}>
+        <div className="work-head deck-copy">
+          {waiting > 0 && (
+            <div className="deck-count">
+              <CountUp className="deed-sum" value={waiting} />
+              <span className="deck-count-cap">{waitCaption(waiting, 'вашей проверки')}</span>
+            </div>
+          )}
+          <p className="deed-lead">
+            Эти наказания ещё никто не разбирал. Ваш ответ забирает карточку у администраторов и сотрудников и сразу решает зарплату.
+          </p>
+          <p className="deck-why">
+            «Подходит» засчитывает тому, кто выдал — администратору группы или сотруднику проекта, это одно и то же. «Неправильно» и «непонятно» никого не оплачивают.
+          </p>
+          {!card && notes}
+          {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
+          {queue && !card && !error && waiting > 0 && (
+            <p className="work-empty">Остальные карточки сейчас смотрят. Если ответа не будет, они вернутся сюда.</p>
+          )}
+          {queue && !card && !error && waiting === 0 && (
+            <p className="work-empty">Сейчас проверять нечего. Сюда приходят наказания, которые ещё не открыл администратор или сотрудник.</p>
+          )}
+          {card && (
+            <p className="work-keys">
+              Потяните карточку: вправо — в зарплату, влево — выдано неправильно, вниз — непонятно.
+              {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
+              <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
+            </p>
+          )}
+        </div>
+        {card && (
+          <div className="deck-col">
+            <DeckCard
+              card={card}
+              band="Ещё никто не проверял"
+              note="Ответ сразу уходит в зарплату того, кто выдал наказание."
+              stamps={SELF_STAMPS}
+              depth={Math.max(0, Math.min(2, waiting - 1))}
+              fly={flySide}
+              back={backSide}
+              swipe={swipe}
+            />
+            <div className="work-choice">
+              {SELF_CHOICES.map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  className={`sec-btn sec-btn-ghost deck-btn is-${choice.id} work-${choice.id}`}
+                  disabled={locked}
+                  onClick={() => choose(choice)}
+                >
+                  <span>
+                    {choice.side === 'left' && <span className="deck-arrow" aria-hidden="true">←</span>}
+                    {choice.label}
+                    {choice.side === 'right' && <span className="deck-arrow" aria-hidden="true">→</span>}
+                    {choice.side === 'down' && <span className="deck-arrow" aria-hidden="true">↓</span>}
+                  </span>
+                  <small>{choice.hint}</small>
+                </button>
+              ))}
+            </div>
+            {notes}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -540,6 +754,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
 
   const views = [
     { id: 'check', label: 'Проверка' },
+    { id: 'self', label: 'Сами' },
     { id: 'done', label: 'Решённые' },
     { id: 'rates', label: 'Нормы' },
     { id: 'cash', label: 'Касса' },
@@ -567,15 +782,21 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
       {!preview && view !== 'cash' && view !== 'rates' && view !== 'payroll' && <RateTune compact />}
 
       {lens && preview && <p className="staff-hint deck-copy">В копии панели чужие проверки не открываются.</p>}
+      {view === 'self' && preview && <p className="staff-hint deck-copy">В копии панели наказания не проверяют.</p>}
+      {view === 'self' && !preview && (
+        <div className="pay-lens" key="self">
+          <CreatorSelf />
+        </div>
+      )}
 
       {lens && !preview && (
         <>
           <div className="deck-copy">
             <p className="deed-lead">
-              Наказание проходит администратора группы и сотрудника проекта. Галочка стоит у каждого: снимите её, если этому человеку платить не нужно. Вправо засчитывает того, кто выдал, и кто сказал «подходит». Влево засчитывает тех, кто сказал «неправильно».
+              Достаточно одного ответа — администратора группы или сотрудника проекта. Вправо сразу отправляет в зарплату того, кто выдал, и кто сказал «подходит». Влево засчитывает «неправильно». Кто именно проверял, не важно.
             </p>
             <p className="deck-why">
-              Нажмите на человека, чтобы смотреть только его проверки. Одну карточку проверяют двое, не больше: один администратор и один сотрудник.
+              Нажмите на человека, чтобы смотреть только его проверки. Наказание, которое ещё никто не открыл, лежит во вкладке «Сами»: ваш ответ сразу решает зарплату.
             </p>
           </div>
           {error && <p className="staff-hint deck-copy" role="alert">{error}</p>}
@@ -585,6 +806,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
               Проверять пока некому. Администраторам групп нужно право «Архив» в разделе
               «Стафф → Администраторы → Должности» — у них появится вкладка «Работа» рядом с «Главная».
               Сотрудники проекта проверяют во вкладке «Работа» рядом с «Игроки» и «Архив».
+              Наказания, которые ещё никто не открыл, лежат во вкладке «Сами».
             </p>
           )}
           <div className="pay-check">

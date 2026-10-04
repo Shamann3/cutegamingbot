@@ -2131,6 +2131,14 @@ export async function fetchStaffWork() {
   return adminRequest('/deed-pay/staff')
 }
 
+export async function fetchCreatorWork() {
+  return adminRequest('/deed-pay/own')
+}
+
+export async function sortCreatorDeed(actionId, verdict) {
+  return adminRequest(`/deed-pay/own/${actionId}`, { method: 'POST', body: { verdict } })
+}
+
 export async function sortDeed(actionId, verdict) {
   return adminRequest(`/deed-pay/work/${actionId}`, { method: 'POST', body: { verdict } })
 }

@@ -92,7 +92,8 @@ export function liftSuffix(item) {
 
 /** Кто уже ответил, одной строкой. */
 export function chainLine(item) {
-  const head = chainText(item)
+  let head = chainText(item)
+  if (!head && item?.selfLabel) head = `Вы: ${String(item.selfLabel).toLowerCase()}`
   const tail = liftSuffix(item)
   if (head && tail) return `${head} · ${tail}`
   if (head) return head

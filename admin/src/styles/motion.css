@@ -389,6 +389,17 @@ body:not(.perf-light) .firstrun-sheet.is-anchored {
   backdrop-filter: blur(6px);
 }
 
+/* Обучение в кабинете группы и в панели сотрудника — одно окно.
+   Карточка: 0% на нуле ползунка, не прозрачнее 55% на сотне.
+   Штора гасит страницу только пока ползунок сам плотный. */
+html.is-coaching .firstrun-shield {
+  background: var(--e-coach-scrim, rgba(0, 0, 0, 0.369)) !important;
+}
+
+html.is-coaching .firstrun-spot {
+  box-shadow: inset 0 0 0 2px var(--e-accent, #fff) !important;
+}
+
 .admin-modal input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
 .metric-sheet input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),
 .focus-sheet input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(.elite-search-field):not(.panel-sidebar-search-field):not(.extras-hub-search-field),

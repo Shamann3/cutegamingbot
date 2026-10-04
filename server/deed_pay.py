@@ -1,7 +1,9 @@
 """Оплата за наказания и за их проверку.
 
-Цепочка одна: администратор группы, затем сотрудник проекта, затем создатель.
-На каждом этапе карточку берёт один человек. Остальным она не показывается.
+Администратор группы и сотрудник проекта проверяют по очереди. Создателю
+хватает любого одного ответа: ждать второго не нужно. Карточку, которую ещё
+никто не открыл, создатель может проверить сам — «подходит» сразу пишет
+зарплату тому, кто выдал, кем бы он ни был.
 
 Создатель решает, верное ли наказание. В зарплату входят те, чей ответ
 с этим совпал: выдавший — если наказание верное, проверявший — если он
@@ -36,12 +38,14 @@ from deed_sort import (
     STAGE_ADMIN,
     STAGE_STAFF,
     STAFF_ROLES,
+    VERDICT_CLEAR,
     VERDICT_LABELS,
     VERDICT_WRONG,
     VERDICTS,
     admin_stage_done_sql,
     can_apply_lift,
     claim_free_sql,
+    creator_open_sql,
     creator_ready_sql,
     ensure_deed_sorts,
     evidence_band,
@@ -50,6 +54,7 @@ from deed_sort import (
     reviewer_roster_sql,
     reviewer_totals_sql,
     self_can_sort,
+    self_settle,
     self_is_staff,
     staff_available_sql,
 )
@@ -401,6 +406,12 @@ async def _install_deed_tables(conn) -> None:
     )
     await conn.execute(
         """
+        ALTER TABLE epsilon_deed_reviews
+            ADD COLUMN IF NOT EXISTS self_verdict TEXT
+        """
+    )
+    await conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS epsilon_deed_credits (
             action_id BIGINT NOT NULL,
             user_id BIGINT NOT NULL,
@@ -710,6 +721,38 @@ async def _grab(where: str, params: list, stage: str, user_id: int, order_sql: s
             if await _claim(conn, int(row["id"]), stage, user_id):
                 chosen = int(row["id"])
                 break
+    proof = None
+    if chosen is not None:
+        for row in rows:
+            if int(row["id"]) != chosen and row["proof"]:
+                proof = row["proof"]
+                break
+    return chosen, proof
+
+
+async def _grab_pair(where: str, params: list, user_id: int, order_sql: str):
+    """Создатель забирает карточку у обеих колод сразу, чтобы её не открыли двое."""
+    rows = await db.pool.fetch(
+        f"""
+        SELECT s.id, NULLIF(btrim(s.proof_media_id), '') AS proof
+        {_CHAIN_FROM}
+        WHERE {where}
+        ORDER BY {order_sql}
+        LIMIT 8
+        """,
+        *params,
+    )
+    chosen = None
+    async with db.pool.acquire() as conn:
+        for row in rows:
+            action_id = int(row["id"])
+            if not await _claim(conn, action_id, STAGE_ADMIN, user_id):
+                continue
+            if not await _claim(conn, action_id, STAGE_STAFF, user_id):
+                await _drop_claim(conn, action_id, STAGE_ADMIN)
+                continue
+            chosen = action_id
+            break
     proof = None
     if chosen is not None:
         for row in rows:
@@ -1153,6 +1196,109 @@ async def deed_staff(user_id: int = Depends(get_any_telegram_user_id)):
     )
 
 
+def _own_where() -> str:
+    """Чужая карточка без ответа, которую ещё могут взять администратор или сотрудник."""
+    return " AND ".join([
+        "s.action_type = ANY($1::text[])",
+        human_actor_sql("s"),
+        "COALESCE(s.admin_user_id, 0) <> $2",
+        creator_open_sql("s", "$2"),
+    ])
+
+
+async def _open_own(user_id: int) -> dict:
+    params = [list(PUNISH), int(user_id)]
+    where = _own_where()
+    waiting = await _count(where, params)
+    chosen, proof = await _grab_pair(where, params, int(user_id), ADMIN_ORDER_SQL)
+    card = await _load_card(chosen) if chosen else None
+    return {"waiting": waiting, "card": card, "nextProofMediaId": proof}
+
+
+@router.get("/own")
+async def deed_own(user_id: int = Depends(get_any_telegram_user_id)):
+    """Наказания, которые создатель проверяет сам и сразу отправляет в зарплату."""
+    _require_creator(user_id)
+    await ensure_deed_tables()
+    return await _open_own(user_id)
+
+
+@router.post("/own/{action_id}")
+async def deed_own_sort(
+    action_id: int,
+    body: SortBody,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    _require_creator(user_id)
+    verdict = (body.verdict or "").strip().lower()
+    if verdict not in VERDICTS:
+        raise HTTPException(status_code=400, detail="Выберите ответ: подходит, выдано неправильно или непонятно")
+    await ensure_deed_tables()
+    where = _own_where()
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            src = await conn.fetchrow(
+                f"""
+                SELECT s.id, s.admin_user_id
+                {_CHAIN_FROM}
+                WHERE s.id = $3 AND {where}
+                """,
+                list(PUNISH),
+                int(user_id),
+                int(action_id),
+            )
+            if not src:
+                await _drop_claim(conn, int(action_id), STAGE_ADMIN)
+                await _drop_claim(conn, int(action_id), STAGE_STAFF)
+                raise HTTPException(status_code=409, detail="Эту карточку уже проверяют")
+            status, credits = self_settle(verdict, int(src["admin_user_id"] or 0))
+            if int(src["admin_user_id"] or 0) == int(user_id):
+                status, credits = "dropped", []
+            inserted = await conn.fetchrow(
+                """
+                INSERT INTO epsilon_deed_reviews
+                    (action_id, status, reviewer_id, credits_set, self_verdict)
+                VALUES ($1, $2, $3, TRUE, $4)
+                ON CONFLICT (action_id) DO NOTHING
+                RETURNING action_id
+                """,
+                int(action_id),
+                status,
+                int(user_id),
+                verdict,
+            )
+            if not inserted:
+                raise HTTPException(status_code=409, detail="Это наказание уже решено")
+            for role, person_id in credits:
+                await conn.execute(
+                    """
+                    INSERT INTO epsilon_deed_credits (action_id, user_id, role)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (action_id, user_id, role) DO NOTHING
+                    """,
+                    int(action_id), person_id, role,
+                )
+            await _drop_claim(conn, int(action_id), STAGE_ADMIN)
+            await _drop_claim(conn, int(action_id), STAGE_STAFF)
+            await _sync_owed(conn)
+    from admin_audit import log_admin_action
+    await log_admin_action(
+        user_id,
+        "deed_keep" if status == "kept" else "deed_drop",
+        target_type="staff_action",
+        target_id=str(action_id),
+        details={"status": status, "self": verdict, "credits": len(credits)},
+    )
+    return {
+        "ok": True,
+        "id": int(action_id),
+        "verdict": verdict,
+        "label": VERDICT_LABELS[verdict],
+        "status": status,
+        "paid": verdict == VERDICT_CLEAR and bool(credits),
+    }
+
+
 async def _require_work_page(user_id: int) -> None:
     """Колода администратора открыта только должности, у которой включена «Работа»."""
     from group_realm import seat_sees, seats_for
@@ -1229,7 +1375,17 @@ async def deed_work_sort(
     }
 
 
+async def _reject_if_paid(conn, action_id: int) -> None:
+    reviewed = await conn.fetchval(
+        "SELECT 1 FROM epsilon_deed_reviews WHERE action_id = $1",
+        action_id,
+    )
+    if reviewed:
+        raise HTTPException(status_code=409, detail="Создатель уже отправил это наказание в зарплату")
+
+
 async def _reject_admin(conn, action_id: int, user_id: int) -> None:
+    await _reject_if_paid(conn, action_id)
     owner = await conn.fetchval(
         "SELECT admin_user_id FROM staff_actions WHERE id = $1",
         action_id,
@@ -1334,6 +1490,7 @@ async def deed_staff_sort(
 
 
 async def _reject_staff(conn, action_id: int, user_id: int) -> None:
+    await _reject_if_paid(conn, action_id)
     owner = await conn.fetchval(
         "SELECT admin_user_id FROM staff_actions WHERE id = $1",
         action_id,
@@ -1815,6 +1972,7 @@ def _done_item(row) -> dict:
     data = dict(row)
     chain = _chain(data)
     verdict = (data.get("sort_verdict") or "").strip()
+    self_verdict = (data.get("self_verdict") or "").strip()
     return {
         "id": int(data["action_id"]),
         "status": data["status"],
@@ -1831,6 +1989,8 @@ def _done_item(row) -> dict:
         "sortVerdict": verdict or None,
         "sortLabel": VERDICT_LABELS.get(verdict, ""),
         "sorterName": (data.get("sorter_name") or "").strip() if verdict else "",
+        "selfVerdict": self_verdict or None,
+        "selfLabel": VERDICT_LABELS.get(self_verdict, ""),
         "chain": chain,
         "liftStatus": (data.get("lift_status") or "") or None,
         "unclearNames": [],
@@ -2092,7 +2252,7 @@ async def deed_done(
         parts.append(_by_person(len(params), "v.action_id"))
     rows = await db.pool.fetch(
         f"""
-        SELECT v.action_id, v.status, v.reviewed_at,
+        SELECT v.action_id, v.status, v.reviewed_at, v.self_verdict,
                s.action_type, s.admin_user_id, s.admin_name, s.target_name,
                s.reason, s.created_at, s.proof_media_id,
                ds.verdict AS sort_verdict, ds.sorter_id,

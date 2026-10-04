@@ -117,9 +117,10 @@ def test_one_answer_closes_the_stage_and_moves_the_card_on():
     assert "st.action_id IS NULL" in staff
     assert "admin_accounts" in staff
     assert "senior_admin" in staff
-    ready = creator_ready_sql()
+    ready = " ".join(creator_ready_sql().split())
     assert "lift_status = 'pending'" in ready
     assert "admin_accounts" in ready
+    assert "ds.action_id IS NOT NULL OR st.action_id IS NOT NULL" in ready
     assert CREATOR_ORDER_SQL.index("lift_status = 'pending'") < CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'")
     assert CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'") < CREATOR_ORDER_SQL.index("ds.verdict = 'wrong' AND st.verdict = 'wrong'")
     assert "epsilon_deed_staff" in UNDO_SORT_SQL
@@ -173,6 +174,23 @@ def test_card_carries_the_chain_the_credits_and_the_lift():
     assert "mark.staff_id = $2" in person
     assert "credits_set" in ISSUE_COUNT_SQL
     assert "epsilon_deed_credits" in CHECK_COUNT_SQL
+
+
+def test_creator_check_pays_whoever_issued_and_shows_either_answer():
+    from deed_pay import _own_where
+    from deed_sort import creator_open_sql, self_settle
+
+    opened = creator_open_sql()
+    assert "ds.action_id IS NULL" in opened
+    assert "st.action_id IS NULL" in opened
+    assert "epsilon_deed_claims" in opened
+    own = _own_where()
+    assert "creator_open_sql" not in own
+    assert "admin_user_id, 0) <> $2" in own
+    assert self_settle("clear", 3) == ("kept", [("issue", 3)])
+    assert self_settle("wrong", 3) == ("dropped", [])
+    assert self_settle("weak", 3) == ("dropped", [])
+    assert self_settle("clear", 0) == ("dropped", [])
 
 
 def test_pay_follows_the_matching_answer_and_a_kick_cannot_be_lifted():

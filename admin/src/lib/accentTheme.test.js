@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyAccentToDocument, coachPlateAlpha, inkOnAccent, overlayPlateAlpha } from './accentTheme'
+import { applyAccentToDocument, coachPlateAlpha, coachScrimAlpha, inkOnAccent, overlayPlateAlpha } from './accentTheme'
 
 describe('inkOnAccent', () => {
   it('кладёт тёмный текст на светлый и серый акцент', () => {
@@ -52,5 +52,15 @@ describe('coachPlateAlpha', () => {
     const root = document.documentElement
     expect(root.style.getPropertyValue('--e-plate')).toBe('rgba(14, 14, 16, 1.000)')
     expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 1.000)')
+    expect(root.style.getPropertyValue('--e-coach-scrim')).toBe('rgba(0, 0, 0, 0.820)')
+  })
+
+  it('на полной прозрачности гасит штору и оставляет карточку на 55%', () => {
+    expect(coachScrimAlpha(100)).toBeCloseTo(0)
+    expect(coachScrimAlpha(0)).toBeCloseTo(0.82)
+    applyAccentToDocument({ hex: '#ffffff', h: 0, s: 0, v: 1, veil: 100, glow: 0 })
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 0.450)')
+    expect(root.style.getPropertyValue('--e-coach-scrim')).toBe('rgba(0, 0, 0, 0.000)')
   })
 })

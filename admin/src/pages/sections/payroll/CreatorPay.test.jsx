@@ -2,11 +2,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CreatorPay from './CreatorPay'
 import {
+  fetchCreatorWork,
   fetchDeedDone,
   fetchDeedQueue,
   fetchDeedReviewers,
   keepDeed,
   liftDeed,
+  sortCreatorDeed,
   undoDeed,
 } from '../../../lib/adminClient'
 
@@ -15,6 +17,8 @@ vi.mock('../../../lib/adminClient', async (importOriginal) => ({
   fetchDeedReviewers: vi.fn(),
   fetchDeedQueue: vi.fn(),
   fetchDeedDone: vi.fn(),
+  fetchCreatorWork: vi.fn(async () => ({ waiting: 0, card: null })),
+  sortCreatorDeed: vi.fn(),
   keepDeed: vi.fn(),
   dropDeed: vi.fn(),
   undoDeed: vi.fn(),
@@ -215,6 +219,33 @@ describe('CreatorPay', () => {
     expect(screen.getByText(/^Анна \(администратор\): наказание выдано неправильно · решено/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'В зарплате' }))
     await waitFor(() => expect(fetchDeedDone).toHaveBeenLastCalledWith({ sorterId: 0, status: 'kept' }))
+  })
+
+  it('lets the creator check an untouched card straight into salary', async () => {
+    vi.mocked(fetchDeedQueue).mockResolvedValue({ waiting: 0, card: null })
+    vi.mocked(fetchCreatorWork)
+      .mockResolvedValueOnce({
+        waiting: 1,
+        card: {
+          ...card,
+          chain: [],
+          credits: [],
+          sortVerdict: null,
+          sortLabel: '',
+          sorterName: '',
+          direct: true,
+          adminName: 'Пётр',
+        },
+      })
+      .mockResolvedValue({ waiting: 0, card: null })
+    vi.mocked(sortCreatorDeed).mockResolvedValue({ ok: true, paid: true, status: 'kept' })
+    render(<CreatorPay />)
+    fireEvent.click(screen.getByRole('button', { name: 'Сами' }))
+    expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
+    expect(screen.getByText('Ещё никто не проверял')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /тому, кто выдал/ }))
+    expect(await screen.findByText(/Сразу в зарплату тому, кто выдал/)).toBeTruthy()
+    expect(sortCreatorDeed).toHaveBeenCalledWith(9, 'clear')
   })
 
   it('explains how an administrator gets into the list', async () => {

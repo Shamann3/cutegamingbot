@@ -2,7 +2,11 @@
 
 Один администратор группы отвечает первым. Ответ — любой, включая
 «непонятно», — закрывает этап: остальные администраторы эту карточку
-больше не видят. Дальше её берёт один сотрудник проекта, затем создатель.
+больше не видят. Дальше её может взять один сотрудник проекта.
+
+Создателю хватает любого уже готового ответа: администратора или сотрудника.
+Карточку, которую ещё никто не открыл, он может проверить сам. «Подходит»
+сразу пишет зарплату тому, кто выдал — администратор это или сотрудник.
 
 Если на этапе некому проверять, карточка перескакивает дальше сама.
 Заявка на разблокировку остаётся у создателя, пока он её не решит.
@@ -159,6 +163,19 @@ def pick_credits(
     if asked is None:
         return eligible
     return [pair for pair in eligible if pair in asked]
+
+
+def self_settle(verdict: str, issuer_id: int) -> tuple[str, list[tuple[str, int]]]:
+    """Проверка самого создателя сразу закрывает зарплату.
+
+    «Подходит» засчитывает тому, кто выдал. Кто он — администратор группы
+    или сотрудник проекта — для записи не важно. «Неправильно» и «непонятно»
+    никого не оплачивают: выдавать было нельзя или твёрдого ответа нет.
+    """
+    issuer = int(issuer_id or 0)
+    if verdict == VERDICT_CLEAR and issuer > 0:
+        return "kept", [("issue", issuer)]
+    return "dropped", []
 
 
 def credit_eligible(status: str, role: str, verdict: str) -> bool:
@@ -362,20 +379,41 @@ def creator_waiting_sql() -> str:
 
 
 def creator_ready_sql(action: str = "s") -> str:
-    """Создателю: оба предыдущих этапа закрыты, либо их было некому пройти.
+    """Создателю хватает ответа администратора или сотрудника.
 
-    Заявка на разблокировку остаётся, даже если зарплата уже записана.
-    В запросе нужны v, ds и st.
+    Ждать второй проверки не нужно. Если не ответил никто и проверять
+    было некому — карточка тоже его. Заявка на разблокировку остаётся,
+    даже если зарплата уже записана. В запросе нужны v, ds и st.
     """
     return f"""(
       {creator_waiting_sql()}
       AND (
         v.action_id IS NOT NULL
+        OR ds.action_id IS NOT NULL
+        OR st.action_id IS NOT NULL
         OR (
-          {admin_stage_done_sql(action)}
-          AND {staff_stage_done_sql(action)}
+          NOT ({other_sorter_exists(action)})
+          AND NOT ({staff_available_sql(action)})
         )
       )
+    )"""
+
+
+def creator_open_sql(action: str = "s", user_sql: str = "$2") -> str:
+    """Ещё никто не ответил, и администратор или сотрудник ещё могут взять карточку.
+
+    Пока создатель её держит, колоды других её не показывают.
+    """
+    return f"""(
+      v.action_id IS NULL
+      AND ds.action_id IS NULL
+      AND st.action_id IS NULL
+      AND (
+        {other_sorter_exists(action)}
+        OR {staff_available_sql(action)}
+      )
+      AND {claim_free_sql(STAGE_ADMIN, user_sql, action)}
+      AND {claim_free_sql(STAGE_STAFF, user_sql, action)}
     )"""
 
 
