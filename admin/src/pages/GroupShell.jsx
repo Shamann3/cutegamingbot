@@ -58,6 +58,7 @@ import { useTabScroll } from '../lib/useTabScroll'
 import { useMusicMode } from '../lib/musicMode'
 import { usePerfMode } from '../lib/perfMode'
 import AccessKeySheet from '../components/AccessKeySheet'
+import OwnKeyControl from '../components/OwnKeyControl'
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
@@ -827,6 +828,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                         {person.accessOff ? ' · доступ выключен' : ''}
                       </span>
                       <div className="staff-ga-actions">
+                        {isSelf && <OwnKeyControl variant="inline" />}
                         {portrait?.isProjectCreator && !isSelf && !person.accessOff && (
                           <button
                             type="button"

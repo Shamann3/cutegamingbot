@@ -3,6 +3,7 @@ import { groupSections, SECTION_HINTS } from '../constants/panelNav'
 import { NAV_ICONS } from './NavIcons'
 import AccentPalette from './AccentPalette'
 import SessionTimer from './SessionTimer'
+import OwnKeyControl from './OwnKeyControl'
 
 function FallbackIcon() {
   return (
@@ -64,6 +65,7 @@ export function PanelPocketTools({
             <span>Снова пройти короткие подсказки по панели</span>
           </button>
         )}
+        <OwnKeyControl />
         {typeof onExitPreview === 'function' && (
           <button type="button" className="pocket-tools-row is-leave" onClick={onExitPreview}>
             <strong>Выйти из копии</strong>

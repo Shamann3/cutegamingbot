@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getAdminInitials, getAdminProfile } from '../lib/adminProfile'
+import OwnKeyControl from './OwnKeyControl'
 import SessionTimer from './SessionTimer'
 import EpsilonLogo from './EpsilonLogo'
 import AccentPalette from './AccentPalette'
@@ -311,6 +312,7 @@ export default function PanelSidebar({
             <span className="panel-logout-hint">вернуться в «Стафф»</span>
           </button>
         )}
+        <OwnKeyControl variant="sidebar" />
         {onChangeDoor && (
           <button type="button" className="panel-logout-btn" data-coach="doors" onClick={onChangeDoor}>
             Сменить панель

@@ -2495,6 +2495,10 @@ export async function showGroupKey(userId) {
   return adminFetch('/group-realm/access/show', { method: 'POST', body: { user_id: userId } })
 }
 
+export async function fetchMyDoorKeys() {
+  return adminFetch('/group-realm/access/mine', { method: 'POST', body: {} })
+}
+
 export async function fetchRealmLogs(chatId) {
   return adminFetch(`/group-realm/logs?chat_id=${encodeURIComponent(chatId)}`)
 }

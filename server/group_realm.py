@@ -21,6 +21,7 @@ from admin_auth import (
     generate_totp_secret,
     get_any_telegram_user_id,
     get_optional_telegram_user_id,
+    get_signed_in_user_id,
     totp_qr_data_url,
     verify_totp,
 )
@@ -1661,6 +1662,70 @@ async def group_access_show(body: AccessBody, user_id: int = Depends(get_any_tel
     if not row or row["disabled"]:
         return {"ok": True, "entryKey": ""}
     return {"ok": True, "entryKey": str(row["entry_key"] or "")}
+
+
+async def _own_staff_key(user_id: int) -> dict:
+    """Личный ключ панели сотрудника. Ключ сервера владельца сюда не попадает."""
+    row = await db.pool.fetchrow(
+        """
+        SELECT role, status, login_key
+        FROM admin_accounts
+        WHERE user_id = $1 AND role <> 'applicant'
+        """,
+        int(user_id),
+    )
+    if not row:
+        return {"state": "none", "key": ""}
+    if str(row["status"] or "") != "active":
+        return {"state": "closed", "key": ""}
+    key = str(row["login_key"] or "")
+    if not key:
+        token = await db.pool.fetchval(
+            "SELECT token FROM admin_invite_tokens WHERE used_by = $1 LIMIT 1",
+            int(user_id),
+        )
+        key = str(token or "")
+        if key:
+            await db.pool.execute(
+                """
+                UPDATE admin_accounts
+                SET login_key = $1
+                WHERE user_id = $2 AND (login_key IS NULL OR login_key = '')
+                """,
+                key,
+                int(user_id),
+            )
+    if key:
+        return {"state": "ready", "key": key}
+    if str(row["role"] or "") == "owner":
+        return {"state": "server", "key": ""}
+    return {"state": "unstored", "key": ""}
+
+
+async def _own_group_key(user_id: int) -> dict:
+    row = await db.pool.fetchrow(
+        "SELECT entry_key, disabled FROM epsilon_group_keys WHERE user_id = $1",
+        int(user_id),
+    )
+    if not row:
+        return {"state": "none", "key": ""}
+    if row["disabled"]:
+        return {"state": "closed", "key": ""}
+    key = str(row["entry_key"] or "")
+    if not key:
+        return {"state": "unstored", "key": ""}
+    return {"state": "ready", "key": key}
+
+
+@router.post("/access/mine")
+async def group_access_mine(user_id: int = Depends(get_signed_in_user_id)):
+    """Ключи того, кто уже внутри. Чужой id принять нельзя."""
+    await ensure_tables()
+    return {
+        "ok": True,
+        "staff": await _own_staff_key(int(user_id)),
+        "group": await _own_group_key(int(user_id)),
+    }
 
 
 @router.post("/prefix")

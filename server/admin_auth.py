@@ -277,11 +277,12 @@ def _bearer_token(request: Request) -> str:
     return query_token
 
 
-async def get_admin_user_id(
+async def get_signed_in_user_id(
     request: Request,
     x_telegram_init_data: str | None = Header(None, alias="X-Telegram-Init-Data"),
     x_dev_user_id: str | None = Header(None, alias="X-Dev-User-Id"),
 ) -> int:
+    """Кто уже внутри: Telegram, сессия панели или локальный dev. Без проверки роли."""
     if not ADMIN_ENABLED:
         raise HTTPException(status_code=503, detail="Admin panel отключён")
 
@@ -332,12 +333,20 @@ async def get_admin_user_id(
             if user_id <= 0:
                 raise HTTPException(status_code=400, detail="Неверный dev user id")
 
+    reject_if_plain_user(user_id)
+    request.state.user_id = user_id
+    return user_id
+
+
+async def get_admin_user_id(
+    request: Request,
+    user_id: int = Depends(get_signed_in_user_id),
+) -> int:
     # Гейт доступа: владелец из конфига ИЛИ зарегистрированный admin-аккаунт
     # (включая кандидатов — их активность/роль проверяет require_active_admin
     # для защищённых роутов и admin_login по статусу).
     from config import owner_user_ids
 
-    reject_if_plain_user(user_id)
     is_owner = user_id in owner_user_ids()
     has_account = False
     if not is_owner:

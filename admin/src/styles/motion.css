@@ -1384,6 +1384,8 @@ html[data-viewport="desktop"] .realm-main .nika-head h1 {
 .access-sheet-card {
   position: relative;
   width: min(440px, 100%);
+  max-height: min(86dvh, 640px);
+  overflow: auto;
   margin: 0;
   padding: 22px 22px 18px;
   border-radius: 22px;
@@ -1435,6 +1437,26 @@ html[data-viewport="desktop"] .realm-main .nika-head h1 {
   line-height: 1.45;
   letter-spacing: 0.01em;
   word-break: break-all;
+}
+
+.own-key-block {
+  margin-top: 16px;
+}
+
+.own-key-block h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.own-key-block p {
+  margin: 8px 0 0;
+  line-height: 1.45;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.own-key-block .sec-btn {
+  margin-top: 8px;
 }
 
 .access-sheet-error {

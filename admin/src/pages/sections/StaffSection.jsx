@@ -70,6 +70,7 @@ import StaffPreviewPane from './StaffPreviewPane'
 import GroupApplicationsPane from './GroupApplicationsPane'
 import GroupPreviewPane from './GroupPreviewPane'
 import AccessKeySheet from '../../components/AccessKeySheet'
+import OwnKeyControl from '../../components/OwnKeyControl'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -857,9 +858,7 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
                         )}
                       </>
                     )}
-                    {isSelf && (
-                      <span className="sec-empty" style={{ fontSize: '0.75rem', opacity: 0.5 }}>это вы</span>
-                    )}
+                    {isSelf && <OwnKeyControl variant="inline" />}
                   </>
                 )
               })()}
@@ -1834,7 +1833,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
         ) : (
           <form className="staff-invite-form staff-ga-form" onSubmit={handleGroupAppoint}>
             <div className="staff-ga-own">
-              <p className="realm-copy">Вход в панель администратора спрашивает ваш ключ кабинета. Здесь его можно получить один раз.</p>
+              <p className="realm-copy">Если ключ уже действует, откройте «Мой ключ» в настройках: он виден и изнутри панели. Эта кнопка выдаёт новый, только когда действующего нет.</p>
               <button
                 type="button"
                 className="sec-btn sec-btn-sm"

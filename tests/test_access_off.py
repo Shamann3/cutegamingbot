@@ -89,6 +89,12 @@ def test_creator_can_open_another_persons_key():
     look = realm[realm.index("async def group_access_show"):realm.index("async def group_prefix")]
     assert "is_project_creator" in look
     assert 'detail="Свой ключ здесь не показывается"' in look
+    mine = realm[realm.index("async def group_access_mine"):realm.index("async def group_prefix")]
+    assert "get_signed_in_user_id" in mine
+    assert "_own_staff_key" in mine
+    assert "_own_group_key" in mine
+    assert "_fresh_login_key" not in mine
+    assert "Depends(get_signed_in_user_id)" in mine
     staff = _text("admin/src/pages/sections/StaffSection.jsx")
     assert "showStaffKey" in staff
     assert "showGroupKey" in staff
