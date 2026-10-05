@@ -9,6 +9,18 @@ from group_realm import (
 )
 from staff_panel_rights import column_granted, purge_allowed
 
+def test_wide_issue_follows_staff_column_not_a_chat_ban():
+    from group_realm import wide_actions_for
+
+    only_full = [item["id"] for item in wide_actions_for(["banfull"])]
+    assert only_full == ["banfull"]
+    assert wide_actions_for(["punish_ban", "ban"]) == []
+    creator = [item["id"] for item in wide_actions_for([], creator=True)]
+    assert creator[0] == "muteall"
+    assert "banfull" in creator
+    assert "unbanall" not in creator
+
+
 def test_local_actions_map_to_one_right():
     assert action_right("ban") == "punish_ban"
     assert action_right("mute") == "punish_mute"

@@ -51,6 +51,7 @@ describe('PersonPunish', () => {
     expect(screen.queryByRole('button', { name: 'Разбанить' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Мут' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Снять мут' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Банфулл' })).toBeNull()
     fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'снова флуд' } })
     fireEvent.click(screen.getByRole('button', { name: 'Выдать: Мут' }))
     expect(onAct).toHaveBeenCalledWith({
@@ -58,6 +59,31 @@ describe('PersonPunish', () => {
       action: 'mute',
       hours: '1',
       reason: 'снова флуд',
+    })
+  })
+
+  it('can issue a project-wide ban when that right is open', async () => {
+    vi.mocked(fetchPersonHistory).mockResolvedValue(history)
+    const onAct = vi.fn().mockResolvedValue({})
+    render(
+      <PersonPunish
+        chatId={-5}
+        userId={7}
+        actions={actions}
+        wide={[{ id: 'banfull', label: 'Банфулл', hint: 'Бан на весь проект. Снять его из этой карточки нельзя.', needsUntil: true }]}
+        onAct={onAct}
+        onClose={() => {}}
+      />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Банфулл' }))
+    expect(screen.getByText(/Бан на весь проект/)).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'спам везде' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Банфулл' }))
+    expect(onAct).toHaveBeenCalledWith({
+      userId: '7',
+      action: 'banfull',
+      hours: '1',
+      reason: 'спам везде',
     })
   })
 })

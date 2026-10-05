@@ -62,14 +62,39 @@ function liftOf(action) {
   return null
 }
 
-function issueActions(actions) {
-  return (actions || []).filter((item) => item?.id && !String(item.id).startsWith('un'))
+function issueList(actions, wide) {
+  const local = (actions || []).filter((item) => item?.id && !String(item.id).startsWith('un'))
+  const extra = (wide || []).filter((item) => item?.id && !local.some((row) => row.id === item.id))
+  return { local, wide: extra, all: [...local, ...extra] }
+}
+
+function ChipRow({ items, selectedId, onPick, label }) {
+  if (!items.length) return null
+  return (
+    <div className="person-issue-block">
+      <p className="person-issue-title">{label}</p>
+      <div className="person-acts" role="group" aria-label={label}>
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={selectedId === item.id ? 'is-on' : ''}
+            aria-pressed={selectedId === item.id}
+            onClick={() => onPick(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function PersonPunish({
   chatId,
   userId,
   actions = [],
+  wide = [],
   onAct,
   watch = [],
   onClose,
@@ -78,21 +103,22 @@ export default function PersonPunish({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [freshId, setFreshId] = useState(null)
-  const [action, setAction] = useState(issueActions(actions)[0]?.id || '')
+  const offered = issueList(actions, wide)
+  const [action, setAction] = useState(offered.all[0]?.id || '')
   const [hours, setHours] = useState('1')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [liftId, setLiftId] = useState(null)
   const [liftReason, setLiftReason] = useState('')
-  const grants = issueActions(actions)
-  const selected = grants.find((item) => item.id === action) || grants[0]
+  const selected = offered.all.find((item) => item.id === action) || offered.all[0]
   const warns = (watch || []).find((item) => Number(item.userId) === Number(userId))
+  const wideSelected = offered.wide.some((item) => item.id === selected?.id)
 
   useEffect(() => {
-    const next = issueActions(actions)
+    const next = issueList(actions, wide).all
     if (next.length && !next.some((item) => item.id === action)) setAction(next[0].id)
-  }, [actions, action])
+  }, [actions, wide, action])
 
   useEffect(() => {
     if (!chatId || !userId) return undefined
@@ -166,22 +192,32 @@ export default function PersonPunish({
   const username = report?.username ? `@${String(report.username).replace(/^@/, '')}` : `#${userId}`
   const items = report?.available === false ? [] : (report?.items || [])
 
-  const form = grants.length > 0 ? (
+  const form = offered.all.length > 0 ? (
     <form className="person-issue" onSubmit={submit}>
       <p className="person-issue-title">Ещё наказание</p>
-      <div className="person-acts" role="group" aria-label="Какое наказание выдать">
-        {grants.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={selected?.id === item.id ? 'is-on' : ''}
-            aria-pressed={selected?.id === item.id}
-            onClick={() => setAction(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {offered.wide.length > 0 ? (
+        <>
+          <ChipRow items={offered.local} selectedId={selected?.id} onPick={setAction} label="В этом чате" />
+          <ChipRow items={offered.wide} selectedId={selected?.id} onPick={setAction} label="Шире этого чата" />
+        </>
+      ) : (
+        <div className="person-acts" role="group" aria-label="Какое наказание выдать">
+          {offered.local.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={selected?.id === item.id ? 'is-on' : ''}
+              aria-pressed={selected?.id === item.id}
+              onClick={() => setAction(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {wideSelected && selected?.hint && (
+        <p className="person-scope" key={selected.id}>{selected.hint}</p>
+      )}
       {selected?.needsUntil && (
         <label>
           Сколько часов держать

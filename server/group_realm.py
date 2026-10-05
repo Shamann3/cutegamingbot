@@ -79,6 +79,44 @@ ACTION_RIGHT = {
 
 LOCAL_ACTIONS = frozenset(ACTION_RIGHT)
 
+# Шире одного чата. Право — столбец сотрудника, не «бан» должности в группе.
+WIDE_ISSUE = (
+    ("muteall", "Муталл", "Мут во всех официальных группах.", True),
+    ("kickall", "Кикалл", "Кик во всех официальных группах.", False),
+    ("warnall", "Варналл", "Предупреждение во всех официальных группах.", True),
+    ("banall", "Баналл", "Бан во всех официальных группах.", True),
+    ("warnfull", "Варнфулл", "Предупреждение на весь проект.", True),
+    ("banfull", "Банфулл", "Бан на весь проект. Снять его из этой карточки нельзя.", True),
+)
+
+
+def wide_issue_catalog() -> list[dict]:
+    return [
+        {"id": key, "label": label, "hint": hint, "needsUntil": needs}
+        for key, label, hint, needs in WIDE_ISSUE
+    ]
+
+
+def wide_actions_for(perms, *, creator: bool = False) -> list[dict]:
+    catalog = wide_issue_catalog()
+    if creator:
+        return catalog
+    granted = {str(item).strip().lower() for item in (perms or [])}
+    return [item for item in catalog if item["id"] in granted]
+
+
+async def wide_issue_for(user_id: int) -> list[dict]:
+    from admin_soft_restart import is_project_creator
+
+    if is_project_creator(int(user_id)):
+        return wide_issue_catalog()
+    try:
+        from staff_panel_rights import actor_staff_perms
+        granted = await actor_staff_perms(int(user_id))
+    except Exception:
+        return []
+    return wide_actions_for(granted, creator=False)
+
 PRESETS: tuple[tuple[str, int, tuple[str, ...], bool], ...] = (
     ("Создатель группы", 5, ALL_RIGHTS, False),
     (
@@ -2298,6 +2336,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
             "recent": mods.get("recent") or [],
             "watch": watch,
         },
+        "wide": await wide_issue_for(int(user_id)),
     }
 
 
@@ -2328,9 +2367,14 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
     if not access:
         raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
     action = (body.action or "").strip().lower()
-    if action not in LOCAL_ACTIONS:
+    wide_ids = {item["id"] for item in wide_issue_catalog()}
+    if action in wide_ids:
+        allowed = {item["id"] for item in await wide_issue_for(int(user_id))}
+        if action not in allowed:
+            raise HTTPException(status_code=403, detail="Нет права на это наказание")
+    elif action not in LOCAL_ACTIONS:
         raise HTTPException(status_code=400, detail="Это действие живёт только внутри одной группы")
-    if not rights_allow(access["rights"], action):
+    elif not rights_allow(access["rights"], action):
         raise HTTPException(status_code=403, detail="Должность не даёт этого наказания")
     if int(body.user_id) <= 0:
         raise HTTPException(status_code=400, detail="Укажите id человека")

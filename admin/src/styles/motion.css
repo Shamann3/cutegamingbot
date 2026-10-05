@@ -4819,6 +4819,7 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 
 .grp-pulse {
   position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -4903,6 +4904,54 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 
 .grp-pulse:active {
   transform: scale(0.985);
+}
+
+.grp-pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.16) 50%, transparent 65%);
+  transform: translateX(-120%);
+  animation: grp-sheen 0.9s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
+}
+
+@keyframes grp-sheen {
+  to { transform: translateX(120%); }
+}
+
+.grp-can {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grp-can li {
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.person-issue-block {
+  display: grid;
+  gap: 8px;
+}
+
+.person-scope {
+  margin: 0;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  animation: arc-rise 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .act-ledger {
@@ -5110,6 +5159,8 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 
   .grp-door:active,
   .grp-pulse:active,
+  .grp-pulse::after,
+  .person-scope,
   .act-ledger li {
     animation: none;
     transform: none;
@@ -5122,6 +5173,8 @@ body.perf-light .grp-door:hover,
 body.perf-light .grp-door:active,
 body.perf-light .grp-pulse:hover,
 body.perf-light .grp-pulse:active,
+body.perf-light .grp-pulse::after,
+body.perf-light .person-scope,
 body.perf-light .act-ledger li {
   animation: none;
   transition: none;

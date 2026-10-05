@@ -696,6 +696,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     if (!id || !Number.isFinite(id)) throw new Error('Укажите числовой id или выберите человека из подсказки')
     if (!String(why || '').trim()) throw new Error('Нужна причина')
     const act = allowedActions.find((item) => item.id === actId)
+      || (Array.isArray(summary?.wide) ? summary.wide : []).find((item) => item.id === actId)
     if (!act) throw new Error('Нет права на это действие')
     let until = null
     if (act.needsUntil) {
@@ -733,6 +734,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const homeWriters = summary?.writers30d
   const homePulse = homeMessages != null && homeWriters != null
   const homeLead = (summary?.writers || []).find((row) => row?.name && Number(row.messages) > 0)
+  const leadShare = homePulse && homeLead && Number(homeMessages) > 0
+    ? Math.round((Number(homeLead.messages) || 0) / Number(homeMessages) * 100)
+    : null
+  const homeCan = [
+    ...allowedActions.filter((item) => !String(item.id).startsWith('un')).map((item) => item.label),
+    ...(Array.isArray(summary?.wide) ? summary.wide : []).map((item) => item.label),
+  ]
   const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
 
   return (
@@ -1035,11 +1043,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
               {chatId && (
                 <div className="grp-seat">
                   <p>Вы — {roleLabel} в этой группе.</p>
-                  <p>
-                    {allowedActions.some((item) => !String(item.id).startsWith('un'))
-                      ? `Можно выдать: ${allowedActions.filter((item) => !String(item.id).startsWith('un')).map((item) => item.label.toLowerCase()).join(', ')}.`
-                      : 'Эта должность не выдаёт наказания.'}
-                  </p>
+                  {homeCan.length > 0 ? (
+                    <ul className="grp-can" aria-label="Что можно выдать">
+                      {homeCan.map((label) => <li key={label}>{label}</li>)}
+                    </ul>
+                  ) : (
+                    <p>Эта должность не выдаёт наказания.</p>
+                  )}
                 </div>
               )}
               {showPulse && (
@@ -1056,7 +1066,11 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                           <em>{writersCaption(homeWriters)}</em>
                         </span>
                       </span>
-                      {homeLead && <span className="grp-pulse-lead">Чаще всех — {homeLead.name}</span>}
+                      {homeLead && (
+                        <span className="grp-pulse-lead">
+                          Чаще всех — {homeLead.name}{leadShare != null ? `, ${leadShare}% за эти 30 дней` : ''}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <strong className="grp-pulse-miss">Счётчик за 30 дней сейчас не открылся</strong>
@@ -1270,6 +1284,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           chatId={chatId}
           userId={punishFor}
           actions={allowedActions}
+          wide={Array.isArray(summary?.wide) ? summary.wide : []}
           onAct={archiveAct}
           watch={mods?.watch || []}
           onClose={() => setPunishFor('')}
