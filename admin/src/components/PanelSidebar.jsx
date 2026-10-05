@@ -7,6 +7,7 @@ import AccentPalette from './AccentPalette'
 import { useIsPhone } from '../lib/useIsDesktop'
 import { CopyableUsername } from './Copyable'
 import { telegramDissolve } from '../lib/telegramDissolve'
+import CueSoundSwitch from './CueSoundSwitch'
 
 const DISSOLVE_MS = 700
 
@@ -79,6 +80,7 @@ function SettingsControls({
           style={{ '--vol-pct': `${Math.round(musicVolume * 100)}%` }}
           aria-label="Громкость музыки"
         />
+        <CueSoundSwitch />
       </div>
 
       {typeof onReplayCoach === 'function' && (

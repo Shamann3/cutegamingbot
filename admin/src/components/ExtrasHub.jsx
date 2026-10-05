@@ -4,6 +4,7 @@ import { NAV_ICONS } from './NavIcons'
 import AccentPalette from './AccentPalette'
 import SessionTimer from './SessionTimer'
 import OwnKeyControl from './OwnKeyControl'
+import CueSoundSwitch from './CueSoundSwitch'
 
 function FallbackIcon() {
   return (
@@ -59,6 +60,7 @@ export function PanelPocketTools({
             />
           </label>
         )}
+        <CueSoundSwitch />
         {typeof onReplayCoach === 'function' && (
           <button type="button" className="pocket-tools-row" onClick={onReplayCoach}>
             <strong>Показать обучение</strong>

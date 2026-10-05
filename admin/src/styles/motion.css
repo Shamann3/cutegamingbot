@@ -3664,10 +3664,433 @@ html[data-viewport="desktop"] .panel-shell .realm-main > section.grp-archive {
   .g-arc-live,
   .deck-note.deck-live,
   .g-arc-card.is-arrive,
-  .arc-card.is-arrive {
+  .arc-card.is-arrive,
+  .grp-home-title-text,
+  .grp-home-title::before,
+  .grp-home-title::after,
+  .nika-head.is-home-name .nika-status,
+  .week-fill {
     animation: none;
     transition: none;
   }
+}
+
+/* Название группы — по центру верха главной. На компьютере обычный заголовок вкладки спрятан. */
+.nika-head.is-home-name,
+html.is-phone .nika-head.is-home-name,
+html[data-viewport="phone"] .nika-head.is-home-name,
+html.is-desktop .grp-page.nika-page .nika-head.is-home-name,
+html[data-viewport="desktop"] .grp-page.nika-page .nika-head.is-home-name {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin: 4px 0 18px !important;
+}
+
+html.is-desktop .realm-main .nika-head.is-home-name h1.grp-home-title,
+html[data-viewport="desktop"] .realm-main .nika-head.is-home-name h1.grp-home-title,
+html.is-phone .nika-head.is-home-name h1.grp-home-title,
+html[data-viewport="phone"] .nika-head.is-home-name h1.grp-home-title {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 8px !important;
+  box-sizing: border-box !important;
+  text-align: center !important;
+  font-size: clamp(2.45rem, 10.4vw, 3.6rem) !important;
+  font-weight: 760 !important;
+  letter-spacing: -0.05em !important;
+  line-height: 0.92 !important;
+  color: #fff !important;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+html.is-desktop .realm-main .nika-head.is-home-name h1.grp-home-title,
+html[data-viewport="desktop"] .realm-main .nika-head.is-home-name h1.grp-home-title {
+  font-size: clamp(3rem, 5.4vw, 5.4rem) !important;
+}
+
+.grp-home-title.is-long,
+html.is-phone .nika-head.is-home-name h1.grp-home-title.is-long,
+html.is-desktop .realm-main .nika-head.is-home-name h1.grp-home-title.is-long,
+html[data-viewport="phone"] .nika-head.is-home-name h1.grp-home-title.is-long,
+html[data-viewport="desktop"] .realm-main .nika-head.is-home-name h1.grp-home-title.is-long {
+  font-size: clamp(1.55rem, 4.2vw, 2.8rem) !important;
+  line-height: 1.02 !important;
+}
+
+.grp-home-title {
+  position: relative;
+  isolation: isolate;
+}
+
+.grp-home-title::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: calc(100% - 6px);
+  z-index: 0;
+  width: min(220px, 56%);
+  height: 22px;
+  transform: translate(-50%, 0);
+  background: radial-gradient(closest-side, rgba(var(--e-accent-rgb, 200, 175, 255), 0.55), transparent 72%);
+  filter: blur(10px);
+  pointer-events: none;
+  animation: home-glow 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-home-title-text {
+  position: relative;
+  z-index: 1;
+  display: inline;
+  color: #fff;
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  animation: home-name-in 880ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-home-title::after {
+  content: '';
+  display: block;
+  width: min(168px, 42%);
+  height: 2px;
+  margin: 14px auto 0;
+  border-radius: 99px;
+  background: var(--e-accent, #fff);
+  box-shadow: 0 0 18px rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  transform-origin: center;
+  animation: home-sweep 900ms 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nika-head.is-home-name .nika-status,
+html.is-phone .nika-head.is-home-name .nika-status,
+html[data-viewport="phone"] .nika-head.is-home-name .nika-status {
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  text-align: center !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  animation: home-name-in 700ms 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes home-name-in {
+  from {
+    opacity: 0;
+    filter: blur(14px);
+    transform: translate3d(0, 16px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+}
+
+@keyframes home-glow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0) scaleX(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scaleX(1);
+  }
+}
+
+@keyframes home-sweep {
+  from { transform: scaleX(0); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}
+
+.week-stage {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.week-stage-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.week-stage-head .realm-h {
+  margin: 0;
+}
+
+.week-stage-total {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-stage-total b {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #fff;
+}
+
+.week-stage-total span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.75rem;
+}
+
+.week-plot {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+  margin-top: 0.35rem;
+}
+
+.week-col,
+.panel-shell .week-col {
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0;
+  padding: 4px 0 0;
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.week-col.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.1) !important;
+}
+
+.week-count {
+  min-height: 2em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  text-align: center;
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.week-col.is-on .week-count,
+.week-col.is-on .week-name {
+  color: var(--e-accent, #fff);
+}
+
+.week-track {
+  display: flex;
+  align-items: flex-end;
+  width: min(100%, 22px);
+  height: 148px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.week-fill {
+  display: block;
+  width: 100%;
+  height: calc(var(--rise, 0.08) * 100%);
+  border-radius: inherit;
+  background: #fff;
+  transform-origin: center bottom;
+  animation: week-rise 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms + 180ms);
+}
+
+.week-col.is-on .week-fill {
+  background: var(--e-accent, #fff);
+  box-shadow: 0 0 18px rgba(var(--e-accent-rgb, 200, 175, 255), 0.55);
+}
+
+.week-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.week-date {
+  margin-top: -4px;
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text-2, #8e8e93);
+}
+
+@keyframes week-rise {
+  from { transform: scaleY(0.12); }
+  to { transform: scaleY(1); }
+}
+
+html.is-desktop .week-track,
+html[data-viewport="desktop"] .week-track {
+  height: 168px;
+  width: min(100%, 28px);
+}
+
+html.is-desktop .week-count,
+html[data-viewport="desktop"] .week-count {
+  font-size: 0.82rem;
+}
+
+.panel-shell .act-bars {
+  height: 156px;
+  align-items: stretch;
+}
+
+.panel-shell .act-bars button {
+  height: 100% !important;
+  min-height: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.panel-shell .act-bars button > i {
+  width: min(100%, 18px);
+  border-radius: 999px;
+}
+
+body.perf-light .grp-home-title-text,
+body.perf-light .grp-home-title::before,
+body.perf-light .grp-home-title::after,
+body.perf-light .nika-head.is-home-name .nika-status,
+body.perf-light .week-fill {
+  animation: none;
+  filter: none;
+}
+
+/* Дополнительные звуки — сразу под громкостью музыки. Логотип не затрагивается. */
+.panel-shell .panel-cue-switch {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 2px 2px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.panel-cue-track {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.panel-cue-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transform: translateX(0);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.panel-cue-switch.is-on .panel-cue-track {
+  background: rgb(var(--e-accent-rgb, 200, 175, 255));
+  box-shadow: 0 0 0 4px rgba(var(--e-accent-rgb, 200, 175, 255), 0.16);
+}
+
+.panel-cue-switch.is-on .panel-cue-knob {
+  background: var(--e-accent-ink, #111);
+  transform: translateX(16px);
+}
+
+.panel-cue-switch:active .panel-cue-knob {
+  transform: scale(0.92);
+}
+
+.panel-cue-switch.is-on:active .panel-cue-knob {
+  transform: translateX(16px) scale(0.92);
+}
+
+.panel-cue-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.panel-cue-copy strong {
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.panel-cue-copy em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.panel-cue-switch:focus-visible {
+  outline: 2px solid rgb(var(--e-accent-rgb, 200, 175, 255));
+  outline-offset: 3px;
+}
+
+.pocket-tools .panel-cue-switch {
+  margin-top: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.pocket-tools .panel-cue-copy strong {
+  font-size: 15px;
+}
+
+.pocket-tools .panel-cue-copy em {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-cue-track,
+  .panel-cue-knob {
+    transition: none;
+  }
+}
+
+body.perf-light .panel-cue-track,
+body.perf-light .panel-cue-knob {
+  transition: none;
 }
 
 

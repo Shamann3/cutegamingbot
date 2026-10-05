@@ -48,6 +48,7 @@ import FocusWindow from '../components/FocusWindow'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
+import WeekStage from '../components/WeekStage'
 import ShiftDesk from '../components/ShiftDesk'
 import GroupGuard from '../components/GroupGuard'
 import GroupLookupPreview from '../components/GroupLookupPreview'
@@ -748,6 +749,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   }
 
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
+  const homeName = !chapter && activeTab === 'overview' && Boolean(chatId)
   const roleLabel = isCreator
     ? (current?.position || 'Создатель')
     : (current?.position || (chatId ? 'Группа' : 'Пусто'))
@@ -824,13 +826,19 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           />
         )}
         <div className="grp-page nika-page realm-main">
-          <header className="nika-head">
-            <div className="nika-head-copy">
-              <h1>{shownTabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
-            </div>
+          <header className={`nika-head${homeName ? ' is-home-name' : ''}`}>
+            {homeName ? (
+              <h1 className={`grp-home-title${title.length > 22 ? ' is-long' : ''}`}>
+                <span className="grp-home-title-text">{title}</span>
+              </h1>
+            ) : (
+              <div className="nika-head-copy">
+                <h1>{shownTabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
+              </div>
+            )}
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
               <b className={`grp-role-badge is-${roleClass}`}>{roleLabel}</b>
-              {chatId && <span>{fmt(summary?.messages30d)} за 30 дней</span>}
+              {chatId && !homeName && <span>{fmt(summary?.messages30d)} за 30 дней</span>}
             </div>
           </header>
           {error && (
@@ -1088,49 +1096,20 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               </div>
               {peakHours.some((point) => point.messages > 0) && (
                 <div className="grp-peak">
-                  <h3 className="realm-h">Сообщения за неделю</h3>
-                  <p className="realm-copy">Выше столбик — больше сообщений. Нажмите день — список откроется ниже, на этой странице.</p>
-                  <div className="act-bars" role="list" aria-label="Сообщения по дням недели">
-                    {peakHours.map((point) => {
-                      const max = Math.max(...peakHours.map((item) => item.messages), 1)
-                      const value = point.messages
-                      const h = Math.max(6, Math.round((value / max) * 100))
-                      const level = value <= 0 ? 0 : value / max < 0.25 ? 1 : value / max < 0.5 ? 2 : value / max < 0.75 ? 3 : 4
-                      const parts = String(point.date || '').split('-')
-                      const stamp = parts.length >= 3 ? `${Number(parts[2])}.${parts[1]}` : ''
-                      return (
-                        <button
-                          key={point.date}
-                          type="button"
-                          role="listitem"
-                          className={homeBoard?.slice === point.date ? 'is-on' : ''}
-                          data-level={level || undefined}
-                          title={`${stamp}: ${fmt(value)} сообщений`}
-                          aria-label={`${stamp}: ${fmt(value)} сообщений`}
-                          aria-pressed={homeBoard?.slice === point.date}
-                          onClick={() => {
-                            if (canActivity) openWriters({ period: 'week', slice: point.date })
-                            else metric.open({
-                              id: `grp-peak-${point.date}`,
-                              title: stamp || String(point.date),
-                              value: fmt(value),
-                              unit: 'сообщений',
-                              hint: 'Сообщения за этот день',
-                            })
-                          }}
-                        >
-                          <i style={{ height: `${value > 0 ? h : 6}%` }} />
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div className="grp-peak-days" aria-hidden="true">
-                    {peakHours.map((point) => {
-                      const parts = String(point.date || '').split('-')
-                      const stamp = parts.length >= 3 ? `${Number(parts[2])}.${parts[1]}` : ''
-                      return <span key={point.date}>{stamp}</span>
-                    })}
-                  </div>
+                  <WeekStage
+                    points={peakHours}
+                    active={homeBoard?.period === 'week' ? homeBoard.slice : ''}
+                    onPick={(point) => {
+                      if (canActivity) openWriters({ period: 'week', slice: point.date })
+                      else metric.open({
+                        id: `grp-peak-${point.date}`,
+                        title: String(point.date),
+                        value: fmt(point.messages),
+                        unit: 'сообщений',
+                        hint: 'Сообщения за этот день',
+                      })
+                    }}
+                  />
                 </div>
               )}
               {homeBoard && canActivity && (

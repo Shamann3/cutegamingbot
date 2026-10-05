@@ -4,6 +4,7 @@ import { vivoEpsilonLogo } from './EpsilonLogo'
 import { applyAccentToDocument, loadStoredAccent } from '../lib/accentTheme'
 import MatrixRain from './MatrixRain'
 import { waitForDashboardStats } from '../lib/dashboardPrefetch'
+import { FOG_CUE_DELAY_MS, LOGO_CUE_DELAY_MS, playEnterCue, playSealCue } from '../lib/cueSounds'
 
 /**
  * Жёсткий таймлайн на 6.0с:
@@ -159,6 +160,14 @@ export default function EntranceSeal({
       audio.load()
     }
   }, [])
+
+  useEffect(() => {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    const logoAt = reduced || lite ? 0 : LOGO_CUE_DELAY_MS
+    const timers = [window.setTimeout(playEnterCue, logoAt)]
+    if (!reduced && !lite) timers.push(window.setTimeout(playSealCue, FOG_CUE_DELAY_MS))
+    return () => timers.forEach((id) => window.clearTimeout(id))
+  }, [lite])
 
   useEffect(() => {
     const warm = new Image()

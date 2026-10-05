@@ -1763,6 +1763,7 @@ html[data-viewport="desktop"] .panel-shelf-sidebar .panel-sidebar-settings:not([
 .panel-shelf-sidebar .panel-accent-trigger,
 .panel-shelf-sidebar .panel-session-timer,
 .panel-shelf-sidebar .panel-music-card,
+.panel-shelf-sidebar .panel-cue-switch,
 .panel-shelf-sidebar .panel-perf-btn,
 .panel-shelf-sidebar .panel-logout-btn {
   width: 100%;

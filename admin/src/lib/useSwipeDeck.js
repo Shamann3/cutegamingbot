@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from 'react'
+import { armSaveCue, disarmSaveCue } from './cueSounds'
 
 const ARM_PX = 8
 
@@ -79,7 +80,9 @@ export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96
     if (decide && Math.abs(dx) >= threshold) {
       stageRef.current?.classList.remove('is-live')
       if (dragRef.current) dragRef.current.style.transition = ''
+      armSaveCue()
       if (swipeRef.current?.(dx > 0 ? 'right' : 'left')) return
+      disarmSaveCue()
     }
     paint(stageRef.current, dragRef.current, 0, threshold, false)
   }, [threshold])

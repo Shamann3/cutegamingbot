@@ -1,3 +1,5 @@
+import { noteCommittedWrite } from './cueSounds'
+
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
 
 const TOKEN_KEY = 'cf_admin_token'
@@ -256,6 +258,8 @@ async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TI
 
       }
 
+      noteCommittedWrite(method, path, false)
+
       const httpError = new Error(detail)
 
       httpError.status = response.status
@@ -265,6 +269,8 @@ async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TI
     }
 
 
+
+    noteCommittedWrite(method, path, true)
 
     return data
 
@@ -2047,7 +2053,12 @@ async function _uploadFile(path, file, text = '') {
   if (text) form.append('text', text)
   const prefix = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
   const resp = await fetch(`${prefix}${path}`, { method: 'POST', headers: _uploadHeaders(), body: form })
-  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Ошибка загрузки') }
+  if (!resp.ok) {
+    noteCommittedWrite('POST', path, false)
+    const e = await resp.json().catch(() => ({}))
+    throw new Error(e.detail || 'Ошибка загрузки')
+  }
+  noteCommittedWrite('POST', path, true)
   return resp.json()
 }
 
@@ -2060,7 +2071,12 @@ async function _uploadForm(path, method, fields) {
   }
   const prefix = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
   const resp = await fetch(`${prefix}${path}`, { method, headers: _uploadHeaders(), body: form })
-  if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Ошибка запроса') }
+  if (!resp.ok) {
+    noteCommittedWrite(method, path, false)
+    const e = await resp.json().catch(() => ({}))
+    throw new Error(e.detail || 'Ошибка запроса')
+  }
+  noteCommittedWrite(method, path, true)
   return resp.json()
 }
 

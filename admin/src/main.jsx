@@ -27,12 +27,14 @@ import './styles/motion.css'
 import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
 import { applyViewportModeToDocument } from './lib/useIsDesktop'
 import { installPanelCopyGuard } from './lib/guardPanelCopy'
+import { installCueSounds } from './lib/cueSounds'
 
 // Подсветка до первого кадра — без вспышки дефолтного цвета
 applyAccentToDocument(loadStoredAccent())
 // Phone/PC до первого paint — CSS сразу берёт правильную ветку
 applyViewportModeToDocument()
 installPanelCopyGuard()
+installCueSounds()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

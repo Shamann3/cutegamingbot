@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { noteSuccessToast } from '../lib/cueSounds'
 
 // Глобальный показ тоста: showToast('Готово') или showToast('Ошибка', 'error')
 export function showToast(message, kind = 'success') {
+  noteSuccessToast(message, kind)
   window.dispatchEvent(new CustomEvent('admin-toast', { detail: { message, kind } }))
 }
 
