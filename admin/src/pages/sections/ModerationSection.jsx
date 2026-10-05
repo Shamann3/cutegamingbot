@@ -13,6 +13,7 @@ import {
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import { payLabel, sortLabel } from '../../lib/deedSort'
 import { arrivalLine, placeLogs } from '../../lib/liveMerge'
+import { playMeme } from '../../lib/memeSounds'
 import StaffDesk from './payroll/StaffDesk'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
@@ -174,6 +175,7 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
       alert('Укажите причину разбана')
       return
     }
+    playMeme('wont')
     if (!window.confirm(`Разбанить игрока ${item.targetName || item.targetId}?`)) return
     setUnbanLoading(true)
     try {
@@ -370,6 +372,7 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
                     setUnbanLoading(true)
                     try {
                       await setAdminUserBanned(item.targetId, true, reason, '', '')
+                      playMeme('punish')
                       setUnbanDone(true)
                       onUnbanned?.(item.targetId)
                     } catch (e) {

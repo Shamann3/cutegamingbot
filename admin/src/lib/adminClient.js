@@ -502,6 +502,17 @@ export async function enterAsCreator() {
   return adminRequest('/auth/creator', { method: 'POST', body: {} })
 }
 
+export async function fetchMemeMode() {
+  return adminRequest('/meme-mode')
+}
+
+export async function saveMemeMode({ chance, excludedIds }) {
+  return adminRequest('/meme-mode', {
+    method: 'PUT',
+    body: { chance, excludedIds },
+  })
+}
+
 
 
 export async function fetchAdminMe() {

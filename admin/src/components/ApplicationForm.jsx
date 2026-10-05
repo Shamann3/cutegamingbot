@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminSelect from './AdminSelect'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../config/applicationQuestions'
 import { fetchApplicationQuestions } from '../lib/adminClient'
+import { playMeme } from '../lib/memeSounds'
 
 // Нормализует вопрос из БД (поле key) или статического списка (поле id) к единому виду
 function normalizeQuestion(q) {
@@ -21,6 +22,10 @@ function deduplicateById(list) {
 export default function ApplicationForm({ onSubmit, loading, error, info }) {
   const [answers, setAnswers] = useState({})
   const [questions, setQuestions] = useState(() => deduplicateById(APPLICATION_QUESTIONS.map(normalizeQuestion)))
+
+  useEffect(() => {
+    playMeme('useful')
+  }, [])
 
   useEffect(() => {
     let cancelled = false

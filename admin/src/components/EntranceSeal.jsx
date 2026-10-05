@@ -4,7 +4,7 @@ import { vivoEpsilonLogo } from './EpsilonLogo'
 import { applyAccentToDocument, loadStoredAccent } from '../lib/accentTheme'
 import MatrixRain from './MatrixRain'
 import { waitForDashboardStats } from '../lib/dashboardPrefetch'
-import { FOG_CUE_DELAY_MS, LOGO_CUE_DELAY_MS, playEnterCue, playSealCue } from '../lib/cueSounds'
+import { playMeme, prepareMemeVisit } from '../lib/memeSounds'
 
 /**
  * Жёсткий таймлайн на 6.0с:
@@ -142,32 +142,19 @@ export default function EntranceSeal({
   }
 
   useEffect(() => {
-    if (typeof Audio !== 'function') return undefined
-    const audio = new Audio(`${import.meta.env.BASE_URL}track.wav`)
-    audio.preload = 'auto'
-    audio.loop = false
-    let level = 0.7
-    try {
-      const stored = localStorage.getItem('cf_admin_music_volume')
-      if (stored !== null) level = Math.max(0, Math.min(1, Number(stored)))
-    } catch { /* ignore */ }
-    audio.volume = level > 0 ? level * level : 0.49
-    const played = audio.play()
-    if (played && typeof played.catch === 'function') played.catch(() => {})
-    return () => {
-      audio.pause()
-      audio.removeAttribute('src')
-      audio.load()
-    }
-  }, [])
-
-  useEffect(() => {
+    let stop = false
+    prepareMemeVisit()
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-    const logoAt = reduced || lite ? 0 : LOGO_CUE_DELAY_MS
-    const timers = [window.setTimeout(playEnterCue, logoAt)]
-    if (!reduced && !lite) timers.push(window.setTimeout(playSealCue, FOG_CUE_DELAY_MS))
-    return () => timers.forEach((id) => window.clearTimeout(id))
-  }, [lite])
+    const logoAt = reduced || lite ? 80 : 1100
+    const matrixAt = variant === 'boot' || variant === 'login' ? 0 : -1
+    const timers = []
+    if (matrixAt >= 0) timers.push(window.setTimeout(() => { if (!stop) playMeme('matrix') }, matrixAt))
+    timers.push(window.setTimeout(() => { if (!stop) playMeme('logo') }, logoAt))
+    return () => {
+      stop = true
+      timers.forEach((id) => window.clearTimeout(id))
+    }
+  }, [lite, variant])
 
   useEffect(() => {
     const warm = new Image()

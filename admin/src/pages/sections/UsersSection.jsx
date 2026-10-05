@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AdminActionModal from '../../components/AdminActionModal'
+import { playMeme } from '../../lib/memeSounds'
 import { MetricTile } from '../../components/MetricSheet'
 import {
   adjustAdminUserBalance,
@@ -1800,9 +1801,10 @@ export default function UsersSection({
             return
           }
           setPendingAction(null)
-          runAction(() =>
-            setAdminUserBanned(profile.userId, true, banReason, banEvidence, banPhotoIds[0] || ''),
-          ).then(() => { setBanReason(''); setBanEvidence(''); setBanPhotoIds([]) })
+          runAction(async () => {
+            await setAdminUserBanned(profile.userId, true, banReason, banEvidence, banPhotoIds[0] || '')
+            playMeme('punish')
+          }).then(() => { setBanReason(''); setBanEvidence(''); setBanPhotoIds([]) })
         }}
         onCancel={() => {
           if (!actionLoading) setPendingAction(null)

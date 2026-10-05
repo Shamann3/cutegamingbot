@@ -21,6 +21,7 @@ export default function CueSoundSwitch() {
   }
 
   return (
+    <>
     <button
       type="button"
       className={`panel-cue-switch${enabled ? ' is-on' : ''}`}
@@ -36,5 +37,7 @@ export default function CueSoundSwitch() {
         <em>{enabled ? 'Включены' : 'Выключены'}</em>
       </span>
     </button>
+    <p className="panel-cue-foot">Выключение дополнительных звуков выключает и мемы.</p>
+    </>
   )
 }

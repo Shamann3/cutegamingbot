@@ -372,6 +372,10 @@ ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS starter_axe INT;
 -- Admin session timeout override
 ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS admin_session_minutes INT;
 
+-- Мемный режим: шанс при входе и идентификаторы, которым он никогда не включается.
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS meme_chance SMALLINT NOT NULL DEFAULT 10;
+ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS meme_excluded TEXT NOT NULL DEFAULT '';
+
 -- История изменений настроек
 CREATE TABLE IF NOT EXISTS settings_history (
     id BIGSERIAL PRIMARY KEY,

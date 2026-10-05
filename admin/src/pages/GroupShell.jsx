@@ -59,6 +59,7 @@ import { useGlobalKeys } from '../lib/useGlobalKeys'
 import { useIsPhone, useViewportMode } from '../lib/useIsDesktop'
 import { useTabScroll } from '../lib/useTabScroll'
 import { useMusicMode } from '../lib/musicMode'
+import { playMeme, stopMeme } from '../lib/memeSounds'
 import { usePerfMode } from '../lib/perfMode'
 import AccessKeySheet from '../components/AccessKeySheet'
 import OwnKeyControl from '../components/OwnKeyControl'
@@ -134,6 +135,15 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
+
+  useEffect(() => {
+    if (preview) return
+    if (coach) {
+      stopMeme()
+      return
+    }
+    playMeme('entered')
+  }, [preview, coach])
   const [lesson, setLesson] = useState(false)
   const [coachRun, setCoachRun] = useState(0)
   const replayCoach = useCallback(() => {
@@ -199,6 +209,15 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const writersRef = useRef(null)
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
+  const heardTab = useRef(activeTab)
+  useEffect(() => {
+    const prev = heardTab.current
+    heardTab.current = activeTab
+    if (preview || coach) return
+    if (prev === activeTab) return
+    if (activeTab === 'more') playMeme('more')
+    if (activeTab === 'activity') playMeme('wake')
+  }, [activeTab, preview, coach])
   const mainRef = useRef(null)
   useTabScroll(mainRef, activeTab)
   const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
@@ -739,6 +758,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         until_sec: until,
       })
       setNotice(data?.receipt || 'Записано в архив официальной группы')
+      if (!String(act.id).startsWith('un')) playMeme('punish')
       await loadSummary(chatId, { quiet: true })
     } catch (err) {
       setError(err.message || 'Действие не прошло')
@@ -749,6 +769,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   }
 
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
+  const weekTotal = peakHours.reduce((sum, point) => sum + (Number(point.messages) || 0), 0)
+  const monthTotal = Number(summary?.messages30d)
+  const weekShare = Number.isFinite(monthTotal) && monthTotal > 0 && weekTotal > 0 && weekTotal <= monthTotal
+    ? Math.round((weekTotal / monthTotal) * 100)
+    : null
   const homeName = !chapter && activeTab === 'overview' && Boolean(chatId)
   const roleLabel = isCreator
     ? (current?.position || 'Создатель')
@@ -1096,6 +1121,10 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               </div>
               {peakHours.some((point) => point.messages > 0) && (
                 <div className="grp-peak">
+                  <p className="week-peak">
+                    За 7 дней — {fmt(weekTotal)}
+                    {weekShare != null ? `. Это ${weekShare}% от сообщений за 30 дней.` : '.'}
+                  </p>
                   <WeekStage
                     points={peakHours}
                     active={homeBoard?.period === 'week' ? homeBoard.slice : ''}
@@ -1126,6 +1155,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                     canArchive={tabs.some((item) => item.id === 'archive')}
                     seedPeriod={homeBoard.period}
                     seedSlice={homeBoard.slice}
+                    peopleOnly
                     onOpenArchive={openPunish}
                   />
                 </div>
@@ -1160,7 +1190,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'activity' && (
             <section className="grp-activity">
-              <p className="realm-copy">Нажмите столбик — один день. Нажмите имя — карточка человека. Наказания открываются из карточки и не уводят на другую вкладку.</p>
+              <p className="realm-copy">Здесь не снимок с главной. Выберите срок: живой день, тихий день и кто написал больше всех. Имя открывает карточку на этой же странице.</p>
               <ActivityBoard
                 chatId={chatId}
                 repeats={repeats}

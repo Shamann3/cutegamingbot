@@ -7,6 +7,7 @@ import {
 } from '../../lib/adminClient'
 import { notifyAdmin } from '../../lib/notify'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
+import MemeSettings from '../../components/MemeSettings'
 
 // Экономика, ферма и семена редактируются в EconomySection / FarmSection.
 // Лейблы ниже — для вкладки «История».
@@ -410,6 +411,7 @@ export default function SystemSection({ panelTabs = null, isProjectCreator = fal
             onToggleMaintenance={handleMaintenanceToggle}
             saving={maintenanceSaving}
           />
+          <MemeSettings />
         </div>
       )}
 

@@ -102,6 +102,7 @@ export default function ActivityBoard({
   watch = [],
   seedPeriod = '',
   seedSlice = '',
+  peopleOnly = false,
 }) {
   const [person, setPerson] = useState(null)
   const [period, setPeriod] = useState(seedPeriod || 'month')
@@ -148,9 +149,21 @@ export default function ActivityBoard({
     value: Number(point.messages) || 0,
   }))
   const useBars = grain === 'day' && chartPoints.length > 0 && chartPoints.length <= 40
+  const people = report?.people || []
+  const spoken = Number(slice ? report?.messages : report?.periodMessages) || 0
+  const peak = chartPoints.reduce((best, point) => (point.value > (best?.value || 0) ? point : best), null)
+  const quiet = chartPoints.reduce((best, point) => (best == null || point.value < best.value ? point : best), null)
+  const lead = people[0] || null
+  const leadShare = spoken > 0 && lead
+    ? Math.round((Number(lead.messages) || 0) / spoken * 100)
+    : 0
+  const topShare = spoken > 0
+    ? Math.round(people.slice(0, 3).reduce((sum, row) => sum + (Number(row.messages) || 0), 0) / spoken * 100)
+    : 0
 
   return (
-    <section className="act-board">
+    <section className={`act-board${peopleOnly ? ' is-people' : ''}`}>
+      {!peopleOnly && (
       <div className="realm-actions" role="tablist" aria-label="За какой срок показать сообщения">
         {PERIODS.map((item) => (
           <button
@@ -163,6 +176,7 @@ export default function ActivityBoard({
           </button>
         ))}
       </div>
+      )}
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {loading && <p className="realm-copy">Считаем сообщения…</p>}
       {report && report.available === false && (
@@ -170,6 +184,19 @@ export default function ActivityBoard({
       )}
       {report && report.available !== false && (
         <>
+          {!peopleOnly && peak?.value > 0 && (
+            <p className="act-insight">
+              <span>Самый живой день — {peak.label}, {fmt(peak.value)}.</span>
+              {quiet && quiet.date !== peak.date && (
+                <span>Тише всего — {quiet.label}, {fmt(quiet.value)}.</span>
+              )}
+              {lead && (
+                <span>Больше всех — {lead.name}, {fmt(lead.messages)}{spoken > 0 ? `, ${leadShare}%` : ''}.</span>
+              )}
+              {people.length >= 3 && <span>Трое первых написали {topShare}% сообщений.</span>}
+            </p>
+          )}
+          {!peopleOnly && (
           <div className="act-bento">
             <button type="button" className={slice ? '' : 'is-on'} onClick={() => setSlice('')}>
               <strong>{fmt(slice ? report.messages : report.periodMessages)}</strong>
@@ -180,12 +207,15 @@ export default function ActivityBoard({
               <span>{slice ? 'писали в этот день' : 'писали за этот срок'}</span>
             </p>
           </div>
+          )}
+          {!peopleOnly && (
           <p className="realm-copy">
             {slice
               ? `${longLabel(focus, grain)}. Нажмите левую цифру, чтобы снова показать весь срок.`
               : `Прошлый такой же срок: ${fmt(report.previousMessages)} сообщений. Нажмите столбик — увидите один день.`}
           </p>
-          {useBars ? (
+          )}
+          {!peopleOnly && (useBars ? (
             <DayBars
               points={chartPoints}
               selected={slice}
@@ -198,9 +228,10 @@ export default function ActivityBoard({
               onPick={(date) => setSlice(slice === date ? '' : date)}
               points={chartPoints}
             />
-          )}
-          <h3 className="realm-h">Кто пишет</h3>
-          <p className="realm-copy">Число справа — сообщения. Нажмите имя: откроется, сколько человек пишет и были ли наказания.</p>
+          ))}
+          {!peopleOnly && <h3 className="realm-h">Кто пишет</h3>}
+          {!peopleOnly && <p className="realm-copy">Число справа — сообщения. Нажмите имя: откроется, сколько человек пишет и были ли наказания.</p>}
+          {peopleOnly && <p className="realm-copy">Число справа — сообщения за выбранный день. Нажмите имя, чтобы открыть карточку.</p>}
           {(report.people || []).length === 0 && <p className="realm-copy">За этот срок никто не писал.</p>}
           <ul className="act-people">
             {(report.people || []).map((personRow, index) => {

@@ -3,6 +3,7 @@ import { fetchGroupOpen, submitGroupApplication } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import ChoiceSheet from '../components/ChoiceSheet'
 import EntryFrame from '../components/EntryFrame'
+import { playMeme } from '../lib/memeSounds'
 
 const RULES_CHANNEL = 'https://t.me/CuteRules'
 
@@ -80,6 +81,12 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const [mine, setMine] = useState([])
   const [chatId, setChatId] = useState(null)
   const [positionId, setPositionId] = useState(null)
+  const usefulHeard = useRef(false)
+  useEffect(() => {
+    if (!positionId || usefulHeard.current) return
+    usefulHeard.current = true
+    playMeme('useful')
+  }, [positionId])
   const [body, setBody] = useState('')
   const nextRef = useRef(null)
   const resultRef = useRef(null)

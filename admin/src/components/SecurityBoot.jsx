@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import MatrixRain from './MatrixRain'
 import { waitForDashboardStats } from '../lib/dashboardPrefetch'
 import { bootIsComplete, bootProgressFrame } from '../lib/bootProgress'
+import { playMeme } from '../lib/memeSounds'
 
 /** Дольше этого экран статистику не ждёт — панель сама доберёт её поллингом. */
 export const STATS_WAIT_CAP_MS = 6000
@@ -130,6 +131,10 @@ export default function SecurityBoot({
   const onDoneRef = useRef(onDone)
   const fired = useRef(false)
   onDoneRef.current = onDone
+
+  useEffect(() => {
+    playMeme('matrix')
+  }, [])
 
   const finish = () => {
     if (fired.current) return

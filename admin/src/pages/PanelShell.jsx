@@ -53,6 +53,7 @@ import AccentAura from '../components/AccentAura'
 import { MetricSheetProvider } from '../components/MetricSheet'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
+import { playMeme, stopMeme } from '../lib/memeSounds'
 import { useGlobalKeys } from '../lib/useGlobalKeys'
 import {
   applyAccentToDocument,
@@ -125,6 +126,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [workCount, setWorkCount] = useState(0)
   const [coachRun, setCoachRun] = useState(0)
   const [preview, setPreview] = useState(null)
+  useEffect(() => {
+    if (preview) return
+    if (coach) {
+      stopMeme()
+      return
+    }
+    playMeme('entered')
+  }, [preview, coach])
   const onCoachStep = useCallback((step) => {
     if (step?.openSection) setSection(step.openSection)
     if (phone) return
@@ -429,6 +438,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isLogs = section === 'logs'
   const isAnalytics = section === 'analytics'
   const isSettings = section === 'settings'
+  const heardSection = useRef(section)
+  useEffect(() => {
+    const prev = heardSection.current
+    heardSection.current = section
+    if (preview || coach) return
+    if (prev === section) return
+    if (section === 'more') playMeme('more')
+    if (section === 'analytics') playMeme('wake')
+  }, [section, preview, coach])
   const isEvents = section === 'events'
   const isSecurity = section === 'security'
   const isStaff = section === 'staff'
@@ -728,7 +746,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isAnalytics && <AnalyticsSection panelTabs={tabsForView} />}
-          {isSettings && <SystemSection panelTabs={tabsForView} />}
+          {isSettings && <SystemSection panelTabs={tabsForView} isProjectCreator={showCreator} />}
           {isEvents && <EventsSection panelTabs={tabsForView} />}
           {isSecurity && <SecuritySection panelTabs={tabsForView} />}
           {isStaff && (

@@ -13,6 +13,7 @@ import GroupApplyPage from './pages/GroupApplyPage'
 import GroupShell from './pages/GroupShell'
 import GroupKeyPage from './pages/GroupKeyPage'
 import GroupResume from './pages/GroupResume'
+import { prepareMemeVisit } from './lib/memeSounds'
 
 const SPLASH_SEEN_KEY = 'epsilon_boot_splash_seen'
 
@@ -41,6 +42,7 @@ export default function App() {
   const channelNext = useRef('gate')
 
   useEffect(() => {
+    prepareMemeVisit()
     initAdminTelegram()
     setDisplayName(getAdminDisplayName())
     if (!(isAdminSessionValid() || hasTelegramInitData())) {

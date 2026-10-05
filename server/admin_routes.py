@@ -12,6 +12,7 @@ from admin_auth import (
     generate_totp_secret,
     get_admin_user_id,
     get_any_telegram_user_id,
+    get_signed_in_user_id,
     reject_if_plain_user,
     issue_admin_token,
     require_admin_session,
@@ -1368,6 +1369,28 @@ async def admin_login(
         "sessionMinutes": get_admin_session_minutes_cached(),
         "authenticated": True,
     }
+
+
+class MemeModeBody(BaseModel):
+    chance: int = Field(default=10, ge=0, le=100)
+    excludedIds: list[int] = Field(default_factory=list)
+
+
+@router.get("/meme-mode")
+async def meme_mode_read(user_id: int = Depends(get_signed_in_user_id)):
+    from meme_mode import meme_state
+
+    return await meme_state(int(user_id))
+
+
+@router.put("/meme-mode")
+async def meme_mode_save(body: MemeModeBody, user_id: int = Depends(get_signed_in_user_id)):
+    from meme_mode import save_meme_state
+
+    saved = await save_meme_state(int(user_id), body.chance, body.excludedIds)
+    if saved is None:
+        raise HTTPException(status_code=403, detail="Это может менять только создатель проекта")
+    return saved
 
 
 @router.post("/auth/creator")

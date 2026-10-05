@@ -15,6 +15,7 @@ import {
   undoDeed,
 } from '../../../lib/adminClient'
 import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
+import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, { DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
@@ -426,6 +427,7 @@ export function CreatorSelf() {
   const choose = useCallback((choice) => {
     const id = card?.id
     if (!id || busy || fly || !choice) return false
+    playVerdictMeme(choice.id)
     run(id, choice)
     return true
   }, [card, busy, fly, run])

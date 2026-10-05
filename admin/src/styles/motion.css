@@ -3917,6 +3917,15 @@ html[data-viewport="phone"] .nika-head.is-home-name .nika-status {
   animation-delay: calc(var(--i, 0) * 55ms + 180ms);
 }
 
+.week-col.is-peak:not(.is-on) .week-fill {
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
+}
+
+.week-col.is-peak:not(.is-on) .week-name,
+.week-col.is-peak:not(.is-on) .week-count {
+  color: #fff;
+}
+
 .week-col.is-on .week-fill {
   background: var(--e-accent, #fff);
   box-shadow: 0 0 18px rgba(var(--e-accent-rgb, 200, 175, 255), 0.55);
@@ -4063,6 +4072,95 @@ body.perf-light .week-fill {
 .panel-cue-switch:focus-visible {
   outline: 2px solid rgb(var(--e-accent-rgb, 200, 175, 255));
   outline-offset: 3px;
+}
+
+.panel-cue-foot {
+  margin: 6px 2px 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.week-peak,
+.act-insight {
+  margin: 0 0 10px;
+  color: #fff;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.act-insight {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--e-plate, rgba(14, 14, 16, 0.72));
+  animation: arc-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.act-insight span {
+  display: block;
+}
+
+.act-insight span + span {
+  margin-top: 4px;
+}
+
+.meme-settings-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meme-settings-head h3 {
+  margin: 0;
+}
+
+.meme-settings-head strong {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.meme-chance,
+.meme-ids {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.meme-chance input[type="range"] {
+  width: 100%;
+  accent-color: rgb(var(--e-accent-rgb, 200, 175, 255));
+}
+
+.meme-ids textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88px;
+  resize: vertical;
+}
+
+.meme-id-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meme-id-list li {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+  animation: arc-rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.meme-settings .sec-btn {
+  margin-top: 8px;
 }
 
 .pocket-tools .panel-cue-switch {

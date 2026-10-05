@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import CountUp from '../../../components/CountUp'
 import { fetchStaffWork, isPanelPreviewMode, sortStaffDeed, unsortStaffDeed } from '../../../lib/adminClient'
 import { VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
+import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, { DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
 
@@ -93,6 +94,7 @@ export default function StaffDesk({ onCount }) {
     const id = card?.id
     if (!id || busy || fly) return false
     if (!lift && !choice) return false
+    if (!lift) playVerdictMeme(choice.id)
     run(id, choice, lift)
     return true
   }, [card, busy, fly, run])

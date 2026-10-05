@@ -7,6 +7,7 @@ import AccentPalette from '../components/AccentPalette'
 import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { usePerfMode } from '../lib/perfMode'
+import { playMeme } from '../lib/memeSounds'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
 const GUEST_PORTRAIT = portraitFrom(null)
@@ -55,6 +56,10 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const sparse = lightMode && !still
   const requestId = useRef(0)
   const flight = useRef(Promise.resolve(GUEST_PORTRAIT))
+
+  useEffect(() => {
+    playMeme('gate')
+  }, [])
   const paletteRef = useRef(null)
 
   const load = useCallback(() => {
