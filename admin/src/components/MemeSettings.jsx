@@ -69,11 +69,12 @@ export default function MemeSettings() {
       </label>
       <label className="meme-ids">
         <span>Никогда не включать этим людям</span>
+        <p className="meme-id-example">Пример: 123456789, 987654321. Каждый с новой строки или через запятую.</p>
         <textarea
           value={rawIds}
           disabled={!ready || saving}
           rows={4}
-          placeholder="Идентификатор, каждый с новой строки"
+          placeholder={'123456789\n987654321'}
           onChange={(event) => setRawIds(event.target.value)}
           aria-label="Идентификаторы без мемов"
         />

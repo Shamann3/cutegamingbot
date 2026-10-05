@@ -4135,6 +4135,14 @@ body.perf-light .week-fill {
   accent-color: rgb(var(--e-accent-rgb, 200, 175, 255));
 }
 
+.meme-id-example {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
 .meme-ids textarea {
   width: 100%;
   box-sizing: border-box;

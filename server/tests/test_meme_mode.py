@@ -17,7 +17,12 @@ def test_excluded_ids_are_unique_positive_numbers():
 
 
 def test_only_the_project_creator_may_change_the_chance():
-    source = (Path(__file__).resolve().parents[1] / "admin_routes.py").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "admin_routes.py").read_text(encoding="utf-8")
+    meme = (root / "meme_mode.py").read_text(encoding="utf-8")
+    lines = [line.strip() for line in meme.splitlines()]
     assert "meme_mode_save" in source
     assert "Это может менять только создатель проекта" in source
+    assert "from db import db" in lines
+    assert "import db" not in lines
     assert creator_only(0) is False

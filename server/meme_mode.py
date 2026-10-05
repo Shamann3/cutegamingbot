@@ -44,7 +44,7 @@ def creator_only(user_id):
 
 
 async def read_meme_row():
-    import db
+    from db import db
 
     try:
         return await db.pool.fetchrow(
@@ -70,8 +70,10 @@ async def meme_state(user_id):
 async def save_meme_state(user_id, chance, excluded_ids):
     if not creator_only(user_id):
         return None
-    import db
+    from db import db
+    from system_settings import ensure_system_settings_row
 
+    await ensure_system_settings_row()
     clean_chance = clamp_chance(chance)
     clean_ids = dump_excluded(excluded_ids)
     await db.pool.execute(
