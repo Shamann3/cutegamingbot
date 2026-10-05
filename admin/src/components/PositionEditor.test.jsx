@@ -173,10 +173,30 @@ describe('PositionEditor', () => {
     open('Спам-блок')
     const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
     expect(sw('Работа').disabled).toBe(false)
-    expect(sw('Мут').disabled).toBe(true)
+    expect(sw('Мут').disabled).toBe(false)
+    expect(sw('Удалять сообщения').disabled).toBe(false)
+    expect(sw('Банфулл').disabled).toBe(false)
+    fireEvent.click(sw('Мут'))
+    fireEvent.click(sw('Банфулл'))
     fireEvent.click(sw('Работа'))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
-    expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'pay'])
+    expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'activity', 'pay'])
+    expect(onSave.mock.calls[0][0].rights).toEqual(expect.arrayContaining(['punish_mute', 'banfull']))
+  })
+
+  it('keeps the group creator rights locked and the project rights open', () => {
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        chatId={-100}
+        onSave={vi.fn()}
+      />,
+    )
+    open('Создатель')
+    const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
+    expect(sw('Мут').disabled).toBe(true)
+    expect(sw('Банфулл').disabled).toBe(false)
   })
 
   it('lifts a rank-1 administrator when the order is written', async () => {

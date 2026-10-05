@@ -1520,8 +1520,8 @@ function positionPrefix(position) {
 }
 
 function positionHint(position) {
-  if (position.kind === 'spamblock') return 'без прав, нужен срок'
-  if (position.kind === 'member' || Number(position.rank) <= 0) return 'ранг 0, как участник'
+  if (position.kind === 'spamblock') return 'ранг 0, нужен срок'
+  if (position.kind === 'member' || Number(position.rank) <= 0) return 'ранг 0'
   return `ранг ${position.rank}`
 }
 

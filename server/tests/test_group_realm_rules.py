@@ -50,6 +50,8 @@ def test_lower_role_cannot_ban():
 def test_punish_only_junior_rank():
     assert may_punish_rank(3, 1, same_person=False) is None
     assert may_punish_rank(1, 0, same_person=False) is None
+    assert may_punish_rank(0, -1, same_person=False) is None
+    assert may_punish_rank(0, 0, same_person=False)
     assert may_punish_rank(3, 3, same_person=False)
     assert may_punish_rank(2, 5, same_person=False)
     assert may_punish_rank(5, 1, same_person=True)
@@ -72,26 +74,55 @@ def test_position_edit_stays_below_actor():
     assert "manage_positions" in editable_rights(2, ["manage_positions", "punish_warn"], creator=True)
 
 
-def test_rank_zero_and_spamblock_carry_no_punishments():
+def test_rank_zero_keeps_every_requested_right():
     from group_realm import (
         KIND_MEMBER,
         KIND_SPAMBLOCK,
         MEMBER_RIGHTS,
         _promote_body,
+        assigned_rights,
+        initial_rights,
         rights_for_kind,
+        send_permissions,
         stored_rank,
         term_bounds,
     )
 
-    assert rights_for_kind(KIND_SPAMBLOCK, 3, ["punish_ban", "can_restrict_members"], creator=True) == []
+    kept = rights_for_kind(
+        KIND_SPAMBLOCK,
+        0,
+        ["punish_ban", "can_restrict_members", "banfull"],
+        creator=True,
+    )
+    assert kept == ["punish_ban", "can_restrict_members", "banfull"]
     assert stored_rank(KIND_SPAMBLOCK, 3) == 0
     assert stored_rank(KIND_MEMBER, 2) == 0
-    member = rights_for_kind(KIND_MEMBER, 0, [], creator=True)
-    assert member == list(MEMBER_RIGHTS)
-    assert "punish_ban" not in member
-    rank0 = rights_for_kind("post", 0, ["punish_ban", "view_members"], creator=True)
-    assert "punish_ban" not in rank0
-    assert "can_send_messages" in rank0
+    fresh = initial_rights(KIND_MEMBER, 0, ["view_members"])
+    assert fresh[:len(MEMBER_RIGHTS)] == list(MEMBER_RIGHTS)
+    assert "view_members" in fresh
+    assert "punish_ban" not in fresh
+    rank0 = rights_for_kind(
+        "post",
+        0,
+        ["punish_ban", "view_members", "can_delete_messages", "banfull"],
+        creator=True,
+    )
+    assert rank0 == ["punish_ban", "view_members", "can_delete_messages", "banfull"]
+    assert "banfull" not in rights_for_kind("post", 0, ["punish_ban"], creator=True)
+    junior = assigned_rights(
+        "post",
+        0,
+        ["punish_warn", "banfull", "muteall"],
+        creator=False,
+        stored=["banfull", "manage_positions"],
+    )
+    assert "banfull" in junior
+    assert "manage_positions" in junior
+    assert "muteall" not in junior
+    assert "punish_warn" in junior
+    opened = send_permissions(None)
+    assert opened["can_send_messages"] is True
+    assert send_permissions(["can_send_messages"])["can_send_photos"] is False
     start, end, err = term_bounds("2026-09-01", "2026-09-30")
     assert err is None and start < end
     _start, _end, missing = term_bounds("", "")

@@ -90,6 +90,10 @@ WIDE_ISSUE = (
 )
 
 
+WIDE_RIGHT_IDS = tuple(item[0] for item in WIDE_ISSUE)
+WIDE_RIGHT_SET = frozenset(WIDE_RIGHT_IDS)
+
+
 def wide_issue_catalog() -> list[dict]:
     return [
         {"id": key, "label": label, "hint": hint, "needsUntil": needs}
@@ -106,15 +110,25 @@ def wide_actions_for(perms, *, creator: bool = False) -> list[dict]:
 
 
 async def wide_issue_for(user_id: int) -> list[dict]:
+    """Проектные наказания: столбец сотрудника или то же право на должности в группе.
+
+    Бан в одном чате сюда не входит. Создатель проекта видит весь список.
+    """
     from admin_soft_restart import is_project_creator
 
     if is_project_creator(int(user_id)):
         return wide_issue_catalog()
+    granted: set[str] = set()
     try:
         from staff_panel_rights import actor_staff_perms
-        granted = await actor_staff_perms(int(user_id))
+        granted.update(await actor_staff_perms(int(user_id)))
     except Exception:
-        return []
+        pass
+    try:
+        for group in await seats_for(int(user_id)):
+            granted.update(str(item) for item in (group.get("rights") or []))
+    except Exception:
+        pass
     return wide_actions_for(granted, creator=False)
 
 PRESETS: tuple[tuple[str, int, tuple[str, ...], bool], ...] = (
@@ -319,25 +333,55 @@ def may_edit_position(actor_rank: int, position_rank: int, *, creator: bool) -> 
 
 
 def editable_rights(rank: int, requested: list[str] | set[str], *, creator: bool) -> list[str]:
-    """Должность создателя группы всегда держит полный набор прав."""
+    """Ранг не вырезает права. Создатель группы держит полный набор прав группы.
+
+    Права на весь проект не входят в этот набор сами: они остаются только если их отметили.
+    Чужой человек не может выдать право менять должности.
+    """
+    wanted = _rights(requested)
+    wide = [item for item in WIDE_RIGHT_IDS if item in set(wanted)]
     if int(rank) >= 5:
-        return list(ALL_RIGHTS)
-    clean = _rights(requested)
-    if not creator:
-        clean = [item for item in clean if item != "manage_positions"]
-    return clean
+        group = list(ALL_RIGHTS)
+    else:
+        group = [item for item in wanted if item not in WIDE_RIGHT_SET]
+        if not creator:
+            group = [item for item in group if item != "manage_positions"]
+    return group + wide
 
 
 def rights_for_kind(kind: str, rank: int, requested: list[str] | set[str], *, creator: bool) -> list[str]:
-    """Спам-блок — пустой набор. Ранг 0 и обычный пользователь — только отправка."""
-    name = kind if kind in KINDS else KIND_POST
-    if name == KIND_SPAMBLOCK:
-        return []
-    if name == KIND_MEMBER or int(rank) <= 0:
-        wanted = set(_rights(requested))
-        chosen = [item for item in MEMBER_RIGHTS if item in wanted]
-        return chosen or list(MEMBER_RIGHTS)
+    """Любая должность, включая ранг 0, хранит ровно отмеченные права."""
+    if kind not in KINDS:
+        rank = int(rank)
     return editable_rights(int(rank), requested, creator=creator)
+
+
+def initial_rights(kind: str, rank: int, requested: list[str]) -> list[str]:
+    """Новый обычный пользователь сразу может писать. Остальное включается в карточке."""
+    base = [str(item) for item in requested]
+    if kind == KIND_MEMBER:
+        base = list(dict.fromkeys([*MEMBER_RIGHTS, *base]))
+    return rights_for_kind(kind, rank, base, creator=True)
+
+
+def assigned_rights(
+    kind: str,
+    rank: int,
+    requested: list[str] | set[str],
+    *,
+    creator: bool,
+    stored: list[str] | None = None,
+) -> list[str]:
+    """Проектные права меняет только создатель проекта. Остальные при правке их не трогают."""
+    rights = rights_for_kind(kind, rank, requested, creator=creator)
+    if creator or stored is None:
+        return rights
+    stored_set = set(_rights(stored))
+    group = [item for item in rights if item not in WIDE_RIGHT_SET]
+    if "manage_positions" in stored_set and "manage_positions" not in group:
+        group.append("manage_positions")
+    kept = [item for item in WIDE_RIGHT_IDS if item in stored_set]
+    return group + kept
 
 
 # Создатель группы — ранг 5 и выше. Должности администраторов живут на 1–4:
@@ -424,7 +468,7 @@ def chat_title(kind: str, title: str, stored: str, requested: str) -> tuple[str,
 def may_punish_rank(actor_rank: int, target_rank: int, *, same_person: bool) -> str | None:
     """Наказать можно только того, кто строго младше в этой группе.
 
-    Нет должности — ранг 0, такой человек младше любого администратора.
+    Нет должности — ниже даже ранга 0. Две должности ранга 0 равны.
     Равный и старший не проходят. Себя наказать нельзя.
     """
     if same_person:
@@ -645,6 +689,83 @@ async def sweep_expired_spamblocks() -> int:
     return removed
 
 
+def send_permissions(rights: list[str] | None) -> dict[str, bool]:
+    """Что обычный участник может отправлять. None — снова можно всё из этого списка."""
+    granted = set(MEMBER_RIGHTS if rights is None else rights)
+    return {flag: flag in granted for flag in MEMBER_RIGHTS}
+
+
+def _has_admin_flag(rights: list[str] | None) -> bool:
+    granted = set(rights or [])
+    return any(flag in granted for flag in _TG_ADMIN_FLAGS)
+
+
+async def _apply_send_limits(chat_id: int, user_id: int, rights: list[str] | None) -> str:
+    ok, err, _data = await _telegram_call(
+        "restrictChatMember",
+        {
+            "chat_id": int(chat_id),
+            "user_id": int(user_id),
+            "permissions": send_permissions(rights),
+        },
+    )
+    if not ok:
+        return f"Ограничения отправки в чате не встали: {err}"
+    if rights is None or set(MEMBER_RIGHTS).issubset(set(rights)):
+        return "В чате можно отправлять сообщения."
+    return "В чате обновлено, что можно отправлять."
+
+
+async def _sync_chat_rights(
+    chat_id: int,
+    user_id: int,
+    title: str,
+    rights: list[str] | None,
+    *,
+    kind: str,
+) -> str:
+    """Админские флаги ставят должность в Telegram. Без них обычный пользователь остаётся участником."""
+    if rights is None:
+        return await _apply_chat_title(int(chat_id), int(user_id), "", rights=None)
+    if kind == KIND_MEMBER and not _has_admin_flag(rights):
+        await _telegram_call(
+            "promoteChatMember",
+            _promote_body(int(chat_id), int(user_id), None),
+        )
+        return await _apply_send_limits(int(chat_id), int(user_id), rights)
+    return await _apply_chat_title(int(chat_id), int(user_id), title, rights=rights)
+
+
+async def _sync_position_holders(chat_id: int, position_id: int, rights: list[str], kind: str) -> str:
+    """Кто уже держит должность, получает новые права в Telegram. Ошибка чата не откатывает запись."""
+    try:
+        holders = await db.pool.fetch(
+            """
+            SELECT user_id, prefix
+            FROM epsilon_seats
+            WHERE position_id = $1 AND chat_id = $2
+              AND (term_end IS NULL OR term_end > NOW())
+            """,
+            int(position_id),
+            int(chat_id),
+        )
+    except Exception:
+        return ""
+    note = ""
+    for holder in holders:
+        try:
+            note = await _sync_chat_rights(
+                int(chat_id),
+                int(holder["user_id"]),
+                holder["prefix"] or "",
+                rights,
+                kind=kind,
+            )
+        except Exception:
+            note = "Права в панели записаны. В чате они могли не обновиться."
+    return note
+
+
 def _promote_body(chat_id: int, user_id: int, rights: list[str] | None) -> dict:
     """None снимает админку. Пустой список оставляет администратора без наказаний — так ставится префикс."""
     body = {"chat_id": int(chat_id), "user_id": int(user_id), "is_anonymous": False}
@@ -697,6 +818,9 @@ async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: l
             return f"Должность в панели снята. В группе админка могла остаться: {err}"
         return f"Место в панели есть. Префикс в группе не встал: {err}"
     if rights is None:
+        restored = await _apply_send_limits(int(chat_id), int(user_id), None)
+        if "не встали" in restored:
+            return f"В группе админка снята. {restored}"
         return "В группе админка и префикс сняты. Человек остаётся обычным участником."
     text = " ".join((title or "").split())[:16]
     if not text:
@@ -748,7 +872,7 @@ def _rights(value: Any) -> list[str]:
             raw = []
     else:
         raw = []
-    allowed = set(ALL_RIGHTS)
+    allowed = set(ALL_RIGHTS) | set(WIDE_RIGHT_IDS)
     return [str(item) for item in raw if str(item) in allowed]
 
 
@@ -894,7 +1018,7 @@ async def seats_for(user_id: int) -> list[dict]:
 
 
 async def _seat_rank(user_id: int, chat_id: int) -> int:
-    """Ранг должности в этом чате. Создатель проекта — 5. Без места — 0."""
+    """Ранг должности в этом чате. Создатель проекта — 5. Без места — ниже ранга 0."""
     if _is_creator(user_id):
         return 5
     row = await db.pool.fetchrow(
@@ -913,7 +1037,7 @@ async def _seat_rank(user_id: int, chat_id: int) -> int:
         int(chat_id),
     )
     if not row:
-        return 0
+        return -1
     return int(row["rank"])
 
 
@@ -1352,7 +1476,7 @@ async def create_position(body: PositionCreateBody, user_id: int = Depends(get_a
     if kind == KIND_SPAMBLOCK and not prefix:
         prefix = SPAMBLOCK_PREFIX
     rank = 0 if kind != KIND_POST else STAFF_RANK_TOP
-    rights = rights_for_kind(kind, rank, body.rights, creator=True)
+    rights = initial_rights(kind, rank, list(body.rights))
     accepting = kind == KIND_POST
     row = await db.pool.fetchrow(
         """
@@ -1451,7 +1575,7 @@ async def edit_position(
     await ensure_tables()
     row = await db.pool.fetchrow(
         """
-        SELECT p.id, p.chat_id, p.rank, p.kind
+        SELECT p.id, p.chat_id, p.rank, p.kind, p.rights
         FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
         WHERE p.id = $1
@@ -1466,11 +1590,16 @@ async def edit_position(
     title = " ".join(body.title.split())
     kind = row["kind"] if row["kind"] in KINDS else KIND_POST
     rank = int(row["rank"])
-    rights = rights_for_kind(kind, rank, body.rights, creator=actor["creator"])
-    locked = kind in (KIND_MEMBER, KIND_SPAMBLOCK) or rank <= 0 or rank >= 5
-    # Создатель задаёт вкладки любой должности. Остальные не переписывают список
-    # у спам-блока, ранга 0 и создателя группы.
-    if body.pages is not None and (actor["creator"] or not locked):
+    rights = assigned_rights(
+        kind,
+        rank,
+        body.rights,
+        creator=actor["creator"],
+        stored=_rights(row["rights"]),
+    )
+    owner_locked = rank >= 5
+    # Создатель задаёт вкладки любой должности. Остальные не переписывают список создателя группы.
+    if body.pages is not None and (actor["creator"] or not owner_locked):
         stored_pages = normalize_pages(body.pages) or []
         await db.pool.execute(
             """
@@ -1495,7 +1624,15 @@ async def edit_position(
             title,
             json.dumps(rights),
         )
-    return {"ok": True, "id": int(position_id), "title": title, "rights": rights, "pages": stored_pages}
+    telegram = await _sync_position_holders(int(row["chat_id"]), int(position_id), rights, kind)
+    return {
+        "ok": True,
+        "id": int(position_id),
+        "title": title,
+        "rights": rights,
+        "pages": stored_pages,
+        "telegram": telegram,
+    }
 
 
 @router.delete("/positions/{position_id}")
@@ -1631,9 +1768,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         term_start, term_end, term_error = term_bounds(body.term_start, body.term_end)
         if term_error:
             raise HTTPException(status_code=400, detail=term_error)
-    held_rights = None if kind == KIND_MEMBER else rights_for_kind(
-        kind, int(pos["rank"]), _rights(pos["rights"]), creator=True,
-    )
+    held_rights = rights_for_kind(kind, int(pos["rank"]), _rights(pos["rights"]), creator=True)
     await db.pool.execute(
         """
         INSERT INTO epsilon_seats (
@@ -1658,11 +1793,12 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         term_start,
         term_end,
     )
-    telegram_note = await _apply_chat_title(
+    telegram_note = await _sync_chat_rights(
         int(body.chat_id),
         int(body.user_id),
         prefix,
-        rights=held_rights,
+        held_rights,
+        kind=kind,
     )
     detail = f"«{pos['title']}»"
     if kind == KIND_SPAMBLOCK and term_end:
@@ -1906,16 +2042,15 @@ async def group_prefix(body: PrefixBody, user_id: int = Depends(get_any_telegram
         int(body.chat_id),
         prefix,
     )
-    held = None if kind == KIND_MEMBER else rights_for_kind(
-        kind, int(seat["rank"]), _rights(seat["rights"]), creator=True,
-    )
+    held = rights_for_kind(kind, int(seat["rank"]), _rights(seat["rights"]), creator=True)
     note = ""
     if prefix or kind == KIND_MEMBER:
-        note = await _apply_chat_title(
+        note = await _sync_chat_rights(
             int(body.chat_id),
             int(body.user_id),
             prefix,
-            rights=held,
+            held,
+            kind=kind,
         )
     await _realm_log(
         int(body.chat_id),

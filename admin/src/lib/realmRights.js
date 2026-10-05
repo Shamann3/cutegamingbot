@@ -7,7 +7,7 @@ export const PAGE_RIGHTS = [
 
 export const PUNISH_RIGHTS = [
   { id: 'punish_mute', label: 'Мут', hint: 'Можно заткнуть человека младше по рангу в этом чате и снять этот мут. Другие чаты не затрагиваются.' },
-  { id: 'punish_ban', label: 'Бан в чате', hint: 'Можно забанить и разбанить в этой группе. На весь проект это не действует: для проекта нужна должность сотрудника с banfull.' },
+  { id: 'punish_ban', label: 'Бан в чате', hint: 'Можно забанить и разбанить в этой группе. На весь проект само не действует: для этого есть отдельный переключатель «Банфулл».' },
   { id: 'punish_kick', label: 'Кик', hint: 'Можно убрать человека из этого чата. Вернуть его этим правом нельзя.' },
   { id: 'punish_warn', label: 'Варн', hint: 'Можно записать предупреждение в этом чате. Из чата человека не удаляет.' },
   { id: 'punish_voice', label: 'Голос', hint: 'Можно запретить голосовые и кружки и снять запрет. Текст при этом остаётся.' },
@@ -38,4 +38,14 @@ export const TELEGRAM_ADMIN_RIGHTS = [
   { id: 'can_add_web_page_previews', label: 'Превью ссылок', hint: 'Превью веб-страниц в сообщениях' },
 ]
 
-export const REALM_RIGHTS = [...PAGE_RIGHTS, ...PUNISH_RIGHTS, ...TELEGRAM_ADMIN_RIGHTS]
+/** Наказания шире одного чата. Сами не включаются от бана или мута в группе. */
+export const PROJECT_RIGHTS = [
+  { id: 'muteall', label: 'Муталл', hint: 'Мут во всех официальных группах. Наказать можно только того, кто младше в этой группе.' },
+  { id: 'kickall', label: 'Кикалл', hint: 'Кик во всех официальных группах.' },
+  { id: 'warnall', label: 'Варналл', hint: 'Предупреждение во всех официальных группах.' },
+  { id: 'banall', label: 'Баналл', hint: 'Бан во всех официальных группах.' },
+  { id: 'warnfull', label: 'Варнфулл', hint: 'Предупреждение на весь проект.' },
+  { id: 'banfull', label: 'Банфулл', hint: 'Бан на весь проект. Снять его из карточки человека нельзя.' },
+]
+
+export const REALM_RIGHTS = [...PAGE_RIGHTS, ...PUNISH_RIGHTS, ...TELEGRAM_ADMIN_RIGHTS, ...PROJECT_RIGHTS]

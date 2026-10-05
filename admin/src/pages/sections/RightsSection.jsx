@@ -267,8 +267,9 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
     setError('')
     setNotice('')
     try {
-      await saveGroupPosition(row.id, positionSaveBody(row))
-      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.`)
+      const data = await saveGroupPosition(row.id, positionSaveBody(row))
+      const telegram = /не встал|могла остаться|не обновил/.test(data?.telegram || '') ? ` ${data.telegram}` : ''
+      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.${telegram}`)
       await load()
     } catch (err) {
       setError(err.message || 'Должность не сохранилась')
@@ -348,7 +349,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
         <p className="pa-hint">Старший, младший и модератор уже есть. Новую должность добавляет только создатель проекта: вкладки и наказания у неё сначала выключены.</p>
       )}
       {office === 'group' && (
-        <p className="pa-hint">Новую должность создаёт только создатель проекта. Вкладки кабинета настраиваются у каждой должности, включая спам-блок и ранг 0. Обычная встаёт сразу под создателем группы, на ранг 4. Кто старше — решает порядок: стрелка или перетаскивание. Наказать можно только младшего. У ранга 0 и спам-блока наказаний нет.</p>
+        <p className="pa-hint">Новую должность создаёт только создатель проекта. У каждой должности, включая ранг 0 и спам-блок, настраиваются вкладки, права Telegram, наказания в чате и права на весь проект. Обычная встаёт сразу под создателем группы, на ранг 4. Кто старше — решает порядок: стрелка или перетаскивание. Наказать можно только младшего, а человека без должности — даже с ранга 0.</p>
       )}
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (
@@ -382,8 +383,8 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
               value={newKind}
               options={[
                 { value: 'post', label: 'Обычная должность', hint: 'сразу под создателем группы, ранг 4' },
-                { value: 'member', label: 'Обычный пользователь', hint: 'внизу списка, без наказаний' },
-                { value: 'spamblock', label: 'Спам-блок', hint: 'внизу списка, без прав, со сроком' },
+                { value: 'member', label: 'Обычный пользователь', hint: 'ранг 0, сразу может писать, остальные права в карточке' },
+                { value: 'spamblock', label: 'Спам-блок', hint: 'ранг 0, права в карточке, нужен срок' },
               ]}
               onChange={setNewKind}
             />

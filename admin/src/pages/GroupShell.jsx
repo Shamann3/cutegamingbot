@@ -654,8 +654,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     setSavingId(row.id)
     setError('')
     try {
-      await saveGroupPosition(row.id, positionSaveBody(row))
-      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.`)
+      const data = await saveGroupPosition(row.id, positionSaveBody(row))
+      const telegram = /не встал|могла остаться|не обновил/.test(data?.telegram || '') ? ` ${data.telegram}` : ''
+      setNotice(`Должность «${row.title.trim()}» сохранена. Вкладки нижней полосы записаны.${telegram}`)
       await loadPositions(chatId)
     } catch (err) {
       setError(err.message || 'Должность не сохранилась')
@@ -891,9 +892,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                     value: String(item.id),
                     label: item.title,
                     hint: item.kind === 'spamblock'
-                      ? 'без прав, нужен срок'
-                      : item.kind === 'member'
-                        ? 'ранг 0, как участник'
+                      ? 'ранг 0, нужен срок'
+                      : item.kind === 'member' || Number(item.rank) <= 0
+                        ? 'ранг 0'
                         : `ранг ${item.rank}`,
                   }))}
                   onChange={(next) => {
@@ -1181,22 +1182,22 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           {!chapter && activeTab === 'rights' && (
             <section>
               <h2 className="realm-h">Права должностей</h2>
-              <p className="realm-copy">Название, вкладки кабинета, наказания и права Telegram. Наказать можно только того, кто ниже по рангу. Порядок должностей меняется стрелкой или перетаскиванием: верхняя получает ранг 4.</p>
+              <p className="realm-copy">Название, вкладки, наказания в чате, права Telegram и права на весь проект. Ранг 0 настраивается так же. Наказать можно только того, кто младше: человек без должности младше даже ранга 0. Порядок администраторов меняется стрелкой или перетаскиванием: верхняя получает ранг 4.</p>
               <label className="realm-field">Найти должность
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
               {isCreator && (
               <form className="realm-form" onSubmit={createPosition}>
                 <h3 className="realm-h">Новая должность</h3>
-                <p className="realm-copy">Создаёт только создатель проекта. Обычная должность встаёт сразу под создателем группы, на ранг 4. Обычный пользователь и спам-блок остаются внизу, без наказаний.</p>
+                <p className="realm-copy">Создаёт только создатель проекта. Обычная должность встаёт сразу под создателем группы, на ранг 4. Обычный пользователь и спам-блок остаются на ранге 0: сразу могут писать или ждать срок, а остальные права включаются в карточке.</p>
                 <label>Название<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
                 <DarkPick
                   label="Тип"
                   value={newKind}
                   options={[
                     { value: 'post', label: 'Обычная должность', hint: 'сразу под создателем группы, ранг 4' },
-                    { value: 'member', label: 'Обычный пользователь', hint: 'внизу списка, без наказаний' },
-                    { value: 'spamblock', label: 'Спам-блок', hint: 'внизу списка, без прав, со сроком' },
+                    { value: 'member', label: 'Обычный пользователь', hint: 'ранг 0, сразу может писать, остальные права в карточке' },
+                    { value: 'spamblock', label: 'Спам-блок', hint: 'ранг 0, права в карточке, нужен срок' },
                   ]}
                   onChange={setNewKind}
                 />

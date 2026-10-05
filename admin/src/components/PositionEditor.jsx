@@ -3,7 +3,7 @@ import { AnimatePresence, Reorder, motion, useDragControls, useReducedMotion } f
 import { searchAdminUsers } from '../lib/adminClient'
 import { CABINET_PAGE_DEFS, cabinetPagesFor, groupCabinetTabs } from '../lib/panelPreview'
 import { isFloorPost, isOwnerPost, isStaffPost, ladderRanks, positionOrder, ranksDiffer } from '../lib/rankLadder'
-import { PAGE_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
+import { PAGE_RIGHTS, PROJECT_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
 import FocusWindow from './FocusWindow'
 import RightSwitch from './RightSwitch'
 
@@ -42,8 +42,8 @@ function lowerRankPeer(positions, rank) {
 
 function rankCaption(row, rank = row?.rank) {
   if (isOwnerPost(row)) return 'Создатель группы · выше всех'
-  if (row.kind === 'spamblock') return 'Спам-блок · без ранга администратора'
-  if (row.kind === 'member' || Number(rank) <= 0) return 'Ранг 0 · как обычный участник'
+  if (row.kind === 'spamblock') return 'Спам-блок · ранг 0'
+  if (row.kind === 'member' || Number(rank) <= 0) return 'Ранг 0'
   return `Ранг ${rank}`
 }
 
@@ -505,9 +505,9 @@ function PositionSheet({
   onSave,
   onPreview,
 }) {
-  const frozen = row.kind === 'spamblock' || row.kind === 'member' || Number(row.rank) <= 0
-  const locked = row.rank >= 5 || frozen
-  const tabsLocked = creator ? false : locked
+  const owner = Number(row.rank) >= 5
+  const rightsLocked = owner
+  const tabsLocked = owner && !creator
   const reduce = useReducedMotion()
   const rights = new Set(row.rights || [])
   const pageIds = cabinetPagesFor(row)
@@ -626,13 +626,13 @@ function PositionSheet({
     <FocusWindow
       title={row.title || 'Должность'}
       subtitle={
-        row.rank >= 5
-          ? 'Создатель группы. Права полные, снять их нельзя. Вкладки кабинета выбираете вы.'
+        owner
+          ? 'Создатель группы. Права группы полные, снять их нельзя. Права на весь проект включаются отдельно внизу.'
           : row.kind === 'spamblock'
-            ? 'Спам-блок. Наказаний нет и включить их нельзя. Вкладки кабинета выбираете вы. Срок задаётся при назначении.'
-            : frozen
-              ? 'Ранг 0. Наказаний нет. Вкладки кабинета выбираете вы.'
-              : `Ранг ${row.rank}. Сначала вкладки нижней полосы, потом что можно делать внутри. Наказать можно только того, кто младше.`
+            ? 'Ранг 0. Права Telegram, этого чата и всего проекта включаете вы. Срок задаётся при назначении.'
+            : Number(row.rank) <= 0 || row.kind === 'member'
+              ? 'Ранг 0. Можно включить любые права: Telegram, этот чат и весь проект. Наказать можно человека без должности.'
+              : `Ранг ${row.rank}. Сначала вкладки нижней полосы, потом права. Наказать можно только того, кто младше.`
       }
       onClose={onClose}
       footer={foot}
@@ -740,24 +740,41 @@ function PositionSheet({
             Ориентир — младшая должность «{peer.title}» (ранг {peer.rank}).
           </p>
         )}
-        <fieldset className="realm-rights-block" disabled={locked}>
+        <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Что можно делать</legend>
-          <RightList items={pages} rights={rights} locked={locked} onToggle={toggle} compareSet={compareSet} />
+          <RightList items={pages} rights={rights} locked={rightsLocked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
-        <fieldset className="realm-rights-block" disabled={locked}>
+        <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Наказания в этом чате</legend>
-          <RightList items={PUNISH_RIGHTS} rights={rights} locked={locked} onToggle={toggle} compareSet={compareSet} />
+          <RightList items={PUNISH_RIGHTS} rights={rights} locked={rightsLocked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
-        <fieldset className="realm-rights-block" disabled={locked}>
+        <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Права Telegram в чате</legend>
+          <p className="realm-copy">Админское право ставится в чат. Ограничения отправки действуют, пока человек не администратор.</p>
           <RightList
             items={TELEGRAM_ADMIN_RIGHTS}
             rights={rights}
-            locked={locked}
+            locked={rightsLocked}
             onToggle={toggle}
             compareSet={compareSet}
           />
         </fieldset>
+        {creator && (
+          <fieldset className="realm-rights-block">
+            <legend>На весь проект</legend>
+            <p className="realm-copy">
+              Эти права не включаются от бана или мута в чате. Выключено — за пределы этой группы наказание не выходит.
+              Включить может только создатель проекта, на любом ранге, включая 0.
+            </p>
+            <RightList
+              items={PROJECT_RIGHTS}
+              rights={rights}
+              locked={false}
+              onToggle={toggle}
+              compareSet={compareSet}
+            />
+          </fieldset>
+        )}
         {onPreview && (
           <button
             type="button"
