@@ -39,11 +39,30 @@ describe('ActivityBoard', () => {
         repeats={new Map([[7, 3]])}
       />,
     )
-    fireEvent.click(await screen.findByRole('button', { name: /Анна/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Анна, 40 сообщений/ }))
     expect(screen.getByText('40%')).toBeTruthy()
     expect(screen.getByText(/Ещё одно предупреждение — бан в этом чате/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Наказания этого человека' }))
     expect(onOpenArchive).toHaveBeenCalledWith(7)
+  })
+
+  it('compares the period and opens one day', async () => {
+    vi.mocked(fetchGroupActivity).mockResolvedValue(report)
+    render(<ActivityBoard chatId={1} />)
+    expect(await screen.findByText(/\+25%/)).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Обзор' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Сравнение' }))
+    expect(screen.getByText(/на 25% больше/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'Дни' }))
+    fireEvent.click(screen.getByRole('button', { name: '1 окт: 40 сообщений' }))
+    expect(await screen.findByRole('button', { name: /Снова весь срок/ })).toBeTruthy()
+  })
+
+  it('stays a name list on the home day', async () => {
+    vi.mocked(fetchGroupActivity).mockResolvedValue(report)
+    render(<ActivityBoard chatId={1} peopleOnly seedPeriod="week" seedSlice="2026-10-01" />)
+    expect(await screen.findByRole('button', { name: /Анна, 40 сообщений/ })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Обзор' })).toBeNull()
   })
 })
 

@@ -145,7 +145,7 @@ export default function EntranceSeal({
     let stop = false
     prepareMemeVisit()
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
-    const logoAt = reduced || lite ? 80 : 1100
+    const logoAt = reduced || lite ? 80 : 700
     const timer = window.setTimeout(() => { if (!stop) playMeme('logo') }, logoAt)
     return () => {
       stop = true

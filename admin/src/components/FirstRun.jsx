@@ -100,7 +100,7 @@ export function groupSteps(phone) {
     },
     {
       title: 'Активность',
-      body: 'Сообщения за день, месяц и год в группе которую вы модерируете',
+      body: 'Сообщения за выбранный срок, сравнение с прошлым и кто пишет больше всех',
       target: '[data-coach="dock"] [data-section="activity"]',
     },
     {

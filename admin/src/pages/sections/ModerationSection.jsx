@@ -19,6 +19,22 @@ import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
 
+function askUnbanConfirm(message) {
+  const tg = window.Telegram?.WebApp
+  if (typeof tg?.showConfirm === 'function') {
+    return new Promise((resolve) => {
+      try {
+        tg.showConfirm(message, (ok) => resolve(Boolean(ok)))
+      } catch {
+        window.setTimeout(() => resolve(window.confirm(message)), 40)
+      }
+    })
+  }
+  return new Promise((resolve) => {
+    window.setTimeout(() => resolve(window.confirm(message)), 40)
+  })
+}
+
 const API_PREFIX = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
 
 // ---------------------------------------------------------------------------
@@ -176,7 +192,8 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
       return
     }
     playMeme('wont')
-    if (!window.confirm(`Разбанить игрока ${item.targetName || item.targetId}?`)) return
+    const agreed = await askUnbanConfirm(`Разбанить игрока ${item.targetName || item.targetId}?`)
+    if (!agreed) return
     setUnbanLoading(true)
     try {
       await postModerationUnban(item.targetId, reason)

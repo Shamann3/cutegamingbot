@@ -5,6 +5,7 @@ import { payLabel, sortLabel } from '../lib/deedSort'
 import { arrivalLine, hiddenLine } from '../lib/liveMerge'
 import UserLookupPreview from './UserLookupPreview'
 import OpenUserLink from './OpenUserLink'
+import { playMeme } from '../lib/memeSounds'
 
 const LOOK = {
   ban: { label: 'Бан', color: '#ef4444' },
@@ -337,7 +338,12 @@ export default function GroupArchive({
                       type="button"
                       className="sec-btn g-arc-lift-open"
                       disabled={busy}
-                      onClick={() => { setLiftId(id); setLiftReason(''); setOpenId(null) }}
+                      onClick={() => {
+                        if (/разбан|разблок/i.test(undo.label)) playMeme('wont')
+                        setLiftId(id)
+                        setLiftReason('')
+                        setOpenId(null)
+                      }}
                     >
                       {undo.label}
                     </button>

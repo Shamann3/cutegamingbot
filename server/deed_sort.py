@@ -206,12 +206,81 @@ def credit_eligible(status: str, role: str, verdict: str) -> bool:
     return False
 
 
-def lift_actions(action_type: str, scope: str | None) -> tuple[str, ...] | None:
+# Панель пишет «баналл» отдельным именем. Бот пишет «ban» и scope.
+# Для колоды это одно и то же наказание.
+_PUNISH_ALIAS = {
+    "ban": ("ban", None),
+    "banall": ("ban", "all"),
+    "banfull": ("ban", "full"),
+    "bot_ban": ("ban", "full"),
+    "mute": ("mute", None),
+    "muteall": ("mute", "all"),
+    "kick": ("kick", None),
+    "kickall": ("kick", "all"),
+    "warn": ("warn", None),
+    "warnall": ("warn", "all"),
+    "warnfull": ("warn", "full"),
+}
+
+
+def canonical_punishment(action_type: str, scope: str | None = None, chat_id: int | None = None):
+    """Семья и охват. None — это не наказание для колоды."""
+    raw = (action_type or "").strip().lower()
+    mapped = _PUNISH_ALIAS.get(raw)
+    if mapped is None:
+        return None
+    family, forced = mapped
+    if forced:
+        span = forced
+    else:
+        span = (scope or "").strip().lower()
+        if span not in ("chat", "all", "full"):
+            span = "chat" if chat_id else "all"
+    return family, span
+
+
+def punish_type_sql(alias: str = "") -> str:
+    column = f"{alias}.action_type" if alias else "action_type"
+    low = f"lower(btrim(COALESCE({column}, '')))"
+    return f"""CASE {low}
+        WHEN 'banall' THEN 'ban'
+        WHEN 'banfull' THEN 'ban'
+        WHEN 'bot_ban' THEN 'ban'
+        WHEN 'muteall' THEN 'mute'
+        WHEN 'kickall' THEN 'kick'
+        WHEN 'warnall' THEN 'warn'
+        WHEN 'warnfull' THEN 'warn'
+        ELSE {low}
+    END"""
+
+
+def punish_scope_sql(alias: str = "s") -> str:
+    low = f"lower(btrim(COALESCE({alias}.action_type, '')))"
+    scope = f"lower(btrim(COALESCE({alias}.scope, '')))"
+    return f"""CASE
+        WHEN {low} IN ('banall', 'muteall', 'kickall', 'warnall') THEN 'all'
+        WHEN {low} IN ('banfull', 'bot_ban', 'warnfull') THEN 'full'
+        WHEN {scope} IN ('chat', 'all', 'full') THEN {scope}
+        WHEN COALESCE({alias}.chat_id, 0) = 0 THEN 'all'
+        ELSE 'chat'
+    END"""
+
+
+def _seat_sees_punishment(seat: str, action: str) -> str:
+    """Своя группа, запись без чата, либо банфулл/баналл и такие же широкие."""
+    return f"""(
+            (COALESCE({action}.chat_id, 0) <> 0 AND {seat}.chat_id = {action}.chat_id)
+            OR COALESCE({action}.chat_id, 0) = 0
+            OR ({punish_scope_sql(action)}) IN ('all', 'full')
+          )"""
+
+
+def lift_actions(action_type: str, scope: str | None, chat_id: int | None = None) -> tuple[str, ...] | None:
     """Чем снять ровно то, что выдали. None — снять нельзя (кик)."""
-    action = (action_type or "").strip().lower()
-    span = (scope or "chat").strip().lower() or "chat"
-    if span not in ("chat", "all", "full"):
-        span = "chat"
+    found = canonical_punishment(action_type, scope, chat_id)
+    if not found:
+        return None
+    action, span = found
     table = {
         ("ban", "chat"): ("unban",),
         ("ban", "all"): ("unbanall",),
@@ -236,12 +305,14 @@ def can_apply_lift(
 ) -> tuple[bool, str]:
     if not target_id:
         return False, "В архиве нет игрока, снять наказание некого."
-    actions = lift_actions(action_type, scope)
+    actions = lift_actions(action_type, scope, chat_id)
     if not actions:
-        if (action_type or "").strip().lower() == "kick":
+        raw = (action_type or "").strip().lower()
+        if raw in ("kick", "kickall"):
             return False, "Кик уже выполнен: вернуть человека в группу нельзя."
         return False, "Такое наказание снять нельзя."
-    span = (scope or "chat").strip().lower() or "chat"
+    found = canonical_punishment(action_type, scope, chat_id)
+    span = found[1] if found else "chat"
     needs_chat = span == "chat" and any(
         name in actions for name in ("unban", "unmute", "unwarn_chat")
     )
@@ -298,10 +369,7 @@ def other_sorter_exists(action: str = "s") -> str:
         WHERE o.user_id <> COALESCE({action}.admin_user_id, 0)
           AND o.user_id NOT IN ({blocked})
           AND {_live_archive_seat("o", "p")}
-          AND (
-            (COALESCE({action}.chat_id, 0) <> 0 AND o.chat_id = {action}.chat_id)
-            OR COALESCE({action}.chat_id, 0) = 0
-          )
+          AND {_seat_sees_punishment("o", action)}
       )
     """
 
@@ -318,10 +386,7 @@ def self_can_sort(action: str = "s", user_sql: str = "$2") -> str:
           AND me.user_id <> COALESCE({action}.admin_user_id, 0)
           AND me.user_id NOT IN ({blocked})
           AND {_live_archive_seat("me", "mp")}
-          AND (
-            (COALESCE({action}.chat_id, 0) <> 0 AND me.chat_id = {action}.chat_id)
-            OR COALESCE({action}.chat_id, 0) = 0
-          )
+          AND {_seat_sees_punishment("me", action)}
       )
     """
 
@@ -445,7 +510,7 @@ def _marks_from_sql() -> str:
       FROM marks m
       JOIN staff_actions s ON s.id = m.action_id
       LEFT JOIN epsilon_deed_reviews dr ON dr.action_id = m.action_id
-      WHERE s.action_type IN ('ban', 'mute', 'kick', 'warn')
+      WHERE s.action_type IN ('ban', 'mute', 'kick', 'warn', 'banall', 'banfull', 'bot_ban', 'muteall', 'kickall', 'warnall', 'warnfull')
         AND {human_actor_sql("s")}
     """
 

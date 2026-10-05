@@ -1190,7 +1190,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'activity' && (
             <section className="grp-activity">
-              <p className="realm-copy">Здесь не снимок с главной. Выберите срок: живой день, тихий день и кто написал больше всех. Имя открывает карточку на этой же странице.</p>
+              <p className="realm-copy">Это не снимок главной. Выберите срок и смотрите, оживает чат или затихает, какой день живой и кто пишет больше всех.</p>
               <ActivityBoard
                 chatId={chatId}
                 repeats={repeats}

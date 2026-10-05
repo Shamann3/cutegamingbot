@@ -1656,14 +1656,26 @@ async def moderate_action(
             await db.pool.execute(
                 """
                 INSERT INTO staff_actions
-                  (admin_user_id, admin_name, target_player_id, action_type, reason, chat_id, created_at)
-                VALUES ($1, 'Админ-панель', $2, $3, $4, $5, NOW())
+                  (admin_user_id, admin_name, target_player_id, action_type, reason, chat_id, scope, created_at)
+                VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, NOW())
                 """,
                 int(admin_id or 0),
                 uid,
                 action,
                 reason or f"panel:{action}",
                 cid,
+                {
+                    "banall": "all",
+                    "muteall": "all",
+                    "kickall": "all",
+                    "warnall": "all",
+                    "unbanall": "all",
+                    "unmuteall": "all",
+                    "banfull": "full",
+                    "bot_ban": "full",
+                    "warnfull": "full",
+                    "bot_unban": "full",
+                }.get(action, "chat"),
             )
         except Exception:
             pass

@@ -1993,7 +1993,7 @@ async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dic
     messages, writers = await _totals(focus_start, focus_end)
     period_messages, period_writers = await _totals(start, end)
     prev_start, prev_end = previous_window(name, start, end)
-    previous_messages, _previous_writers = await _totals(prev_start, prev_end)
+    previous_messages, previous_writers = await _totals(prev_start, prev_end)
     if grain == "month":
         series_rows = await db.pool.fetch(
             """
@@ -2060,6 +2060,7 @@ async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dic
         "periodMessages": period_messages,
         "periodWriters": period_writers,
         "previousMessages": previous_messages,
+        "previousWriters": previous_writers,
         "series": series,
         "people": [
             {
@@ -2108,6 +2109,7 @@ async def group_activity(
             "messages": None,
             "writers": None,
             "previousMessages": None,
+            "previousWriters": None,
             "series": [],
             "people": [],
         }

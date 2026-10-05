@@ -7,9 +7,11 @@
 import { fetchMemeMode } from './adminClient'
 import { readCueSoundsEnabled } from './cueSounds'
 
-export const MEME_VOLUME = 0.55
+export const MEME_VOLUME = 0.35
+export const LOGO_MEME_VOLUME = 0.55
 export const DEFAULT_MEME_CHANCE = 10
 const ROLL_KEY = 'cf_admin_meme_on'
+const LOGO_SKIP_SEC = 1.5
 
 const FILES = {
   logo: new URL('../../../public/84946-chelovek-pauk-mem.mp3', import.meta.url).href,
@@ -120,6 +122,32 @@ function installUnlock() {
   })
 }
 
+function volumeFor(kind) {
+  return kind === 'logo' ? LOGO_MEME_VOLUME : MEME_VOLUME
+}
+
+function placeLogo(audio) {
+  const duration = Number(audio.duration)
+  const skip = Number.isFinite(duration) && duration > 0.4
+    ? Math.min(LOGO_SKIP_SEC, Math.max(0, duration - 0.2))
+    : LOGO_SKIP_SEC
+  try { audio.currentTime = skip } catch { /* файл ещё не открыт */ }
+  audio.volume = LOGO_MEME_VOLUME
+}
+
+function begin(audio, kind) {
+  const volume = volumeFor(kind)
+  audio.volume = volume
+  const run = audio.play()
+  if (run && typeof run.then === 'function') {
+    run.then(() => {
+      if (current === audio) audio.volume = volume
+    }).catch(() => {
+      if (current === audio) pendingKind = kind
+    })
+  }
+}
+
 function startClip(kind) {
   if (!FILES[kind] || !memeRolledOn() || !readCueSoundsEnabled()) return false
   if (typeof Audio !== 'function') return false
@@ -127,16 +155,28 @@ function startClip(kind) {
   const audio = new Audio(FILES[kind])
   audio.preload = 'auto'
   audio.loop = false
-  audio.volume = MEME_VOLUME
+  audio.volume = volumeFor(kind)
   try { audio.playsInline = true } catch { /* ignore */ }
   current = audio
-  const run = audio.play()
-  if (run && typeof run.then === 'function') {
-    run.then(() => {
-      if (current === audio) audio.volume = MEME_VOLUME
-    }).catch(() => {
-      if (current === audio) pendingKind = kind
-    })
+  if (kind !== 'logo') {
+    begin(audio, kind)
+    return true
+  }
+  let started = false
+  const start = () => {
+    if (started || current !== audio) return
+    started = true
+    placeLogo(audio)
+    begin(audio, kind)
+  }
+  if (audio.readyState >= 1) start()
+  else {
+    const late = window.setTimeout(start, 800)
+    audio.addEventListener('loadedmetadata', () => {
+      window.clearTimeout(late)
+      start()
+    }, { once: true })
+    try { audio.load() } catch { /* ignore */ }
   }
   return true
 }

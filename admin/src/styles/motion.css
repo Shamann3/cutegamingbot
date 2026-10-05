@@ -4199,4 +4199,579 @@ body.perf-light .panel-cue-knob {
   transition: none;
 }
 
+/* Активность группы: обзор срока, а не снимок главной.
+   Пластины слушаются ползунок прозрачности. */
+.act-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.act-desk ::selection {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.35);
+  color: #fff;
+}
+
+.act-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-shell .act-desk .realm-actions {
+  margin: 0 !important;
+  padding: 4px !important;
+  background: var(--e-plate) !important;
+  background-color: var(--e-plate) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.act-lenses {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.act-lenses::-webkit-scrollbar { display: none; }
+
+.act-lenses button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--e-plate);
+  color: var(--e-text, #fff);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.act-lenses button svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.act-lenses button.is-on {
+  background: var(--e-plate-2, var(--e-plate));
+  box-shadow: inset 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+}
+
+.act-lenses button.is-on svg {
+  color: var(--e-accent, #c8afff);
+}
+
+.act-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.act-kpi,
+.act-clear,
+.act-day-picks button,
+.act-chips button {
+  margin: 0;
+  border: 0;
+  background: var(--e-plate);
+  color: var(--e-text, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  min-height: 108px;
+  padding: 14px;
+  border-radius: 22px;
+}
+
+.act-kpi span,
+.act-day-picks span,
+.act-delta {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.act-kpi strong,
+.act-day-picks strong {
+  font-size: 1.7rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.act-delta.is-up { color: #3ddc84; }
+.act-delta.is-down { color: #ff7b72; }
+.act-delta.is-flat { color: var(--e-text-2, #aeaeb2); }
+
+.act-kpi:hover,
+.act-clear:hover,
+.act-lenses button:hover,
+.act-day-picks button:hover,
+.act-chips button:hover,
+.act-ring-legend button:hover {
+  background: var(--e-plate-2, var(--e-plate));
+}
+
+.act-clear {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-weight: 650;
+}
+
+.act-split {
+  display: grid;
+  gap: 8px;
+}
+
+.act-stage,
+.act-people-block {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 22px;
+  background: var(--e-plate);
+  animation: arc-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.act-people-block .act-people {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0;
+  padding: 0;
+}
+
+.act-stage .realm-h,
+.act-block-head .realm-h {
+  margin: 0 0 8px;
+}
+
+.act-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.act-block-head .gate-text {
+  min-height: 44px;
+}
+
+.act-read {
+  margin: 0 0 10px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.act-line {
+  position: relative;
+}
+
+.act-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 4px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.78rem;
+}
+
+.act-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.act-legend i,
+.act-ring-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.act-legend i.is-msg,
+.act-ring-legend i.is-lead,
+.act-stroke.is-msg,
+.act-dot,
+.act-ring-slice.is-lead {
+  color: var(--e-accent, #c8afff);
+  stroke: var(--e-accent, #c8afff);
+  background: var(--e-accent, #c8afff);
+}
+
+.act-legend i.is-writers,
+.act-stroke.is-writers {
+  background: rgba(255, 255, 255, 0.82);
+  stroke: rgba(255, 255, 255, 0.82);
+}
+
+.act-line svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.act-grid {
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 1;
+}
+
+.act-area {
+  fill: rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+  stroke: none;
+}
+
+.act-stroke {
+  fill: none;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.act-guide {
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.act-dot {
+  fill: var(--e-accent, #c8afff);
+  stroke: none;
+}
+
+.act-dot.is-on {
+  fill: #fff;
+}
+
+.act-tick {
+  fill: var(--e-text-2, #aeaeb2);
+  font-size: 22px;
+  font-family: inherit;
+}
+
+.act-tip {
+  position: absolute;
+  top: 34px;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--e-plate-2, rgba(24, 24, 28, 0.92));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.act-tip b {
+  font-size: 0.86rem;
+}
+
+.act-tip span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.75rem;
+}
+
+.act-ring {
+  display: grid;
+  gap: 12px;
+}
+
+.act-ring-figure {
+  position: relative;
+  width: min(180px, 70%);
+  margin: 0 auto;
+}
+
+.act-ring-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.act-ring-track,
+.act-ring-slice {
+  fill: none;
+  stroke-width: 10;
+}
+
+.act-ring-track {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+.act-ring-slice.is-next { stroke: rgba(255, 255, 255, 0.72); }
+.act-ring-slice.is-rest { stroke: rgba(255, 255, 255, 0.28); }
+.act-ring-legend i.is-next { background: rgba(255, 255, 255, 0.72); }
+.act-ring-legend i.is-rest { background: rgba(255, 255, 255, 0.28); }
+
+.act-ring-core {
+  position: absolute;
+  inset: 18%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
+}
+
+.act-ring-core strong {
+  font-size: 1.8rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.act-ring-core span,
+.act-ring-core em {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.72rem;
+  font-style: normal;
+  line-height: 1.2;
+}
+
+.act-ring-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.act-ring-legend button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act-ring-legend button span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.act-ring-legend button b {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  font-size: 0.82rem;
+}
+
+.act-day-picks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.act-day-picks button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 76px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--e-plate-2, var(--e-plate));
+}
+
+.act-day-picks button.is-on,
+.act-chips button.is-on {
+  box-shadow: inset 0 0 0 1px rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+}
+
+.act-day-picks em {
+  color: var(--e-text-2, #aeaeb2);
+  font-style: normal;
+  font-size: 0.78rem;
+}
+
+.act-stage .act-bars {
+  height: 196px;
+}
+
+.panel-shell .act-bars button.is-hot > i,
+.panel-shell .act-bars button.is-on > i {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.28);
+}
+
+.act-compare {
+  display: grid;
+  gap: 8px;
+}
+
+.act-vs {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.act-vs caption {
+  caption-side: bottom;
+  padding-top: 8px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.act-vs th,
+.act-vs td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: right;
+  font-weight: 650;
+}
+
+.act-vs th:first-child,
+.act-vs td:first-child,
+.act-vs tbody th {
+  text-align: left;
+  font-weight: 600;
+}
+
+.act-vs thead th {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.act-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.act-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-weight: 650;
+}
+
+.act-chips button b {
+  font-variant-numeric: tabular-nums;
+}
+
+.act-person > em {
+  flex: 0 0 1.5rem;
+  font-style: normal;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.act-desk button:focus-visible,
+.act-line svg:focus-visible {
+  outline: 2px solid rgb(var(--e-accent-rgb, 200, 175, 255));
+  outline-offset: 3px;
+}
+
+html.is-phone .act-lenses,
+html[data-viewport="phone"] .act-lenses {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: visible;
+}
+
+html.is-phone .act-lenses button,
+html[data-viewport="phone"] .act-lenses button {
+  width: 100%;
+}
+
+html.is-desktop .act-toolbar,
+html[data-viewport="desktop"] .act-toolbar {
+  flex-direction: row;
+  align-items: center;
+}
+
+html.is-desktop .act-toolbar .realm-actions,
+html[data-viewport="desktop"] .act-toolbar .realm-actions {
+  flex: 0 1 440px;
+}
+
+html.is-desktop .act-lenses,
+html[data-viewport="desktop"] .act-lenses {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+html.is-desktop .act-lenses button,
+html[data-viewport="desktop"] .act-lenses button {
+  flex: 0 0 auto;
+}
+
+html.is-desktop .act-kpis,
+html[data-viewport="desktop"] .act-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+html.is-desktop .act-split,
+html[data-viewport="desktop"] .act-split {
+  grid-template-columns: minmax(0, 1.45fr) minmax(240px, 0.85fr);
+  align-items: stretch;
+}
+
+html.is-phone .act-kpi strong,
+html[data-viewport="phone"] .act-kpi strong {
+  font-size: 1.45rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-stage,
+  .act-people-block,
+  .act-person-track > b {
+    animation: none;
+    transition: none;
+  }
+}
+
+body.perf-light .act-stage,
+body.perf-light .act-people-block,
+body.perf-light .act-kpi:hover,
+body.perf-light .act-lenses button:hover {
+  animation: none;
+  transition: none;
+}
+
+
 

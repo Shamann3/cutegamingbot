@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clampChance, decideMeme, parseExcludedIds, MEME_VOLUME } from './memeSounds'
+import { clampChance, decideMeme, parseExcludedIds, MEME_VOLUME, LOGO_MEME_VOLUME } from './memeSounds'
 
 describe('meme mode', () => {
   afterEach(() => {
@@ -10,7 +10,8 @@ describe('meme mode', () => {
     expect(clampChance(undefined)).toBe(10)
     expect(clampChance(140)).toBe(100)
     expect(clampChance(-2)).toBe(0)
-    expect(MEME_VOLUME).toBe(0.55)
+    expect(MEME_VOLUME).toBe(0.35)
+    expect(LOGO_MEME_VOLUME).toBe(0.55)
   })
 
   it('never rolls a meme for an excluded person', () => {

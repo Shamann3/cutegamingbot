@@ -220,6 +220,22 @@ def test_pay_follows_the_matching_answer_and_a_kick_cannot_be_lifted():
     assert can_apply_lift("ban", "chat", -100, 9) == (True, "")
 
 
+def test_wide_bans_enter_the_work_deck():
+    from deed_pay import _work_where
+    from deed_sort import canonical_punishment, lift_actions, self_can_sort
+
+    assert canonical_punishment("banfull", None, -100) == ("ban", "full")
+    assert canonical_punishment("banall", "chat", -100) == ("ban", "all")
+    assert canonical_punishment("warnfull", "", 5) == ("warn", "full")
+    assert canonical_punishment("muteall", None, -1) == ("mute", "all")
+    assert canonical_punishment("kickall", None, -1) == ("kick", "all")
+    assert canonical_punishment("ban", "full", -5) == ("ban", "full")
+    assert lift_actions("banfull", None) == ("unbanall", "bot_unban")
+    assert lift_actions("banall", "") == ("unbanall",)
+    assert "banfull" in _work_where()
+    assert "'all', 'full'" in self_can_sort()
+
+
 def test_only_the_creator_can_write_salary_and_never_his_own():
     import inspect
 

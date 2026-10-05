@@ -51,6 +51,8 @@ from deed_sort import (
     evidence_band,
     lift_actions,
     pick_credits,
+    punish_type_sql,
+    canonical_punishment,
     reviewer_roster_sql,
     reviewer_totals_sql,
     self_can_sort,
@@ -106,14 +108,14 @@ WHERE status = 'paid'
 GROUP BY 1
 """
 
-WEEK_ISSUE_SQL = """
-SELECT s.action_type AS action, COUNT(*)::int AS n
+WEEK_ISSUE_SQL = f"""
+SELECT {punish_type_sql("s")} AS action, COUNT(*)::int AS n
 FROM epsilon_deed_reviews v
 JOIN staff_actions s ON s.id = v.action_id
 WHERE v.status = 'kept'
   AND v.reviewed_at > NOW() - INTERVAL '7 days'
-  AND s.action_type IN ('ban', 'mute', 'kick', 'warn')
-GROUP BY s.action_type
+  AND ({punish_type_sql("s")}) IN ('ban', 'mute', 'kick', 'warn')
+GROUP BY 1
 """
 
 WEEK_CHECK_SQL = """
@@ -151,6 +153,10 @@ LIMIT 12
 """
 
 PUNISH = ("ban", "mute", "kick", "warn")
+
+
+def _punish_match(alias: str, slot: str) -> str:
+    return f"({punish_type_sql(alias)}) = ANY({slot}::text[])"
 LABELS = {
     "ban": "Бан",
     "mute": "Мут",
@@ -205,12 +211,12 @@ RETURNING st.verdict
 
 # Старые решения без списка людей по-прежнему платят тому, кто выдал.
 # Новые платят только отмеченным: credits_set отличает эти случаи.
-ISSUE_COUNT_SQL = """
+ISSUE_COUNT_SQL = f"""
 SELECT s.admin_user_id AS admin_id, COUNT(*)::int AS n
 FROM epsilon_deed_reviews v
 JOIN staff_actions s ON s.id = v.action_id
 WHERE v.status = 'kept'
-  AND s.action_type = $1
+  AND ({punish_type_sql("s")}) = $1
   AND s.admin_user_id IS NOT NULL
   AND (
     COALESCE(v.credits_set, FALSE) = FALSE
@@ -262,12 +268,12 @@ _CARD_SQL = """
     (
         SELECT COUNT(*)::int FROM staff_actions h
         WHERE h.target_player_id = s.target_player_id
-          AND h.action_type IN ('ban', 'mute', 'kick', 'warn', 'unban', 'unmute', 'unwarn')
+          AND h.action_type IN ('ban', 'mute', 'kick', 'warn', 'banall', 'banfull', 'bot_ban', 'muteall', 'kickall', 'warnall', 'warnfull', 'unban', 'unmute', 'unwarn')
           AND {human}
     ) AS archive_count
 """.format(human=human_actor_sql("h"))
 
-_CARD_FROM = """
+_CARD_FROM = f"""
 FROM staff_actions s
 LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
 LEFT JOIN epsilon_deed_sorts ds ON ds.action_id = s.id
@@ -277,7 +283,7 @@ LEFT JOIN users stu ON stu.user_id = st.staff_id
 LEFT JOIN chat c ON c.chat_id = s.chat_id
 LEFT JOIN users tu ON tu.user_id = s.target_player_id
 LEFT JOIN users au ON au.user_id = s.admin_user_id
-LEFT JOIN epsilon_deed_rates r ON r.action_type = s.action_type
+LEFT JOIN epsilon_deed_rates r ON r.action_type = ({punish_type_sql("s")})
 """
 
 
@@ -582,8 +588,12 @@ def _credit_people(row) -> list[tuple[str, int, str]]:
 
 
 def _card(row, history: list[dict]) -> dict[str, Any]:
-    action = row["action_type"]
-    scope = row["scope"] or ("chat" if row["chat_id"] else "all")
+    found = canonical_punishment(row["action_type"], row.get("scope"), int(row.get("chat_id") or 0))
+    if found:
+        action, scope = found
+    else:
+        action = row["action_type"]
+        scope = row["scope"] or ("chat" if row["chat_id"] else "all")
     minutes = row["duration_minutes"]
     verdict = (row.get("sort_verdict") or "").strip()
     chain = _chain(row)
@@ -646,7 +656,7 @@ async def _history(target_id: int | None) -> list[dict]:
         SELECT id, created_at, action_type, reason, admin_name
         FROM staff_actions
         WHERE target_player_id = $1
-          AND action_type IN ('ban', 'mute', 'kick', 'warn', 'unban', 'unmute', 'unwarn')
+          AND action_type IN ('ban', 'mute', 'kick', 'warn', 'banall', 'banfull', 'bot_ban', 'muteall', 'kickall', 'warnall', 'warnfull', 'unban', 'unmute', 'unwarn')
           AND {human_actor_sql()}
         ORDER BY created_at DESC, id DESC
         LIMIT 5
@@ -658,7 +668,10 @@ async def _history(target_id: int | None) -> list[dict]:
         out.append({
             "id": int(row["id"]),
             "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
-            "actionLabel": LABELS.get(row["action_type"], row["action_type"]),
+            "actionLabel": LABELS.get(
+                (canonical_punishment(row["action_type"]) or (row["action_type"],))[0],
+                row["action_type"],
+            ),
             "reason": row["reason"] or "",
             "adminName": row["admin_name"] or "",
         })
@@ -916,14 +929,14 @@ def _asked_set(credits: list[CreditIn] | None) -> set[tuple[str, int]] | None:
 def _filters(action: str, admin_id: int, sorter_id: int = 0) -> tuple[str, list[Any]]:
     params: list[Any] = [list(PUNISH)]
     parts = [
-        "s.action_type = ANY($1::text[])",
+        _punish_match("s", "$1"),
         human_actor_sql("s"),
         creator_ready_sql("s"),
     ]
     picked = action.strip().lower()
     if picked in PUNISH:
         params.append(picked)
-        parts.append(f"s.action_type = ${len(params)}")
+        parts.append(f"({punish_type_sql('s')}) = ${len(params)}")
     if admin_id:
         params.append(int(admin_id))
         parts.append(f"s.admin_user_id = ${len(params)}")
@@ -1056,7 +1069,7 @@ async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tupl
                        st.verdict AS staff_verdict, st.staff_id,
                        st.lift_ask, st.lift_status
                 {_CHAIN_FROM}
-                WHERE s.id = $1 AND s.action_type = ANY($2::text[])
+                WHERE s.id = $1 AND {_punish_match("s", "$2")}
                 """,
                 action_id, list(PUNISH),
             )
@@ -1156,7 +1169,7 @@ def _work_where() -> str:
     return " AND ".join([
         "v.action_id IS NULL",
         "ds.action_id IS NULL",
-        "s.action_type = ANY($1::text[])",
+        _punish_match("s", "$1"),
         human_actor_sql("s"),
         self_can_sort("s", "$2"),
         claim_free_sql(STAGE_ADMIN, "$2"),
@@ -1168,7 +1181,7 @@ def _staff_where() -> str:
     return " AND ".join([
         "v.action_id IS NULL",
         "st.action_id IS NULL",
-        "s.action_type = ANY($1::text[])",
+        _punish_match("s", "$1"),
         human_actor_sql("s"),
         self_is_staff("$2"),
         "COALESCE(s.admin_user_id, 0) <> $2",
@@ -1247,7 +1260,7 @@ async def deed_staff(user_id: int = Depends(get_any_telegram_user_id)):
 def _own_where() -> str:
     """Чужая карточка без ответа, которую ещё могут взять администратор или сотрудник."""
     return " AND ".join([
-        "s.action_type = ANY($1::text[])",
+        _punish_match("s", "$1"),
         human_actor_sql("s"),
         "COALESCE(s.admin_user_id, 0) <> $2",
         creator_open_sql("s", "$2"),
@@ -1624,7 +1637,10 @@ async def _clear_warns(user_id: int, chat_id: int, *, everyone: bool, admin_id: 
 
 
 async def _note_lift(admin_id: int, target: int, chat_id: int, scope: str, action_type: str, reason: str) -> None:
-    visible = {"ban": "unban", "mute": "unmute", "warn": "unwarn"}.get(action_type)
+    found = canonical_punishment(action_type, scope, chat_id)
+    family = found[0] if found else (action_type or "")
+    span = found[1] if found else (scope or "chat")
+    visible = {"ban": "unban", "mute": "unmute", "warn": "unwarn"}.get(family)
     if not visible:
         return
     await db.pool.execute(
@@ -1633,7 +1649,7 @@ async def _note_lift(admin_id: int, target: int, chat_id: int, scope: str, actio
             (admin_user_id, admin_name, target_player_id, action_type, reason, chat_id, scope, created_at)
         VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, NOW())
         """,
-        int(admin_id), int(target), visible, reason, int(chat_id or 0), scope or "chat",
+        int(admin_id), int(target), visible, reason, int(chat_id or 0), span or "chat",
     )
 
 
@@ -1833,12 +1849,12 @@ async def deed_collect(user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_deed_tables()
     rows = await db.pool.fetch(
         f"""
-        SELECT action_type, COUNT(*)::int AS n
+        SELECT {punish_type_sql()} AS action_type, COUNT(*)::int AS n
         FROM staff_actions
-        WHERE action_type = ANY($1::text[])
+        WHERE ({punish_type_sql()}) = ANY($1::text[])
           AND created_at >= NOW() - INTERVAL '90 days'
           AND {human_actor_sql()}
-        GROUP BY action_type
+        GROUP BY 1
         """,
         list(PUNISH),
     )
@@ -1944,12 +1960,12 @@ async def deed_mine(user_id: int = Depends(get_any_telegram_user_id)):
         user_id, list(STAFF_ROLES),
     ))
     waiting = int(await db.pool.fetchval(
-        """
+        f"""
         SELECT COUNT(*)::int
         FROM staff_actions s
         LEFT JOIN epsilon_deed_reviews v ON v.action_id = s.id
         WHERE v.action_id IS NULL AND s.admin_user_id = $1
-          AND s.action_type = ANY($2::text[])
+          AND {_punish_match("s", "$2")}
         """,
         user_id, list(PUNISH),
     ) or 0)
@@ -2373,7 +2389,7 @@ async def deed_done(
     parts = ["1=1", human_actor_sql("s")]
     if action.strip().lower() in PUNISH:
         params.append(action.strip().lower())
-        parts.append(f"s.action_type = ${len(params)}")
+        parts.append(f"({punish_type_sql('s')}) = ${len(params)}")
     if adminId:
         params.append(int(adminId))
         parts.append(f"s.admin_user_id = ${len(params)}")
