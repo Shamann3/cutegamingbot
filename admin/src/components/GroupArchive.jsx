@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import FocusWindow from './FocusWindow'
 import PhotoLook from './PhotoLook'
 import { payLabel, sortLabel } from '../lib/deedSort'
+import { arrivalLine, hiddenLine } from '../lib/liveMerge'
 import UserLookupPreview from './UserLookupPreview'
 import OpenUserLink from './OpenUserLink'
 
@@ -79,6 +80,14 @@ function lookFor(action) {
   return LOOK[key] || { label: key || 'Запись', color: '#f4f4f4' }
 }
 
+function rowShown(row, filter, repeats, warnMap) {
+  if (filter === 'all') return true
+  if (filter === 'repeat') return (repeats.get(Number(row.target_user_id)) || 0) >= 2
+  if (filter === 'near') return (warnMap.get(Number(row.target_user_id)) || 0) >= 2
+  if (filter === 'far') return (warnMap.get(Number(row.target_user_id)) || 0) <= 1
+  return (FAMILY[filter] || []).includes(String(row.action || '').toLowerCase())
+}
+
 function undoAction(action) {
   const key = String(action || '').toLowerCase()
   if (key === 'ban') return { id: 'unban', label: 'Разбанить' }
@@ -97,6 +106,7 @@ export default function GroupArchive({
   onAct,
   seedQuery = '',
   onOpenUser,
+  arrived = [],
 }) {
   const [filter, setFilter] = useState('all')
   const [openId, setOpenId] = useState(null)
@@ -130,18 +140,16 @@ export default function GroupArchive({
 
   const items = useMemo(() => {
     const list = rows || []
-    if (filter === 'all') return list
-    if (filter === 'repeat') {
-      return list.filter((row) => (repeats.get(Number(row.target_user_id)) || 0) >= 2)
-    }
-    if (filter === 'near') {
-      return list.filter((row) => (warnMap.get(Number(row.target_user_id)) || 0) >= 2)
-    }
-    if (filter === 'far') {
-      return list.filter((row) => (warnMap.get(Number(row.target_user_id)) || 0) <= 1)
-    }
-    return list.filter((row) => (FAMILY[filter] || []).includes(String(row.action || '').toLowerCase()))
+    return list.filter((row) => rowShown(row, filter, repeats, warnMap))
   }, [rows, filter, repeats, warnMap])
+
+  const freshIds = useMemo(() => new Set((arrived || []).map((row) => Number(row.id))), [arrived])
+  const liveText = useMemo(() => {
+    if (!arrived?.length) return ''
+    const visible = arrived.filter((row) => rowShown(row, filter, repeats, warnMap))
+    if (!visible.length) return hiddenLine(arrived[0])
+    return arrivalLine(visible)
+  }, [arrived, filter, repeats, warnMap])
 
   const selected = actions.find((item) => item.id === action) || actions[0]
 
@@ -208,6 +216,7 @@ export default function GroupArchive({
         ))}
       </div>
       {FILTER_HINT[filter] && <p className="realm-copy">{FILTER_HINT[filter]}</p>}
+      {liveText && <p className="g-arc-live" role="status">{liveText}</p>}
 
       {actions.length > 0 && (
         <form id="g-arc-punish" className="realm-form g-arc-punish" onSubmit={submit}>
@@ -266,7 +275,7 @@ export default function GroupArchive({
           return (
             <article
               key={id}
-              className={open ? 'g-arc-card is-open' : 'g-arc-card'}
+              className={`g-arc-card${open ? ' is-open' : ''}${freshIds.has(Number(id)) ? ' is-arrive' : ''}`}
               style={{ '--cc': look.color }}
             >
               <button type="button" className="g-arc-hit" onClick={() => setOpenId(open ? null : id)} aria-expanded={open}>

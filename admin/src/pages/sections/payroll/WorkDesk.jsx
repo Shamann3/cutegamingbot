@@ -3,7 +3,7 @@ import CountUp from '../../../components/CountUp'
 import { fetchDeedWork, isPanelPreviewMode, sortDeed, unsortDeed } from '../../../lib/adminClient'
 import { BAND_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { FLY_MS, motionQuiet, pinShellScroll, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
+import DeckCard, { DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
 
 const CHOICES = [
   { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'можно просить снять', side: 'left' },
@@ -59,6 +59,7 @@ export default function WorkDesk({ onCount }) {
 
   useEffect(() => { load() }, [load])
   useRefill(queue, load)
+  const pileNote = useDeckLive('work', queue, setQueue, load)
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
@@ -178,6 +179,7 @@ export default function WorkDesk({ onCount }) {
               <span className="deck-count-cap">{waitCaption(waiting, 'вашей проверки')}</span>
             </div>
           )}
+          {pileNote && card && <DeckPileNote text={pileNote} />}
           <p className="deed-lead">
             Здесь чужие наказания. Посмотрите доказательство и ответьте. Дальше карточку проверит один из сотрудников проекта, затем создатель.
           </p>

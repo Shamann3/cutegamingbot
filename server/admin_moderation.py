@@ -89,6 +89,7 @@ async def list_moderation_logs(
     sort_by: str = "date",
     limit: int = 50,
     offset: int = 0,
+    after_id: int | None = None,
 ) -> dict:
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
@@ -115,6 +116,18 @@ async def list_moderation_logs(
     order = "action_type ASC, created_at DESC, id DESC" if sort_by == "type" else "created_at DESC, id DESC"
 
     where = " AND ".join(conditions)
+    item_conditions = list(conditions)
+    item_params = list(params)
+    item_idx = idx
+    item_order = order
+    item_offset = offset
+    if after_id and int(after_id) > 0:
+        item_conditions.append(f"id > ${item_idx}")
+        item_params.append(int(after_id))
+        item_idx += 1
+        item_order = "id DESC"
+        item_offset = 0
+    item_where = " AND ".join(item_conditions)
     try:
         from deed_sort import ensure_deed_sorts, verdict_of_sql
         await ensure_deed_sorts()
@@ -128,16 +141,16 @@ async def list_moderation_logs(
         verdict_sql = ""
     total = int(await db.pool.fetchval(f"SELECT COUNT(*)::int FROM staff_actions WHERE {where}", *params) or 0)
 
-    params.extend([limit, offset])
+    item_params.extend([limit, item_offset])
     rows = await db.pool.fetch(
         f"""
         SELECT {_ACTION_COLUMNS}{verdict_sql}
         FROM staff_actions
-        WHERE {where}
-        ORDER BY {order}
-        LIMIT ${idx} OFFSET ${idx + 1}
+        WHERE {item_where}
+        ORDER BY {item_order}
+        LIMIT ${item_idx} OFFSET ${item_idx + 1}
         """,
-        *params,
+        *item_params,
     )
     return {"total": total, "items": [_action_row(r) for r in rows]}
 

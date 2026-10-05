@@ -70,7 +70,7 @@ export default function ShiftDesk({ chatId, canActivity, onOpen }) {
         type={Hero === 'button' ? 'button' : undefined}
         className={`dash-bot-hero${waiting ? ' is-collecting' : ''}${onOpen && !waiting && !closed ? ' metric-tile' : ''} ${toneClass}`.trim()}
         aria-label={Hero === 'button' ? `${fmt(current)} сообщений. ${story}. Открыть, кто писал` : undefined}
-        onClick={Hero === 'button' ? onOpen : undefined}
+        onClick={Hero === 'button' ? () => onOpen?.(period) : undefined}
       >
         {waiting && (
           <span className="dash-collecting">
@@ -86,7 +86,7 @@ export default function ShiftDesk({ chatId, canActivity, onOpen }) {
             </strong>
             <span className="dash-bot-hero-sub">
               {story}
-              {onOpen ? <span className="dash-bot-hero-more">Нажмите цифру — откроется, кто писал.</span> : null}
+              {onOpen ? <span className="dash-bot-hero-more">Нажмите цифру — список откроется ниже, на этой странице.</span> : null}
             </span>
           </>
         )}

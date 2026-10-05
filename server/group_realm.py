@@ -2141,6 +2141,27 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
     }
 
 
+@router.get("/pulse/{chat_id}")
+async def group_pulse(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    """Свежий архив группы. Карточку проверки эта сверка не забирает."""
+    access = await _access(user_id, chat_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
+    from admin_groups import _moderation_counts, chat_warn_watch
+
+    mods = await _moderation_counts(int(chat_id))
+    watch = await chat_warn_watch(int(chat_id))
+    return {
+        "actions30d": mods.get("actions_30d"),
+        "mutes": mods.get("mutes"),
+        "bans": mods.get("bans"),
+        "warns": mods.get("warns"),
+        "kicks": mods.get("kicks"),
+        "recent": mods.get("recent") or [],
+        "watch": watch,
+    }
+
+
 @router.post("/act")
 async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_id)):
     access = await _access(user_id, body.chat_id)

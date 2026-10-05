@@ -62,4 +62,26 @@ describe('GroupArchive', () => {
     expect(screen.getByLabelText('Причина снятия')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Разбанить' })).toBeTruthy()
   })
+
+  it('shows a new punishment in the open list and names one the filter hides', () => {
+    const { rerender } = render(
+      <GroupArchive
+        rows={[{ id: 4, action: 'mute', target_user_id: 3, admin: 'Анна', reason: 'флуд', at: '2026-10-05T01:00:00Z' }]}
+        actions={[]}
+      />,
+    )
+    rerender(
+      <GroupArchive
+        rows={[
+          { id: 9, action: 'ban', target_user_id: 8, admin: 'Анна', reason: 'спам', at: '2026-10-05T01:02:00Z' },
+          { id: 4, action: 'mute', target_user_id: 3, admin: 'Анна', reason: 'флуд', at: '2026-10-05T01:00:00Z' },
+        ]}
+        actions={[]}
+        arrived={[{ id: 9, action: 'ban', target_user_id: 8 }]}
+      />,
+    )
+    expect(screen.getByRole('status').textContent).toBe('Новый бан уже в этом списке.')
+    fireEvent.click(screen.getByRole('button', { name: 'Муты' }))
+    expect(screen.getByRole('status').textContent).toBe('Новый бан уже в архиве. Этот фильтр его не показывает.')
+  })
 })

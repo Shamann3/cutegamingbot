@@ -6940,6 +6940,7 @@ async def admin_moderation_logs(
     sort_by: str = Query("date"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    after_id: int | None = Query(None),
     _admin_id: int = Depends(require_admin_permission("moderate_ban")),
 ):
     return await list_moderation_logs(
@@ -6949,6 +6950,7 @@ async def admin_moderation_logs(
         sort_by=sort_by,
         limit=limit,
         offset=offset,
+        after_id=after_id,
     )
 
 

@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PhotoLook from '../../../components/PhotoLook'
 import { loadTgPhotoUrl } from '../../../components/TgPhoto'
+import { fetchDeedPulse, isPanelPreviewMode } from '../../../lib/adminClient'
+import { pileLine } from '../../../lib/liveMerge'
 
 export const FLY_MS = 420
 
@@ -45,6 +47,76 @@ export function useRefill(queue, load) {
     const timer = window.setTimeout(() => { load() }, 15000)
     return () => window.clearTimeout(timer)
   }, [queue, load])
+}
+
+const LIVE_MS = 2500
+
+/**
+ * Новое наказание само ложится в колоду.
+ * Пустая колода открывает карточку. Открытую карточку не подменяет — только число за ней.
+ * stage '' — чужой фильтр: пустую колоду обновляем, карточку в руках не трогаем.
+ */
+export function useDeckLive(stage, queue, setQueue, load) {
+  const [pileNote, setPileNote] = useState('')
+  const queueRef = useRef(queue)
+  const loadRef = useRef(load)
+  const lock = useRef(false)
+  queueRef.current = queue
+  loadRef.current = load
+
+  useEffect(() => {
+    if (!pileNote) return undefined
+    const timer = window.setTimeout(() => setPileNote(''), 4600)
+    return () => window.clearTimeout(timer)
+  }, [pileNote])
+
+  useEffect(() => {
+    let stop = false
+    const tick = async () => {
+      if (stop || document.hidden || lock.current || isPanelPreviewMode()) return
+      const snap = queueRef.current
+      if (!snap) return
+      lock.current = true
+      try {
+        if (!stage) {
+          if (!snap.card) await loadRef.current()
+          return
+        }
+        const data = await fetchDeedPulse()
+        if (stop || data?.[stage] == null) return
+        const waiting = Number(data[stage]) || 0
+        const held = queueRef.current
+        if (!held) return
+        if (held.card) {
+          const prev = Number(held.waiting) || 0
+          if (waiting !== prev) {
+            setQueue((current) => (current?.card ? { ...current, waiting } : current))
+          }
+          if (waiting > prev) setPileNote(pileLine(waiting - prev))
+          return
+        }
+        if (waiting > 0) await loadRef.current()
+      } catch {
+        /* следующая сверка подберёт запись */
+      } finally {
+        lock.current = false
+      }
+    }
+    const first = window.setTimeout(tick, 800)
+    const timer = window.setInterval(tick, LIVE_MS)
+    return () => {
+      stop = true
+      window.clearTimeout(first)
+      window.clearInterval(timer)
+    }
+  }, [stage, setQueue])
+
+  return pileNote
+}
+
+export function DeckPileNote({ text }) {
+  if (!text) return null
+  return <p className="deck-note deck-live" role="status">{text}</p>
 }
 
 /** После ответа карточка меняется, а экран остаётся на месте. */

@@ -2092,11 +2092,12 @@ export async function fetchModeratorStats(period = 'week') {
   return adminRequest(`/moderation/moderator-stats?period=${period}`)
 }
 
-export async function fetchModerationLogs({ actionType = '', playerId = '', chatId = '', sortBy = 'date', limit = 50, offset = 0 } = {}) {
+export async function fetchModerationLogs({ actionType = '', playerId = '', chatId = '', sortBy = 'date', limit = 50, offset = 0, afterId = 0 } = {}) {
   const p = new URLSearchParams({ limit, offset, sort_by: sortBy })
   if (actionType) p.set('action_type', actionType)
   if (playerId) p.set('player_id', playerId)
   if (chatId) p.set('chat_id', chatId)
+  if (afterId) p.set('after_id', String(afterId))
   return adminRequest(`/moderation/logs?${p}`)
 }
 
@@ -2127,6 +2128,10 @@ export async function fetchDeedReviewers() {
 
 export async function fetchDeedWork() {
   return adminRequest('/deed-pay/work')
+}
+
+export async function fetchDeedPulse() {
+  return adminRequest('/deed-pay/pulse')
 }
 
 export async function fetchStaffWorkCount() {
@@ -2531,6 +2536,10 @@ export async function decideGroupApplication(body) {
 
 export async function fetchGroupSummary(chatId) {
   return adminFetch(`/group-realm/summary/${encodeURIComponent(chatId)}`)
+}
+
+export async function fetchGroupPulse(chatId) {
+  return adminFetch(`/group-realm/pulse/${encodeURIComponent(chatId)}`)
 }
 
 export async function fetchGroupGuard(chatId) {

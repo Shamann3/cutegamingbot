@@ -12,6 +12,7 @@ import {
 } from '../../lib/adminClient'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import { payLabel, sortLabel } from '../../lib/deedSort'
+import { arrivalLine, placeLogs } from '../../lib/liveMerge'
 import StaffDesk from './payroll/StaffDesk'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
@@ -480,10 +481,10 @@ function CaseModal({ item, role, perms, onClose, onUnbanned, onOpenUser }) {
 // ---------------------------------------------------------------------------
 // Card
 // ---------------------------------------------------------------------------
-function ActionCard({ item, onClick }) {
+function ActionCard({ item, onClick, fresh = false }) {
   const meta = actionMeta(item.actionType, item.scope)
   return (
-    <div className="arc-card" style={{ '--cc': meta.color, '--cg': meta.glow, '--cb': meta.bg }}
+    <div className={`arc-card${fresh ? ' is-arrive' : ''}`} style={{ '--cc': meta.color, '--cg': meta.glow, '--cb': meta.bg }}
       onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}>
       <div className="arc-card-num">#{String(item.id).padStart(5, '0')}</div>
@@ -957,6 +958,8 @@ export default function ModerationSection({
     tab.id === 'check' && checkCount > 0 ? { ...tab, label: `Проверка · ${checkCount}` } : tab
   ))
   const [items, setItems] = useState([])
+  const [freshIds, setFreshIds] = useState([])
+  const [liveLine, setLiveLine] = useState('')
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -967,9 +970,17 @@ export default function ModerationSection({
   const [sortBy, setSortBy] = useState('date')
   const [playerInput, setPlayerInput] = useState('')
   const [offset, setOffset] = useState(0)
-  const [liveCount, setLiveCount] = useState(0)
   const [openCase, setOpenCase] = useState(null)
   const wsRef = useRef(null)
+  const pullRef = useRef(() => {})
+  const itemsRef = useRef(items)
+  const offsetRef = useRef(0)
+  const sortRef = useRef('date')
+  const highWater = useRef(0)
+  const liveTimer = useRef(0)
+  itemsRef.current = items
+  offsetRef.current = offset
+  sortRef.current = sortBy
 
   const load = useCallback(async (opts = {}) => {
     setLoading(true); setError('')
@@ -988,6 +999,72 @@ export default function ModerationSection({
   }, [filterType, filterPlayer, filterChat, offset])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    for (const row of items) {
+      const id = Number(row?.id) || 0
+      if (id > highWater.current) highWater.current = id
+    }
+  }, [items])
+
+  useEffect(() => () => window.clearTimeout(liveTimer.current), [])
+
+  useEffect(() => {
+    if (activeMainTab !== 'archive') return undefined
+    let stop = false
+    const mark = (line) => {
+      setLiveLine(line)
+      window.clearTimeout(liveTimer.current)
+      liveTimer.current = window.setTimeout(() => {
+        setLiveLine('')
+        setFreshIds([])
+      }, 4800)
+    }
+    const tick = async () => {
+      if (stop || document.hidden) return
+      const afterId = highWater.current
+      if (!afterId) return
+      try {
+        const data = await fetchModerationLogs({
+          actionType: filterType,
+          playerId: filterPlayer,
+          chatId: filterChat,
+          sortBy,
+          limit: PAGE_SIZE,
+          offset: 0,
+          afterId,
+        })
+        if (stop) return
+        const incoming = data?.items || []
+        if (!incoming.length) return
+        for (const row of incoming) {
+          const id = Number(row?.id) || 0
+          if (id > highWater.current) highWater.current = id
+        }
+        if (typeof data?.total === 'number') setTotal(data.total)
+        if (offsetRef.current !== 0) {
+          mark('Новая запись уже на первой странице.')
+          return
+        }
+        const placed = placeLogs(itemsRef.current, incoming, sortRef.current)
+        if (!placed.fresh.length) return
+        setItems(placed.items.slice(0, PAGE_SIZE))
+        setFreshIds(placed.fresh.map((row) => row.id))
+        mark(arrivalLine(placed.fresh))
+      } catch {
+        /* следующая сверка */
+      }
+    }
+    const first = window.setTimeout(tick, 900)
+    const timer = window.setInterval(tick, 2500)
+    pullRef.current = () => { if (!stop) tick() }
+    return () => {
+      stop = true
+      window.clearTimeout(first)
+      window.clearInterval(timer)
+      pullRef.current = () => {}
+    }
+  }, [activeMainTab, filterType, filterPlayer, filterChat, sortBy])
 
   useEffect(() => {
     if (checkBoot.current) return undefined
@@ -1015,7 +1092,10 @@ export default function ModerationSection({
       if (dead) return
       ws = new WebSocket(wsUrl)
       ws.onmessage = (e) => {
-        try { const msg = JSON.parse(e.data); if (msg.event === 'new_moderation_log') setLiveCount(n => n+1) } catch {}
+        try {
+          const msg = JSON.parse(e.data)
+          if (msg.event === 'new_moderation_log') pullRef.current()
+        } catch { /* чужой кадр */ }
       }
       ws.onclose = () => { if (!dead) setTimeout(connect, 4000) }
       wsRef.current = ws
@@ -1061,11 +1141,7 @@ export default function ModerationSection({
             <div className="arc-title">Главный Архив</div>
             <div className="arc-subtitle">Наказания людей во всём проекте. Записи самого бота скрыты. Фото в деле открывается целиком. {total.toLocaleString('ru-RU')} записей</div>
           </div>
-          {liveCount > 0 && (
-            <button className="arc-live" onClick={() => { setLiveCount(0); load() }}>
-              +{liveCount} новых — обновить
-            </button>
-          )}
+          {liveLine && <p className="g-arc-live" role="status">{liveLine}</p>}
         </div>
 
         {/* Главные табы */}
@@ -1145,7 +1221,9 @@ export default function ModerationSection({
           )}
           {!loading && items.length > 0 && (
             <div className="arc-grid">
-              {items.map(item => <ActionCard key={item.id} item={item} onClick={() => setOpenCase(item)} />)}
+              {items.map(item => (
+                <ActionCard key={item.id} item={item} fresh={freshIds.includes(item.id)} onClick={() => setOpenCase(item)} />
+              ))}
             </div>
           )}
           {totalPages > 1 && (

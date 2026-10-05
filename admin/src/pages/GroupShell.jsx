@@ -12,6 +12,7 @@ import {
   fetchRealmLogs,
   fetchGroupActivity,
   fetchGroupPositions,
+  fetchGroupPulse,
   fetchGroupSummary,
   groupRealmAct,
   markGroupOfficial,
@@ -24,6 +25,7 @@ import {
 } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
+import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import MySalary from './sections/payroll/MySalary'
@@ -156,6 +158,11 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const { volume: musicVolume, setVolume: setMusicVolume, toggleMute: toggleMusicMute } = useMusicMode()
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [summary, setSummary] = useState(null)
+  const [arrived, setArrived] = useState([])
+  const summaryRef = useRef(null)
+  const actingRef = useRef(false)
+  const arrivedTimer = useRef(0)
+  summaryRef.current = summary
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -164,6 +171,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [hits, setHits] = useState([])
   const [userId, setUserId] = useState('')
   const [acting, setActing] = useState(false)
+  actingRef.current = acting
   const [positions, setPositions] = useState([])
   const [apps, setApps] = useState([])
   const [appointUser, setAppointUser] = useState('')
@@ -185,6 +193,9 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [newRank, setNewRank] = useState('1')
   const [newKind, setNewKind] = useState('post')
   const [peakHours, setPeakHours] = useState([])
+  const [homeBoard, setHomeBoard] = useState(null)
+  const [punishFor, setPunishFor] = useState('')
+  const writersRef = useRef(null)
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const mainRef = useRef(null)
@@ -255,24 +266,96 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     }
   }, [railOpen, phone])
 
-  const loadSummary = useCallback(async (id) => {
+  const showArrived = useCallback((rows) => {
+    if (!rows?.length) return
+    setArrived(rows)
+    window.clearTimeout(arrivedTimer.current)
+    arrivedTimer.current = window.setTimeout(() => setArrived([]), 4800)
+  }, [])
+
+  useEffect(() => () => window.clearTimeout(arrivedTimer.current), [])
+
+  const loadSummary = useCallback(async (id, { quiet = false } = {}) => {
     if (!id) {
       setSummary(null)
       return
     }
-    setLoading(true)
-    setError('')
+    if (!quiet) {
+      setLoading(true)
+      setError('')
+    }
     try {
-      setSummary(await fetchGroupSummary(id))
+      const data = await fetchGroupSummary(id)
+      const fresh = moderationDelta(summaryRef.current?.moderation?.recent, data?.moderation?.recent).fresh
+      setSummary(data)
+      if (fresh.length) showArrived(fresh)
     } catch (err) {
-      setSummary(null)
+      if (!quiet) setSummary(null)
       setError(err.message || 'Карточка группы не открылась')
     } finally {
-      setLoading(false)
+      if (!quiet) setLoading(false)
     }
-  }, [])
+  }, [showArrived])
 
   useEffect(() => { loadSummary(chatId) }, [chatId, loadSummary])
+
+  useEffect(() => {
+    if (!chatId) return undefined
+    let stop = false
+    const tick = async () => {
+      if (stop || document.hidden || actingRef.current) return
+      const current = summaryRef.current
+      if (!current?.moderation) return
+      try {
+        const data = await fetchGroupPulse(chatId)
+        if (stop) return
+        const seen = (summaryRef.current?.moderation?.recent || []).reduce(
+          (max, row) => Math.max(max, Number(row?.id) || 0),
+          0,
+        )
+        const incoming = (data?.recent || []).reduce(
+          (max, row) => Math.max(max, Number(row?.id) || 0),
+          0,
+        )
+        if (incoming < seen) return
+        const delta = moderationDelta(summaryRef.current?.moderation?.recent, data?.recent)
+        const unchanged = !delta.fresh.length && !delta.changed && samePulse(summaryRef.current?.moderation, data)
+        if (unchanged) return
+        setSummary((prev) => {
+          if (!prev?.moderation) return prev
+          const held = (prev.moderation.recent || []).reduce(
+            (max, row) => Math.max(max, Number(row?.id) || 0),
+            0,
+          )
+          if (incoming < held) return prev
+          const next = moderationDelta(prev.moderation.recent, data?.recent)
+          return {
+            ...prev,
+            moderation: {
+              ...prev.moderation,
+              actions30d: data?.actions30d,
+              mutes: data?.mutes,
+              bans: data?.bans,
+              warns: data?.warns,
+              kicks: data?.kicks,
+              recent: next.recent,
+              watch: data?.watch ?? prev.moderation.watch,
+            },
+          }
+        })
+        if (delta.fresh.length) showArrived(delta.fresh)
+      } catch {
+        /* архив остаётся как был, сверка повторится */
+      }
+    }
+    const first = window.setTimeout(tick, 800)
+    const timer = window.setInterval(tick, 2500)
+    return () => {
+      stop = true
+      window.clearTimeout(first)
+      window.clearInterval(timer)
+    }
+  }, [chatId, showArrived])
 
   useEffect(() => {
     if (!chatId) {
@@ -610,6 +693,22 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     setTab(id)
   }
 
+  const openWriters = (next) => {
+    setHomeBoard(next)
+    window.requestAnimationFrame(() => {
+      const node = writersRef.current
+      const main = mainRef.current
+      if (!node || !main) return
+      const top = node.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 8
+      main.scrollTop = Math.max(0, top)
+    })
+  }
+
+  const openPunish = (id) => {
+    if (!id) return
+    setPunishFor(String(id))
+  }
+
   const mods = summary?.moderation
   const repeats = useMemo(() => repeatCounts(mods?.recent), [mods])
   const canActivity = tabs.some((item) => item.id === 'activity')
@@ -639,7 +738,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         until_sec: until,
       })
       setNotice(data?.receipt || 'Записано в архив официальной группы')
-      await loadSummary(chatId)
+      await loadSummary(chatId, { quiet: true })
     } catch (err) {
       setError(err.message || 'Действие не прошло')
       throw err
@@ -680,6 +779,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         />
       )}
       {!phone && <PanelDrawerOverlay open={railOpen} onClose={closeRail} ms={700} />}
+      <div className="panel-tg-chrome" aria-hidden="true" />
       {!phone && (
         <PanelSidebar
           sections={navSections}
@@ -702,6 +802,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         />
       )}
       <main ref={mainRef} className="panel-shell-main">
+      {phone && activeTab !== 'more' && (
+        <div className="panel-appearance">
+          <AccentPalette
+            value={accent}
+            onChange={(next) => setAccent(persistAccent(next))}
+          />
+        </div>
+      )}
       <div className="panel-layout panel-layout-page">
         {!phone && (
           <EliteTopbar
@@ -716,14 +824,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           />
         )}
         <div className="grp-page nika-page realm-main">
-          {phone && activeTab !== 'more' && (
-            <div className="panel-appearance">
-              <AccentPalette
-                value={accent}
-                onChange={(next) => setAccent(persistAccent(next))}
-              />
-            </div>
-          )}
           <header className="nika-head">
             <div className="nika-head-copy">
               <h1>{shownTabs.find((item) => item.id === activeTab)?.label || (chatId ? title : 'Группа не выбрана')}</h1>
@@ -947,7 +1047,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               <ShiftDesk
                 chatId={chatId}
                 canActivity={canActivity}
-                onOpen={canActivity ? () => pickTab('activity') : undefined}
+                onOpen={canActivity ? (period) => openWriters({ period: period || 'day', slice: '' }) : undefined}
               />
               <div className="dash-usage-stage">
                 <div className="dash-usage-grid grp-overview-stats">
@@ -956,7 +1056,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                     title: 'Писали за 30 дней',
                     value: fmt(summary?.writers30d ?? summary?.members),
                     hint: 'Сколько разных людей отправили хотя бы одно сообщение',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
                   })}>
                     <span className="dash-usage-label">Писали</span>
                     <strong className="dash-usage-value">{fmt(summary?.writers30d ?? summary?.members)}</strong>
@@ -967,7 +1067,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                     title: 'Сообщения за 30 дней',
                     value: fmt(summary?.messages30d),
                     hint: 'Сколько сообщений ушло в этот чат',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
                   })}>
                     <span className="dash-usage-label">Сообщения</span>
                     <strong className="dash-usage-value">{fmt(summary?.messages30d)}</strong>
@@ -978,7 +1078,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                     title: 'Кого панель уже видела',
                     value: fmt(summary?.members),
                     hint: 'Это не полный список Telegram. Только люди, которые уже попадали в этот чат.',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => pickTab('activity') } : null,
+                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
                   })}>
                     <span className="dash-usage-label">Участники</span>
                     <strong className="dash-usage-value">{fmt(summary?.members)}</strong>
@@ -989,7 +1089,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
               {peakHours.some((point) => point.messages > 0) && (
                 <div className="grp-peak">
                   <h3 className="realm-h">Сообщения за неделю</h3>
-                  <p className="realm-copy">Выше столбик — больше сообщений. Нажмите день, чтобы открыть, кто писал.</p>
+                  <p className="realm-copy">Выше столбик — больше сообщений. Нажмите день — список откроется ниже, на этой странице.</p>
                   <div className="act-bars" role="list" aria-label="Сообщения по дням недели">
                     {peakHours.map((point) => {
                       const max = Math.max(...peakHours.map((item) => item.messages), 1)
@@ -1003,11 +1103,13 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                           key={point.date}
                           type="button"
                           role="listitem"
+                          className={homeBoard?.slice === point.date ? 'is-on' : ''}
                           data-level={level || undefined}
                           title={`${stamp}: ${fmt(value)} сообщений`}
                           aria-label={`${stamp}: ${fmt(value)} сообщений`}
+                          aria-pressed={homeBoard?.slice === point.date}
                           onClick={() => {
-                            if (canActivity) pickTab('activity')
+                            if (canActivity) openWriters({ period: 'week', slice: point.date })
                             else metric.open({
                               id: `grp-peak-${point.date}`,
                               title: stamp || String(point.date),
@@ -1031,6 +1133,24 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                   </div>
                 </div>
               )}
+              {homeBoard && canActivity && (
+                <div className="grp-home-board" ref={writersRef}>
+                  <div className="grp-home-board-head">
+                    <h3 className="realm-h">Кто писал</h3>
+                    <button type="button" className="gate-text" onClick={() => setHomeBoard(null)}>Скрыть</button>
+                  </div>
+                  <ActivityBoard
+                    key={`${homeBoard.period}:${homeBoard.slice}`}
+                    chatId={chatId}
+                    repeats={repeats}
+                    watch={mods?.watch || []}
+                    canArchive={tabs.some((item) => item.id === 'archive')}
+                    seedPeriod={homeBoard.period}
+                    seedSlice={homeBoard.slice}
+                    onOpenArchive={openPunish}
+                  />
+                </div>
+              )}
               {groups.length > 1 && (
                 <>
                   <h3 className="realm-h">Ваши группы</h3>
@@ -1052,7 +1172,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'work' && (
             <section className="work-page">
-              <h2 className="realm-h">Работа</h2>
               {isProjectCreator
                 ? <CreatorDeck onCount={setWorkCount} />
                 : <WorkDesk onCount={setWorkCount} />}
@@ -1061,22 +1180,20 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
           )}
 
           {!chapter && activeTab === 'activity' && (
-            <section>
-              <h2 className="realm-h">Активность</h2>
-              <p className="realm-copy">Нажмите столбик — один день. Нажмите имя — карточка человека. Наказать его можно из этой карточки, во вкладке «Архив».</p>
+            <section className="grp-activity">
+              <p className="realm-copy">Нажмите столбик — один день. Нажмите имя — карточка человека. Наказания открываются из карточки и не уводят на другую вкладку.</p>
               <ActivityBoard
                 chatId={chatId}
                 repeats={repeats}
                 watch={mods?.watch || []}
                 canArchive={tabs.some((item) => item.id === 'archive')}
-                onOpenArchive={(id) => { setUserId(String(id)); pickTab('archive') }}
+                onOpenArchive={openPunish}
               />
             </section>
           )}
 
           {!chapter && activeTab === 'archive' && (
-            <section>
-              <h2 className="realm-h">Архив чата</h2>
+            <section className="grp-archive">
               <p className="realm-copy">
                 Наказания этого чата.
                 {current?.position ? ` Ваша должность: ${current.position}.` : ''}
@@ -1094,6 +1211,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
                 actions={allowedActions}
                 onAct={archiveAct}
                 seedQuery={userId}
+                arrived={arrived}
                 onOpenUser={(id) => setUserId(String(id))}
               />
               {acting && <p className="realm-copy">Запись…</p>}
@@ -1229,6 +1347,24 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         menuOpen={!phone && railOpen}
         onOpenMenu={phone ? undefined : () => setRailOpen((open) => !open)}
       />
+      {punishFor && (
+        <FocusWindow
+          title="Наказания этого человека"
+          subtitle={`#${punishFor}`}
+          onClose={() => setPunishFor('')}
+        >
+          <GroupArchive
+            rows={(mods?.recent || []).filter((row) => String(row.target_user_id) === String(punishFor))}
+            repeats={repeats}
+            watch={summary ? (mods?.watch ?? null) : undefined}
+            actions={allowedActions}
+            onAct={archiveAct}
+            seedQuery={punishFor}
+            arrived={(arrived || []).filter((row) => String(row.target_user_id) === String(punishFor))}
+            onOpenUser={() => {}}
+          />
+        </FocusWindow>
+      )}
     </div>
   )
 }

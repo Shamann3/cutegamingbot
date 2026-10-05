@@ -246,7 +246,11 @@ body.perf-light .pay-person,
 body.perf-light .pay-bar i,
 body.perf-light .pay-lens,
 body.perf-light .done-row,
-body.perf-light .deck-toast {
+body.perf-light .deck-toast,
+body.perf-light .g-arc-card.is-arrive,
+body.perf-light .arc-card.is-arrive,
+body.perf-light .g-arc-live,
+body.perf-light .deck-note.deck-live {
   animation: none;
   filter: none;
 }
@@ -3392,6 +3396,83 @@ html[data-viewport="desktop"] .my-pay-lines {
   font-variant-numeric: tabular-nums;
 }
 
+/* Главная и активность — отдельные пластины, как на главной панели сотрудника.
+   Общая карточка вокруг всей вкладки прятала их друг в друга. */
+html.is-phone .panel-shell .realm-main > section.grp-home,
+html.is-phone .panel-shell .realm-main > section.grp-activity,
+html.is-phone .panel-shell .realm-main > section.grp-archive,
+html.is-desktop .panel-shell .realm-main > section.grp-home,
+html.is-desktop .panel-shell .realm-main > section.grp-activity,
+html.is-desktop .panel-shell .realm-main > section.grp-archive,
+html[data-viewport="phone"] .panel-shell .realm-main > section.grp-home,
+html[data-viewport="phone"] .panel-shell .realm-main > section.grp-activity,
+html[data-viewport="phone"] .panel-shell .realm-main > section.grp-archive,
+html[data-viewport="desktop"] .panel-shell .realm-main > section.grp-home,
+html[data-viewport="desktop"] .panel-shell .realm-main > section.grp-activity,
+html[data-viewport="desktop"] .panel-shell .realm-main > section.grp-archive {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.panel-shell .grp-shift.shift-desk,
+.panel-shell .grp-activity .realm-actions {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.grp-peak,
+.act-people {
+  background: var(--e-plate) !important;
+  background-color: var(--e-plate) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  border-radius: 22px;
+}
+
+.grp-peak {
+  display: grid;
+  gap: 0.35rem;
+  padding: 14px 14px 12px;
+}
+
+.grp-peak .realm-h {
+  margin: 0;
+}
+
+.grp-peak .realm-copy {
+  margin: 0;
+}
+
+.act-people {
+  padding: 4px 12px 6px;
+}
+
+.grp-home-board {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.grp-home-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.grp-home-board-head .realm-h {
+  margin: 0;
+}
+
+.grp-home-board-head .gate-text {
+  min-height: 44px;
+}
+
 .g-arc-acts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr));
@@ -3535,10 +3616,55 @@ html[data-viewport="desktop"] .my-pay-lines {
   width: 100%;
 }
 
+.g-arc-live {
+  margin: 0.15rem 0 0.85rem;
+  color: var(--e-text, #f4f4f5);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  animation: arc-note 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.deck-note.deck-live {
+  animation: arc-note 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.g-arc-card.is-arrive,
+.arc-card.is-arrive {
+  animation: arc-arrive 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes arc-note {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes arc-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .grp-home > *,
   .act-people li,
-  .act-person-track > b {
+  .act-person-track > b,
+  .g-arc-live,
+  .deck-note.deck-live,
+  .g-arc-card.is-arrive,
+  .arc-card.is-arrive {
     animation: none;
     transition: none;
   }

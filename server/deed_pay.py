@@ -1196,6 +1196,36 @@ async def deed_work(user_id: int = Depends(get_any_telegram_user_id)):
     return await _open_deck(_work_where(), [list(PUNISH), int(user_id)], STAGE_ADMIN, user_id, ADMIN_ORDER_SQL)
 
 
+@router.get("/pulse")
+async def deed_pulse(user_id: int = Depends(get_any_telegram_user_id)):
+    """Сколько карточек ждёт на каждом этапе. Ни одну из рук не забирает."""
+    await ensure_deed_tables()
+    uid = int(user_id)
+    out = {"work": None, "staff": None, "own": None, "queue": None}
+    if is_project_creator(uid):
+        out["own"] = await _count(_own_where(), [list(PUNISH), uid])
+        where, params = _filters("", 0, 0)
+        out["queue"] = await _count(where, params)
+        return out
+    from config import is_plain_user
+    from group_realm import seat_sees, seats_for
+
+    if seat_sees(await seats_for(uid), "work"):
+        out["work"] = await _count(_work_where(), [list(PUNISH), uid])
+    if not is_plain_user(uid):
+        staff = await db.pool.fetchval(
+            """
+            SELECT 1 FROM admin_accounts
+            WHERE user_id = $1 AND status = 'active' AND role = ANY($2::text[])
+            """,
+            uid,
+            list(STAFF_ROLES),
+        )
+        if staff:
+            out["staff"] = await _count(_staff_where(), [list(PUNISH), uid])
+    return out
+
+
 @router.get("/staff/count")
 async def deed_staff_count(user_id: int = Depends(get_any_telegram_user_id)):
     """Сколько карточек ждёт, не забирая ни одну себе."""

@@ -94,19 +94,28 @@ function DayBars({ points = [], selected = '', onPick }) {
   )
 }
 
-export default function ActivityBoard({ onOpenArchive, canArchive = false, chatId, repeats = new Map(), watch = [] }) {
+export default function ActivityBoard({
+  onOpenArchive,
+  canArchive = false,
+  chatId,
+  repeats = new Map(),
+  watch = [],
+  seedPeriod = '',
+  seedSlice = '',
+}) {
   const [person, setPerson] = useState(null)
-  const [period, setPeriod] = useState('month')
-  const [slice, setSlice] = useState('')
+  const [period, setPeriod] = useState(seedPeriod || 'month')
+  const [slice, setSlice] = useState(seedSlice || '')
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    setSlice('')
+    setSlice(seedSlice || '')
+    setPeriod(seedPeriod || 'month')
     setReport(null)
     setPerson(null)
-  }, [chatId])
+  }, [chatId, seedPeriod, seedSlice])
 
   useEffect(() => {
     if (!chatId) return undefined

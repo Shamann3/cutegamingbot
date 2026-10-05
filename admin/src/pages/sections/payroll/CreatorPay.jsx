@@ -16,7 +16,7 @@ import {
 } from '../../../lib/adminClient'
 import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { FLY_MS, motionQuiet, pinShellScroll, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
+import DeckCard, { DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
 import PurseDesk from './PurseDesk'
 import RateTune from './RateTune'
@@ -66,6 +66,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   const toastRef = useToastInView()
   const salaryOpen = Boolean(card) && !card.reviewStatus
   useRefill(queue, load)
+  const pileNote = useDeckLive(sorterId ? '' : 'queue', queue, setQueue, load)
   useWarmProof(queue?.nextProofMediaId)
   const swipe = useSwipeDeck({
     onSwipe: (side) => decide(side === 'right' ? 'keep' : 'drop'),
@@ -230,6 +231,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
             <span className="deck-count-cap">{waitCaption(waiting, 'вашего решения')}</span>
           </div>
         )}
+        {pileNote && card && <DeckPileNote text={pileNote} />}
         <p className="deed-lead">
           {focusName
             ? `Показаны только проверки: ${focusName}.`
@@ -383,6 +385,7 @@ export function CreatorSelf() {
 
   useEffect(() => { load() }, [load])
   useRefill(queue, load)
+  const pileNote = useDeckLive('own', queue, setQueue, load)
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
@@ -501,6 +504,7 @@ export function CreatorSelf() {
               <span className="deck-count-cap">{waitCaption(waiting, 'вашей проверки')}</span>
             </div>
           )}
+          {pileNote && card && <DeckPileNote text={pileNote} />}
           <p className="deed-lead">
             Эти наказания ещё никто не разбирал. Ваш ответ забирает карточку у администраторов и сотрудников и сразу решает зарплату.
           </p>
