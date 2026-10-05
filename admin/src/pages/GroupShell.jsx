@@ -77,6 +77,15 @@ function fmt(n) {
   return new Intl.NumberFormat('ru-RU').format(Number(n))
 }
 
+function writersCaption(count) {
+  const n = Math.abs(Number(count) || 0)
+  const n10 = n % 10
+  const n100 = n % 100
+  if (n10 === 1 && n100 !== 11) return 'человек писал'
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return 'человека писали'
+  return 'человек писали'
+}
+
 function roleTone(title, isCreator) {
   if (isCreator) return 'creator'
   const t = String(title || '').toLowerCase()
@@ -720,6 +729,11 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     ? (current?.position || 'Создатель')
     : (current?.position || (chatId ? 'Группа' : 'Пусто'))
   const roleClass = roleTone(roleLabel, isCreator)
+  const homeMessages = summary?.messages30d
+  const homeWriters = summary?.writers30d
+  const homePulse = homeMessages != null && homeWriters != null
+  const homeLead = (summary?.writers || []).find((row) => row?.name && Number(row.messages) > 0)
+  const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
 
   return (
     <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
@@ -1028,10 +1042,31 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                   </p>
                 </div>
               )}
-              {chatId && canActivity && (
-                <button type="button" className="grp-door" onClick={() => pickTab('activity')}>
-                  <strong>Активность</strong>
-                  <span>Сообщения, сравнение с прошлым сроком и кто пишет</span>
+              {showPulse && (
+                <button type="button" className="grp-pulse" onClick={() => pickTab('activity')}>
+                  {homePulse ? (
+                    <>
+                      <span className="grp-pulse-nums">
+                        <span>
+                          <strong>{fmt(homeMessages)}</strong>
+                          <em>сообщений за 30 дней</em>
+                        </span>
+                        <span>
+                          <strong>{fmt(homeWriters)}</strong>
+                          <em>{writersCaption(homeWriters)}</em>
+                        </span>
+                      </span>
+                      {homeLead && <span className="grp-pulse-lead">Чаще всех — {homeLead.name}</span>}
+                    </>
+                  ) : (
+                    <strong className="grp-pulse-miss">Счётчик за 30 дней сейчас не открылся</strong>
+                  )}
+                  <span className="grp-pulse-go">
+                    Подробный разбор — в активности
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M9 6l6 6-6 6" />
+                    </svg>
+                  </span>
                 </button>
               )}
               {groups.length > 1 && (
@@ -1064,7 +1099,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
           {!chapter && activeTab === 'activity' && (
             <section className="grp-activity">
-              <p className="realm-copy">Сообщения за выбранный срок, сравнение с прошлым и кто пишет. Имя открывает карточку, оттуда — все прошлые наказания и новое.</p>
+              <p className="realm-copy">Сообщения за выбранный срок, сравнение с прошлым и кто пишет. Имя открывает карточку: сколько сообщений и какие наказания уже были.</p>
               <ActivityBoard
                 chatId={chatId}
                 repeats={repeats}

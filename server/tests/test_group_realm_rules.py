@@ -145,6 +145,28 @@ def test_junior_cannot_open_rights_page_by_asking():
     assert "manage_positions" not in saved
 
 
+def test_person_counts_skip_zeros_and_keep_every_kind():
+    from group_realm import fold_person_counts
+
+    rows = fold_person_counts([
+        ("banfull", 2),
+        ("bot_ban", 1),
+        ("unmute", 0),
+        ("unban", 3),
+        ("warnfull", 1),
+        ("mute", 4),
+        ("", 5),
+    ])
+    by_action = {row["action"]: row["count"] for row in rows}
+    assert by_action["banfull"] == 3
+    assert "unmute" not in by_action
+    assert by_action["unban"] == 3
+    assert by_action["warnfull"] == 1
+    assert by_action["mute"] == 4
+    assert [row["action"] for row in rows] == ["banfull", "unban", "mute", "warnfull"]
+    assert rows[0]["hint"] == "весь проект"
+
+
 def test_person_history_keeps_this_chat_and_wide_punishments():
     from group_realm import person_history_where
 

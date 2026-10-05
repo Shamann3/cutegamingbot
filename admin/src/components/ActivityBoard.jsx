@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchGroupActivity } from '../lib/adminClient'
+import { fetchGroupActivity, fetchPersonHistory } from '../lib/adminClient'
 import { watchLevel, watchLine } from '../lib/shiftDesk'
 import FocusWindow from './FocusWindow'
 
@@ -33,25 +33,14 @@ function levelOf(value, max) {
   return 4
 }
 
-function ruTimes(count) {
-  const n = Math.abs(Number(count) || 0)
-  const n10 = n % 10
-  const n100 = n % 100
-  const word = n10 === 1 && n100 !== 11
-    ? 'раз'
-    : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)
-      ? 'раза'
-      : 'раз'
-  return `${n} ${word}`
-}
-
 function personNote(person, watch) {
   const row = (watch || []).find((item) => Number(item.userId) === Number(person.userId))
-  const archive = person.times > 0
-    ? `В последних записях этого чата: ${ruTimes(person.times)}.`
-    : 'Все прошлые наказания — по кнопке ниже.'
-  const warns = row ? watchLine(watchLevel(row.warns), row.warns) : 'Активных предупреждений нет.'
-  return `${archive} ${warns}`
+  return row ? watchLine(watchLevel(row.warns), row.warns) : 'Активных предупреждений нет.'
+}
+
+function ledgerRows(report) {
+  if (!report || report.available === false || !Array.isArray(report.counts)) return null
+  return report.counts.filter((row) => Number(row.count) > 0)
 }
 
 function pctChange(now, before) {
@@ -368,6 +357,9 @@ export default function ActivityBoard({
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [ledger, setLedger] = useState(null)
+  const [ledgerState, setLedgerState] = useState('idle')
+  const [ledgerError, setLedgerError] = useState('')
 
   useEffect(() => {
     setSlice(seedSlice || '')
@@ -394,6 +386,31 @@ export default function ActivityBoard({
       })
     return () => { stop = true }
   }, [chatId, period, slice])
+
+  useEffect(() => {
+    if (!person?.userId || !chatId) {
+      setLedger(null)
+      setLedgerState('idle')
+      setLedgerError('')
+      return undefined
+    }
+    let stop = false
+    setLedger(null)
+    setLedgerState('loading')
+    setLedgerError('')
+    fetchPersonHistory(chatId, person.userId)
+      .then((data) => {
+        if (stop) return
+        setLedger(data)
+        setLedgerState('ready')
+      })
+      .catch((err) => {
+        if (stop) return
+        setLedgerError(err.message || 'Счётчик наказаний не открылся')
+        setLedgerState('error')
+      })
+    return () => { stop = true }
+  }, [chatId, person])
 
   function openPerson(personRow, index) {
     const times = repeats.get(Number(personRow.userId)) || 0
@@ -481,6 +498,36 @@ export default function ActivityBoard({
         </p>
       </div>
       <p className="realm-copy">{personNote(person, watch)}</p>
+      <div className="act-ledger" aria-live="polite">
+        <h3 className="realm-h">Какие наказания уже были</h3>
+        {ledgerState === 'loading' && <p className="act-read">Считаем наказания…</p>}
+        {ledgerState === 'error' && <p className="realm-alert" role="alert">{ledgerError}</p>}
+        {ledgerState === 'ready' && ledger?.available === false && (
+          <p className="act-read">Счётчик наказаний не открылся. Нулей вместо записей здесь нет.</p>
+        )}
+        {ledgerState === 'ready' && ledger?.available !== false && ledgerRows(ledger) == null && (
+          <p className="act-read">Разбивка по видам не пришла.</p>
+        )}
+        {ledgerState === 'ready' && ledger?.available !== false && ledgerRows(ledger)?.length === 0 && (
+          <p className="act-read">Наказаний ещё не было.</p>
+        )}
+        {ledgerState === 'ready' && ledgerRows(ledger)?.length > 0 && (
+          <>
+            <p className="act-read">Если вида не было, его строки здесь нет.</p>
+            <ul>
+              {ledgerRows(ledger).map((row, index) => (
+                <li key={row.action} style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}>
+                  <span>
+                    <strong>{row.label || row.action}</strong>
+                    {row.hint ? <em>{row.hint}</em> : null}
+                  </span>
+                  <b>{fmt(row.count)}</b>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </FocusWindow>
   )
 
@@ -494,7 +541,7 @@ export default function ActivityBoard({
           </button>
         )}
       </div>
-      <p className="act-read">Число справа — сообщения. Нажмите имя: сколько человек пишет и были ли наказания.</p>
+      <p className="act-read">Число справа — сообщения. Нажмите имя: сколько человек пишет и какие наказания уже были.</p>
       {shownPeople.length === 0 && <p className="act-read">За этот срок никто не писал.</p>}
       <ul className="act-people">
         {shownPeople.map((personRow, index) => {

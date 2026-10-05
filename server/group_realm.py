@@ -2074,6 +2074,53 @@ async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dic
     }
 
 
+_COUNT_FOLD = {"bot_ban": "banfull"}
+_COUNT_FACE = (
+    ("banfull", "Банфулл", "весь проект"),
+    ("banall", "Баналл", "официальные группы"),
+    ("ban", "Бан", "этот чат"),
+    ("unbanall", "Разбан везде", "официальные группы"),
+    ("bot_unban", "Разбан на весь проект", "весь проект"),
+    ("unban", "Разбан", "этот чат"),
+    ("muteall", "Муталл", "официальные группы"),
+    ("mute", "Мут", "этот чат"),
+    ("unmuteall", "Размут везде", "официальные группы"),
+    ("unmute", "Размут", "этот чат"),
+    ("kickall", "Кикалл", "официальные группы"),
+    ("kick", "Кик", "этот чат"),
+    ("warnfull", "Варнфулл", "весь проект"),
+    ("warnall", "Варналл", "официальные группы"),
+    ("warn", "Предупреждение", "этот чат"),
+    ("unwarn", "Снято предупреждение", "этот чат"),
+    ("voice", "Без голоса", "этот чат"),
+    ("unvoice", "Голос вернули", "этот чат"),
+)
+
+
+def fold_person_counts(pairs) -> list:
+    """Складывает одинаковые виды и выбрасывает нули. Порядок постоянный, чтобы глаз узнавал список."""
+    totals: dict[str, int] = {}
+    for action, count in pairs:
+        key = _COUNT_FOLD.get(str(action or "").strip().lower(), str(action or "").strip().lower())
+        amount = int(count or 0)
+        if not key or amount <= 0:
+            continue
+        totals[key] = totals.get(key, 0) + amount
+    ordered = []
+    seen = set()
+    for key, label, hint in _COUNT_FACE:
+        amount = totals.get(key) or 0
+        if amount <= 0:
+            continue
+        ordered.append({"action": key, "label": label, "hint": hint, "count": amount})
+        seen.add(key)
+    for key, amount in totals.items():
+        if key in seen or amount <= 0:
+            continue
+        ordered.append({"action": key, "label": key, "hint": "", "count": amount})
+    return ordered
+
+
 def person_history_where() -> str:
     """Наказания этого человека в текущем чате и широкие, которые действуют везде."""
     from human_actor import human_actor_sql
@@ -2130,6 +2177,16 @@ async def load_person_history(chat_id: int, target_id: int) -> dict:
             "hasProof": bool(row["proof_media_id"]),
             "proofMediaId": row["proof_media_id"] or None,
         })
+    count_rows = await db.pool.fetch(
+        f"""
+        SELECT lower(COALESCE(s.action_type, '')) AS action, count(*)::int AS n
+        FROM staff_actions s
+        WHERE {where}
+        GROUP BY 1
+        """,
+        int(chat_id),
+        int(target_id),
+    )
     counted = int(total or 0)
     return {
         "available": True,
@@ -2138,6 +2195,7 @@ async def load_person_history(chat_id: int, target_id: int) -> dict:
         "username": (person["username"] if person else None) or None,
         "total": counted,
         "clipped": counted > len(items),
+        "counts": fold_person_counts((row["action"], row["n"]) for row in count_rows),
         "items": items,
     }
 
@@ -2164,7 +2222,14 @@ async def group_person_history(
     try:
         return await load_person_history(int(chat_id), int(target_id))
     except Exception:
-        return {"available": False, "userId": int(target_id), "items": [], "total": None, "clipped": False}
+        return {
+            "available": False,
+            "userId": int(target_id),
+            "items": [],
+            "counts": None,
+            "total": None,
+            "clipped": False,
+        }
 
 
 @router.get("/activity/{chat_id}")

@@ -4787,7 +4787,7 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 }
 
 .grp-seat,
-.grp-door {
+.grp-pulse {
   background: var(--e-plate);
   background-color: var(--e-plate);
   border-radius: 22px;
@@ -4811,54 +4811,146 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
   font-size: 0.92rem;
 }
 
-.grp-door {
+.grp-seat p:first-child {
+  font-size: 1.12rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.grp-pulse {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: stretch;
+  gap: 12px;
   width: 100%;
   min-height: 64px;
   margin: 0;
-  padding: 14px 42px 14px 16px;
+  padding: 16px;
   border: 0;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+  background:
+    radial-gradient(90% 80% at 0% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 58%),
+    var(--e-plate);
+  background-color: var(--e-plate);
 }
 
-.grp-door::after {
-  content: '';
-  position: absolute;
-  right: 18px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid currentColor;
-  border-top: 2px solid currentColor;
-  transform: translateY(-50%) rotate(45deg);
-  opacity: 0.72;
+.grp-pulse-nums {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
 }
 
-.grp-door:active {
-  transform: scale(0.985);
+.grp-pulse-nums strong {
+  display: block;
+  font-size: clamp(1.85rem, 7vw, 2.7rem);
+  font-weight: 760;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  font-variant-numeric: tabular-nums;
 }
 
-.grp-door strong {
-  font-size: 1.05rem;
+.grp-pulse-nums em,
+.grp-pulse-go,
+.grp-pulse-miss {
+  font-style: normal;
+}
+
+.grp-pulse-nums em {
+  display: block;
+  margin-top: 6px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.grp-pulse-nums > span + span {
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.grp-pulse-lead {
+  color: #fff;
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+}
+
+.grp-pulse-miss {
+  font-size: 1.02rem;
   font-weight: 700;
   letter-spacing: -0.03em;
 }
 
-.grp-door span {
+.grp-pulse-go {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   color: var(--e-text-2, #aeaeb2);
   font-size: 0.86rem;
   line-height: 1.35;
 }
 
-.grp-door:hover {
-  background: var(--e-plate-2, var(--e-plate));
+.grp-pulse:hover {
+  background:
+    radial-gradient(90% 80% at 0% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.3), transparent 58%),
+    var(--e-plate-2, var(--e-plate));
+}
+
+.grp-pulse:active {
+  transform: scale(0.985);
+}
+
+.act-ledger {
+  margin-top: 16px;
+}
+
+.act-ledger .realm-h {
+  margin: 0 0 6px;
+}
+
+.act-ledger ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.act-ledger li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  animation: arc-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.act-ledger li span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.act-ledger li strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.02em;
+}
+
+.act-ledger li em {
+  color: var(--e-text-2, #aeaeb2);
+  font-style: normal;
+  font-size: 0.78rem;
+}
+
+.act-ledger li b {
+  font-size: 1.2rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .person-read {
@@ -4878,7 +4970,8 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 
 .focus-sheet:has(.person-deeds),
 .focus-sheet:has(.person-issue),
-.focus-sheet:has(.person-read) {
+.focus-sheet:has(.person-read),
+.focus-sheet:has(.act-ledger) {
   background: #111113 !important;
   background-color: #111113 !important;
 }
@@ -4991,7 +5084,7 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
   color: rgba(255, 255, 255, 0.42);
 }
 
-.grp-door:focus-visible,
+.grp-pulse:focus-visible,
 .person-acts button:focus-visible,
 .focus-sheet .person-issue input:focus-visible,
 .focus-sheet .person-lift input:focus-visible,
@@ -5001,6 +5094,7 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 }
 
 .grp-seat ::selection,
+.grp-pulse ::selection,
 .person-deed ::selection,
 .person-issue ::selection {
   background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.35);
@@ -5014,7 +5108,10 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
     animation: none;
   }
 
-  .grp-door:active {
+  .grp-door:active,
+  .grp-pulse:active,
+  .act-ledger li {
+    animation: none;
     transform: none;
   }
 }
@@ -5022,7 +5119,10 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
 body.perf-light .grp-seat,
 body.perf-light .person-deed,
 body.perf-light .grp-door:hover,
-body.perf-light .grp-door:active {
+body.perf-light .grp-door:active,
+body.perf-light .grp-pulse:hover,
+body.perf-light .grp-pulse:active,
+body.perf-light .act-ledger li {
   animation: none;
   transition: none;
   transform: none;

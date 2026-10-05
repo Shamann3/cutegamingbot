@@ -1,16 +1,21 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ActivityBoard from './ActivityBoard'
 import GroupArchive from './GroupArchive'
-import { fetchGroupActivity } from '../lib/adminClient'
+import { fetchGroupActivity, fetchPersonHistory } from '../lib/adminClient'
 
 vi.mock('../lib/adminClient', () => ({
   fetchGroupActivity: vi.fn(),
+  fetchPersonHistory: vi.fn(),
 }))
 
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+})
+
+beforeEach(() => {
+  vi.mocked(fetchPersonHistory).mockResolvedValue({ available: true, counts: [] })
 })
 
 const report = {
@@ -44,6 +49,26 @@ describe('ActivityBoard', () => {
     expect(screen.getByText(/Ещё одно предупреждение — бан в этом чате/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Наказания этого человека' }))
     expect(onOpenArchive).toHaveBeenCalledWith(7)
+  })
+
+  it('lists only the punishments that already happened', async () => {
+    vi.mocked(fetchGroupActivity).mockResolvedValue(report)
+    vi.mocked(fetchPersonHistory).mockResolvedValue({
+      available: true,
+      counts: [
+        { action: 'banfull', label: 'Банфулл', hint: 'весь проект', count: 2 },
+        { action: 'unban', label: 'Разбан', hint: 'этот чат', count: 1 },
+        { action: 'warnfull', label: 'Варнфулл', hint: 'весь проект', count: 1 },
+      ],
+    })
+    render(<ActivityBoard chatId={1} canArchive onOpenArchive={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Анна, 40 сообщений/ }))
+    expect(await screen.findByText('Банфулл')).toBeTruthy()
+    expect(screen.getByText('Разбан')).toBeTruthy()
+    expect(screen.getByText('Варнфулл')).toBeTruthy()
+    expect(screen.getAllByText('весь проект')).toHaveLength(2)
+    expect(screen.queryByText('Размут')).toBeNull()
+    expect(screen.queryByText('Мут')).toBeNull()
   })
 
   it('compares the period and opens one day', async () => {
