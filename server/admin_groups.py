@@ -1336,6 +1336,24 @@ async def set_chat_level(chat_id: int, level: int, *, sponsor_id: Optional[int] 
         return {"chat_id": int(chat_id), "level": lvl}
 
 
+_span_column_ready = False
+
+
+async def ensure_staff_action_span() -> bool:
+    """Секунды срока. Старые строки остаются с duration_minutes."""
+    global _span_column_ready
+    if _span_column_ready:
+        return True
+    try:
+        await db.pool.execute(
+            "ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS duration_seconds INT"
+        )
+    except Exception:
+        return False
+    _span_column_ready = True
+    return True
+
+
 async def moderate_action(
     *,
     chat_id: int,
@@ -1371,8 +1389,9 @@ async def moderate_action(
     action = aliases.get(action, action)
     cid, uid = int(chat_id), int(user_id)
     reason = (reason or "")[:200]
-    until = int(until_sec) if until_sec and int(until_sec) > 0 else 0
-    until_date = int(datetime.now().timestamp()) + max(35, until) if until > 0 else None
+    from group_realm import telegram_hold_seconds
+    until = telegram_hold_seconds(until_sec)
+    until_date = int(datetime.now().timestamp()) + until if until > 0 else None
 
     async def _restrict(target_chat: int, muted: bool) -> Dict[str, Any]:
         if muted:
@@ -1653,30 +1672,55 @@ async def moderate_action(
 
     if ok:
         try:
-            await db.pool.execute(
-                """
-                INSERT INTO staff_actions
-                  (admin_user_id, admin_name, target_player_id, action_type, reason, chat_id, scope, created_at)
-                VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, NOW())
-                """,
+            scope = {
+                "banall": "all",
+                "muteall": "all",
+                "kickall": "all",
+                "warnall": "all",
+                "unbanall": "all",
+                "unmuteall": "all",
+                "banfull": "full",
+                "bot_ban": "full",
+                "warnfull": "full",
+                "bot_unban": "full",
+            }.get(action, "chat")
+            seconds = int(until) if until > 0 else None
+            minutes = max(1, int(round(seconds / 60))) if seconds else None
+            common = (
                 int(admin_id or 0),
                 uid,
                 action,
                 reason or f"panel:{action}",
                 cid,
-                {
-                    "banall": "all",
-                    "muteall": "all",
-                    "kickall": "all",
-                    "warnall": "all",
-                    "unbanall": "all",
-                    "unmuteall": "all",
-                    "banfull": "full",
-                    "bot_ban": "full",
-                    "warnfull": "full",
-                    "bot_unban": "full",
-                }.get(action, "chat"),
+                scope,
+                minutes,
             )
+            wrote = False
+            if await ensure_staff_action_span():
+                try:
+                    await db.pool.execute(
+                        """
+                        INSERT INTO staff_actions
+                          (admin_user_id, admin_name, target_player_id, action_type, reason,
+                           chat_id, scope, duration_minutes, duration_seconds, created_at)
+                        VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, $7, $8, NOW())
+                        """,
+                        *common,
+                        seconds,
+                    )
+                    wrote = True
+                except Exception:
+                    wrote = False
+            if not wrote:
+                await db.pool.execute(
+                    """
+                    INSERT INTO staff_actions
+                      (admin_user_id, admin_name, target_player_id, action_type, reason,
+                       chat_id, scope, duration_minutes, created_at)
+                    VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, $7, NOW())
+                    """,
+                    *common,
+                )
         except Exception:
             pass
 

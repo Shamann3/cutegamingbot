@@ -2,7 +2,8 @@
  * Мемный режим: один бросок на вход.
  * Мелодия играет до конца. Новая мелодия останавливает предыдущую,
  * чтобы быстрая сортировка «подходит / не подходит» не накладывала звуки.
- * Громкость 55%. Без дополнительных звуков мемы молчат.
+ * Громкость логотипа 55%, остальных мемов 35%.
+ * Выключенные дополнительные звуки гасят мемы сразу и не дают начать новые.
  */
 import { fetchMemeMode } from './adminClient'
 import { readCueSoundsEnabled } from './cueSounds'
@@ -182,7 +183,7 @@ function startClip(kind) {
 }
 
 export async function playMeme(kind) {
-  if (!FILES[kind]) return false
+  if (!FILES[kind] || !readCueSoundsEnabled()) return false
   installUnlock()
   const stored = box()?.getItem(ROLL_KEY)
   if (stored !== '1' && stored !== '0') {

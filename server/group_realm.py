@@ -966,6 +966,19 @@ class DecideBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+def telegram_hold_seconds(until_sec) -> int:
+    """Секунды для Telegram. Короче 35 секунд сервис считает вечным баном."""
+    try:
+        until = int(until_sec or 0)
+    except (TypeError, ValueError):
+        return 0
+    if until <= 0:
+        return 0
+    if until < 35:
+        return 35
+    return until
+
+
 class ActBody(BaseModel):
     chat_id: int
     user_id: int = Field(ge=1)
@@ -2185,10 +2198,14 @@ async def load_person_history(chat_id: int, target_id: int) -> dict:
         int(chat_id),
         int(target_id),
     )
+    from admin_groups import ensure_staff_action_span
+
+    has_seconds = await ensure_staff_action_span()
+    span_sql = "s.duration_seconds" if has_seconds else "NULL::int"
     rows = await db.pool.fetch(
         f"""
         SELECT s.id, s.created_at, s.action_type, s.scope, s.chat_id, s.admin_name,
-               s.reason, s.duration_minutes, s.proof_media_id
+               s.reason, s.duration_minutes, {span_sql} AS duration_seconds, s.proof_media_id
         FROM staff_actions s
         WHERE {where}
         ORDER BY s.created_at DESC NULLS LAST
@@ -2212,6 +2229,7 @@ async def load_person_history(chat_id: int, target_id: int) -> dict:
             "admin": row["admin_name"] or "",
             "reason": (row["reason"] or "")[:400],
             "minutes": int(row["duration_minutes"] or 0),
+            "seconds": int(row["duration_seconds"] or 0),
             "hasProof": bool(row["proof_media_id"]),
             "proofMediaId": row["proof_media_id"] or None,
         })

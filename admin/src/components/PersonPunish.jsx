@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchPersonHistory } from '../lib/adminClient'
 import { playMeme } from '../lib/memeSounds'
+import { spanToSend, speakSpan } from '../lib/spanClock'
 import FocusWindow from './FocusWindow'
 import PhotoLook from './PhotoLook'
+import SpanClock from './SpanClock'
 
 const LABEL = {
   ban: 'Бан',
@@ -48,10 +50,19 @@ function when(iso) {
   return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-function held(minutes) {
-  const hours = Math.round(Number(minutes || 0) / 60)
-  if (!hours) return ''
-  return `на ${hours} ч`
+function issueVerb(selected, spanSec) {
+  const name = selected?.label || 'наказание'
+  if (!selected?.needsUntil) return `Выдать: ${name}`
+  const sent = spanToSend(spanSec)
+  return sent ? `Выдать: ${name} · ${speakSpan(sent)}` : `Выдать: ${name}`
+}
+
+function held(row) {
+  const seconds = Number(row?.seconds || 0)
+  const minutes = Number(row?.minutes || 0)
+  const total = seconds > 0 ? seconds : (minutes > 0 ? minutes * 60 : 0)
+  const said = speakSpan(total)
+  return said ? `на ${said}` : ''
 }
 
 function liftOf(action) {
@@ -105,7 +116,8 @@ export default function PersonPunish({
   const [freshId, setFreshId] = useState(null)
   const offered = issueList(actions, wide)
   const [action, setAction] = useState(offered.all[0]?.id || '')
-  const [hours, setHours] = useState('1')
+  const spanRef = useRef(3600)
+  const [spanSec, setSpanSec] = useState(3600)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
@@ -143,11 +155,20 @@ export default function PersonPunish({
     if (!onAct || !selected) return
     setBusy(true)
     setFormError('')
+    let untilSec = null
+    if (selected.needsUntil) {
+      untilSec = spanToSend(spanRef.current)
+      if (untilSec == null) {
+        setFormError('Укажите срок больше нуля и не дольше 366 дней')
+        setBusy(false)
+        return
+      }
+    }
     try {
       await onAct({
         userId: String(userId),
         action: selected.id,
-        hours: selected.needsUntil ? hours : null,
+        untilSec,
         reason: reason.trim(),
       })
       setReason('')
@@ -174,7 +195,7 @@ export default function PersonPunish({
       await onAct({
         userId: String(userId),
         action: actId,
-        hours: null,
+        untilSec: null,
         reason: liftReason.trim(),
       })
       setLiftId(null)
@@ -194,6 +215,7 @@ export default function PersonPunish({
 
   const form = offered.all.length > 0 ? (
     <form className="person-issue" onSubmit={submit}>
+      <div className="person-issue-scroll">
       <p className="person-issue-title">Ещё наказание</p>
       {offered.wide.length > 0 ? (
         <>
@@ -219,18 +241,22 @@ export default function PersonPunish({
         <p className="person-scope" key={selected.id}>{selected.hint}</p>
       )}
       {selected?.needsUntil && (
-        <label>
-          Сколько часов держать
-          <input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="например, 1" />
-        </label>
+        <SpanClock
+          seconds={spanSec}
+          onChange={(next) => {
+            spanRef.current = next
+            setSpanSec(next)
+          }}
+        />
       )}
       <label>
         Причина
         <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="что человек сделал" required />
       </label>
       {formError && <p className="realm-alert" role="alert">{formError}</p>}
+      </div>
       <button type="submit" className="sec-btn" disabled={busy || !selected}>
-        {busy ? 'Запись…' : `Выдать: ${selected?.label || 'наказание'}`}
+        {busy ? 'Запись…' : issueVerb(selected, spanSec)}
       </button>
     </form>
   ) : (
@@ -288,7 +314,7 @@ export default function PersonPunish({
                   {row.admin || 'Кто выдал, не записан'}
                   {' · '}
                   {spanOf(row)}
-                  {held(row.minutes) ? ` · ${held(row.minutes)}` : ''}
+                  {held(row) ? ` · ${held(row)}` : ''}
                 </p>
                 {row.hasProof && row.proofMediaId && (
                   <PhotoLook fileId={row.proofMediaId} alt="Фото к наказанию" />

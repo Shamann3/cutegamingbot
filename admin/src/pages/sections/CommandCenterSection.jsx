@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { WORLD_BORDERS } from '../../lib/worldborders'
 import { getAdminProfile } from '../../lib/adminProfile'
+import { readCueSoundsEnabled } from '../../lib/cueSounds'
 
 /**
  * Командный Пункт — owner-only «режим Бога».
@@ -178,8 +179,17 @@ export default function CommandCenterSection({ onExit, architect }) {
     if (!audio.current.ac) audio.current.ac = new (window.AudioContext || window.webkitAudioContext)()
     return audio.current.ac
   }
+  const stopDrone = useCallback(() => {
+    const ac = audio.current.ac
+    const drone = audio.current.drone
+    if (!ac || !drone) return
+    try { drone.g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.05) } catch { /* ignore */ }
+    try { drone.o1.stop(); drone.o2.stop(); drone.lfo.stop() } catch { /* ignore */ }
+    audio.current.drone = null
+  }, [])
+
   const playTone = useCallback((kind) => {
-    if (!soundOn || !audio.current.ac) return
+    if (!readCueSoundsEnabled() || !soundOn || !audio.current.ac) return
     const ac = audio.current.ac
     const now = ac.currentTime
     const o = ac.createOscillator()
@@ -207,9 +217,20 @@ export default function CommandCenterSection({ onExit, architect }) {
     }
   }, [soundOn])
 
+  useEffect(() => {
+    const hush = (event) => {
+      if (event.detail) return
+      setSoundOn(false)
+      stopDrone()
+    }
+    window.addEventListener('epsilon-cue-sounds', hush)
+    return () => window.removeEventListener('epsilon-cue-sounds', hush)
+  }, [stopDrone])
+
   const toggleSound = () => {
     setSoundOn((on) => {
       const next = !on
+      if (next && !readCueSoundsEnabled()) return on
       if (next) {
         const ac = ensureAC()
         ac.resume()
@@ -222,10 +243,7 @@ export default function CommandCenterSection({ onExit, architect }) {
         d.g.gain.linearRampToValueAtTime(0.06, ac.currentTime + 2)
         audio.current.drone = d
       } else if (audio.current.drone) {
-        const ac = audio.current.ac; const d = audio.current.drone
-        d.g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.6)
-        setTimeout(() => { try { d.o1.stop(); d.o2.stop(); d.lfo.stop() } catch { /* ignore */ } }, 700)
-        audio.current.drone = null
+        stopDrone()
       }
       return next
     })

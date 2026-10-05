@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { readCueSoundsEnabled } from '../lib/cueSounds'
 import { musicGain } from '../lib/musicMode'
 
 const PANEL_TRACK = `${import.meta.env.BASE_URL}track.mp3`
@@ -9,12 +10,13 @@ const PANEL_TRACK = `${import.meta.env.BASE_URL}track.mp3`
 export default function PanelBackgroundMusic({ volume = 0 }) {
   const audioRef = useRef(null)
   const volumeRef = useRef(volume)
+  const allowRef = useRef(readCueSoundsEnabled())
   volumeRef.current = volume
 
   const apply = (raw) => {
     const audio = audioRef.current
     if (!audio) return
-    const level = musicGain(raw)
+    const level = allowRef.current ? musicGain(raw) : 0
     audio.volume = level
     if (level <= 0) {
       audio.pause()
@@ -45,13 +47,19 @@ export default function PanelBackgroundMusic({ volume = 0 }) {
 
   useEffect(() => {
     const onSet = (event) => apply(event.detail)
+    const onCue = (event) => {
+      allowRef.current = Boolean(event.detail)
+      apply(volumeRef.current)
+    }
     const unlock = () => {
-      if (volumeRef.current > 0) apply(volumeRef.current)
+      if (allowRef.current && volumeRef.current > 0) apply(volumeRef.current)
     }
     window.addEventListener('epsilon-music-set', onSet)
+    window.addEventListener('epsilon-cue-sounds', onCue)
     window.addEventListener('pointerdown', unlock, { passive: true })
     return () => {
       window.removeEventListener('epsilon-music-set', onSet)
+      window.removeEventListener('epsilon-cue-sounds', onCue)
       window.removeEventListener('pointerdown', unlock)
     }
   }, [])

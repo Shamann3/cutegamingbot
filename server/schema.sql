@@ -734,6 +734,7 @@ ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS admin_name TEXT NOT NULL DEFA
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS target_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS proof_media_id TEXT;
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS duration_minutes INT;
+ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS duration_seconds INT;
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS chat_id BIGINT;
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS scope TEXT;
 ALTER TABLE staff_actions ADD COLUMN IF NOT EXISTS proof_bot_token TEXT;

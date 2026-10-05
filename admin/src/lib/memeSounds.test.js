@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clampChance, decideMeme, parseExcludedIds, MEME_VOLUME, LOGO_MEME_VOLUME } from './memeSounds'
+import { writeCueSoundsEnabled } from './cueSounds'
+import { clampChance, decideMeme, parseExcludedIds, playMeme, MEME_VOLUME, LOGO_MEME_VOLUME } from './memeSounds'
 
 describe('meme mode', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    localStorage.removeItem('cf_admin_cue_sounds')
+    sessionStorage.removeItem('cf_admin_meme_on')
   })
 
   it('keeps the default chance and a fixed volume', () => {
@@ -18,6 +22,17 @@ describe('meme mode', () => {
     expect(decideMeme({ chance: 100, exempt: true, random: () => 0 })).toBe(false)
     expect(decideMeme({ chance: 100, stored: '0', random: () => 0 })).toBe(false)
     expect(decideMeme({ chance: 10, stored: '1', random: () => 0.99 })).toBe(true)
+  })
+
+  it('does not construct a clip when additional sounds are off', async () => {
+    writeCueSoundsEnabled(false)
+    sessionStorage.setItem('cf_admin_meme_on', '1')
+    const created = vi.fn()
+    vi.stubGlobal('Audio', created)
+    expect(await playMeme('punish')).toBe(false)
+    expect(await playMeme('logo')).toBe(false)
+    expect(await playMeme('wont')).toBe(false)
+    expect(created).not.toHaveBeenCalled()
   })
 
   it('uses the chance only for a fresh visit', () => {

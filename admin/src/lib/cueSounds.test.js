@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CUE_VOLUME,
   FOG_CUE_DELAY_MS,
@@ -9,6 +9,8 @@ import {
   noteCommittedWrite,
   noteSuccessToast,
   pathIsSilent,
+  playEnterCue,
+  playSealCue,
   readCueSoundsEnabled,
   writeCueSoundsEnabled,
   writeShouldChime,
@@ -58,6 +60,17 @@ describe('cue sounds', () => {
     armSaveCue()
     expect(noteCommittedWrite('POST', '/group-realm/act/1', true)).toBe(true)
     expect(writeShouldChime('POST', '/group-realm/act/1')).toBe(false)
+  })
+
+  it('opens no clip when additional sounds are off', () => {
+    writeCueSoundsEnabled(false)
+    const created = vi.fn()
+    vi.stubGlobal('Audio', created)
+    expect(playEnterCue()).toBe(false)
+    expect(playSealCue()).toBe(false)
+    expect(noteSuccessToast('Наказание выдано')).toBe(false)
+    expect(created).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 
   it('does not treat an error toast as a save', () => {

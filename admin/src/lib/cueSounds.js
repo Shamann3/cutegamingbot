@@ -45,10 +45,22 @@ export function readCueSoundsEnabled() {
   return true
 }
 
+function hushClips() {
+  pending = ''
+  clipToken += 1
+  for (const audio of Object.values(clips)) {
+    if (!audio) continue
+    audio.volume = 0
+    try { audio.pause() } catch { /* ignore */ }
+    try { audio.currentTime = 0 } catch { /* ignore */ }
+  }
+}
+
 export function writeCueSoundsEnabled(on) {
   const next = Boolean(on)
   const box = storage()
   try { box?.setItem(STORAGE_KEY, next ? '1' : '0') } catch { /* ignore */ }
+  if (!next) hushClips()
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('epsilon-cue-sounds', { detail: next }))
   }
@@ -158,6 +170,7 @@ function armFromControl(node) {
 }
 
 function prime() {
+  if (!readCueSoundsEnabled()) return
   if (primed) return
   const enter = ensure('enter')
   const seal = ensure('seal')
@@ -179,6 +192,10 @@ function prime() {
 }
 
 function onGesture(event) {
+  if (!readCueSoundsEnabled()) {
+    pending = ''
+    return
+  }
   prime()
   if (pending && readCueSoundsEnabled()) {
     const kind = pending

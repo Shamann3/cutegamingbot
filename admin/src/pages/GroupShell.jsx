@@ -24,6 +24,7 @@ import {
 } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { punishmentHours } from '../lib/gateRecovery'
+import { spanToSend } from '../lib/spanClock'
 import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
@@ -688,7 +689,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const repeats = useMemo(() => repeatCounts(mods?.recent), [mods])
   const canActivity = tabs.some((item) => item.id === 'activity')
 
-  const archiveAct = async ({ userId: raw, action: actId, hours: hrs, reason: why }) => {
+  const archiveAct = async ({ userId: raw, action: actId, hours: hrs, untilSec, reason: why }) => {
     const queryText = String(raw || '').trim()
     const asNum = Number(queryText.replace(/^#/, ''))
     const id = Number.isFinite(asNum) && String(asNum) === queryText.replace(/^#/, '') ? asNum : Number(queryText)
@@ -700,8 +701,12 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     if (!act) throw new Error('Нет права на это действие')
     let until = null
     if (act.needsUntil) {
-      until = punishmentHours(hrs)
-      if (until == null) throw new Error('Укажите часы, больше нуля и не дольше года')
+      until = untilSec != null ? spanToSend(untilSec) : punishmentHours(hrs)
+      if (until == null) {
+        throw new Error(untilSec != null
+          ? 'Укажите срок больше нуля и не дольше 366 дней'
+          : 'Укажите часы, больше нуля и не дольше года')
+      }
     }
     setActing(true)
     setError('')

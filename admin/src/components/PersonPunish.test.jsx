@@ -53,11 +53,11 @@ describe('PersonPunish', () => {
     expect(screen.queryByRole('button', { name: 'Снять мут' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Банфулл' })).toBeNull()
     fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'снова флуд' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Мут' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Мут · 1 час' }))
     expect(onAct).toHaveBeenCalledWith({
       userId: '7',
       action: 'mute',
-      hours: '1',
+      untilSec: 3600,
       reason: 'снова флуд',
     })
   })
@@ -78,12 +78,32 @@ describe('PersonPunish', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Банфулл' }))
     expect(screen.getByText(/Бан на весь проект/)).toBeTruthy()
     fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'спам везде' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Банфулл' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Банфулл · 1 час' }))
     expect(onAct).toHaveBeenCalledWith({
       userId: '7',
       action: 'banfull',
-      hours: '1',
+      untilSec: 3600,
       reason: 'спам везде',
+    })
+  })
+
+  it('can hold a punishment down to the second and lifts a shorter span to 35', async () => {
+    vi.mocked(fetchPersonHistory).mockResolvedValue(history)
+    const onAct = vi.fn().mockResolvedValue({})
+    render(
+      <PersonPunish chatId={-5} userId={7} actions={actions} onAct={onAct} onClose={() => {}} />,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'До секунды' }))
+    fireEvent.change(screen.getByLabelText('Часы'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText('Секунды'), { target: { value: '10' } })
+    expect(screen.getByText(/уйдёт на 35/)).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'флуд' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Мут · 35 секунд' }))
+    expect(onAct).toHaveBeenCalledWith({
+      userId: '7',
+      action: 'mute',
+      untilSec: 35,
+      reason: 'флуд',
     })
   })
 })

@@ -9,6 +9,16 @@ from group_realm import (
 )
 from staff_panel_rights import column_granted, purge_allowed
 
+def test_hold_keeps_seconds_and_lifts_a_telegram_short_span():
+    from group_realm import telegram_hold_seconds
+
+    assert telegram_hold_seconds(10) == 35
+    assert telegram_hold_seconds(90) == 90
+    assert telegram_hold_seconds(3600) == 3600
+    assert telegram_hold_seconds(0) == 0
+    assert telegram_hold_seconds(None) == 0
+
+
 def test_wide_issue_follows_staff_column_not_a_chat_ban():
     from group_realm import wide_actions_for
 
