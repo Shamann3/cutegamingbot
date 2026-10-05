@@ -206,6 +206,15 @@ def test_only_creator_can_purge_and_not_himself():
     assert purge_allowed(actor_is_creator=True, target_is_creator=True)
 
 
+def test_drag_puts_the_top_post_above_rank_one():
+    from group_realm import ladder_places
+
+    assert ladder_places([10]) == [(10, 4, 0)]
+    assert ladder_places([10, 11, 12]) == [(10, 4, 0), (11, 3, 1), (12, 2, 2)]
+    assert [rank for _pid, rank, _i in ladder_places([1, 2, 3, 4, 5])] == [4, 3, 2, 1, 1]
+    assert ladder_places([3, 3, 0, "x"]) == [(3, 4, 0)]
+
+
 def test_delete_position_unseats_before_drop_and_keeps_creator():
     import inspect
 

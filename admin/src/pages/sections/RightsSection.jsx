@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPosition, fetchPanelAccess, fetchRightsBoard, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPosition, fetchPanelAccess, fetchRightsBoard, orderGroupPositions, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
 import DarkPick from '../../components/DarkPick'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
@@ -190,8 +190,8 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
   const [chapter, setChapter] = useState(office === 'staff' ? 'staff' : 'group')
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
-  const [newRank, setNewRank] = useState('2')
   const [newKind, setNewKind] = useState('post')
+  const [ordering, setOrdering] = useState(false)
 
   const load = useCallback(async () => {
     setError('')
@@ -225,12 +225,14 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
       await createGroupPosition({
         chat_id: Number(chatId),
         title,
-        rank: newKind === 'post' ? Math.min(4, Math.max(0, Number(newRank) || 0)) : 0,
+        rank: newKind === 'post' ? 4 : 0,
         kind: newKind,
         rights: newKind === 'spamblock' ? [] : ['view_members'],
       })
       setNewTitle('')
-      setNotice(`Должность «${title}» создана. Отметьте, какие наказания и страницы ей открыты, и сохраните.`)
+      setNotice(newKind === 'post'
+        ? `Должность «${title}» создана и стоит сразу под создателем группы. Отметьте наказания и страницы, затем сохраните.`
+        : `Должность «${title}» создана и остаётся внизу списка, без ранга администратора.`)
       await load()
     } catch (err) {
       setError(err.message || 'Должность не создалась')
@@ -238,6 +240,27 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
   }
 
   const current = groups.find((group) => group.chatId === chatId) || null
+
+  const saveOrder = async (ids) => {
+    if (!chatId) return
+    setOrdering(true)
+    setError('')
+    setNotice('')
+    try {
+      await orderGroupPositions({ chat_id: Number(chatId), ids })
+      setNotice('Ранги записаны. Верхняя должность администраторов — ранг 4, ниже по порядку.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Ранги не записались')
+      try {
+        await load()
+      } catch {
+        /* список останется как был */
+      }
+    } finally {
+      setOrdering(false)
+    }
+  }
 
   const save = async (row) => {
     setSavingId(row.id)
@@ -325,7 +348,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
         <p className="pa-hint">Старший, младший и модератор уже есть. Новую должность добавляет только создатель проекта: вкладки и наказания у неё сначала выключены.</p>
       )}
       {office === 'group' && (
-        <p className="pa-hint">Новую должность создаёт только создатель проекта. Вкладки кабинета настраиваются у каждой должности, включая спам-блок и ранг 0. Обычная сразу получает «Кто пишет», наказания включаются отдельно. У ранга 0 и спам-блока наказаний нет.</p>
+        <p className="pa-hint">Новую должность создаёт только создатель проекта. Вкладки кабинета настраиваются у каждой должности, включая спам-блок и ранг 0. Обычная встаёт сразу под создателем группы, на ранг 4. Кто старше — решает порядок: стрелка или перетаскивание. Наказать можно только младшего. У ранга 0 и спам-блока наказаний нет.</p>
       )}
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (
@@ -358,17 +381,12 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
               label="Тип"
               value={newKind}
               options={[
-                { value: 'post', label: 'Обычная должность', hint: 'права настраиваются отдельно' },
-                { value: 'member', label: 'Обычный пользователь', hint: 'ранг 0, только писать' },
-                { value: 'spamblock', label: 'Спам-блок', hint: 'ранг 0, без прав, со сроком' },
+                { value: 'post', label: 'Обычная должность', hint: 'сразу под создателем группы, ранг 4' },
+                { value: 'member', label: 'Обычный пользователь', hint: 'внизу списка, без наказаний' },
+                { value: 'spamblock', label: 'Спам-блок', hint: 'внизу списка, без прав, со сроком' },
               ]}
               onChange={setNewKind}
             />
-            {newKind === 'post' && (
-              <label>Ранг, 0 как участник, 4 старше
-                <input value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} inputMode="numeric" />
-              </label>
-            )}
             <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
           </form>
           <PositionEditor
@@ -381,6 +399,9 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             onAppoint={appointHere}
             savingId={savingId}
             onPreview={onPreview ? (row) => onPreview(groupPositionPreview(current, row)) : null}
+            onOrder={saveOrder}
+            ordering={ordering}
+            canReorder={!posQuery.trim()}
           />
         </>
       )}

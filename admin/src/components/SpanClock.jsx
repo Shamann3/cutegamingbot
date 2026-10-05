@@ -11,10 +11,10 @@ import {
 } from '../lib/spanClock'
 
 const FIELDS = [
-  { id: 'days', label: 'Дни', short: 'дни' },
-  { id: 'hours', label: 'Часы', short: 'часы' },
-  { id: 'minutes', label: 'Минуты', short: 'минуты' },
   { id: 'seconds', label: 'Секунды', short: 'секунды' },
+  { id: 'minutes', label: 'Минуты', short: 'минуты' },
+  { id: 'hours', label: 'Часы', short: 'часы' },
+  { id: 'days', label: 'Дни', short: 'дни' },
 ]
 
 function draftFrom(total) {

@@ -2668,6 +2668,10 @@ export async function createGroupPosition(body) {
   return adminFetch('/group-realm/positions', { method: 'POST', body })
 }
 
+export async function orderGroupPositions(body) {
+  return adminFetch('/group-realm/positions/order', { method: 'POST', body })
+}
+
 export async function saveGroupPosition(positionId, body) {
   return adminFetch(`/group-realm/positions/${encodeURIComponent(positionId)}`, { method: 'POST', body })
 }

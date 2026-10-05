@@ -23,7 +23,12 @@ afterEach(() => {
 })
 
 function open(title) {
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(title) }))
+  const button = screen.getAllByRole('button').find((node) => {
+    const label = node.getAttribute('aria-label') || ''
+    if (/^(Перетащить|Выше|Ниже)/.test(label)) return false
+    return new RegExp(title).test(node.textContent || '')
+  })
+  fireEvent.click(button)
 }
 
 describe('PositionEditor', () => {
@@ -172,5 +177,44 @@ describe('PositionEditor', () => {
     fireEvent.click(sw('Работа'))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить должность' }))
     expect(onSave.mock.calls[0][0].pages).toEqual(['work', 'pay'])
+  })
+
+  it('lifts a rank-1 administrator when the order is written', async () => {
+    const onOrder = vi.fn()
+    render(
+      <PositionEditor
+        positions={[
+          { id: 2, title: 'Модератор', rank: 1, kind: 'post', rights: ['view_members'] },
+          { id: 4, title: 'Хелпер', rank: 1, kind: 'post', rights: ['view_members'] },
+          { id: 5, title: 'Создатель', rank: 5, kind: 'post', rights: [] },
+          { id: 9, title: 'Спам-блок', rank: 0, kind: 'spamblock', rights: [] },
+        ]}
+        creator
+        canReorder
+        onOrder={onOrder}
+        onSave={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Записать ранги' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Перетащить, Создатель/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Перетащить, Спам-блок/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Записать ранги' }))
+    expect(onOrder).toHaveBeenCalledWith([2, 4])
+    fireEvent.click(screen.getByRole('button', { name: 'Ниже, Модератор' }))
+    await waitFor(() => expect(onOrder).toHaveBeenLastCalledWith([4, 2]))
+  })
+
+  it('does not drag while a search hides part of the ladder', () => {
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        canReorder={false}
+        onOrder={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Очистите поиск, чтобы менять ранги.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Перетащить/ })).toBeNull()
   })
 })

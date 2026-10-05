@@ -17,6 +17,7 @@ import {
   markGroupOfficial,
   createGroupPosition,
   deleteGroupPosition,
+  orderGroupPositions,
   saveGroupPosition,
   searchGroupsStudio,
   fetchDeedQueue,
@@ -199,8 +200,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const [savingId, setSavingId] = useState(null)
   const [posQuery, setPosQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
-  const [newRank, setNewRank] = useState('1')
   const [newKind, setNewKind] = useState('post')
+  const [ordering, setOrdering] = useState(false)
   const [punishFor, setPunishFor] = useState('')
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
@@ -615,15 +616,37 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
       await createGroupPosition({
         chat_id: Number(chatId),
         title: newTitle.trim(),
-        rank: newKind === 'post' ? Number(newRank) : 0,
+        rank: newKind === 'post' ? 4 : 0,
         kind: newKind,
         rights: newKind === 'spamblock' ? [] : ['view_members'],
       })
       setNewTitle('')
-      setNotice('Должность создана. Отметьте права наказаний и сохраните.')
+      setNotice(newKind === 'post'
+        ? 'Должность создана и стоит сразу под создателем группы. Отметьте права и сохраните.'
+        : 'Должность создана. Она остаётся внизу списка, без ранга администратора.')
       await loadPositions(chatId)
     } catch (err) {
       setError(err.message || 'Должность не создалась')
+    }
+  }
+
+  const saveOrder = async (ids) => {
+    if (!chatId) return
+    setOrdering(true)
+    setError('')
+    try {
+      await orderGroupPositions({ chat_id: Number(chatId), ids })
+      setNotice('Ранги записаны. Верхняя должность администраторов — ранг 4, ниже по порядку.')
+      await loadPositions(chatId)
+    } catch (err) {
+      setError(err.message || 'Ранги не записались')
+      try {
+        await loadPositions(chatId)
+      } catch {
+        /* список останется как был */
+      }
+    } finally {
+      setOrdering(false)
     }
   }
 
@@ -1158,30 +1181,25 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           {!chapter && activeTab === 'rights' && (
             <section>
               <h2 className="realm-h">Права должностей</h2>
-              <p className="realm-copy">Страницы кабинета, наказания и права Telegram. Наказать можно только младшего. При правке сравниваем с должностью рангом ниже.</p>
+              <p className="realm-copy">Название, вкладки кабинета, наказания и права Telegram. Наказать можно только того, кто ниже по рангу. Порядок должностей меняется стрелкой или перетаскиванием: верхняя получает ранг 4.</p>
               <label className="realm-field">Найти должность
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
               {isCreator && (
               <form className="realm-form" onSubmit={createPosition}>
                 <h3 className="realm-h">Новая должность</h3>
-                <p className="realm-copy">Создаёт только создатель проекта. Обычный пользователь и спам-блок встают на ранг 0 и не получают наказаний.</p>
+                <p className="realm-copy">Создаёт только создатель проекта. Обычная должность встаёт сразу под создателем группы, на ранг 4. Обычный пользователь и спам-блок остаются внизу, без наказаний.</p>
                 <label>Название<input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} /></label>
                 <DarkPick
                   label="Тип"
                   value={newKind}
                   options={[
-                    { value: 'post', label: 'Обычная должность', hint: 'права настраиваются отдельно' },
-                    { value: 'member', label: 'Обычный пользователь', hint: 'ранг 0, только писать' },
-                    { value: 'spamblock', label: 'Спам-блок', hint: 'ранг 0, без прав, со сроком' },
+                    { value: 'post', label: 'Обычная должность', hint: 'сразу под создателем группы, ранг 4' },
+                    { value: 'member', label: 'Обычный пользователь', hint: 'внизу списка, без наказаний' },
+                    { value: 'spamblock', label: 'Спам-блок', hint: 'внизу списка, без прав, со сроком' },
                   ]}
                   onChange={setNewKind}
                 />
-                {newKind === 'post' && (
-                  <label>Ранг, от 0 до 4. Ноль — как участник.
-                    <input inputMode="numeric" value={newRank} onChange={(event) => setNewRank(event.target.value.replace(/[^\d]/g, '').slice(0, 1))} />
-                  </label>
-                )}
                 <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
               </form>
               )}
@@ -1194,6 +1212,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 onDelete={isCreator ? removePosition : null}
                 onAppoint={isCreator ? appointHere : null}
                 savingId={savingId}
+                onOrder={isCreator ? saveOrder : null}
+                ordering={ordering}
+                canReorder={isCreator && !posQuery.trim()}
               />
             </section>
           )}

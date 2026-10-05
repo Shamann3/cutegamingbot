@@ -340,11 +340,35 @@ def rights_for_kind(kind: str, rank: int, requested: list[str] | set[str], *, cr
     return editable_rights(int(rank), requested, creator=creator)
 
 
+# Создатель группы — ранг 5 и выше. Должности администраторов живут на 1–4:
+# верх списка получает 4, следующая 3, и так до 1. Ранг 1 не является местом по умолчанию.
+STAFF_RANK_TOP = 4
+
+
 def stored_rank(kind: str, rank: int) -> int:
     """Обычный пользователь и спам-блок всегда на ранге 0: их можно наказать как участника."""
     if kind in {KIND_MEMBER, KIND_SPAMBLOCK}:
         return 0
-    return max(0, min(4, int(rank)))
+    return max(0, min(STAFF_RANK_TOP, int(rank)))
+
+
+def ladder_places(ordered_ids: list[int]) -> list[tuple[int, int, int]]:
+    """Порядок сверху вниз. Первая должность — самая старшая, но всегда ниже создателя группы."""
+    seen: list[int] = []
+    known = set()
+    for raw in ordered_ids:
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if pid <= 0 or pid in known:
+            continue
+        known.add(pid)
+        seen.append(pid)
+    return [
+        (pid, max(1, STAFF_RANK_TOP - index), index)
+        for index, pid in enumerate(seen)
+    ]
 
 
 def term_bounds(start_raw: str | None, end_raw: str | None) -> tuple[datetime | None, datetime | None, str | None]:
@@ -476,6 +500,7 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS entry_key TEXT NOT NULL DEFAULT '';
         ALTER TABLE epsilon_positions ADD COLUMN IF NOT EXISTS pages JSONB;
+        ALTER TABLE epsilon_positions ADD COLUMN IF NOT EXISTS ladder INT NOT NULL DEFAULT 0;
         CREATE TABLE IF NOT EXISTS epsilon_realm_log (
             id BIGSERIAL PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -744,6 +769,7 @@ def _position_out(row) -> dict:
         "rank": rank,
         "kind": kind,
         "prefix": row["prefix"] or "",
+        "ladder": int(row["ladder"] or 0) if "ladder" in row else 0,
         "rights": rights_for_kind(kind, rank, _rights(row["rights"]), creator=True),
         "pages": _row_pages(row),
         "accepting": bool(row["accepting"]),
@@ -918,6 +944,12 @@ class PositionEditBody(BaseModel):
     title: str = Field(min_length=2, max_length=40)
     rights: list[str] = Field(default_factory=list)
     pages: list[str] | None = None
+    model_config = {"extra": "forbid"}
+
+
+class PositionOrderBody(BaseModel):
+    chat_id: int
+    ids: list[int] = Field(min_length=1, max_length=80)
     model_config = {"extra": "forbid"}
 
 
@@ -1255,10 +1287,10 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     for group in groups:
         rows = await db.pool.fetch(
             """
-            SELECT id, title, rank, rights, accepting, kind, prefix, pages
+            SELECT id, title, rank, rights, accepting, kind, prefix, pages, ladder
             FROM epsilon_positions
             WHERE chat_id = $1
-            ORDER BY rank DESC, id
+            ORDER BY rank DESC, ladder ASC, id
             """,
             int(group["chatId"]),
         )
@@ -1290,10 +1322,10 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
     await ensure_tables()
     rows = await db.pool.fetch(
         """
-        SELECT id, title, rank, rights, accepting, kind, prefix, pages
+        SELECT id, title, rank, rights, accepting, kind, prefix, pages, ladder
         FROM epsilon_positions
         WHERE chat_id = $1
-        ORDER BY rank DESC, id
+        ORDER BY rank DESC, ladder ASC, id
         """,
         int(chat_id),
     )
@@ -1319,9 +1351,9 @@ async def create_position(body: PositionCreateBody, user_id: int = Depends(get_a
         raise HTTPException(status_code=400, detail=prefix_error)
     if kind == KIND_SPAMBLOCK and not prefix:
         prefix = SPAMBLOCK_PREFIX
-    rank = stored_rank(kind, int(body.rank))
+    rank = 0 if kind != KIND_POST else STAFF_RANK_TOP
     rights = rights_for_kind(kind, rank, body.rights, creator=True)
-    accepting = kind == KIND_POST and rank > 0
+    accepting = kind == KIND_POST
     row = await db.pool.fetchrow(
         """
         INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
@@ -1336,6 +1368,12 @@ async def create_position(body: PositionCreateBody, user_id: int = Depends(get_a
         kind,
         prefix,
     )
+    new_id = int(row["id"])
+    if kind == KIND_POST:
+        current = await _staff_ids(int(body.chat_id))
+        ordered = [new_id] + [item for item in current if item != new_id]
+        places = await _write_ladder(int(body.chat_id), ordered)
+        rank = next(item[1] for item in places if item[0] == new_id)
     await _realm_log(
         int(body.chat_id),
         None,
@@ -1343,7 +1381,65 @@ async def create_position(body: PositionCreateBody, user_id: int = Depends(get_a
         f"Должность «{title}», тип {kind}, ранг {rank}",
         int(user_id),
     )
-    return {"ok": True, "id": int(row["id"]), "title": title, "rank": rank, "kind": kind, "rights": rights}
+    return {"ok": True, "id": new_id, "title": title, "rank": rank, "kind": kind, "rights": rights}
+
+
+async def _staff_ids(chat_id: int) -> list[int]:
+    rows = await db.pool.fetch(
+        """
+        SELECT id
+        FROM epsilon_positions
+        WHERE chat_id = $1 AND kind = $2 AND rank < 5
+        ORDER BY rank DESC, ladder ASC, id
+        """,
+        int(chat_id),
+        KIND_POST,
+    )
+    return [int(row["id"]) for row in rows]
+
+
+async def _write_ladder(chat_id: int, ordered_ids: list[int]) -> list[tuple[int, int, int]]:
+    places = ladder_places(ordered_ids)
+    for pid, rank, ladder in places:
+        await db.pool.execute(
+            """
+            UPDATE epsilon_positions
+            SET rank = $2, ladder = $3, accepting = TRUE
+            WHERE id = $1 AND chat_id = $4 AND kind = $5 AND rank < 5
+            """,
+            pid,
+            rank,
+            ladder,
+            int(chat_id),
+            KIND_POST,
+        )
+    return places
+
+
+@router.post("/positions/order")
+async def order_positions(body: PositionOrderBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Порядок сверху вниз задаёт ранги: первая должность получает 4, создатель группы остаётся выше."""
+    _require_creator(user_id)
+    await ensure_tables()
+    have = await _staff_ids(int(body.chat_id))
+    wanted = [pid for pid, _rank, _ladder in ladder_places(body.ids)]
+    if set(wanted) != set(have) or len(wanted) != len(have):
+        raise HTTPException(
+            status_code=400,
+            detail="В списке должны быть все должности администраторов этой группы, без создателя группы",
+        )
+    places = await _write_ladder(int(body.chat_id), wanted)
+    await _realm_log(
+        int(body.chat_id),
+        None,
+        "positions_ordered",
+        ", ".join(f"{pid}:{rank}" for pid, rank, _ladder in places),
+        int(user_id),
+    )
+    return {
+        "ok": True,
+        "ranks": [{"id": pid, "rank": rank, "ladder": ladder} for pid, rank, ladder in places],
+    }
 
 
 @router.post("/positions/{position_id}")
