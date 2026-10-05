@@ -746,6 +746,7 @@ function PositionSheet({
         </fieldset>
         <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Наказания в этом чате</legend>
+          <p className="realm-copy">Включено — у всех на этой должности есть такая кнопка. Выключено — кнопки нет. За эту группу наказание не выходит.</p>
           <RightList items={PUNISH_RIGHTS} rights={rights} locked={rightsLocked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
         <fieldset className="realm-rights-block" disabled={rightsLocked}>
@@ -759,22 +760,21 @@ function PositionSheet({
             compareSet={compareSet}
           />
         </fieldset>
-        {creator && (
-          <fieldset className="realm-rights-block">
-            <legend>На весь проект</legend>
-            <p className="realm-copy">
-              Эти права не включаются от бана или мута в чате. Выключено — за пределы этой группы наказание не выходит.
-              Включить может только создатель проекта, на любом ранге, включая 0.
-            </p>
-            <RightList
-              items={PROJECT_RIGHTS}
-              rights={rights}
-              locked={false}
-              onToggle={toggle}
-              compareSet={compareSet}
-            />
-          </fieldset>
-        )}
+        <fieldset className="realm-rights-block">
+          <legend>Наказания шире этого чата</legend>
+          <p className="realm-copy">
+            Это отдельные кнопки. Мут или бан в чате их не включает.
+            Включено — кнопка есть у этой должности. Выключено — её нет.
+            {creator ? '' : ' Меняет только создатель проекта.'}
+          </p>
+          <RightList
+            items={PROJECT_RIGHTS}
+            rights={rights}
+            locked={!creator}
+            onToggle={toggle}
+            compareSet={compareSet}
+          />
+        </fieldset>
         {onPreview && (
           <button
             type="button"

@@ -224,6 +224,26 @@ describe('PositionEditor', () => {
     await waitFor(() => expect(onOrder).toHaveBeenLastCalledWith([4, 2]))
   })
 
+  it('shows what each punishment switch does and locks the wider ones for anyone else', () => {
+    render(
+      <PositionEditor
+        positions={positions}
+        chatId={-100}
+        onSave={vi.fn()}
+      />,
+    )
+    open('Модератор')
+    const sw = (title) => screen.getAllByRole('switch').find((node) => node.querySelector('strong')?.textContent === title)
+    expect(screen.getByText('Наказания в этом чате')).toBeTruthy()
+    expect(screen.getByText('Наказания шире этого чата')).toBeTruthy()
+    expect(sw('Мут').disabled).toBe(false)
+    expect(sw('Мут').textContent).toMatch(/Только этот чат/)
+    expect(sw('Банфулл').disabled).toBe(true)
+    expect(sw('Банфулл').textContent).toMatch(/Весь проект/)
+    expect(sw('Баналл').textContent).toMatch(/Все официальные группы/)
+    expect(screen.getByText(/Мут или бан в чате их не включает/)).toBeTruthy()
+  })
+
   it('does not drag while a search hides part of the ladder', () => {
     render(
       <PositionEditor

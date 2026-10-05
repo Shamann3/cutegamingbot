@@ -450,6 +450,7 @@ html.is-personal .act-bars button.is-on > i {
   font-style: normal !important;
   font-size: 0.82rem !important;
   line-height: 1.35 !important;
+  overflow-wrap: anywhere;
 }
 
 /* Dock — floating capsule */

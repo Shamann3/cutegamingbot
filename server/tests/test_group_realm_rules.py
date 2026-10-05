@@ -19,12 +19,14 @@ def test_hold_keeps_seconds_and_lifts_a_telegram_short_span():
     assert telegram_hold_seconds(None) == 0
 
 
-def test_wide_issue_follows_staff_column_not_a_chat_ban():
-    from group_realm import wide_actions_for
+def test_wide_issue_follows_the_position_switch():
+    from group_realm import position_wide, wide_actions_for
 
     only_full = [item["id"] for item in wide_actions_for(["banfull"])]
     assert only_full == ["banfull"]
     assert wide_actions_for(["punish_ban", "ban"]) == []
+    assert [item["id"] for item in position_wide(["punish_ban", "punish_mute"])] == []
+    assert [item["id"] for item in position_wide(["banfull", "muteall"])] == ["muteall", "banfull"]
     creator = [item["id"] for item in wide_actions_for([], creator=True)]
     assert creator[0] == "muteall"
     assert "banfull" in creator

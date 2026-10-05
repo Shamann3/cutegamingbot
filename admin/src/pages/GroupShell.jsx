@@ -29,6 +29,7 @@ import { spanToSend } from '../lib/spanClock'
 import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
+import { grantedWide } from '../lib/realmRights'
 import MySalary from './sections/payroll/MySalary'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
@@ -62,6 +63,14 @@ import { playMeme, stopMeme } from '../lib/memeSounds'
 import { usePerfMode } from '../lib/perfMode'
 import AccessKeySheet from '../components/AccessKeySheet'
 import OwnKeyControl from '../components/OwnKeyControl'
+
+const HOME_NAME = {
+  mute: 'Мут',
+  voice: 'Голос',
+  kick: 'Кик',
+  warn: 'Варн',
+  ban: 'Бан в чате',
+}
 
 const ACTIONS = [
   { id: 'mute', label: 'Мут', right: 'punish_mute', needsUntil: true },
@@ -216,7 +225,11 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }, [activeTab, preview, coach])
   const mainRef = useRef(null)
   useTabScroll(mainRef, activeTab)
-  const allowedActions = ACTIONS.filter((item) => isCreator || rights.has(item.right))
+  const allowedActions = ACTIONS.filter((item) => rights.has(item.right))
+  const seatWide = useMemo(
+    () => grantedWide(summary?.wide, rights),
+    [summary, rights],
+  )
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const hasWork = tabs.some((item) => item.id === 'work')
@@ -721,7 +734,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     if (!id || !Number.isFinite(id)) throw new Error('Укажите числовой id или выберите человека из подсказки')
     if (!String(why || '').trim()) throw new Error('Нужна причина')
     const act = allowedActions.find((item) => item.id === actId)
-      || (Array.isArray(summary?.wide) ? summary.wide : []).find((item) => item.id === actId)
+      || seatWide.find((item) => item.id === actId)
     if (!act) throw new Error('Нет права на это действие')
     let until = null
     if (act.needsUntil) {
@@ -767,8 +780,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     ? Math.round((Number(homeLead.messages) || 0) / Number(homeMessages) * 100)
     : null
   const homeCan = [
-    ...allowedActions.filter((item) => !String(item.id).startsWith('un')).map((item) => item.label),
-    ...(Array.isArray(summary?.wide) ? summary.wide : []).map((item) => item.label),
+    ...allowedActions
+      .filter((item) => !String(item.id).startsWith('un'))
+      .map((item) => HOME_NAME[item.id] || item.label),
+    ...seatWide.map((item) => item.label),
   ]
   const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
 
@@ -1073,11 +1088,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 <div className="grp-seat">
                   <p>Вы — {roleLabel} в этой группе.</p>
                   {homeCan.length > 0 ? (
-                    <ul className="grp-can" aria-label="Что можно выдать">
-                      {homeCan.map((label) => <li key={label}>{label}</li>)}
-                    </ul>
+                    <>
+                      <p>Может выдавать только то, что включено у этой должности.</p>
+                      <ul className="grp-can" aria-label="Дисциплины этой должности">
+                        {homeCan.map((label) => <li key={label}>{label}</li>)}
+                      </ul>
+                    </>
                   ) : (
-                    <p>Эта должность не выдаёт наказания.</p>
+                    <p>Наказания у этой должности выключены.</p>
                   )}
                 </div>
               )}
@@ -1182,7 +1200,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           {!chapter && activeTab === 'rights' && (
             <section>
               <h2 className="realm-h">Права должностей</h2>
-              <p className="realm-copy">Название, вкладки, наказания в чате, права Telegram и права на весь проект. Ранг 0 настраивается так же. Наказать можно только того, кто младше: человек без должности младше даже ранга 0. Порядок администраторов меняется стрелкой или перетаскиванием: верхняя получает ранг 4.</p>
+              <p className="realm-copy">У должности два блока наказаний. «Наказания в этом чате» остаются в этой группе. «Наказания шире этого чата» — отдельные кнопки: все официальные группы или весь проект. Выключено — кнопки нет. Ранг 0 настраивается так же. Наказать можно только того, кто младше.</p>
               <label className="realm-field">Найти должность
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
@@ -1206,7 +1224,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
               )}
               <PositionEditor
                 positions={positions.filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
-                creator={isCreator}
+                creator={isCreator || isProjectCreator}
                 chatId={chatId}
                 seats={holders}
                 onSave={savePosition}
@@ -1311,7 +1329,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           chatId={chatId}
           userId={punishFor}
           actions={allowedActions}
-          wide={Array.isArray(summary?.wide) ? summary.wide : []}
+          wide={seatWide}
           onAct={archiveAct}
           watch={mods?.watch || []}
           onClose={() => setPunishFor('')}

@@ -79,14 +79,14 @@ ACTION_RIGHT = {
 
 LOCAL_ACTIONS = frozenset(ACTION_RIGHT)
 
-# Шире одного чата. Право — столбец сотрудника, не «бан» должности в группе.
+# Шире одного чата. В кабинете группы кнопка есть только у включённого переключателя должности.
 WIDE_ISSUE = (
-    ("muteall", "Муталл", "Мут во всех официальных группах.", True),
-    ("kickall", "Кикалл", "Кик во всех официальных группах.", False),
-    ("warnall", "Варналл", "Предупреждение во всех официальных группах.", True),
-    ("banall", "Баналл", "Бан во всех официальных группах.", True),
-    ("warnfull", "Варнфулл", "Предупреждение на весь проект.", True),
-    ("banfull", "Банфулл", "Бан на весь проект. Снять его из этой карточки нельзя.", True),
+    ("muteall", "Муталл", "Все официальные группы. Мут в каждой из них. Мут одного чата это не включает.", True),
+    ("kickall", "Кикалл", "Все официальные группы. Кик из каждой. Кик из одного чата это не включает.", False),
+    ("warnall", "Варналл", "Все официальные группы. Предупреждение в каждой. Варн одного чата это не включает.", True),
+    ("banall", "Баналл", "Все официальные группы. Бан в каждой. Это ещё не бан всего проекта.", True),
+    ("warnfull", "Варнфулл", "Весь проект. Предупреждение не только в группах. Варн чата это не включает.", True),
+    ("banfull", "Банфулл", "Весь проект. Бан везде. Снять его из карточки человека нельзя. Бан чата это не включает.", True),
 )
 
 
@@ -109,27 +109,20 @@ def wide_actions_for(perms, *, creator: bool = False) -> list[dict]:
     return [item for item in catalog if item["id"] in granted]
 
 
-async def wide_issue_for(user_id: int) -> list[dict]:
-    """Проектные наказания: столбец сотрудника или то же право на должности в группе.
+def position_wide(rights) -> list[dict]:
+    """Дисциплины шире одного чата. Только то, что включено переключателем на должности.
 
-    Бан в одном чате сюда не входит. Создатель проекта видит весь список.
+    Создатель проекта и столбцы сотрудника сами по себе кнопку в группе не дают.
+    Бан в этом чате тоже не включает банфулл.
     """
-    from admin_soft_restart import is_project_creator
+    return wide_actions_for(rights or [], creator=False)
 
-    if is_project_creator(int(user_id)):
-        return wide_issue_catalog()
-    granted: set[str] = set()
-    try:
-        from staff_panel_rights import actor_staff_perms
-        granted.update(await actor_staff_perms(int(user_id)))
-    except Exception:
-        pass
-    try:
-        for group in await seats_for(int(user_id)):
-            granted.update(str(item) for item in (group.get("rights") or []))
-    except Exception:
-        pass
-    return wide_actions_for(granted, creator=False)
+
+async def wide_issue_for(user_id: int, chat_id: int) -> list[dict]:
+    access = await _access(int(user_id), int(chat_id))
+    if not access:
+        return []
+    return position_wide(access.get("rights") or [])
 
 PRESETS: tuple[tuple[str, int, tuple[str, ...], bool], ...] = (
     ("Создатель группы", 5, ALL_RIGHTS, False),
@@ -2585,7 +2578,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
             "recent": mods.get("recent") or [],
             "watch": watch,
         },
-        "wide": await wide_issue_for(int(user_id)),
+        "wide": position_wide(access.get("rights") or []),
     }
 
 
@@ -2618,9 +2611,9 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
     action = (body.action or "").strip().lower()
     wide_ids = {item["id"] for item in wide_issue_catalog()}
     if action in wide_ids:
-        allowed = {item["id"] for item in await wide_issue_for(int(user_id))}
+        allowed = {item["id"] for item in position_wide(access.get("rights") or [])}
         if action not in allowed:
-            raise HTTPException(status_code=403, detail="Нет права на это наказание")
+            raise HTTPException(status_code=403, detail="У этой должности эта дисциплина выключена")
     elif action not in LOCAL_ACTIONS:
         raise HTTPException(status_code=400, detail="Это действие живёт только внутри одной группы")
     elif not rights_allow(access["rights"], action):

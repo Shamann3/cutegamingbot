@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchPersonHistory } from '../lib/adminClient'
 import { playMeme } from '../lib/memeSounds'
+import { PUNISH_RIGHTS } from '../lib/realmRights'
 import { spanToSend, speakSpan } from '../lib/spanClock'
 import FocusWindow from './FocusWindow'
 import PhotoLook from './PhotoLook'
@@ -49,6 +50,10 @@ function when(iso) {
   if (Number.isNaN(date.getTime())) return ''
   return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+
+const CHAT_SCOPE = Object.fromEntries(
+  PUNISH_RIGHTS.map((item) => [item.id.replace('punish_', ''), item.hint]),
+)
 
 function issueVerb(selected, spanSec) {
   const name = selected?.label || 'наказание'
@@ -124,8 +129,8 @@ export default function PersonPunish({
   const [liftId, setLiftId] = useState(null)
   const [liftReason, setLiftReason] = useState('')
   const selected = offered.all.find((item) => item.id === action) || offered.all[0]
+  const scopeHint = selected?.hint || CHAT_SCOPE[selected?.id] || ''
   const warns = (watch || []).find((item) => Number(item.userId) === Number(userId))
-  const wideSelected = offered.wide.some((item) => item.id === selected?.id)
 
   useEffect(() => {
     const next = issueList(actions, wide).all
@@ -237,8 +242,8 @@ export default function PersonPunish({
           ))}
         </div>
       )}
-      {wideSelected && selected?.hint && (
-        <p className="person-scope" key={selected.id}>{selected.hint}</p>
+      {scopeHint && (
+        <p className="person-scope" key={selected?.id}>{scopeHint}</p>
       )}
       {selected?.needsUntil && (
         <SpanClock
