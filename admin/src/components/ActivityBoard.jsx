@@ -48,8 +48,8 @@ function ruTimes(count) {
 function personNote(person, watch) {
   const row = (watch || []).find((item) => Number(item.userId) === Number(person.userId))
   const archive = person.times > 0
-    ? `В архиве этого чата: ${ruTimes(person.times)}.`
-    : 'В архиве этого чата его ещё нет.'
+    ? `В последних записях этого чата: ${ruTimes(person.times)}.`
+    : 'Все прошлые наказания — по кнопке ниже.'
   const warns = row ? watchLine(watchLevel(row.warns), row.warns) : 'Активных предупреждений нет.'
   return `${archive} ${warns}`
 }

@@ -2608,6 +2608,10 @@ export async function removeGuardAllow(userId) {
   return adminFetch(`/group-realm/guard-allow/${encodeURIComponent(userId)}`, { method: 'DELETE' })
 }
 
+export async function fetchPersonHistory(chatId, userId) {
+  return adminFetch(`/group-realm/person/${encodeURIComponent(chatId)}/${encodeURIComponent(userId)}`)
+}
+
 export async function fetchGroupActivity(chatId, { period = 'month', slice = '' } = {}) {
   const query = new URLSearchParams({ period })
   if (slice) query.set('slice', slice)

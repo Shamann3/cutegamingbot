@@ -145,6 +145,17 @@ def test_junior_cannot_open_rights_page_by_asking():
     assert "manage_positions" not in saved
 
 
+def test_person_history_keeps_this_chat_and_wide_punishments():
+    from group_realm import person_history_where
+
+    sql = person_history_where()
+    assert "s.target_player_id = $2" in sql
+    assert "s.chat_id = $1" in sql
+    assert "'all', 'full'" in sql
+    assert "banfull" in sql
+    assert "warnall" in sql
+
+
 def test_only_creator_can_purge_and_not_himself():
     assert purge_allowed(actor_is_creator=True, target_is_creator=False) is None
     assert purge_allowed(actor_is_creator=False, target_is_creator=False)

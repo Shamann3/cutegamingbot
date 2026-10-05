@@ -10,7 +10,6 @@ import {
   decideGroupApplication,
   fetchGroupApplications,
   fetchRealmLogs,
-  fetchGroupActivity,
   fetchGroupPositions,
   fetchGroupPulse,
   fetchGroupSummary,
@@ -42,14 +41,12 @@ import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import AccentAura from '../components/AccentAura'
 import AccentPalette from '../components/AccentPalette'
-import { MetricSheetProvider, useMetricSheet } from '../components/MetricSheet'
 import DarkPick from '../components/DarkPick'
 import FocusWindow from '../components/FocusWindow'
 import PositionEditor from '../components/PositionEditor'
 import ActivityBoard from '../components/ActivityBoard'
 import GroupArchive from '../components/GroupArchive'
-import WeekStage from '../components/WeekStage'
-import ShiftDesk from '../components/ShiftDesk'
+import PersonPunish from '../components/PersonPunish'
 import GroupGuard from '../components/GroupGuard'
 import GroupLookupPreview from '../components/GroupLookupPreview'
 import UserLookupPreview from '../components/UserLookupPreview'
@@ -90,17 +87,8 @@ function roleTone(title, isCreator) {
   return 'seat'
 }
 
-export default function GroupShell(props) {
-  return (
-    <MetricSheetProvider>
-      <GroupShellView {...props} />
-    </MetricSheetProvider>
-  )
-}
-
-function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, banner = null }) {
+export default function GroupShell({ portrait, onLeave, onStaffApply, preview = false, banner = null }) {
   const personal = accentIsPersonal(loadStoredAccent())
-  const metric = useMetricSheet()
   const isCreator = Boolean(portrait?.isOwner)
   const isProjectCreator = Boolean(portrait?.isProjectCreator)
   const groups = portrait?.groups || []
@@ -203,10 +191,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   const [newTitle, setNewTitle] = useState('')
   const [newRank, setNewRank] = useState('1')
   const [newKind, setNewKind] = useState('post')
-  const [peakHours, setPeakHours] = useState([])
-  const [homeBoard, setHomeBoard] = useState(null)
   const [punishFor, setPunishFor] = useState('')
-  const writersRef = useRef(null)
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const heardTab = useRef(activeTab)
@@ -376,34 +361,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
       window.clearInterval(timer)
     }
   }, [chatId, showArrived])
-
-  useEffect(() => {
-    if (!chatId) {
-      setPeakHours([])
-      return undefined
-    }
-    let stop = false
-    fetchGroupActivity(chatId, { period: 'week' })
-      .then((data) => {
-        if (stop || data?.available === false) {
-          if (!stop) setPeakHours([])
-          return
-        }
-        const series = Array.isArray(data?.series) ? data.series : []
-        const ranked = [...series]
-          .map((point) => ({
-            date: point.date,
-            messages: Number(point.messages) || 0,
-            writers: Number(point.writers) || 0,
-          }))
-          .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-        setPeakHours(ranked)
-      })
-      .catch(() => {
-        if (!stop) setPeakHours([])
-      })
-    return () => { stop = true }
-  }, [chatId])
 
   const loadPositions = useCallback(async (id) => {
     if (!id) return
@@ -713,17 +670,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
     setTab(id)
   }
 
-  const openWriters = (next) => {
-    setHomeBoard(next)
-    window.requestAnimationFrame(() => {
-      const node = writersRef.current
-      const main = mainRef.current
-      if (!node || !main) return
-      const top = node.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 8
-      main.scrollTop = Math.max(0, top)
-    })
-  }
-
   const openPunish = (id) => {
     if (!id) return
     setPunishFor(String(id))
@@ -769,11 +715,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
   }
 
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
-  const weekTotal = peakHours.reduce((sum, point) => sum + (Number(point.messages) || 0), 0)
-  const monthTotal = Number(summary?.messages30d)
-  const weekShare = Number.isFinite(monthTotal) && monthTotal > 0 && weekTotal > 0 && weekTotal <= monthTotal
-    ? Math.round((weekTotal / monthTotal) * 100)
-    : null
   const homeName = !chapter && activeTab === 'overview' && Boolean(chatId)
   const roleLabel = isCreator
     ? (current?.position || 'Создатель')
@@ -846,7 +787,7 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
             compact
             showSupport={false}
             where={chatId
-              ? `${current?.position ? `${current.position} · ` : ''}${fmt(summary?.messages30d)} сообщений за 30 дней`
+              ? `${current?.position ? `${current.position} · ` : ''}${title}`
               : 'Группа ещё не выбрана. Её отмечает создатель проекта.'}
           />
         )}
@@ -863,7 +804,6 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
             )}
             <div className={`nika-status${chatId ? ' is-ok' : ''}`}>
               <b className={`grp-role-badge is-${roleClass}`}>{roleLabel}</b>
-              {chatId && !homeName && <span>{fmt(summary?.messages30d)} за 30 дней</span>}
             </div>
           </header>
           {error && (
@@ -1077,88 +1017,22 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'overview' && (
             <section className="grp-home">
-              <ShiftDesk
-                chatId={chatId}
-                canActivity={canActivity}
-                onOpen={canActivity ? (period) => openWriters({ period: period || 'day', slice: '' }) : undefined}
-              />
-              <div className="dash-usage-stage">
-                <div className="dash-usage-grid grp-overview-stats">
-                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
-                    id: 'grp-writers',
-                    title: 'Писали за 30 дней',
-                    value: fmt(summary?.writers30d ?? summary?.members),
-                    hint: 'Сколько разных людей отправили хотя бы одно сообщение',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
-                  })}>
-                    <span className="dash-usage-label">Писали</span>
-                    <strong className="dash-usage-value">{fmt(summary?.writers30d ?? summary?.members)}</strong>
-                    <span className="dash-usage-hint">человек за 30 дней</span>
-                  </button>
-                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
-                    id: 'grp-messages',
-                    title: 'Сообщения за 30 дней',
-                    value: fmt(summary?.messages30d),
-                    hint: 'Сколько сообщений ушло в этот чат',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
-                  })}>
-                    <span className="dash-usage-label">Сообщения</span>
-                    <strong className="dash-usage-value">{fmt(summary?.messages30d)}</strong>
-                    <span className="dash-usage-hint">за 30 дней</span>
-                  </button>
-                  <button type="button" className="dash-usage-card metric-tile" onClick={() => metric.open({
-                    id: 'grp-members',
-                    title: 'Кого панель уже видела',
-                    value: fmt(summary?.members),
-                    hint: 'Это не полный список Telegram. Только люди, которые уже попадали в этот чат.',
-                    action: canActivity ? { label: 'Кто именно писал', run: () => openWriters({ period: 'month', slice: '' }) } : null,
-                  })}>
-                    <span className="dash-usage-label">Участники</span>
-                    <strong className="dash-usage-value">{fmt(summary?.members)}</strong>
-                    <span className="dash-usage-hint">кого панель уже видела</span>
-                  </button>
-                </div>
-              </div>
-              {peakHours.some((point) => point.messages > 0) && (
-                <div className="grp-peak">
-                  <p className="week-peak">
-                    За 7 дней — {fmt(weekTotal)}
-                    {weekShare != null ? `. Это ${weekShare}% от сообщений за 30 дней.` : '.'}
+              {!chatId && <p className="realm-copy">Группа ещё не выбрана. Её отмечает создатель проекта.</p>}
+              {chatId && (
+                <div className="grp-seat">
+                  <p>Вы — {roleLabel} в этой группе.</p>
+                  <p>
+                    {allowedActions.some((item) => !String(item.id).startsWith('un'))
+                      ? `Можно выдать: ${allowedActions.filter((item) => !String(item.id).startsWith('un')).map((item) => item.label.toLowerCase()).join(', ')}.`
+                      : 'Эта должность не выдаёт наказания.'}
                   </p>
-                  <WeekStage
-                    points={peakHours}
-                    active={homeBoard?.period === 'week' ? homeBoard.slice : ''}
-                    onPick={(point) => {
-                      if (canActivity) openWriters({ period: 'week', slice: point.date })
-                      else metric.open({
-                        id: `grp-peak-${point.date}`,
-                        title: String(point.date),
-                        value: fmt(point.messages),
-                        unit: 'сообщений',
-                        hint: 'Сообщения за этот день',
-                      })
-                    }}
-                  />
                 </div>
               )}
-              {homeBoard && canActivity && (
-                <div className="grp-home-board" ref={writersRef}>
-                  <div className="grp-home-board-head">
-                    <h3 className="realm-h">Кто писал</h3>
-                    <button type="button" className="gate-text" onClick={() => setHomeBoard(null)}>Скрыть</button>
-                  </div>
-                  <ActivityBoard
-                    key={`${homeBoard.period}:${homeBoard.slice}`}
-                    chatId={chatId}
-                    repeats={repeats}
-                    watch={mods?.watch || []}
-                    canArchive={tabs.some((item) => item.id === 'archive')}
-                    seedPeriod={homeBoard.period}
-                    seedSlice={homeBoard.slice}
-                    peopleOnly
-                    onOpenArchive={openPunish}
-                  />
-                </div>
+              {chatId && canActivity && (
+                <button type="button" className="grp-door" onClick={() => pickTab('activity')}>
+                  <strong>Активность</strong>
+                  <span>Сообщения, сравнение с прошлым сроком и кто пишет</span>
+                </button>
               )}
               {groups.length > 1 && (
                 <>
@@ -1190,12 +1064,12 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
 
           {!chapter && activeTab === 'activity' && (
             <section className="grp-activity">
-              <p className="realm-copy">Это не снимок главной. Выберите срок и смотрите, оживает чат или затихает, какой день живой и кто пишет больше всех.</p>
+              <p className="realm-copy">Сообщения за выбранный срок, сравнение с прошлым и кто пишет. Имя открывает карточку, оттуда — все прошлые наказания и новое.</p>
               <ActivityBoard
                 chatId={chatId}
                 repeats={repeats}
                 watch={mods?.watch || []}
-                canArchive={tabs.some((item) => item.id === 'archive')}
+                canArchive
                 onOpenArchive={openPunish}
               />
             </section>
@@ -1357,22 +1231,14 @@ function GroupShellView({ portrait, onLeave, onStaffApply, preview = false, bann
         onOpenMenu={phone ? undefined : () => setRailOpen((open) => !open)}
       />
       {punishFor && (
-        <FocusWindow
-          title="Наказания этого человека"
-          subtitle={`#${punishFor}`}
+        <PersonPunish
+          chatId={chatId}
+          userId={punishFor}
+          actions={allowedActions}
+          onAct={archiveAct}
+          watch={mods?.watch || []}
           onClose={() => setPunishFor('')}
-        >
-          <GroupArchive
-            rows={(mods?.recent || []).filter((row) => String(row.target_user_id) === String(punishFor))}
-            repeats={repeats}
-            watch={summary ? (mods?.watch ?? null) : undefined}
-            actions={allowedActions}
-            onAct={archiveAct}
-            seedQuery={punishFor}
-            arrived={(arrived || []).filter((row) => String(row.target_user_id) === String(punishFor))}
-            onOpenUser={() => {}}
-          />
-        </FocusWindow>
+        />
       )}
     </div>
   )

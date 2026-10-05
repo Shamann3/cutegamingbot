@@ -2074,6 +2074,99 @@ async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dic
     }
 
 
+def person_history_where() -> str:
+    """Наказания этого человека в текущем чате и широкие, которые действуют везде."""
+    from human_actor import human_actor_sql
+
+    return f"""
+    s.target_player_id = $2
+      AND (
+        s.chat_id = $1
+        OR COALESCE(s.chat_id, 0) = 0
+        OR lower(COALESCE(s.scope, '')) IN ('all', 'full')
+        OR lower(COALESCE(s.action_type, '')) IN (
+          'banall', 'banfull', 'bot_ban', 'muteall', 'kickall',
+          'warnall', 'warnfull', 'unbanall', 'unmuteall', 'bot_unban'
+        )
+      )
+      AND {human_actor_sql("s")}
+    """
+
+
+async def load_person_history(chat_id: int, target_id: int) -> dict:
+    where = person_history_where()
+    total = await db.pool.fetchval(
+        f"SELECT count(*)::int FROM staff_actions s WHERE {where}",
+        int(chat_id),
+        int(target_id),
+    )
+    rows = await db.pool.fetch(
+        f"""
+        SELECT s.id, s.created_at, s.action_type, s.scope, s.chat_id, s.admin_name,
+               s.reason, s.duration_minutes, s.proof_media_id
+        FROM staff_actions s
+        WHERE {where}
+        ORDER BY s.created_at DESC NULLS LAST
+        LIMIT 200
+        """,
+        int(chat_id),
+        int(target_id),
+    )
+    person = await db.pool.fetchrow(
+        "SELECT first_name, username FROM users WHERE user_id = $1",
+        int(target_id),
+    )
+    items = []
+    for row in rows:
+        items.append({
+            "id": int(row["id"]),
+            "at": row["created_at"].isoformat() if row["created_at"] else None,
+            "action": row["action_type"],
+            "scope": row["scope"] or "",
+            "chatId": int(row["chat_id"] or 0),
+            "admin": row["admin_name"] or "",
+            "reason": (row["reason"] or "")[:400],
+            "minutes": int(row["duration_minutes"] or 0),
+            "hasProof": bool(row["proof_media_id"]),
+            "proofMediaId": row["proof_media_id"] or None,
+        })
+    counted = int(total or 0)
+    return {
+        "available": True,
+        "userId": int(target_id),
+        "name": (person["first_name"] if person else None) or None,
+        "username": (person["username"] if person else None) or None,
+        "total": counted,
+        "clipped": counted > len(items),
+        "items": items,
+    }
+
+
+@router.get("/person/{chat_id}/{target_id}")
+async def group_person_history(
+    chat_id: int,
+    target_id: int,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    if int(target_id) <= 0:
+        raise HTTPException(status_code=400, detail="Укажите id человека")
+    access = await _access(user_id, chat_id)
+    if not access:
+        raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
+    pages = cabinet_pages(
+        access.get("rights") or [],
+        creator=bool(access.get("isCreator")),
+        pages=access.get("pages"),
+        rank=int(access.get("rank") or 0),
+    )
+    if "activity" not in pages and "archive" not in pages:
+        raise HTTPException(status_code=403, detail="Должность не открывает историю наказаний")
+    try:
+        return await load_person_history(int(chat_id), int(target_id))
+    except Exception:
+        return {"available": False, "userId": int(target_id), "items": [], "total": None, "clipped": False}
+
+
 @router.get("/activity/{chat_id}")
 async def group_activity(
     chat_id: int,

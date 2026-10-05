@@ -4773,5 +4773,261 @@ body.perf-light .act-lenses button:hover {
   transition: none;
 }
 
+/* Главная группы без статистики: должность и дверь в активность. */
+.grp-home {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+html.is-desktop .realm-main > section.grp-home,
+html[data-viewport="desktop"] .realm-main > section.grp-home {
+  width: min(560px, 100%);
+  margin-inline: auto;
+}
+
+.grp-seat,
+.grp-door {
+  background: var(--e-plate);
+  background-color: var(--e-plate);
+  border-radius: 22px;
+}
+
+.grp-seat {
+  padding: 16px;
+  animation: arc-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.grp-seat p {
+  margin: 0;
+  color: var(--e-text, #fff);
+  font-size: 1.02rem;
+  line-height: 1.4;
+}
+
+.grp-seat p + p {
+  margin-top: 6px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.92rem;
+}
+
+.grp-door {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  padding: 14px 42px 14px 16px;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.grp-door::after {
+  content: '';
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  transform: translateY(-50%) rotate(45deg);
+  opacity: 0.72;
+}
+
+.grp-door:active {
+  transform: scale(0.985);
+}
+
+.grp-door strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.grp-door span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.grp-door:hover {
+  background: var(--e-plate-2, var(--e-plate));
+}
+
+.person-read {
+  margin: 0 0 10px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.person-deeds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.focus-sheet:has(.person-deeds),
+.focus-sheet:has(.person-issue),
+.focus-sheet:has(.person-read) {
+  background: #111113 !important;
+  background-color: #111113 !important;
+}
+
+.person-deed {
+  padding: 12px;
+  border-radius: 18px;
+  background: #1c1c21;
+  animation: arc-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.person-deed.is-arrive {
+  animation: arc-arrive 0.68s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.person-deed-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.person-deed-top strong {
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+}
+
+.person-deed-top time,
+.person-deed-meta,
+.person-deed p {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.person-deed p {
+  margin: 6px 0 0;
+  color: var(--e-text, #fff);
+  font-size: 0.95rem;
+}
+
+.person-deed-meta {
+  margin-top: 4px;
+}
+
+.person-lift,
+.person-issue {
+  display: grid;
+  gap: 8px;
+}
+
+.person-lift {
+  margin-top: 10px;
+}
+
+.person-issue-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.person-acts,
+.person-lift-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.person-acts button,
+.person-lift-open {
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.person-acts button.is-on {
+  background: var(--e-accent, #fff);
+  color: #111;
+}
+
+.focus-sheet .person-issue label,
+.focus-sheet .person-lift label {
+  display: grid;
+  gap: 4px;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.82rem;
+}
+
+.focus-sheet .person-issue input,
+.focus-sheet .person-lift input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0c0c0e;
+  color: #fff;
+  font: inherit;
+  caret-color: var(--e-accent, #fff);
+}
+
+.focus-sheet .person-issue input::placeholder,
+.focus-sheet .person-lift input::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.grp-door:focus-visible,
+.person-acts button:focus-visible,
+.focus-sheet .person-issue input:focus-visible,
+.focus-sheet .person-lift input:focus-visible,
+.person-deed .sec-btn:focus-visible {
+  outline: 2px solid rgb(var(--e-accent-rgb, 200, 175, 255));
+  outline-offset: 3px;
+}
+
+.grp-seat ::selection,
+.person-deed ::selection,
+.person-issue ::selection {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.35);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grp-seat,
+  .person-deed,
+  .person-deed.is-arrive {
+    animation: none;
+  }
+
+  .grp-door:active {
+    transform: none;
+  }
+}
+
+body.perf-light .grp-seat,
+body.perf-light .person-deed,
+body.perf-light .grp-door:hover,
+body.perf-light .grp-door:active {
+  animation: none;
+  transition: none;
+  transform: none;
+}
+
+
 
 
