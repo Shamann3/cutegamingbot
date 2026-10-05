@@ -146,15 +146,12 @@ export default function EntranceSeal({
     prepareMemeVisit()
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
     const logoAt = reduced || lite ? 80 : 1100
-    const matrixAt = variant === 'boot' || variant === 'login' ? 0 : -1
-    const timers = []
-    if (matrixAt >= 0) timers.push(window.setTimeout(() => { if (!stop) playMeme('matrix') }, matrixAt))
-    timers.push(window.setTimeout(() => { if (!stop) playMeme('logo') }, logoAt))
+    const timer = window.setTimeout(() => { if (!stop) playMeme('logo') }, logoAt)
     return () => {
       stop = true
-      timers.forEach((id) => window.clearTimeout(id))
+      window.clearTimeout(timer)
     }
-  }, [lite, variant])
+  }, [lite])
 
   useEffect(() => {
     const warm = new Image()
