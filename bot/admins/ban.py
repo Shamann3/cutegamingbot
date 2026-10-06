@@ -99,7 +99,12 @@ from bot.admins.mute import (
   _is_transient_db_error,
   _format_scope_with_groups,
   _resolve_reply_or_explicit,
-  check_staff_permission,
+  check_punish_permission,
+  guard_seat_target,
+  reply_seat_refusal,
+  seat_refusal_alert,
+  seat_target_refusal,
+  seat_wide_ban_refusal,
   parse_duration,
   DbUnavailableError,
   NO_PREVIEW,
@@ -2160,6 +2165,10 @@ async def _handle_ban_command(message: Message) -> bool:
   if parsed.target_id == _bot().id:
     await message.reply(BanText.BOT, parse_mode="HTML", link_preview_options=NO_PREVIEW)
     return True
+  if await guard_seat_target(
+    message, parsed.target_id, _BAN_MODE_PERMISSION.get(parsed.mode, "ban"),
+  ):
+    return True
 
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
@@ -2729,6 +2738,17 @@ async def _handle_unban_command(message: Message) -> bool:
     return True
 
   mode = _unban_command_mode(_get_command_text(message))
+  if target_id != message.from_user.id:
+    action = _BAN_MODE_PERMISSION.get(mode, "ban")
+    if await guard_seat_target(message, target_id, action, lift=True):
+      return True
+    try:
+      refusal = await seat_wide_ban_refusal(message.from_user.id, target_id, message.chat.id, action)
+    except DbUnavailableError:
+      await _reply_db_unavailable(message)
+      return True
+    if refusal:
+      return await reply_seat_refusal(message, refusal)
   return await _execute_unban(
     message, target_id, target_name or str(target_id), target_username, mode=mode,
   )
@@ -2787,7 +2807,8 @@ async def ban_process(message: Message) -> bool:
     if low in ("отмена", "cancel", "/cancel"):
       if not pending_contains(_pending_bans, uid):
         return False
-      perm = await check_staff_permission(uid, "ban")
+      pending_chat = (pending_get(_pending_bans, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_ban", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -2815,7 +2836,8 @@ async def ban_process(message: Message) -> bool:
       return True
 
     if _is_cancel_ban_command(command_text):
-      perm = await check_staff_permission(uid, "ban")
+      pending_chat = (pending_get(_pending_bans, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_ban", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -2825,7 +2847,7 @@ async def ban_process(message: Message) -> bool:
 
     if _is_ban_command(command_text):
       ban_action = _ban_permission_action(command_text)
-      perm = await check_staff_permission(uid, ban_action)
+      perm = await check_punish_permission(uid, ban_action, chat_id)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -2838,7 +2860,7 @@ async def ban_process(message: Message) -> bool:
 
   if is_proof_only_photo(message) and _is_ban_related_message(message):
     ban_action = _ban_permission_action(command_text)
-    perm = await check_staff_permission(uid, ban_action)
+    perm = await check_punish_permission(uid, ban_action, chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -2854,7 +2876,7 @@ async def ban_process(message: Message) -> bool:
     return False
 
   if _is_cancel_ban_command(command_text):
-    perm = await check_staff_permission(message.from_user.id, "ban")
+    perm = await check_punish_permission(message.from_user.id, "cancel_ban", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -2872,7 +2894,7 @@ async def ban_process(message: Message) -> bool:
       uid=uid, mode=unban_mode, action=unban_action,
       text=command_text[:60],
     )
-    perm = await check_staff_permission(message.from_user.id, unban_action)
+    perm = await check_punish_permission(message.from_user.id, unban_action, chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -2902,7 +2924,7 @@ async def ban_process(message: Message) -> bool:
 
   # Право проверяем по конкретному режиму: ban / banall / banfull.
   ban_action = _ban_permission_action(command_text)
-  perm = await check_staff_permission(message.from_user.id, ban_action)
+  perm = await check_punish_permission(message.from_user.id, ban_action, chat_id)
   if perm == "db_unavailable":
     await _reply_db_unavailable(message)
     return True
@@ -2930,7 +2952,10 @@ async def on_ban_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(BanText.CB_ONLY_AUTHOR, show_alert=True)
     return
 
-  perm = await check_staff_permission(admin_id, "ban")
+  from bot.admins.punish_proof import pending_get
+  pending = pending_get(_pending_bans, admin_id)
+  perm_chat = (pending or {}).get("chat_id", callback.message.chat.id)
+  perm = await check_punish_permission(admin_id, "cancel_ban", perm_chat)
   if perm != "allowed":
     if perm == "db_unavailable":
       await callback.answer(BanText.CB_DB, show_alert=True)
@@ -2938,8 +2963,6 @@ async def on_ban_pending_cancel(callback: CallbackQuery) -> None:
       await callback.answer(BanText.CB_NO_PERM, show_alert=True)
     return
 
-  from bot.admins.punish_proof import pending_get
-  pending = pending_get(_pending_bans, admin_id)
   if not pending:
     try:
       await callback.message.edit_reply_markup(reply_markup=None)
@@ -2994,9 +3017,10 @@ async def on_ban_revoke(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
+  chat_id = callback.message.chat.id
   # Право проверяем по охвату снятия: ban / banall / banfull.
   revoke_action = _BAN_MODE_PERMISSION.get(mode, "ban")
-  perm = await check_staff_permission(clicker, revoke_action)
+  perm = await check_punish_permission(clicker, revoke_action, chat_id)
   if perm != "allowed":
     await callback.answer(
       BanText.CB_DB if perm == "db_unavailable" else BanText.CB_NO_PERM,
@@ -3004,9 +3028,20 @@ async def on_ban_revoke(callback: CallbackQuery) -> None:
     )
     return
 
-  staff = await StaffRef.from_user_id(clicker)
+  if clicker != target_id:
+    try:
+      blocked = await seat_target_refusal(
+        clicker, target_id, chat_id, revoke_action, lift=True,
+      ) or await seat_wide_ban_refusal(clicker, target_id, chat_id, revoke_action)
+    except DbUnavailableError:
+      await callback.answer(BanText.CB_DB, show_alert=True)
+      return
+    if blocked:
+      await callback.answer(seat_refusal_alert(blocked), show_alert=True)
+      return
+
+  staff = await StaffRef.from_user_id(clicker, chat_id=chat_id)
   target_name, target_username = await _resolve_user_display(target_id)
-  chat_id = callback.message.chat.id
 
   async def _noop(_text: str) -> None:
     return None

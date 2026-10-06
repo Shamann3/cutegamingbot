@@ -217,6 +217,11 @@ class MuteText:
     "<blockquote><i>Если считаете, что это ошибка - обратитесь к старшему администратору.</i>"
     "</blockquote>"
   )
+  SEAT_REFUSED = (
+    "{greeting}\n"
+    "<b><tg-emoji emoji-id='5834895792409677476'>⛔️</tg-emoji> Нельзя</b>\n"
+    "<i>{reason}.</i>{hint}"
+  )
   ERR_NEED_TIME = (
     "<b><tg-emoji emoji-id='5256110225848543598'>✖️</tg-emoji> Укажите время.</b>\n"
     "<code>мут 60с</code> · <code>мут [username, id, имя нарушителя] [время]</code>"
@@ -1444,6 +1449,9 @@ _ACTION_PUBLIC_LABELS: Dict[str, str] = {
   "cancel_mute": "отмену ожидания мута",
   "cancel_kick": "отмену ожидания кика",
   "cancel_pending": "отмену ожидания",
+  "cancel_ban": "отмену ожидания блокировки",
+  "cancel_warn": "отмену ожидания предупреждения",
+  "clearwarns": "снятие всех предупреждений сразу",
 }
 
 _ACTION_PERMISSION_KEY: Dict[str, str] = {
@@ -1457,6 +1465,7 @@ _ACTION_PERMISSION_KEY: Dict[str, str] = {
   "unbanfull": "banfull",
   "cancel_warn": "warn",
   "unwarn": "warn",
+  "clearwarns": "warn",
 }
 
 
@@ -1611,6 +1620,274 @@ async def check_staff_permission(user_id: int, action: str) -> str:
 async def deny_permission(message: Message, action: str = "mute") -> bool:
   await _send_no_permission(message, action)
   return True
+
+
+# ---------------------------------------------------------------------------
+# Должность в официальной группе (кабинет группы в панели) тоже даёт право наказывать
+# ---------------------------------------------------------------------------
+# Сотрудник проекта наказывает по staff_rules. Владелец должности - по правам
+# этой должности, только в своей группе и только тех, кто младше. Правила
+# общие с панелью: server/punish_rights.py.
+
+SEAT_ROLE_PREFIX = "seat:"
+_SEAT_CACHE_SEC = 10.0
+_seat_cache: Dict[Tuple[int, int], Tuple[Optional["GroupSeat"], float]] = {}
+
+
+def _punish_rules():
+  _official_rules()
+  import punish_rights
+  return punish_rights
+
+
+def _seat_title(role: Optional[str]) -> Optional[str]:
+  if role and str(role).startswith(SEAT_ROLE_PREFIX):
+    return str(role)[len(SEAT_ROLE_PREFIX):].strip() or "Должность в группе"
+  return None
+
+
+@dataclass(frozen=True)
+class GroupSeat:
+  """Действующая должность человека в официальной группе."""
+  chat_id: int
+  title: str
+  rank: int
+  rights: frozenset
+
+  @property
+  def role(self) -> str:
+    return SEAT_ROLE_PREFIX + self.title
+
+  def allows(self, action: str) -> bool:
+    return _punish_rules().seat_allows(self.rights, action)
+
+
+async def group_seat(user_id: int, chat_id: Optional[int]) -> Optional[GroupSeat]:
+  """Должность в этой группе или None. Если база не отвечает - DbUnavailableError."""
+  try:
+    uid, cid = int(user_id), int(chat_id or 0)
+  except (TypeError, ValueError):
+    return None
+  if cid >= 0:
+    return None
+  now = time.monotonic()
+  hit = _seat_cache.get((uid, cid))
+  if hit and now - hit[1] < _SEAT_CACHE_SEC:
+    return hit[0]
+  rules = _punish_rules()
+  try:
+    async with _db_acquire() as conn:
+      row = await conn.fetchrow(rules.SEAT_SQL, uid, cid)
+  except DbUnavailableError:
+    raise
+  except Exception as e:
+    if _is_transient_db_error(e):
+      raise DbUnavailableError(str(e)) from e
+    # Таблиц кабинета групп ещё нет - значит, нет и должностей.
+    MuteDebug.log("AUTH", "seat lookup skip", err=str(e), user_id=uid, chat_id=cid)
+    row = None
+  seat: Optional[GroupSeat] = None
+  if row and row["in_term"] and not row["key_off"]:
+    rank = int(row["rank"] or 0)
+    title = " ".join(str(row["title"] or "").split()) or "Должность в группе"
+    seat = GroupSeat(cid, title, rank, frozenset(rules.seat_rights(row["rights"], rank)))
+  _seat_cache[(uid, cid)] = (seat, now)
+  return seat
+
+
+async def _seat_quiet(user_id: int, chat_id: Optional[int]) -> Optional[GroupSeat]:
+  try:
+    return await group_seat(user_id, chat_id)
+  except DbUnavailableError:
+    return None
+
+
+def invalidate_seat_cache() -> None:
+  _seat_cache.clear()
+
+
+async def punish_access(
+  user_id: int, action: str, chat_id: Optional[int],
+) -> Tuple[str, Optional[GroupSeat]]:
+  """('allowed', None) - право сотрудника проекта. Оно старше должности: этим
+  можно наказать и участника, и администратора группы. ('allowed', seat) -
+  только должность, и тогда только того, кто младше.
+
+  Иначе ('denied', seat или None) или ('db_unavailable', None).
+  """
+  staff = await check_staff_permission(user_id, action)
+  if staff == "allowed":
+    return "allowed", None
+  if staff == "db_unavailable":
+    return "db_unavailable", None
+  try:
+    seat = await group_seat(user_id, chat_id)
+  except DbUnavailableError:
+    return "db_unavailable", None
+  if seat and seat.allows(action):
+    return "allowed", seat
+  return "denied", seat
+
+
+async def check_punish_permission(user_id: int, action: str, chat_id: Optional[int]) -> str:
+  """Как check_staff_permission, но учитывает и должность в этой группе."""
+  verdict, seat = await punish_access(user_id, action, chat_id)
+  MuteDebug.log(
+    "AUTH", "punish check",
+    user_id=user_id, action=action, chat_id=chat_id, verdict=verdict,
+    via=(seat.title if seat and verdict == "allowed" else "staff_rules"),
+  )
+  return verdict
+
+
+async def acting_role(user_id: int, chat_id: Optional[int]) -> Optional[str]:
+  """Чем подписать наказание: должность сотрудника проекта, иначе должность в группе."""
+  account = await get_admin_account(user_id)
+  if account and account.role:
+    return account.role
+  seat = await _seat_quiet(user_id, chat_id)
+  return seat.role if seat else None
+
+
+async def seat_target_refusal(
+  actor_id: int,
+  target_id: int,
+  chat_id: Optional[int],
+  action: str,
+  *,
+  wide: Optional[bool] = None,
+  lift: bool = False,
+) -> Optional[Tuple[str, str]]:
+  """Почему должность не может наказать этого человека: (причина, подсказка). None - может.
+
+  action - то же, что проверялось правом. Сотрудника проекта с правом это не касается.
+  """
+  verdict, seat = await punish_access(actor_id, action, chat_id)
+  if verdict == "db_unavailable":
+    raise DbUnavailableError("punish access")
+  if verdict != "allowed":
+    return "Права на это действие нет", ""
+  if seat is None:
+    return None
+  rules = _punish_rules()
+  wide = rules.is_wide(action) if wide is None else wide
+  try:
+    async with _db_acquire() as conn:
+      staff_row = await conn.fetchrow(
+        "SELECT role, status FROM admin_accounts WHERE user_id = $1", int(target_id),
+      )
+      if wide:
+        row = await conn.fetchrow(rules.TARGET_TOP_SEAT_SQL, int(target_id))
+      else:
+        row = await conn.fetchrow(rules.TARGET_SEAT_SQL, int(target_id), int(chat_id))
+  except DbUnavailableError:
+    raise
+  except Exception as e:
+    MuteDebug.error("AUTH", "seat target check", e, actor=actor_id, target=target_id)
+    raise DbUnavailableError(str(e)) from e
+  reason = rules.seat_target_block(
+    actor_rank=seat.rank,
+    target_rank=int(row["rank"]) if row else -1,
+    same_person=int(actor_id) == int(target_id),
+    target_staff=bool(staff_row) and rules.is_staff_account(staff_row["role"], staff_row["status"]),
+    wide=wide,
+    lift=lift,
+  )
+  if not reason:
+    return None
+  if reason in (rules.STAFF_TARGET_BLOCK, rules.STAFF_LIFT_BLOCK):
+    return reason, rules.STAFF_TARGET_HINT
+  if reason in (rules.SELF_BLOCK, rules.SELF_LIFT_BLOCK):
+    return reason, ""
+  target_title = " ".join(str(row["title"] or "").split()) if row else ""
+  hint = f"Ваша должность - «{seat.title}»"
+  if target_title:
+    hint += f", у этого человека - «{target_title}»"
+  return reason, hint + "."
+
+
+async def unmute_reach(actor_id: int, target_id: int, chat_id: int) -> Tuple[str, Optional[str]]:
+  """Где этот человек снимает мут.
+
+  ('all', None)  - сотрудник проекта или должность с «Муталл»: везде, как раньше;
+  ('chat', None) - должность в группе: только мут этой группы;
+  ('', текст)    - мут выдан во всех группах, а «Муталл» у должности выключен.
+  """
+  verdict, seat = await punish_access(actor_id, "unmute", chat_id)
+  if verdict == "db_unavailable":
+    raise DbUnavailableError("punish access")
+  if seat is None or verdict != "allowed" or "muteall" in seat.rights:
+    return "all", None
+  rules = _punish_rules()
+  async with _db_acquire() as conn:
+    row = await conn.fetchrow(rules.WIDE_MUTE_SQL, int(target_id))
+  if rules.wide_mute_on(dict(row) if row else None):
+    return "", f"{rules.WIDE_MUTE_LIFT}. {rules.WIDE_MUTE_LIFT_HINT}"
+  return "chat", None
+
+
+async def seat_wide_ban_refusal(
+  actor_id: int, target_id: int, chat_id: Optional[int], action: str,
+) -> Optional[Tuple[str, str]]:
+  """Бан шире группы снимает только должность с нужным переключателем. None - можно."""
+  verdict, seat = await punish_access(actor_id, action, chat_id)
+  if verdict == "db_unavailable":
+    raise DbUnavailableError("punish access")
+  if seat is None or verdict != "allowed":
+    return None
+  rules = _punish_rules()
+  async with _db_acquire() as conn:
+    row = await conn.fetchrow(rules.WIDE_BAN_SQL, int(target_id))
+  need = rules.wide_ban_switch(dict(row) if row else None)
+  if rules.switch_covers(seat.rights, need):
+    return None
+  return rules.WIDE_BAN_LIFT[need]
+
+
+async def reply_seat_refusal(message: Message, refusal: Tuple[str, str]) -> bool:
+  reason, hint = refusal
+  staff = await StaffRef.from_message(message)
+  await message.reply(
+    MuteText.SEAT_REFUSED.format(
+      greeting=staff.greeting,
+      reason=escape(reason.rstrip(".")),
+      hint=f"\n<blockquote><i>{escape(hint)}</i></blockquote>" if hint else "",
+    ),
+    parse_mode="HTML", link_preview_options=NO_PREVIEW,
+  )
+  return True
+
+
+def seat_refusal_alert(refusal: Tuple[str, str]) -> str:
+  """Тот же отказ для всплывающего окна под кнопкой (Telegram режет после 200 символов)."""
+  reason, hint = refusal
+  text = reason.rstrip(".") + "." + (f" {hint}" if hint else "")
+  return text if len(text) <= 200 else text[:199] + "…"
+
+
+async def guard_seat_target(
+  message: Message,
+  target_id: int,
+  action: str,
+  *,
+  wide: Optional[bool] = None,
+  lift: bool = False,
+) -> bool:
+  """True - наказывать нельзя, ответ уже отправлен."""
+  try:
+    refusal = await seat_target_refusal(
+      message.from_user.id, target_id, message.chat.id, action, wide=wide, lift=lift,
+    )
+  except DbUnavailableError:
+    await _reply_db_unavailable(message)
+    return True
+  if not refusal:
+    return False
+  MuteDebug.log(
+    "AUTH", "seat target blocked",
+    actor=message.from_user.id, target=target_id, action=action, reason=refusal[0],
+  )
+  return await reply_seat_refusal(message, refusal)
 
 
 # Служебные столбцы staff_rules (не права)
@@ -1870,6 +2147,9 @@ def _parse_rule_record(row: Dict[str, Any], schema: StaffRulesSchema) -> Optiona
 def role_title_from_cache(role: Optional[str]) -> str:
   if not role:
     return "-"
+  seat_title = _seat_title(role)
+  if seat_title:
+    return seat_title
   if _staff_rules_cache:
     rec = _staff_rules_cache[0].get(role.strip().lower())
     if rec:
@@ -2072,6 +2352,11 @@ class StaffRef:
 
   @property
   def greeting(self) -> str:
+    if not self.role:
+      return (
+        f"<b><tg-emoji emoji-id='5316887736823591263'>👤</tg-emoji> Уважаемый</b> "
+        f"{_user_link(self.user_id, self.name)},"
+      )
     return (
       f"<b><tg-emoji emoji-id='5316887736823591263'>👤</tg-emoji> "
       f"Уважаемый {escape(self.role_title)},</b> "
@@ -2080,10 +2365,14 @@ class StaffRef:
 
   @property
   def actor(self) -> str:
+    if not self.role:
+      return f"<i>{escape(self.name)}</i>"
     return f"<i>{escape(self.role_title)} {escape(self.name)}</i>"
 
   @property
   def actor_plain(self) -> str:
+    if not self.role:
+      return self.name
     return f"{self.role_title} {self.name}"
 
   @classmethod
@@ -2098,6 +2387,13 @@ class StaffRef:
   @classmethod
   async def from_message(cls, message: Message) -> StaffRef:
     account = await get_admin_account(message.from_user.id)
+    if account and account.role:
+      return cls.from_account(account)
+    seat = await _seat_quiet(message.from_user.id, message.chat.id)
+    if seat:
+      user = message.from_user
+      name = account.display_name if account else (user.full_name or user.first_name or str(user.id))
+      return cls(user.id, name, seat.role, user.username)
     if account:
       return cls.from_account(account)
     user = message.from_user
@@ -2114,10 +2410,17 @@ class StaffRef:
     user_id: int,
     name: Optional[str] = None,
     username: Optional[str] = None,
+    *,
+    chat_id: Optional[int] = None,
   ) -> StaffRef:
     account = await get_admin_account(user_id)
-    if account:
+    if account and account.role:
       return cls.from_account(account)
+    seat = await _seat_quiet(user_id, chat_id) if chat_id else None
+    if account and not seat:
+      return cls.from_account(account)
+    if account:
+      return cls(user_id, account.display_name, seat.role, account.username)
     if not name:
       try:
         async with _db().pool.acquire() as conn:
@@ -2131,7 +2434,7 @@ class StaffRef:
           name = str(user_id)
       except Exception:
         name = str(user_id)
-    return cls(user_id, name, None, username)
+    return cls(user_id, name, seat.role if seat else None, username)
 
 
 @dataclass
@@ -4147,11 +4450,16 @@ async def is_staff_admin(user_id: int, action: str = "mute") -> bool:
 
 
 async def _resolve_admin_identity(message: Message) -> Tuple[str, Optional[str], Optional[AdminAccount]]:
-  """Имя, роль и запись admin_accounts для текущего пользователя."""
+  """Имя, должность и запись admin_accounts (только если у неё есть роль сотрудника).
+
+  Без роли сотрудника должностью считается место в этой группе: «seat:Название».
+  """
   account = await get_admin_account(message.from_user.id)
-  if account:
+  if account and account.role:
     return account.display_name, account.role, account
-  return _admin_display_name(message), None, None
+  name = account.display_name if account else _admin_display_name(message)
+  seat = await _seat_quiet(message.from_user.id, message.chat.id)
+  return name, (seat.role if seat else None), None
 
 
 async def _format_staff_line_from_user(user_id: int, message: Optional[Message] = None) -> str:
@@ -4278,6 +4586,54 @@ async def _clear_mute_db(
     return True
   except Exception as e:
     MuteDebug.error("DB", "clear_mute", e)
+    return False
+
+
+async def _clear_chat_mute_db(
+  target_user_id: int,
+  admin_user_id: int,
+  admin_name: str,
+  target_name: str,
+  chat_id: int,
+  reason: str = "Размут сотрудником",
+) -> bool:
+  """Снимает мут только этой группы. Муталл (users.mute_until, chat_id = 0) не трогает."""
+  try:
+    async with _db().pool.acquire() as conn:
+      async with conn.transaction():
+        await conn.execute(
+          "DELETE FROM active_mutes WHERE user_id = $1 AND chat_id = $2",
+          target_user_id, chat_id,
+        )
+        await conn.execute(
+          """
+          INSERT INTO staff_actions (
+            admin_user_id, admin_name, action_type,
+            target_player_id, target_name, reason, chat_id, scope
+          )
+          VALUES ($1, $2, 'unmute', $3, $4, $5, $6, 'chat')
+          """,
+          admin_user_id, admin_name, target_user_id, target_name, reason, chat_id,
+        )
+    return True
+  except Exception as e:
+    MuteDebug.error("DB", "clear_chat_mute", e)
+    return False
+
+
+async def _muted_in_chat(user_id: int, chat_id: int, state: "PlayerMuteState") -> bool:
+  """Есть ли мут именно в этой группе: Telegram, память бота или запись active_mutes."""
+  if chat_id in state.telegram_chats or _is_muted_in_chat(chat_id, user_id):
+    return True
+  try:
+    async with _db_acquire() as conn:
+      found = await conn.fetchval(
+        "SELECT 1 FROM active_mutes WHERE user_id = $1 AND chat_id = $2",
+        user_id, chat_id,
+      )
+    return bool(found)
+  except Exception as e:
+    MuteDebug.log("DB", "chat mute lookup skip", err=str(e), user=user_id, chat=chat_id)
     return False
 
 
@@ -4722,7 +5078,7 @@ async def _notify_unmute(
   staff: Optional[StaffRef] = None
   if acting_admin_id and acting_admin_name:
     account = await get_admin_account(acting_admin_id)
-    if account:
+    if account and account.role:
       staff = StaffRef.from_account(account)
     else:
       staff = StaffRef(
@@ -4911,27 +5267,99 @@ def _debug_hint(code: str) -> str:
   return f"\n\n<i>🔧 debug:</i> <code>{escape(code)}</code>"
 
 
+def _first_upper(text: str) -> str:
+  """Заглавная только первая буква: str.capitalize() портил бы названия должностей."""
+  return text[:1].upper() + text[1:] if text else text
+
+
+def _join_titles(titles: List[str]) -> str:
+  if len(titles) == 1:
+    return titles[0]
+  return ", ".join(titles[:-1]) + f" или {titles[-1]}"
+
+
+def seat_denial_reason(seat: GroupSeat, action: str) -> str:
+  """Почему должность в группе не даёт это действие."""
+  rules = _punish_rules()
+  if action == "clearwarns":
+    return (
+      "должность в группе не снимает все предупреждения сразу: они действуют "
+      "и в других группах. Снимайте по одному командой «разварн»"
+    )
+  need = rules.seat_need(action)
+  if need in rules.WIDE_SWITCHES:
+    label = rules.SWITCH_LABELS.get(need, need)
+    return f"у должности «{seat.title}» в этой группе не включено «{label}»"
+  return f"должности «{seat.title}» в этой группе не разрешено: {_action_public_label(action)}"
+
+
+async def _seat_titles_for(action: str, chat_id: Optional[int]) -> List[str]:
+  """Должности этой группы, которым действие разрешено."""
+  try:
+    cid = int(chat_id or 0)
+  except (TypeError, ValueError):
+    return []
+  if cid >= 0:
+    return []
+  await refresh_official_chats()
+  if cid not in _official_live:
+    return []
+  rules = _punish_rules()
+  try:
+    async with _db_acquire() as conn:
+      rows = await conn.fetch(rules.CHAT_POSITIONS_SQL, cid)
+  except Exception as e:
+    MuteDebug.log("AUTH", "chat positions skip", err=str(e), chat_id=cid)
+    return []
+  titles: List[str] = []
+  for row in rows:
+    rank = int(row["rank"] or 0)
+    if not rules.seat_allows(rules.seat_rights(row["rights"], rank), action):
+      continue
+    title = " ".join(str(row["title"] or "").split())
+    if title and title not in titles:
+      titles.append(title)
+  return titles
+
+
 async def _send_no_permission(message: Message, action: str = "mute") -> None:
-  rules_msg = await staff_rules_status_message()
-  if rules_msg:
-    await message.reply(rules_msg, parse_mode="HTML", link_preview_options=NO_PREVIEW)
-    return
+  user_id = message.from_user.id
+  chat_id = message.chat.id
+  account = await get_admin_account(user_id)
+  is_staff = bool(account and account.role)
+  if is_staff:
+    rules_msg = await staff_rules_status_message()
+    if rules_msg:
+      await message.reply(rules_msg, parse_mode="HTML", link_preview_options=NO_PREVIEW)
+      return
 
   staff = await StaffRef.from_message(message)
-  account = await get_admin_account(message.from_user.id)
+  seat = await _seat_quiet(user_id, chat_id)
   action_label = _action_public_label(action)
 
-  if account:
+  if is_staff:
+    reason = await account.denial_reason(action)
+  elif seat:
+    reason = seat_denial_reason(seat, action)
+  elif account:
     reason = await account.denial_reason(action)
   else:
-    reason = "вы не зарегистрированы как сотрудник проекта"
+    reason = "вы не сотрудник проекта и не занимаете должность в этой группе"
 
-  allowed_hint = await action_roles_hint(action)
+  staff_hint = await action_roles_hint(action)
+  seat_titles = [] if action == "clearwarns" else await _seat_titles_for(action, chat_id)
+  if seat_titles:
+    allowed_hint = (
+      f"должности этой группы - {_join_titles(seat_titles)}; "
+      f"сотрудники проекта - {staff_hint}"
+    )
+  else:
+    allowed_hint = staff_hint
   await message.reply(
     MuteText.NO_PERMISSION.format(
       greeting=staff.greeting,
-      reason=escape(reason.capitalize()),
-      action_label=escape(action_label.capitalize()),
+      reason=escape(_first_upper(reason)),
+      action_label=escape(_first_upper(action_label)),
       allowed_hint=escape(allowed_hint),
     ),
     parse_mode="HTML", link_preview_options=NO_PREVIEW,
@@ -5105,8 +5533,7 @@ async def _finalize_mute(
   # (в т.ч. для мутов с охватом «только эта группа») и переживала рестарт.
   admin_role: Optional[str] = None
   try:
-    acc = await get_admin_account(message.from_user.id)
-    admin_role = acc.role if acc else None
+    admin_role = await acting_role(message.from_user.id, chat_id)
   except Exception:
     admin_role = None
   await _record_active_mute(
@@ -5273,8 +5700,9 @@ async def _handle_mute_command(message: Message) -> bool:
   # Муталл (охват «все официальные группы») требует отдельного права muteall в
   # staff_rules. Базовое право mute уже проверено в mute_process; здесь, при
   # глобальном охвате, дополнительно проверяем доступ именно к муталлу.
-  if parsed.scope == "all":
-    perm_all = await check_staff_permission(message.from_user.id, "muteall")
+  mute_action = "muteall" if parsed.scope == "all" else "mute"
+  if mute_action == "muteall":
+    perm_all = await check_punish_permission(message.from_user.id, "muteall", message.chat.id)
     if perm_all == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -5291,6 +5719,8 @@ async def _handle_mute_command(message: Message) -> bool:
     return True
   if parsed.target_id == _bot().id:
     await message.reply(MuteText.BOT, parse_mode="HTML", link_preview_options=NO_PREVIEW)
+    return True
+  if await guard_seat_target(message, parsed.target_id, mute_action):
     return True
 
   from bot.admins.punish_validate import (
@@ -5372,6 +5802,7 @@ async def _execute_unmute_core(
   reply: Callable[[str], Awaitable[Any]],
   broadcast_groups: bool = True,
   announce_result: bool = True,
+  reach: str = "all",
 ) -> str:
   """Ядро снятия мута. Возвращает 'revoked' | 'not_muted' | 'db_error'.
 
@@ -5381,6 +5812,7 @@ async def _execute_unmute_core(
   broadcast_groups=False - не рассылать групповые уведомления;
   announce_result=False - не отправлять текстовый ответ-результат (используется
   при снятии через кнопку, когда исходное сообщение редактируется на месте).
+  reach="chat" - снять только мут этой группы (должность в группе, см. unmute_reach).
   """
   player = PlayerRef(target_id, target_name, target_username)
 
@@ -5400,7 +5832,11 @@ async def _execute_unmute_core(
   )
 
   mute_state = await _resolve_player_mute_state(target_id)
-  if not mute_state.is_muted:
+  if reach == "chat":
+    muted = await _muted_in_chat(target_id, chat_id, mute_state)
+  else:
+    muted = mute_state.is_muted
+  if not muted:
     if announce_result:
       await reply(
         MuteText.NOT_MUTED.format(
@@ -5412,26 +5848,37 @@ async def _execute_unmute_core(
   last_mute = await _get_last_mute_record(chat_id, target_id)
   mute_reason = last_mute.mute_reason if last_mute else None
 
-  # Охват определяем ДО очистки записей: уведомляем ТОЛЬКО те группы, где
-  # пользователь реально был замучен. Если точный набор неизвестен, но мут был
-  # глобальным (muteall) - запасной вариант «все официальные группы».
-  _global_scope, affected_chats = await _resolve_mute_scope(target_id)
-  if affected_chats:
-    unmute_notify_chats: Optional[List[int]] = affected_chats
-  elif _global_scope:
-    unmute_notify_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
+  if reach == "chat":
+    unmute_notify_chats: Optional[List[int]] = [chat_id]
+    if not await _clear_chat_mute_db(
+      target_id, actor_id, admin_name, target_name, chat_id, reason=db_reason,
+    ):
+      if announce_result:
+        await reply(MuteText.UNMUTE_DB_ERROR + _debug_hint("unmute_db"))
+      return "db_error"
+    await _unrestrict_in_chat(chat_id, target_id)
+    _clear_chat_mute(chat_id, target_id)
   else:
-    unmute_notify_chats = None
+    # Охват определяем ДО очистки записей: уведомляем ТОЛЬКО те группы, где
+    # пользователь реально был замучен. Если точный набор неизвестен, но мут был
+    # глобальным (muteall) - запасной вариант «все официальные группы».
+    _global_scope, affected_chats = await _resolve_mute_scope(target_id)
+    if affected_chats:
+      unmute_notify_chats = affected_chats
+    elif _global_scope:
+      unmute_notify_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
+    else:
+      unmute_notify_chats = None
 
-  if not await _clear_mute_db(
-    target_id, actor_id, admin_name, target_name, chat_id, reason=db_reason,
-    scope=("all" if _global_scope else "chat"),
-  ):
-    if announce_result:
-      await reply(MuteText.UNMUTE_DB_ERROR + _debug_hint("unmute_db"))
-    return "db_error"
+    if not await _clear_mute_db(
+      target_id, actor_id, admin_name, target_name, chat_id, reason=db_reason,
+      scope=("all" if _global_scope else "chat"),
+    ):
+      if announce_result:
+        await reply(MuteText.UNMUTE_DB_ERROR + _debug_hint("unmute_db"))
+      return "db_error"
 
-  await _unrestrict_in_all_staff_chats(target_id)
+    await _unrestrict_in_all_staff_chats(target_id)
   if not target_username:
     try:
       async with _db().pool.acquire() as conn:
@@ -5466,7 +5913,10 @@ async def _execute_unmute_core(
     )
   try:
     from bot.admins import punish_timers
-    punish_timers.cancel_mute(target_id)
+    if reach == "chat":
+      punish_timers.cancel_mute_in_chat(target_id, chat_id)
+    else:
+      punish_timers.cancel_mute(target_id)
   except Exception:
     pass
   return "revoked"
@@ -5481,6 +5931,20 @@ async def _execute_unmute(
   target_username: Optional[str] = None,
 ) -> bool:
   """Снимает мут с нарушителя и уведомляет участников (вызов из команды)."""
+  if message.from_user.id != target_id:
+    try:
+      reach, refusal = await unmute_reach(message.from_user.id, target_id, message.chat.id)
+    except DbUnavailableError:
+      await _reply_db_unavailable(message)
+      return True
+    if refusal:
+      return await reply_seat_refusal(message, (refusal, ""))
+    if await guard_seat_target(
+      message, target_id, "unmute", wide=(reach == "all"), lift=True,
+    ):
+      return True
+  else:
+    reach = "all"
   admin_name, admin_role, admin_account = await _resolve_admin_identity(message)
   staff = (
     StaffRef.from_account(admin_account)
@@ -5503,6 +5967,7 @@ async def _execute_unmute(
     target_username=target_username,
     cancelled=cancelled,
     reply=_reply,
+    reach=reach,
   )
   return True
 
@@ -5632,7 +6097,12 @@ async def mute_process(message: Message) -> bool:
     if low in ("отмена", "cancel", "/cancel"):
       if not pending_contains(_pending_mutes, uid):
         return False
-      if not await is_staff_admin(uid, "cancel_pending"):
+      pending_chat = (pending_get(_pending_mutes, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_pending", pending_chat)
+      if perm == "db_unavailable":
+        await _reply_db_unavailable(message)
+        return True
+      if perm != "allowed":
         await _send_no_permission(message, "cancel_pending")
         return True
       if not _is_staff_chat(message.chat.id):
@@ -5654,7 +6124,7 @@ async def mute_process(message: Message) -> bool:
       return True
 
     if _is_cancel_mute_command(command_text):
-      perm = await check_staff_permission(uid, "cancel_mute")
+      perm = await check_punish_permission(uid, "cancel_mute", chat_id)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -5679,7 +6149,7 @@ async def mute_process(message: Message) -> bool:
     return False
 
   if _is_cancel_mute_command(command_text):
-    perm = await check_staff_permission(uid, "cancel_mute")
+    perm = await check_punish_permission(uid, "cancel_mute", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -5688,7 +6158,7 @@ async def mute_process(message: Message) -> bool:
     return await _handle_cancel_mute_command(message)
 
   if _is_unmute_command(command_text):
-    perm = await check_staff_permission(uid, "unmute")
+    perm = await check_punish_permission(uid, "unmute", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -5712,14 +6182,17 @@ async def _dispatch_mute_with_feedback(message: Message) -> bool:
                                дополнительно проверяется право muteall);
     • нет права (в т.ч. не сотрудник) → карточка «⛔️ Нет доступа».
   Так устраняется ситуация «при муталл/мут ничего не происходит».
+  Право - сотрудника проекта (staff_rules) или должности в этой группе.
   """
-  perm = await check_staff_permission(message.from_user.id, "mute")
+  scope = _mute_command_scope(_get_command_text(message))
+  action = "muteall" if scope == "all" else "mute"
+  perm = await check_punish_permission(message.from_user.id, action, message.chat.id)
   if perm == "db_unavailable":
     await _reply_db_unavailable(message)
     return True
   if perm != "allowed":
-    MuteDebug.log("AUTH", "mute denied", user_id=message.from_user.id, perm=perm)
-    return await deny_permission(message, "mute")
+    MuteDebug.log("AUTH", "mute denied", user_id=message.from_user.id, perm=perm, action=action)
+    return await deny_permission(message, action)
 
   return await _handle_mute_command(message)
 
@@ -7081,12 +7554,17 @@ async def mute_cancel_callback(callback: CallbackQuery) -> None:
     )
     return
 
-  if not await is_staff_admin(admin_id, "cancel_pending"):
-    await callback.answer(MuteText.CB_NO_PERM, show_alert=True)
-    return
-
   from bot.admins.punish_proof import pending_get
   pending = pending_get(_pending_mutes, admin_id)
+  perm_chat = (pending or {}).get("chat_id", callback.message.chat.id)
+  perm = await check_punish_permission(admin_id, "cancel_pending", perm_chat)
+  if perm != "allowed":
+    await callback.answer(
+      MuteText.CB_DB if perm == "db_unavailable" else MuteText.CB_NO_PERM,
+      show_alert=True,
+    )
+    return
+
   if not pending:
     try:
       await callback.message.edit_reply_markup(reply_markup=None)
@@ -7139,7 +7617,8 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
-  perm = await check_staff_permission(clicker, "unmute")
+  chat_id = callback.message.chat.id
+  perm = await check_punish_permission(clicker, "unmute", chat_id)
   if perm != "allowed":
     await callback.answer(
       MuteText.CB_DB if perm == "db_unavailable" else MuteText.CB_NO_PERM,
@@ -7147,14 +7626,26 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
     )
     return
 
-  account = await get_admin_account(clicker)
-  staff = StaffRef.from_account(account) if account else await StaffRef.from_user_id(clicker)
+  reach = "all"
+  if clicker != target_id:
+    try:
+      reach, refusal = await unmute_reach(clicker, target_id, chat_id)
+      blocked = (refusal, "") if refusal else await seat_target_refusal(
+        clicker, target_id, chat_id, "unmute", wide=(reach == "all"), lift=True,
+      )
+    except DbUnavailableError:
+      await callback.answer(MuteText.CB_DB, show_alert=True)
+      return
+    if blocked:
+      await callback.answer(seat_refusal_alert(blocked), show_alert=True)
+      return
+
+  staff = await StaffRef.from_user_id(clicker, chat_id=chat_id)
   target_name, target_username = await _resolve_user_display(target_id)
 
   async def _noop(_text: str) -> None:
     return None
 
-  chat_id = callback.message.chat.id
   status = await _execute_unmute_core(
     chat_id=chat_id,
     actor_id=clicker,

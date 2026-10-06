@@ -7285,3 +7285,66 @@ async def put_staff_punish_rights(
     rules, schema = await _read_staff_rules()
     rule = rules.get(role_key)
     return {"ok": True, "role": _punish_role(rule, _punish_columns(schema)) if rule else None}
+
+
+# ---------------------------------------------------------------------------
+# Наказание из панели сотрудника (право — столбцы staff_rules, как в боте)
+# ---------------------------------------------------------------------------
+
+class StaffPunishBody(BaseModel):
+    chat_id: int
+    user_id: int = Field(ge=1)
+    action: str = Field(min_length=3, max_length=16)
+    until_sec: int | None = Field(default=None, ge=0, le=366 * 24 * 3600)
+    reason: str = Field(min_length=2, max_length=200)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/staff/punish/options")
+async def get_staff_punish_options(
+    role: str | None = Query(default=None, max_length=64),
+    user_id: int = Depends(require_active_admin),
+):
+    from staff_punish import PunishRefused, punish_options
+
+    try:
+        return await punish_options(user_id, preview_role=role)
+    except PunishRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+@router.post("/staff/punish")
+async def post_staff_punish(
+    body: StaffPunishBody,
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    from staff_punish import PunishRefused, punish
+
+    try:
+        result = await punish(
+            user_id,
+            chat_id=body.chat_id,
+            user_id=body.user_id,
+            action=body.action,
+            until_sec=body.until_sec,
+            reason=body.reason,
+        )
+    except PunishRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    try:
+        await log_admin_action(
+            user_id,
+            f"staff_punish_{result['action']}",
+            target_type="user",
+            target_id=str(body.user_id),
+            details={
+                "chat_id": result["chatId"],
+                "until_sec": result["untilSec"],
+                "reason": body.reason.strip()[:200],
+            },
+            ip=_get_client_ip(request),
+        )
+    except Exception:
+        logger.warning("staff punish audit for %s failed", body.user_id)
+    return result

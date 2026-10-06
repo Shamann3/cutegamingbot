@@ -79,7 +79,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.tggames.soccer',
 )
 
-# prefix -> (module, handler): 386
+# prefix -> (module, handler): 387
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'prg:': ('bot.handlers.pr_groups', 'dispatch_pr_callback'),
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
@@ -421,6 +421,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'shajoin:': ('bot.games.scah', 'scah_join_game_callback'),
     'shamode:': ('bot.games.scah', 'select_mode_callback'),
     'state123': ('bot.funcs.top', 'cb_stats_today'),
+    'whopick:': ('bot.funcs.profile', 'profile_pick_callback'),
     'accept_': ('bot.funcs.shop', 'process_accept_callback'),
     'ach_rev': ('main', 'achievements_callbacks'),
     'backtop': ('bot.funcs.top', 'sasadqqwdqwcallback_top'),

@@ -228,11 +228,32 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }, [activeTab, preview, coach])
   const mainRef = useRef(null)
   useTabScroll(mainRef, activeTab)
-  const allowedActions = ACTIONS.filter((item) => rights.has(item.right))
-  const seatWide = useMemo(
-    () => grantedWide(summary?.wide, rights),
-    [summary, rights],
-  )
+  const allowedActions = useMemo(() => {
+    const seat = ACTIONS.filter((item) => rights.has(item.right))
+    const have = new Set(seat.map((item) => item.id))
+    const extra = (summary?.staffActs || [])
+      .filter((item) => item?.scope === 'chat' && item.id && !have.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        label: item.label,
+        needsUntil: Boolean(item.needsUntil),
+        hint: item.hint || '',
+      }))
+    return [...seat, ...extra]
+  }, [rights, summary])
+  const seatWide = useMemo(() => {
+    const seat = grantedWide(summary?.wide, rights)
+    const have = new Set(seat.map((item) => item.id))
+    const extra = (summary?.staffActs || [])
+      .filter((item) => item?.scope && item.scope !== 'chat' && item.id && !have.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        label: item.label,
+        needsUntil: Boolean(item.needsUntil),
+        hint: item.hint || '',
+      }))
+    return [...seat, ...extra]
+  }, [summary, rights])
 
   const closeRail = useCallback(() => setRailOpen(false), [])
   const hasWork = tabs.some((item) => item.id === 'work')

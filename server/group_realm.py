@@ -28,6 +28,8 @@ from admin_auth import (
 )
 from config import ADMIN_JWT_SECRET, is_plain_user, owner_user_ids
 from db import db
+from punish_rights import may_punish_rank
+import punish_rights
 
 router = APIRouter(prefix="/group-realm", tags=["group-realm"])
 _log = logging.getLogger(__name__)
@@ -872,19 +874,6 @@ def chat_title(kind: str, title: str, stored: str, requested: str) -> tuple[str,
     return " ".join((title or "").split())[:16], None
 
 
-def may_punish_rank(actor_rank: int, target_rank: int, *, same_person: bool) -> str | None:
-    """Наказать можно только того, кто строго младше в этой группе.
-
-    Нет должности — ниже даже ранга 0. Две должности ранга 0 равны.
-    Равный и старший не проходят. Себя наказать нельзя.
-    """
-    if same_person:
-        return "Себя наказать нельзя"
-    if int(target_rank) >= int(actor_rank):
-        return "Наказать можно только того, кто младше вашей должности в этой группе"
-    return None
-
-
 async def ensure_tables() -> None:
     global _READY
     if _READY:
@@ -1446,6 +1435,64 @@ async def _seat_rank(user_id: int, chat_id: int) -> int:
     if not row:
         return -1
     return int(row["rank"])
+
+
+async def _top_seat_rank(user_id: int) -> int:
+    """Самая старшая действующая должность во всех официальных группах."""
+    if _is_creator(user_id):
+        return 5
+    row = await db.pool.fetchrow(punish_rights.TARGET_TOP_SEAT_SQL, int(user_id))
+    if not row:
+        return -1
+    return int(row["rank"])
+
+
+async def act_refusal(
+    actor_id: int,
+    access: dict,
+    target_id: int,
+    chat_id: int,
+    action: str,
+    *,
+    staff_grant: bool = False,
+) -> str | None:
+    """Кого нельзя наказать. Сотрудник с этим правом старше должности в группе."""
+    if int(target_id) in punish_rights.PROTECTED_CREATOR_IDS:
+        return punish_rights.PROTECTED_BLOCK
+    if staff_grant:
+        if int(target_id) == int(actor_id):
+            return punish_rights.SELF_LIFT_BLOCK if punish_rights.is_lift(action) else punish_rights.SELF_BLOCK
+        return None
+    creator = _is_creator(actor_id)
+    staff = await db.pool.fetchrow(
+        "SELECT role, status FROM admin_accounts WHERE user_id = $1",
+        int(target_id),
+    )
+    wide = punish_rights.is_wide(action)
+    target_rank = await (_top_seat_rank(target_id) if wide else _seat_rank(target_id, chat_id))
+    blocked = punish_rights.seat_target_block(
+        actor_rank=int(access["rank"]),
+        target_rank=target_rank,
+        same_person=int(target_id) == int(actor_id),
+        target_staff=bool(staff) and punish_rights.is_staff_account(staff["role"], staff["status"]),
+        wide=wide,
+        actor_creator=creator,
+        lift=punish_rights.is_lift(action),
+    )
+    if blocked or creator:
+        return blocked
+    rights = set(access.get("rights") or [])
+    if action == "unmute" and "muteall" not in rights:
+        row = await db.pool.fetchrow(punish_rights.WIDE_MUTE_SQL, int(target_id))
+        if punish_rights.wide_mute_on(dict(row) if row else None):
+            return f"{punish_rights.WIDE_MUTE_LIFT}. {punish_rights.WIDE_MUTE_LIFT_HINT}"
+    if action == "unban":
+        row = await db.pool.fetchrow(punish_rights.WIDE_BAN_SQL, int(target_id))
+        need = punish_rights.wide_ban_switch(dict(row) if row else None)
+        if not punish_rights.switch_covers(rights, need):
+            text, hint = punish_rights.WIDE_BAN_LIFT[need]
+            return f"{text}. {hint}"
+    return None
 
 
 async def _access(user_id: int, chat_id: int) -> dict | None:
@@ -3417,6 +3464,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
             "watch": watch,
         },
         "wide": position_wide(access.get("rights") or []),
+        "staffActs": await _staff_acts(int(user_id)),
     }
 
 
@@ -3441,6 +3489,17 @@ async def group_pulse(chat_id: int, user_id: int = Depends(get_any_telegram_user
     }
 
 
+async def _staff_acts(user_id: int) -> list[dict]:
+    """Права сотрудника поверх должности. Сбой матрицы не закрывает карточку группы."""
+    try:
+        from staff_punish import staff_act_catalog
+
+        return await staff_act_catalog(int(user_id))
+    except Exception:
+        _log.warning("staff acts for %s failed", user_id, exc_info=True)
+        return []
+
+
 @router.post("/act")
 async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_id)):
     access = await _access(user_id, body.chat_id)
@@ -3448,21 +3507,30 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
         raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
     action = (body.action or "").strip().lower()
     wide_ids = {item["id"] for item in wide_issue_catalog()}
-    if action in wide_ids:
+    from staff_punish import PunishRefused, actor_grants
+
+    try:
+        staff_grant = await actor_grants(int(user_id), action)
+    except PunishRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    if action not in wide_ids and action not in LOCAL_ACTIONS:
+        raise HTTPException(status_code=400, detail="Это действие живёт только внутри одной группы")
+    if not staff_grant and action in wide_ids:
         allowed = {item["id"] for item in position_wide(access.get("rights") or [])}
         if action not in allowed:
             raise HTTPException(status_code=403, detail="У этой должности эта дисциплина выключена")
-    elif action not in LOCAL_ACTIONS:
-        raise HTTPException(status_code=400, detail="Это действие живёт только внутри одной группы")
-    elif not rights_allow(access["rights"], action):
+    elif not staff_grant and not rights_allow(access["rights"], action):
         raise HTTPException(status_code=403, detail="Должность не даёт этого наказания")
     if int(body.user_id) <= 0:
         raise HTTPException(status_code=400, detail="Укажите id человека")
-    blocked = may_punish_rank(
-        int(access["rank"]),
-        await _seat_rank(int(body.user_id), int(body.chat_id)),
-        same_person=int(body.user_id) == int(user_id),
-    )
+    try:
+        blocked = await act_refusal(
+            int(user_id), access, int(body.user_id), int(body.chat_id), action,
+            staff_grant=staff_grant,
+        )
+    except Exception as exc:
+        _log.warning("act check for %s failed: %s", body.user_id, exc)
+        raise HTTPException(status_code=503, detail="Не удалось проверить права. Повторите через минуту.") from exc
     if blocked:
         raise HTTPException(status_code=403, detail=blocked)
     from admin_groups import moderate_action

@@ -116,7 +116,10 @@ from bot.admins.mute import (
   _target_lookup_error_message,
   _db_acquire,
   _reply_db_unavailable,
-  check_staff_permission,
+  check_punish_permission,
+  guard_seat_target,
+  seat_refusal_alert,
+  seat_target_refusal,
   DbUnavailableError,
   NO_PREVIEW,
   cfg,
@@ -2741,6 +2744,10 @@ async def _handle_warn_command(message: Message) -> bool:
   if parsed.target_id == _bot().id:
     await message.reply(WarnText.BOT, parse_mode="HTML", link_preview_options=NO_PREVIEW)
     return True
+  if await guard_seat_target(
+    message, parsed.target_id, _WARN_MODE_PERMISSION.get(parsed.mode, "warn"),
+  ):
+    return True
 
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
@@ -2840,6 +2847,10 @@ async def _handle_unwarn_command(message: Message, mode: Mode = "chat") -> bool:
       + _debug_hint("unwarn_no_target"),
       parse_mode="HTML", link_preview_options=NO_PREVIEW,
     )
+    return True
+  if await guard_seat_target(
+    message, target_id, _WARN_MODE_PERMISSION.get(mode, "warn"), lift=True,
+  ):
     return True
 
   staff = await StaffRef.from_message(message)
@@ -3161,6 +3172,8 @@ async def _handle_clear_warns_command(message: Message) -> bool:
       parse_mode="HTML", link_preview_options=NO_PREVIEW,
     )
     WarnDebug.log("AUTH", "self clear blocked", actor=message.from_user.id, target=target_id)
+    return True
+  if await guard_seat_target(message, target_id, "warnall"):
     return True
 
   staff = await StaffRef.from_message(message)
@@ -3644,12 +3657,13 @@ async def warn_process(message: Message) -> bool:
     if low in ("отмена", "cancel", "/cancel"):
       if not pending_contains(_pending_warns, uid):
         return False
-      perm = await check_staff_permission(uid, "warn")
+      pending_chat = (pending_get(_pending_warns, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_warn", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
       if perm != "allowed":
-        return await deny_permission(message, "warn")
+        return await deny_permission(message, "cancel_warn")
       if not _is_staff_chat(message.chat.id):
         return False
       pending_data = pending_get(_pending_warns, uid)
@@ -3671,7 +3685,8 @@ async def warn_process(message: Message) -> bool:
       return True
 
     if _is_cancel_warn_command(command_text):
-      perm = await check_staff_permission(uid, "warn")
+      pending_chat = (pending_get(_pending_warns, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_warn", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -3681,7 +3696,7 @@ async def warn_process(message: Message) -> bool:
 
     if _is_warn_command(command_text):
       warn_action = _warn_permission_action(command_text)
-      perm = await check_staff_permission(uid, warn_action)
+      perm = await check_punish_permission(uid, warn_action, chat_id)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -3694,7 +3709,7 @@ async def warn_process(message: Message) -> bool:
 
   if is_proof_only_photo(message) and _is_warn_related_message(message):
     warn_action = _warn_permission_action(command_text)
-    perm = await check_staff_permission(uid, warn_action)
+    perm = await check_punish_permission(uid, warn_action, chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -3710,7 +3725,7 @@ async def warn_process(message: Message) -> bool:
     return False
 
   if _is_cancel_warn_command(command_text):
-    perm = await check_staff_permission(message.from_user.id, "warn")
+    perm = await check_punish_permission(message.from_user.id, "cancel_warn", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -3719,19 +3734,19 @@ async def warn_process(message: Message) -> bool:
     return await _handle_cancel_warn_command(message)
 
   if _is_clear_warns_command(command_text):
-    perm = await check_staff_permission(message.from_user.id, "warn")
+    perm = await check_punish_permission(message.from_user.id, "warnall", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
     if perm != "allowed":
-      return await deny_permission(message, "warn")
+      return await deny_permission(message, "warnall")
     return await _handle_clear_warns_command(message)
 
   if _is_unwarn_command(command_text):
     # Право проверяем по охвату снятия: warn / warnall / warnfull.
     unwarn_mode = _unwarn_mode(command_text) or "chat"
     unwarn_action = _WARN_MODE_PERMISSION.get(unwarn_mode, "warn")
-    perm = await check_staff_permission(message.from_user.id, unwarn_action)
+    perm = await check_punish_permission(message.from_user.id, unwarn_action, chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -3748,7 +3763,7 @@ async def warn_process(message: Message) -> bool:
 
   # Право проверяем по конкретному режиму: warn / warnall / warnfull.
   warn_action = _warn_permission_action(command_text)
-  perm = await check_staff_permission(message.from_user.id, warn_action)
+  perm = await check_punish_permission(message.from_user.id, warn_action, chat_id)
   if perm == "db_unavailable":
     await _reply_db_unavailable(message)
     return True
@@ -3776,7 +3791,10 @@ async def on_warn_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(WarnText.CB_ONLY_AUTHOR, show_alert=True)
     return
 
-  perm = await check_staff_permission(admin_id, "warn")
+  from bot.admins.punish_proof import pending_get
+  pending = pending_get(_pending_warns, admin_id)
+  perm_chat = (pending or {}).get("chat_id", callback.message.chat.id)
+  perm = await check_punish_permission(admin_id, "cancel_warn", perm_chat)
   if perm != "allowed":
     if perm == "db_unavailable":
       await callback.answer(WarnText.CB_DB, show_alert=True)
@@ -3784,8 +3802,6 @@ async def on_warn_pending_cancel(callback: CallbackQuery) -> None:
       await callback.answer(WarnText.CB_NO_PERM, show_alert=True)
     return
 
-  from bot.admins.punish_proof import pending_get
-  pending = pending_get(_pending_warns, admin_id)
   if not pending:
     try:
       await callback.message.edit_reply_markup(reply_markup=None)
@@ -3838,9 +3854,10 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
+  chat_id = callback.message.chat.id
   # Право снятия соответствует виду предупреждения: warn / warnall / warnfull.
   revoke_action = _WARN_MODE_PERMISSION.get(mode, "warn")
-  perm = await check_staff_permission(clicker, revoke_action)
+  perm = await check_punish_permission(clicker, revoke_action, chat_id)
   if perm != "allowed":
     await callback.answer(
       WarnText.CB_DB if perm == "db_unavailable" else WarnText.CB_NO_PERM,
@@ -3848,7 +3865,19 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
     )
     return
 
-  staff = await StaffRef.from_user_id(clicker)
+  if clicker != target_id:
+    try:
+      blocked = await seat_target_refusal(
+        clicker, target_id, chat_id, revoke_action, lift=True,
+      )
+    except DbUnavailableError:
+      await callback.answer(WarnText.CB_DB, show_alert=True)
+      return
+    if blocked:
+      await callback.answer(seat_refusal_alert(blocked), show_alert=True)
+      return
+
+  staff = await StaffRef.from_user_id(clicker, chat_id=chat_id)
   target_name, target_username = await _resolve_user_display(target_id)
 
   async def _noop(_text: str) -> None:

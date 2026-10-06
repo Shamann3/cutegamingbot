@@ -666,6 +666,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                 setGroupsInitialId(chatId)
                 setSection('groupsStudio')
               }}
+              punishPreviewRole={staffPreview ? staffPreview.role : null}
             />
           )}
           {isAccounts && (

@@ -20,6 +20,7 @@ import {
   fetchPlayerInventory,
   fetchPlayerNotes,
   fetchPlayerQuests,
+  fetchStaffPunishOptions,
   resetAdminUserOnboarding,
   resetFarmUserPlots,
   searchAdminUsers,
@@ -31,6 +32,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import PlayerDossierPanel from '../../components/PlayerDossierPanel'
 import StaffPortraitRail from '../../components/StaffPortraitRail'
+import StaffPunishTab from '../../components/StaffPunishTab'
 import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
 import { useIsPhone } from '../../lib/useIsDesktop'
 
@@ -63,6 +65,7 @@ const PROFILE_TABS = [
   { id: 'history', label: 'История', short: 'Журнал' },
   { id: 'quests', label: 'Квесты', short: 'Квесты' },
   { id: 'bans', label: 'Баны', short: 'Баны' },
+  { id: 'punish', label: 'Наказать', short: 'Наказать' },
   { id: 'inventory', label: 'Инвентарь', short: 'Вещи' },
   { id: 'notes', label: 'Заметки', short: 'Заметки' },
 ]
@@ -1405,6 +1408,7 @@ export default function UsersSection({
   canBanfull = false,
   canOpenGroups = false,
   onOpenGroup,
+  punishPreviewRole = null,
 }) {
   const phone = useIsPhone()
   const isOwner = role === 'owner'
@@ -1467,6 +1471,27 @@ export default function UsersSection({
   useEffect(() => {
     fetchContentDex({ limit: 100 }).then((d) => setDexItems(d.items || [])).catch(() => {})
   }, [])
+
+  const [punishOptions, setPunishOptions] = useState(null)
+  const [punishLoadError, setPunishLoadError] = useState('')
+  const loadPunishOptions = useCallback(() => {
+    setPunishLoadError('')
+    fetchStaffPunishOptions(punishPreviewRole)
+      .then((data) => setPunishOptions(data))
+      .catch((err) => setPunishLoadError(err.message || 'Права на наказания не загрузились'))
+  }, [punishPreviewRole])
+  useEffect(() => {
+    setPunishOptions(null)
+    loadPunishOptions()
+  }, [loadPunishOptions])
+  const showPunishTab = Boolean(punishLoadError) || (punishOptions?.actions || []).length > 0
+  const profileTabs = useMemo(
+    () => (showPunishTab ? PROFILE_TABS : PROFILE_TABS.filter((t) => t.id !== 'punish')),
+    [showPunishTab],
+  )
+  useEffect(() => {
+    if (profileTab === 'punish' && !showPunishTab) setProfileTab('profile')
+  }, [profileTab, showPunishTab])
 
   const hasProfile = Boolean(profile?.userId)
   const plots = profile?.plots || []
@@ -1980,7 +2005,7 @@ export default function UsersSection({
         {hasProfile && !peek && (
           <div className="users-toolbar">
             <nav className="nika-seg" role="tablist" aria-label="Разделы игрока">
-              {PROFILE_TABS.map((t) => (
+              {profileTabs.map((t) => (
                 <button
                   key={t.id}
                   type="button"
@@ -2111,6 +2136,17 @@ export default function UsersSection({
         {hasProfile && profileTab === 'bans' && (
           <div className="pu-tab-pane panel-shelf panel-users-card">
             <BansTab userId={profile.userId} />
+          </div>
+        )}
+        {hasProfile && profileTab === 'punish' && showPunishTab && (
+          <div className="pu-tab-pane panel-shelf panel-users-card">
+            <StaffPunishTab
+              userId={profile.userId}
+              actorId={myUserId}
+              options={punishOptions}
+              loadError={punishLoadError}
+              onRetry={loadPunishOptions}
+            />
           </div>
         )}
         {hasProfile && profileTab === 'inventory' && (

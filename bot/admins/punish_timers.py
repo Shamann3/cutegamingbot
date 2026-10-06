@@ -83,6 +83,18 @@ def cancel_mute(user_id: int) -> None:
   cancel(f"mute:{user_id}")
 
 
+def cancel_mute_in_chat(user_id: int, chat_id: int) -> None:
+  """Таймер мута снимается, только если он про эту группу: муталл и муты других групп идут дальше."""
+  key = f"mute:{user_id}"
+  entry = _get_store().get(key)
+  if not entry:
+    return
+  if (entry.get("scope") or "chat") != "chat":
+    return
+  if int(entry.get("source_chat_id") or 0) == int(chat_id):
+    cancel(key)
+
+
 def cancel_ban(user_id: int) -> None:
   cancel(f"ban:{user_id}")
 

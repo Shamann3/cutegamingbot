@@ -16,6 +16,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from main import *
 from bot.handlers.handlers_btns import *
+from bot.funcs import who_lookup as who
 
 # =========================================================
 # GLOBAL STATE
@@ -466,32 +467,18 @@ def _extract_trigger_and_arg(text: str):
     triggers = ("кто ты", "ктоты")
 
     for tr in triggers:
-        if lower_text == tr:
+        if not lower_text.startswith(tr):
+            continue
+        rest = text[len(tr):]
+        if not rest:
             return tr, ""
-
-        if lower_text.startswith(tr + " "):
-            return tr, text[len(tr):].strip()
+        if rest[0] == " ":
+            return tr, rest.strip()
+        # «кто ты?» и «кто ты, Вася» — тот же вопрос.
+        if rest[0] in "?!.,…":
+            return tr, rest.lstrip("?!.,… ").strip()
 
     return None, ""
-
-
-def _extract_username_from_link(text: str) -> Optional[str]:
-    if not text:
-        return None
-
-    raw = text.strip()
-
-    patterns = [
-        r"^(?:https?://)?t\.me/([A-Za-z0-9_]{1,64})(?:\?.*)?$",
-        r"^(?:https?://)?telegram\.me/([A-Za-z0-9_]{1,64})(?:\?.*)?$",
-    ]
-
-    for pattern in patterns:
-        m = re.match(pattern, raw, flags=re.IGNORECASE)
-        if m:
-            return m.group(1)
-
-    return None
 
 
 def _clean_username_candidate(text: str) -> str:
@@ -509,12 +496,6 @@ def _clean_username_candidate(text: str) -> str:
     s = s.strip(" ,.;:!\"'`()[]{}<>")
 
     return s
-
-
-def _looks_like_username(text: str) -> bool:
-    if not text or len(text) < 3:
-        return False
-    return re.fullmatch(r"[A-Za-z0-9_]{3,64}", text) is not None
 
 
 # =========================================================
@@ -852,87 +833,84 @@ async def _try_find_user_id_by_username(db, username_candidate: str):
         return None
 
 
-async def _try_find_users_by_first_name(db, first_name_text: str):
-    first_name_text = (first_name_text or "").strip()
+WHO_CHAT_SCAN_LIMIT = 3000
+WHO_GLOBAL_LIMIT = 50
+WHO_PICK_LIMIT = 8
+WHO_PICK_PREFIX = "whopick"
+WHO_USERBOT_TIMEOUT = 4.0
+WHO_USERBOT_STALL_PAUSE = 60.0
 
-    if not first_name_text:
-        return {}
 
+async def _who_chat_people(db, chat_id: int) -> List[who.Candidate]:
+    """Люди этой группы из базы Кута — самые активные первыми."""
+    pool = getattr(db, "pool", None)
+    if pool is None or int(chat_id) >= 0:
+        return []
     try:
-        _who_dbg(f"Пробуем искать по имени: {first_name_text!r}")
-        users_dict = await db.get_user_id_by_first_name(first_name_text)
-
-        if users_dict is None:
-            _who_dbg("db.get_user_id_by_first_name вернул None")
-            return {}
-
-        if not isinstance(users_dict, dict):
-            _who_dbg(f"Ожидался dict, получено: {type(users_dict).__name__}")
-            return {}
-
-        _who_dbg(f"По имени найдено пользователей: {len(users_dict)}")
-        return users_dict
-
-    except Exception as e:
-        _who_dbg(f"Ошибка поиска по имени {first_name_text!r}: {e}")
-        return {}
-
-
-async def _send_multiple_found_users(message: Message, db, users_dict: dict):
-    if not users_dict:
-        await message.reply("<b>😔 Этого пользователя нет в нашем боте</b>", parse_mode="HTML")
-        return
-
-    if len(users_dict) == 1:
-        target_group_id = list(users_dict.keys())[0]
-        _who_dbg(f"Найден ровно один пользователь: {target_group_id}")
-        await get_user_information_in_who_are_you(message, db, target_group_id)
-        return
-
-    if message.chat.type == "private":
-        MAX_MESSAGES = 2
-        caller_id = message.from_user.id
-        stop_who_are_you_flags[caller_id] = False
-
-        await message.answer(
-            "🌸 <b>Нашёл несколько пользователей с таким именем.\n"
-            "Начинаю отправку информации... Напишите <code>стоп кто ты</code>, чтобы остановить.</b>",
-            parse_mode="HTML"
+        # text в chatall бывает строкой, а строк у человека — несколько.
+        rows = await pool.fetch(
+            "SELECT u.user_id, u.first_name, u.username "
+            "FROM ("
+            "  SELECT user_id, "
+            "         SUM(CASE WHEN text::text ~ '^[0-9]+$' THEN text::text::bigint ELSE 0 END) AS sent "
+            "  FROM chatall WHERE chat_id = $1 GROUP BY user_id"
+            ") c "
+            "JOIN users u ON u.user_id = c.user_id "
+            "ORDER BY c.sent DESC "
+            "LIMIT $2",
+            int(chat_id),
+            WHO_CHAT_SCAN_LIMIT,
         )
+    except Exception as e:
+        _who_dbg(f"Не удалось прочитать людей чата {chat_id}: {e}")
+        return []
+    return [
+        who.Candidate(int(r["user_id"]), str(r["first_name"] or ""), str(r["username"] or ""))
+        for r in rows
+    ]
 
-        count = 0
-        for uid in users_dict.keys():
-            if stop_who_are_you_flags.get(caller_id):
-                await message.answer(
-                    "🛑 <b>Выдача информации остановлена по вашему запросу!</b>",
-                    parse_mode="HTML"
-                )
-                break
 
-            if caller_id != 6801702632 and count >= MAX_MESSAGES:
-                break
+async def _who_global_people(db, name: str) -> List[who.Candidate]:
+    """Игроки Кута с точно таким именем — поиск вне группы."""
+    pool = getattr(db, "pool", None)
+    text = " ".join(str(name or "").split())
+    if pool is None or not text:
+        return []
+    pattern = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    try:
+        rows = await pool.fetch(
+            "SELECT user_id, first_name, username FROM users "
+            "WHERE first_name ILIKE $1 "
+            "ORDER BY user_id "
+            "LIMIT $2",
+            pattern,
+            WHO_GLOBAL_LIMIT,
+        )
+    except Exception as e:
+        _who_dbg(f"Ошибка поиска по имени {text!r}: {e}")
+        return []
+    return [
+        who.Candidate(int(r["user_id"]), str(r["first_name"] or ""), str(r["username"] or ""))
+        for r in rows
+    ]
 
-            await get_user_information_in_who_are_you(message, db, uid)
-            count += 1
-            await asyncio.sleep(1)
 
-        await message.answer("🌿 <b>Это всё</b>", parse_mode="HTML")
-        return
+def _who_pick_cb(viewer_id: int, target_user_id: int) -> str:
+    return f"{WHO_PICK_PREFIX}:{int(viewer_id)}:{int(target_user_id)}"
 
-    inline_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="☁️ Перейти в личные сообщения ☁️",
-                    url="https://t.me/CuteGamingBot"
-                )
-            ]
-        ]
-    )
+
+async def _who_send_picker(message: Message, query: str, people: List[who.Candidate], *, in_chat: bool):
+    viewer_id = int(message.from_user.id)
+    shown = people[:WHO_PICK_LIMIT]
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=who.pick_label(person), callback_data=_who_pick_cb(viewer_id, person.user_id))]
+        for person in shown
+    ])
     await message.reply(
-        f'<b>💛 Найдено несколько пользователей. Напишите сообщение "<code>{message.text}</code>" в ЛС боту.</b>',
-        reply_markup=inline_keyboard,
-        parse_mode="HTML"
+        who.picker_html(query, len(shown), len(people), in_chat=in_chat),
+        parse_mode="HTML",
+        reply_markup=markup,
+        disable_web_page_preview=True,
     )
 
 
@@ -1959,11 +1937,9 @@ def _resolve_reply_target_user_id(message: Message) -> Optional[int]:
     return None
 
 
-# Поиск «кто ты» только по базе Кута. Человека из Telegram сюда не подтягиваем
-# и строку users не создаём: если его нет в боте, так и пишем.
-NOT_IN_BOT_HTML = "<b>😔 Этого пользователя нет в нашем боте</b>"
-
-
+# «Кто ты» только читает базу Кута и Telegram. Строку users не создаёт:
+# она появится, когда человек сам напишет при боте, и реферальная ссылка
+# останется за тем, кто его пригласит.
 async def _cute_profile_exists(db, user_id: int) -> bool:
     pool = getattr(db, "pool", None)
     if pool is None:
@@ -1993,90 +1969,233 @@ async def get_user_who_are_you(message: Message, db):
     if not trigger_used:
         return
 
-    _who_dbg(f"Триггер: {trigger_used!r}")
-    _who_dbg(f"Аргумент: {arg_text!r}")
+    ask = who.parse_who(arg_text, getattr(message, "entities", None) or ())
+    _who_dbg(f"Запрос: {ask.kind} {ask.value!r}")
 
-    # Ответ на сообщение без аргумента → профиль автора того сообщения
-    if not arg_text:
-        reply_target_id = _resolve_reply_target_user_id(message)
-        if reply_target_id is not None:
-            _who_dbg(f"Ответ на сообщение: ID пользователя - {reply_target_id}")
-            await get_user_information_in_who_are_you(message, db, reply_target_id)
-            return
-
-        target_group_id = message.from_user.id
-        _who_dbg(f"Аргумент пустой, показываем автора: {target_group_id}")
-        await get_user_information_in_who_are_you(message, db, target_group_id)
+    if ask.kind == "person":
+        await get_user_information_in_who_are_you(message, db, ask.person.user_id, person=ask.person)
         return
 
-    # Числовой ID
-    if arg_text.isdigit():
+    if ask.kind == "id":
+        await get_user_information_in_who_are_you(message, db, int(ask.value))
+        return
+
+    if ask.kind == "username":
+        found_id = await _try_find_user_id_by_username(db, ask.value)
+        if found_id:
+            await get_user_information_in_who_are_you(message, db, found_id)
+            return
+        missing = await _who_show_telegram_username(message, db, ask.value)
+        if missing is not None:
+            await _who_reply(
+                message,
+                who.username_missing_html(ask.value) if missing == "missing"
+                else who.username_unchecked_html(ask.value),
+            )
+        return
+
+    if ask.kind == "name":
+        await _who_show_name(message, db, ask.value, maybe_username=ask.maybe_username)
+        return
+
+    reply = message.reply_to_message
+    sender_chat = getattr(reply, "sender_chat", None) if reply is not None else None
+    if sender_chat is not None:
+        await _who_reply(
+            message,
+            who.sender_chat_html(sender_chat, same_chat=int(sender_chat.id) == int(message.chat.id)),
+        )
+        return
+
+    card_target = WHO_CARD_TARGETS.get((int(message.chat.id), int(reply.message_id))) if reply is not None else None
+    if card_target is not None:
+        await get_user_information_in_who_are_you(message, db, card_target)
+        return
+
+    reply_target_id = _resolve_reply_target_user_id(message)
+    if reply_target_id is not None:
+        await get_user_information_in_who_are_you(
+            message, db, reply_target_id, person=_who_reply_person(message, reply_target_id),
+        )
+        return
+
+    reply_user = getattr(reply, "from_user", None) if reply is not None else None
+    if reply_user is not None and reply_user.is_bot and int(reply_user.id) != int(_who_bot(message).id):
+        await get_user_information_in_who_are_you(
+            message, db, int(reply_user.id), person=who.TgPerson.from_user(reply_user),
+        )
+        return
+
+    await get_user_information_in_who_are_you(
+        message, db, int(message.from_user.id), person=who.TgPerson.from_user(message.from_user),
+    )
+
+
+def _who_bot(message: Message):
+    return getattr(message, "bot", None) or bot1
+
+
+# Карточки из Telegram: ответ «кто ты» на карточку — тот же человек.
+# Отдельно от PROFILE_MESSAGE_META, чтобы обновление профиля карточку не трогало.
+WHO_CARD_TARGETS: Dict[Tuple[int, int], int] = {}
+WHO_CARD_TARGETS_MAX = 2000
+
+
+def _who_remember_card(sent, user_id: int) -> None:
+    try:
+        key = (int(sent.chat.id), int(sent.message_id))
+    except Exception:
+        return
+    WHO_CARD_TARGETS[key] = int(user_id)
+    while len(WHO_CARD_TARGETS) > WHO_CARD_TARGETS_MAX:
+        WHO_CARD_TARGETS.pop(next(iter(WHO_CARD_TARGETS)))
+
+
+async def _who_reply(message: Message, text: str):
+    return await message.reply(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+def _who_reply_person(message: Message, user_id: int) -> Optional[who.TgPerson]:
+    reply = message.reply_to_message
+    user = getattr(reply, "from_user", None) if reply is not None else None
+    if user is None or user.is_bot or int(user.id) != int(user_id):
+        return None
+    return who.TgPerson.from_user(user)
+
+
+async def _who_tg_call(factory):
+    try:
+        return await asyncio.wait_for(factory(), timeout=PROFILE_TG_TIMEOUT)
+    except Exception as e:
+        return e
+
+
+async def _who_telegram_card(message: Message, user_id: int, person: Optional[who.TgPerson] = None) -> Optional[str]:
+    """Карточка из Telegram для человека не из Кута. None — Telegram его боту не показал."""
+    bot = _who_bot(message)
+    chat_id = int(message.chat.id)
+    calls = [_who_tg_call(lambda: bot.get_chat(user_id))]
+    if chat_id < 0:
+        calls.append(_who_tg_call(lambda: bot.get_chat_member(chat_id, user_id)))
+    results = await asyncio.gather(*calls)
+    full = results[0] if not isinstance(results[0], Exception) else None
+    member = results[1] if len(results) > 1 and not isinstance(results[1], Exception) else None
+    if full is not None and not isinstance(who.from_bot_chat(full), who.TgPerson):
+        full = None
+
+    base = person or who.TgPerson.from_user(getattr(member, "user", None)) or who.TgPerson.from_user(full)
+    if base is None:
+        _who_dbg(f"Telegram не показал пользователя {user_id}: {results!r}")
+        return None
+    base = who.fill_person(base, member_user=getattr(member, "user", None), chat=full)
+    member_html = ""
+    if member is not None:
+        member_html = who.member_line(
+            getattr(member, "status", ""),
+            custom_title=getattr(member, "custom_title", ""),
+            is_member=getattr(member, "is_member", None),
+        )
+    return who.tg_card_html(
+        base,
+        bio=str(getattr(full, "bio", "") or "") if full is not None else "",
+        member=member_html,
+        is_self=base.user_id == int(message.from_user.id),
+    )
+
+
+async def _who_username_in_telegram(message: Message, username: str) -> Tuple[str, Any]:
+    """Кто носит username в Telegram: юзербот по бюджету, затем Bot API."""
+    budget = who.USERNAME_BUDGET
+    hit = budget.cached(username, time.monotonic())
+    if hit is not None:
+        return hit
+
+    viewer_id = int(message.from_user.id)
+    client = who.find_userbot()
+    if client is not None and budget.allow(viewer_id, time.monotonic()):
+        budget.spend(viewer_id, time.monotonic())
         try:
-            target_group_id = int(arg_text)
-            _who_dbg(f"Извлечён числовой ID: {target_group_id}")
-            await get_user_information_in_who_are_you(message, db, target_group_id)
-            return
-        except Exception as e:
-            _who_dbg(f"Ошибка приведения ID к int: {e}")
+            kind, value = await asyncio.wait_for(
+                who.resolve_with_userbot(client, username),
+                timeout=WHO_USERBOT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            # Короткий FloodWait Telethon ждёт молча — человека столько не держим.
+            budget.pause(WHO_USERBOT_STALL_PAUSE, time.monotonic())
+            kind, value = "unknown", None
+        if kind == "flood":
+            _who_dbg(f"Юзербот: FloodWait {value} с, username проверяю через Bot API")
+            budget.pause(float(value), time.monotonic())
+        elif kind in ("person", "place", "missing"):
+            budget.remember(username, kind, value, time.monotonic())
+            return kind, value
 
-    # Поиск по @username
-    if arg_text.startswith("@"):
-        username_candidate = _clean_username_candidate(arg_text)
-        found_id = await _try_find_user_id_by_username(db, username_candidate)
+    chat = await _who_tg_call(lambda: _who_bot(message).get_chat(f"@{username}"))
+    found = None if isinstance(chat, Exception) else who.from_bot_chat(chat)
+    if isinstance(found, who.TgPerson):
+        budget.remember(username, "person", found, time.monotonic())
+        return "person", found
+    if isinstance(found, who.TgPlace):
+        budget.remember(username, "place", found, time.monotonic())
+        return "place", found
+    return "unknown", None
+
+
+async def _who_show_telegram_username(message: Message, db, username: str) -> Optional[str]:
+    """Показывает того, кто носит username. Если показать некого — "missing" или "unknown"."""
+    kind, value = await _who_username_in_telegram(message, username)
+    if kind == "person":
+        await get_user_information_in_who_are_you(message, db, value.user_id, person=value)
+        return None
+    if kind == "place":
+        await _who_reply(message, who.place_html(username, value))
+        return None
+    return kind
+
+
+async def _who_show_name(message: Message, db, name: str, *, maybe_username: str = ""):
+    if maybe_username:
+        found_id = await _try_find_user_id_by_username(db, maybe_username)
         if found_id:
             await get_user_information_in_who_are_you(message, db, found_id)
             return
-        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
+
+    in_chat = int(message.chat.id) < 0
+    ranked = who.rank_people(name, await _who_chat_people(db, message.chat.id)) if in_chat else []
+    if not ranked:
+        in_chat = False
+        ranked = who.rank_people(name, await _who_global_people(db, name))
+
+    sure = who.sure_pick(name, ranked)
+    if sure is not None:
+        await get_user_information_in_who_are_you(message, db, sure.user_id)
+        return
+    if ranked:
+        await _who_send_picker(message, name, [person for _, person in ranked], in_chat=in_chat)
         return
 
-    # Ссылка t.me
-    username_from_link = _extract_username_from_link(arg_text)
-    if username_from_link:
-        _who_dbg(f"Извлечён username из ссылки: {username_from_link!r}")
-        found_id = await _try_find_user_id_by_username(db, username_from_link)
-        if found_id:
-            await get_user_information_in_who_are_you(message, db, found_id)
-            return
-        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
+    if maybe_username and await _who_show_telegram_username(message, db, maybe_username) is None:
         return
-
-    # Поиск по имени / username-like
-    plain_text = arg_text.strip()
-    username_candidate = _clean_username_candidate(plain_text)
-    should_try_username_first = _looks_like_username(username_candidate)
-
-    if should_try_username_first:
-        _who_dbg(f"Plain-text похож на username, сначала ищем как username: {username_candidate!r}")
-        found_id = await _try_find_user_id_by_username(db, username_candidate)
-        if found_id:
-            await get_user_information_in_who_are_you(message, db, found_id)
-            return
-    else:
-        _who_dbg(f"Plain-text не очень похож на username, но всё равно попробуем fallback-поиск позже: {username_candidate!r}")
-
-    users_dict = await _try_find_users_by_first_name(db, plain_text)
-    if users_dict:
-        await _send_multiple_found_users(message, db, users_dict)
-        return
-
-    if not should_try_username_first and username_candidate:
-        _who_dbg(f"Имя не найдено, запускаем финальный план Б: повторная попытка как username -> {username_candidate!r}")
-        found_id = await _try_find_user_id_by_username(db, username_candidate)
-        if found_id:
-            await get_user_information_in_who_are_you(message, db, found_id)
-            return
-
-    await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
+    await _who_reply(message, who.name_missing_html(name))
 
 
 # =========================================================
 # USER INFO ("кто ты")
 # =========================================================
-async def get_user_information_in_who_are_you(message: Message, db, target_group_id: int):
+async def get_user_information_in_who_are_you(
+    message: Message,
+    db,
+    target_group_id: int,
+    *,
+    person: Optional[who.TgPerson] = None,
+):
     user_id = int(target_group_id)
     viewer_id = int(message.from_user.id)
     if not await _cute_profile_exists(db, user_id):
-        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
+        card = await _who_telegram_card(message, user_id, person)
+        sent = await _who_reply(message, card or who.id_missing_html(user_id))
+        if card:
+            _who_remember_card(sent, user_id)
         return
 
     try:
@@ -2439,6 +2558,89 @@ async def profile_refresh_callback(callback_query: types.CallbackQuery):
             pass
     finally:
         PROFILE_INFLIGHT_REFRESH.pop(inflight_key, None)
+
+
+# =========================================================
+# «КТО ТЫ»: ВЫБОР ИЗ НЕСКОЛЬКИХ НАЙДЕННЫХ
+# =========================================================
+@dp.callback_query(lambda c: c.data and c.data.startswith("whopick:"))
+async def profile_pick_callback(callback_query: types.CallbackQuery):
+    viewer_id, target_user_id = _profile_parse_viewer_target_cb(callback_query.data or "", WHO_PICK_PREFIX)
+    if viewer_id is None or target_user_id is None:
+        try:
+            await callback_query.answer("Ошибка кнопки.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    if int(callback_query.from_user.id) != viewer_id:
+        try:
+            await callback_query.answer(
+                "Этот список открыл другой человек. Напишите свой «кто ты».",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        await callback_query.answer()
+    except Exception:
+        pass
+
+    message_obj = callback_query.message
+    chat_id = int(message_obj.chat.id)
+    try:
+        await db.ensure_pool()
+    except Exception as e:
+        _p_err("CALLBACK", "ensure_pool failed", e, uid=viewer_id, level=2)
+
+    try:
+        caption = await _build_profile_caption_for_target(
+            viewer_id=viewer_id,
+            target_user_id=target_user_id,
+            db=db,
+            chat_id=chat_id,
+        )
+    except Exception as e:
+        _who_info_dbg(f"Ошибка при сборке профиля пользователя {target_user_id}: {e}")
+        await _profile_safe_edit_message(
+            message_obj,
+            text="<b>😔 Не удалось получить информацию о пользователе</b>",
+            reply_markup=None,
+        )
+        return
+
+    has_warns = await _profile_target_has_warns(target_user_id)
+    markup = _profile_build_who_markup(
+        viewer_id=viewer_id,
+        target_user_id=target_user_id,
+        has_warns=has_warns,
+    )
+    shown_id = message_obj.message_id
+    if await _profile_safe_edit_message(message_obj, text=caption, reply_markup=markup) == "failed":
+        async def _send_profile(body: str):
+            return await message_obj.answer(
+                body,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+
+        try:
+            shown_id = (await _profile_send_caption(_send_profile, caption, uid=target_user_id)).message_id
+        except Exception as e:
+            _who_info_dbg(f"Не удалось показать профиль {target_user_id}: {e}")
+            return
+
+    _profile_store_message_meta(
+        shown_id,
+        viewer_id=viewer_id,
+        target_user_id=target_user_id,
+        mode="who_are_you",
+        chat_id=chat_id,
+        has_warns=has_warns,
+    )
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("profwarn:"))

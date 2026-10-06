@@ -2303,6 +2303,25 @@ export async function saveStaffPunishRights(role, permissions) {
   })
 }
 
+/** Группы и наказания, которые сотрудник может выдать из панели. role — предпросмотр создателя. */
+export async function fetchStaffPunishOptions(role = null) {
+  const query = role ? `?role=${encodeURIComponent(role)}` : ''
+  return adminRequest(`/staff/punish/options${query}`)
+}
+
+export async function staffPunish({ chatId, userId, action, untilSec = null, reason }) {
+  return adminRequest('/staff/punish', {
+    method: 'POST',
+    body: {
+      chat_id: Number(chatId),
+      user_id: Number(userId),
+      action,
+      until_sec: untilSec ?? null,
+      reason,
+    },
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Group Post Campaigns
 // ---------------------------------------------------------------------------

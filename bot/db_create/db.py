@@ -20646,6 +20646,25 @@ class Database:
             print(f"Ошибка при получении числа сообщений пользователя {user_id} за всё время в чате {chat_id}: {e}")
             return 0
 
+    async def _ensure_chatchange_seen(self) -> bool:
+        """Колонка времени последнего сообщения. Один раз на процесс, без значения по умолчанию."""
+        flag = getattr(self, "_chatchange_seen_ok", None)
+        if flag is True:
+            return True
+        if flag is False or not self.pool:
+            return False
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "ALTER TABLE chatchange ADD COLUMN IF NOT EXISTS seen_at TIMESTAMP"
+                )
+            self._chatchange_seen_ok = True
+            return True
+        except Exception as e:
+            print(f"[DB] chatchange.seen_at: {e}")
+            self._chatchange_seen_ok = False
+            return False
+
     async def get_user_chat_pulse(self, chat_id: int, user_id: int) -> Optional[dict]:
         """Сообщения человека в этом чате: день, неделя, месяц, всё. None — база не ответила."""
         try:
@@ -20654,19 +20673,21 @@ class Database:
             return None
         if uid <= 0 or cid >= 0:
             return None
-        from bot.funcs.chat_pulse import pending_today, windows
+        from bot.funcs.chat_pulse import as_seen_unix, pending_today, windows
 
         today, week_start, month_start = windows(_msk_today())
+        has_seen = await self._ensure_chatchange_seen()
+        seen_sql = ",\n                        MAX(seen_at) AS seen_at" if has_seen else ""
         try:
             async with self.pool.acquire() as connection:
                 row = await connection.fetchrow(
-                    """
+                    f"""
                     SELECT
                         COALESCE(SUM(text) FILTER (WHERE date = $3), 0) AS day_n,
                         COALESCE(SUM(text) FILTER (WHERE date >= $4), 0) AS week_n,
                         COALESCE(SUM(text) FILTER (WHERE date >= $5), 0) AS month_n,
                         COALESCE(SUM(text), 0) AS total_n,
-                        MAX(date) AS last_day
+                        MAX(date) AS last_day{seen_sql}
                     FROM chatchange
                     WHERE chat_id = $1
                       AND user_id = $2
@@ -20692,14 +20713,18 @@ class Database:
             stored_day = last_day.date() if isinstance(last_day, datetime) else last_day
             if stored_day is None or stored_day < today:
                 last_day = today
-        seen = (getattr(self, "_chat_seen", {}) or {}).get((uid, cid))
+        seen = as_seen_unix((getattr(self, "_chat_seen", {}) or {}).get((uid, cid)))
+        if has_seen and row is not None:
+            stored = as_seen_unix(row["seen_at"])
+            if stored is not None and (seen is None or stored > seen):
+                seen = stored
         return {
             "day": day_n,
             "week": week_n,
             "month": month_n,
             "total": total_n,
             "last_day": last_day,
-            "seen_unix": float(seen) if seen else None,
+            "seen_unix": seen,
         }
 
     async def get_top_users1(self , chat_id: int , limit: int = 30):
@@ -20887,6 +20912,9 @@ class Database:
         self._pending_user_counts = {}
         self._pending_chat_counts = {}
 
+        from bot.funcs.chat_pulse import msk_stamp
+
+        has_seen = await self._ensure_chatchange_seen()
         user_items: list[tuple[int, int, date, int]] = []
         for key, cnt in user_snapshot.items():
             if not cnt or cnt <= 0:
@@ -20910,26 +20938,53 @@ class Database:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
                     for uid, cid, day, cnt in user_items:
-                        status = await conn.execute(
-                            '''
-                            UPDATE chatchange
-                            SET text = COALESCE(text, 0) + $4
-                            WHERE user_id = $1 AND chat_id = $2 AND date = $3
-                            ''',
-                            int(uid), int(cid), day, int(cnt),
-                        )
+                        stamp = None
+                        if has_seen:
+                            raw_seen = (getattr(self, "_chat_seen", {}) or {}).get((int(uid), int(cid)))
+                            stamp = msk_stamp(raw_seen, day)
+                        if has_seen:
+                            status = await conn.execute(
+                                '''
+                                UPDATE chatchange
+                                SET text = COALESCE(text, 0) + $4,
+                                    seen_at = CASE
+                                        WHEN $5::timestamp IS NULL THEN seen_at
+                                        ELSE $5
+                                    END
+                                WHERE user_id = $1 AND chat_id = $2 AND date = $3
+                                ''',
+                                int(uid), int(cid), day, int(cnt), stamp,
+                            )
+                        else:
+                            status = await conn.execute(
+                                '''
+                                UPDATE chatchange
+                                SET text = COALESCE(text, 0) + $4
+                                WHERE user_id = $1 AND chat_id = $2 AND date = $3
+                                ''',
+                                int(uid), int(cid), day, int(cnt),
+                            )
                         try:
                             updated = int(str(status).split()[-1])
                         except Exception:
                             updated = 0
                         if updated == 0:
-                            await conn.execute(
-                                '''
-                                INSERT INTO chatchange (user_id, chat_id, date, text)
-                                VALUES ($1, $2, $3, $4)
-                                ''',
-                                int(uid), int(cid), day, int(cnt),
-                            )
+                            if has_seen:
+                                await conn.execute(
+                                    '''
+                                    INSERT INTO chatchange (user_id, chat_id, date, text, seen_at)
+                                    VALUES ($1, $2, $3, $4, $5)
+                                    ''',
+                                    int(uid), int(cid), day, int(cnt), stamp,
+                                )
+                            else:
+                                await conn.execute(
+                                    '''
+                                    INSERT INTO chatchange (user_id, chat_id, date, text)
+                                    VALUES ($1, $2, $3, $4)
+                                    ''',
+                                    int(uid), int(cid), day, int(cnt),
+                                )
 
                     for cid, cnt in chat_items:
                         await conn.execute(

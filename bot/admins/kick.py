@@ -83,7 +83,8 @@ from bot.admins.mute import (
   _reply_db_unavailable,
   _format_scope_with_groups,
   _resolve_reply_or_explicit,
-  check_staff_permission,
+  check_punish_permission,
+  guard_seat_target,
   DbUnavailableError,
   NO_PREVIEW,
   cfg,
@@ -355,6 +356,11 @@ def _kick_command_scope(text: str) -> Scope:
 def _is_kick_command(text: str) -> bool:
   ok, _ = parse_command_scope(_cmd_word(text), KICK_COMMANDS, _KICK_CMD_ROOTS)
   return ok
+
+
+def _kick_permission_action(text: str) -> str:
+  """Кик этой группы — право kick. Кикалл — отдельный переключатель, кик его не даёт."""
+  return "kickall" if _kick_command_scope(text) == "all" else "kick"
 
 
 def _is_cancel_kick_command(text: str) -> bool:
@@ -1131,6 +1137,9 @@ async def _handle_kick_command(message: Message) -> bool:
   if parsed.target_id == _bot().id:
     await message.reply(KickText.BOT, parse_mode="HTML", link_preview_options=NO_PREVIEW)
     return True
+  kick_action = "kickall" if parsed.scope == "all" else "kick"
+  if await guard_seat_target(message, parsed.target_id, kick_action):
+    return True
 
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
@@ -1360,7 +1369,8 @@ async def kick_process(message: Message) -> bool:
     if low in ("отмена", "cancel", "/cancel"):
       if not pending_contains(_pending_kicks, uid):
         return False
-      perm = await check_staff_permission(uid, "kick")
+      pending_chat = (pending_get(_pending_kicks, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_kick", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -1388,7 +1398,8 @@ async def kick_process(message: Message) -> bool:
       return True
 
     if _is_cancel_kick_command(command_text):
-      perm = await check_staff_permission(uid, "kick")
+      pending_chat = (pending_get(_pending_kicks, uid) or {}).get("chat_id", chat_id)
+      perm = await check_punish_permission(uid, "cancel_kick", pending_chat)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
@@ -1397,24 +1408,26 @@ async def kick_process(message: Message) -> bool:
       return await _handle_cancel_kick_command(message)
 
     if _is_kick_command(command_text):
-      perm = await check_staff_permission(uid, "kick")
+      kick_action = _kick_permission_action(command_text)
+      perm = await check_punish_permission(uid, kick_action, chat_id)
       if perm == "db_unavailable":
         await _reply_db_unavailable(message)
         return True
       if perm != "allowed":
-        return await deny_permission(message, "kick")
+        return await deny_permission(message, kick_action)
       return await _handle_kick_command(message)
 
     KickDebug.log("PROOF", "ignored text while pending", uid=uid, text=command_text[:60])
     return True
 
   if is_proof_only_photo(message) and _is_kick_related_message(message):
-    perm = await check_staff_permission(uid, "kick")
+    kick_action = _kick_permission_action(command_text)
+    perm = await check_punish_permission(uid, kick_action, chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
     if perm != "allowed":
-      return await deny_permission(message, "kick")
+      return await deny_permission(message, kick_action)
     return await _handle_kick_command(message)
 
   if not command_text:
@@ -1425,7 +1438,7 @@ async def kick_process(message: Message) -> bool:
     return False
 
   if _is_cancel_kick_command(command_text):
-    perm = await check_staff_permission(message.from_user.id, "kick")
+    perm = await check_punish_permission(message.from_user.id, "cancel_kick", chat_id)
     if perm == "db_unavailable":
       await _reply_db_unavailable(message)
       return True
@@ -1436,12 +1449,13 @@ async def kick_process(message: Message) -> bool:
   if not _is_kick_command(command_text):
     return False
 
-  perm = await check_staff_permission(message.from_user.id, "kick")
+  kick_action = _kick_permission_action(command_text)
+  perm = await check_punish_permission(message.from_user.id, kick_action, chat_id)
   if perm == "db_unavailable":
     await _reply_db_unavailable(message)
     return True
   if perm != "allowed":
-    return await deny_permission(message, "kick")
+    return await deny_permission(message, kick_action)
 
   return await _handle_kick_command(message)
 
@@ -1464,7 +1478,10 @@ async def on_kick_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(KickText.CB_ONLY_AUTHOR, show_alert=True)
     return
 
-  perm = await check_staff_permission(admin_id, "kick")
+  from bot.admins.punish_proof import pending_get
+  pending = pending_get(_pending_kicks, admin_id)
+  perm_chat = (pending or {}).get("chat_id", callback.message.chat.id)
+  perm = await check_punish_permission(admin_id, "cancel_kick", perm_chat)
   if perm != "allowed":
     if perm == "db_unavailable":
       await callback.answer(KickText.CB_DB, show_alert=True)
@@ -1472,8 +1489,6 @@ async def on_kick_pending_cancel(callback: CallbackQuery) -> None:
       await callback.answer(KickText.CB_NO_PERM, show_alert=True)
     return
 
-  from bot.admins.punish_proof import pending_get
-  pending = pending_get(_pending_kicks, admin_id)
   if not pending:
     try:
       await callback.message.edit_reply_markup(reply_markup=None)

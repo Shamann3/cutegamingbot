@@ -2621,3 +2621,61 @@ button.pu-cmp-hero:hover {
   font-size: 0.95rem;
   line-height: 1.45;
 }
+
+.staff-punish {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 40rem;
+}
+
+.staff-punish .pu-section-title {
+  margin: 0;
+}
+
+.staff-punish .panel-shelf-muted {
+  margin: 0.25rem 0 0;
+}
+
+.staff-punish .span-parts label {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+
+.staff-punish .span-parts input {
+  width: 100%;
+  min-height: 2.45rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0c0c0e;
+  color: #fff;
+  font: inherit;
+  font-size: 1.1rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  text-align: center;
+  caret-color: var(--e-accent, #fff);
+}
+
+.staff-punish .span-parts input:focus-visible {
+  outline: 2px solid rgb(var(--e-accent-rgb, 200, 175, 255));
+  outline-offset: 2px;
+}
+
+.staff-punish .span-parts span {
+  color: var(--e-text-4, #8e8e93);
+  font-size: 0.72rem;
+}
+
+.staff-punish-done {
+  margin: 0;
+  color: var(--e-text, #fff);
+  font-weight: 650;
+}
+
+.staff-punish > .panel-users-btn {
+  justify-self: start;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+}

@@ -61,6 +61,33 @@ def _day_label(day: date, today: date) -> str:
     return day.strftime("%d.%m.%Y")
 
 
+def clock_label(seen_unix: float) -> str:
+    """Московские часы последнего сообщения: 09:05, 21:00."""
+    return datetime.fromtimestamp(float(seen_unix), _MSK).strftime("%H:%M")
+
+
+def as_seen_unix(value: Any) -> Optional[float]:
+    """Момент из памяти или из базы. Наивное время считаем московским."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, datetime):
+        moment = value if value.tzinfo is not None else value.replace(tzinfo=_MSK)
+        return moment.timestamp()
+    return None
+
+
+def msk_stamp(seen_unix: Optional[float], day: date) -> Optional[datetime]:
+    """Наивное московское время для строки этого дня. Чужой день не подписываем."""
+    if seen_unix is None:
+        return None
+    moment = datetime.fromtimestamp(float(seen_unix), _MSK).replace(tzinfo=None)
+    if moment.date() != day:
+        return None
+    return moment
+
+
 def last_seen_label(
     *,
     seen_unix: Optional[float],
@@ -70,23 +97,39 @@ def last_seen_label(
 ) -> str:
     """Когда человек последний раз писал в этом чате.
 
-    Пока бот сам видел сообщение — минуты и часы; дальше — по дню из базы.
+    Сегодня — часы и минуты по Москве. Вчера — слово «вчера».
+    Часы берутся только если момент действительно сегодняшний:
+    вчерашний след не подменяет день, который в базе новее.
     """
+    del now_unix  # календарный день важнее «N часов назад»
     day = _as_date(last_day)
+    seen_day = None
     if seen_unix is not None:
-        sec = max(0, int(now_unix - float(seen_unix)))
-        if sec < 45:
-            return "только что"
-        if sec < 3600:
-            return f"{max(1, sec // 60)} мин назад"
-        if sec < 86400:
-            return f"{max(1, sec // 3600)} ч назад"
         seen_day = datetime.fromtimestamp(float(seen_unix), _MSK).date()
         if day is None or seen_day > day:
             day = seen_day
-    if day is not None:
-        return _day_label(day, today)
-    return "ещё не было"
+    if day is None:
+        return "ещё не было"
+    if day >= today:
+        if seen_unix is not None and seen_day is not None and seen_day >= today:
+            return clock_label(seen_unix)
+        return "сегодня"
+    if (today - day).days == 1:
+        return "вчера"
+    return _day_label(day, today)
+
+
+def _when_html(last: str) -> str:
+    """Часы сегодня — моноширинные, как время. Остальные подписи остаются словами."""
+    text = str(last)
+    if (
+        len(text) == 5
+        and text[2] == ":"
+        and text[:2].isdigit()
+        and text[3:].isdigit()
+    ):
+        return f"<code>{text}</code>"
+    return escape(text)
 
 
 def pulse_block(last: str, day: int, week: int, month: int, total: int) -> str:
@@ -95,11 +138,10 @@ def pulse_block(last: str, day: int, week: int, month: int, total: int) -> str:
     Первая строка говорит, о чём речь (эта группа), вторая — что считается
     (сообщения), чтобы цифры были понятны и без подсказки.
     """
-    when = escape(str(last))
     return (
-        f"{DOVE} <b>Последнее сообщение в этой группе : {when}</b>\n"
-        f"{BOOK} <b>Сообщений : сегодня {compact_count(day)} · неделя {compact_count(week)}"
-        f" · месяц {compact_count(month)} · всего {compact_count(total)}</b>"
+        f"{DOVE} <b>Последняя активность : {_when_html(last)}</b>\n"
+        f"{BOOK} <b>Today {compact_count(day)} · Week {compact_count(week)}"
+        f" · Month {compact_count(month)} · All {compact_count(total)}</b>"
     )
 
 

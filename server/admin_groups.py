@@ -1631,6 +1631,7 @@ async def moderate_action(
                 ok_any = True
         try:
             await db.pool.execute("DELETE FROM active_mutes WHERE user_id = $1", uid)
+            await db.pool.execute("UPDATE users SET mute_until = NULL WHERE user_id = $1", uid)
             ok_any = True
         except Exception:
             pass
