@@ -20,6 +20,7 @@ _LEVEL_EMOJI = {
     5: ("👑", "5305629674058061875"),
 }
 _DIAMOND = ("💎", "5296773795091094130")
+_RIGHTS_CROWN = ("👑", "5373346752671804066")
 
 # Порядок как у переключателей должности: сначала этот чат, потом шире.
 _RIGHTS = (
@@ -73,6 +74,12 @@ def _emoji(rank: int) -> str:
 def _plain_emoji(rank: int) -> str:
     level = max(1, min(5, int(rank or 1)))
     return _LEVEL_EMOJI[level][0]
+
+
+def _rank_icon(rank: int) -> str:
+    """Тот же custom emoji id, что в тексте сообщения у этого ранга."""
+    level = max(1, min(5, int(rank or 1)))
+    return _LEVEL_EMOJI[level][1]
 
 
 def _clip(text: str, limit: int = 28) -> str:
@@ -199,33 +206,104 @@ def render_group_rights(group_title: str, posts: list[dict], *, only: Optional[i
     return "".join(parts)
 
 
-def group_roster_rows(viewer_id: int, posts: list[dict]) -> list[list[tuple[str, str]]]:
-    """Кнопки под составом группы. В callback_data зашит тот, кто открыл список."""
+_PLAIN_MARKS = {plain for plain, _custom in _LEVEL_EMOJI.values()} | {_DIAMOND[0], _RIGHTS_CROWN[0]}
+
+
+def split_icon_label(label: str) -> tuple[str, str]:
+    """«🔸 Модератор» → ("🔸", "Модератор").
+
+    На кнопке premium-иконка встаёт перед текстом сама, поэтому обычный эмодзи
+    из надписи убирается и нужен только как запасной вариант без иконок.
+    """
+    text = str(label or "")
+    head, sep, rest = text.partition(" ")
+    if sep and head in _PLAIN_MARKS and rest.strip():
+        return head, rest.strip()
+    return "", text.strip()
+
+
+def post_label(post: dict) -> str:
+    """Надпись на кнопке должности — та же, что видит человек."""
+    rank = int(post.get("rank") or 1)
+    return _clip(f"{_plain_emoji(rank)} {post.get('title') or 'Должность'}")
+
+
+def pick_post(posts: list[dict], raw_index: Any, label: str = "") -> Optional[int]:
+    """Какую должность нажали. Если список с тех пор сдвинулся — ищем по надписи кнопки."""
+    chosen = list(posts or [])
+    try:
+        index = int(raw_index)
+    except (TypeError, ValueError):
+        index = -1
+    clean = split_icon_label(label)[1]
+
+    def same(post: dict) -> bool:
+        return split_icon_label(post_label(post))[1] == clean
+
+    if 0 <= index < len(chosen) and (not clean or same(chosen[index])):
+        return index
+    if clean:
+        for position, post in enumerate(chosen):
+            if same(post):
+                return position
+    return None
+
+
+def find_post(posts: list[dict], post_id: Any) -> Optional[int]:
+    for position, post in enumerate(posts or []):
+        if post.get("id") is not None and str(post.get("id")) == str(post_id):
+            return position
+    return None
+
+
+def roster_shape(posts: list[dict]) -> tuple:
+    """Всё, что видно в составе, кроме статусов «в сети / не в сети»."""
+    return tuple(
+        (
+            str(post.get("id")),
+            str(post.get("title") or ""),
+            int(post.get("rank") or 0),
+            tuple(sorted(coerce_rights(post.get("rights")))),
+            tuple(str(person.get("html") or person.get("name") or "") for person in post.get("people") or []),
+        )
+        for post in posts or []
+    )
+
+
+def group_roster_rows(viewer_id: int, posts: list[dict]) -> list[list[tuple[str, str, str]]]:
+    """Кнопки под составом группы. В callback_data зашит тот, кто открыл список.
+
+    Третий элемент — premium emoji с той же должности в тексте сообщения.
+    """
     viewer = int(viewer_id)
-    rows: list[list[tuple[str, str]]] = []
-    row: list[tuple[str, str]] = []
+    rows: list[list[tuple[str, str, str]]] = []
+    row: list[tuple[str, str, str]] = []
     for index, post in enumerate(posts or []):
-        label = _clip(f"{_plain_emoji(int(post.get('rank') or 1))} {post.get('title') or 'Должность'}")
-        row.append((label, f"staff:gperm:{viewer}:{index}"))
+        rank = int(post.get("rank") or 1)
+        row.append((post_label(post), f"staff:gperm:{viewer}:{index}", _rank_icon(rank)))
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
     if posts:
-        rows.append([(BTN_ALL, f"staff:gall:{viewer}")])
-    rows.append([(BTN_STAFF, f"staff:gstf:{viewer}")])
+        crown, crown_id = _RIGHTS_CROWN
+        rows.append([(f"{crown} {BTN_ALL}", f"staff:gall:{viewer}", crown_id)])
+    gem, gem_id = _DIAMOND
+    rows.append([(f"{gem} {BTN_STAFF}", f"staff:gstf:{viewer}", gem_id)])
     return rows
 
 
-def group_rights_rows(viewer_id: int) -> list[list[tuple[str, str]]]:
+def group_rights_rows(viewer_id: int) -> list[list[tuple[str, str, str]]]:
     viewer = int(viewer_id)
+    gem, gem_id = _DIAMOND
     return [
-        [(BTN_GROUP_BACK, f"staff:gback:{viewer}")],
-        [(BTN_STAFF, f"staff:gstf:{viewer}")],
+        [(f"{gem} {BTN_GROUP_BACK}", f"staff:gback:{viewer}", gem_id)],
+        [(f"{gem} {BTN_STAFF}", f"staff:gstf:{viewer}", gem_id)],
     ]
 
 
-def staff_return_row(viewer_id: int) -> list[tuple[str, str]]:
+def staff_return_row(viewer_id: int) -> list[tuple[str, str, str]]:
     """Кнопка назад к администраторам группы из сообщения про персонал проекта."""
-    return [(BTN_GROUP, f"staff:gadm:{int(viewer_id)}")]
+    gem, gem_id = _DIAMOND
+    return [(f"{gem} {BTN_GROUP}", f"staff:gadm:{int(viewer_id)}", gem_id)]

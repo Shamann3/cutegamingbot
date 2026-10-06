@@ -272,23 +272,6 @@ def command_filter(names: Collection[str]):
     return _check
 
 
-_HOWTO_ALIASES = (
-    (("башни", "башня", "башню"), "башня 10"),
-    (("риск",), "риск 10"),
-    (("плиты", "плита"), "плита 10"),
-    (("бомбы", "бомба"), "бомбы 10"),
-    (("трейд",), "трейд вверх 10"),
-    (("шарик", "шар"), "шарик 10"),
-    (("провода", "провод"), "провода 10"),
-    (("слоты", "слот", "спин", "барабан"), "слоты 10"),
-    (("баскетбол", "баскетболл", "баскетбал", "баскет"), "баскет 10"),
-    (("футбол", "фут"), "футбол 10"),
-    (("боулинг", "боул"), "боулинг 10"),
-    (("дартс", "дарт"), "дартс 10"),
-    (("кубик", "куб"), "куб 10 4"),
-)
-
-
 def roulette_help_text() -> str:
     return (
         "💭 <b>Неверный формат команды!</b>\n"
@@ -302,33 +285,6 @@ def roulette_help_text() -> str:
         "<code>рулетка 10 1 6</code>\n"
         "<code>рулетка 10 6 12</code></i></blockquote>"
     )
-
-
-def howto_reply(text: str) -> Optional[str]:
-    """Ответ на «как играть в …» из справки. None — это не такая фраза."""
-    folded = " ".join(fold(part) for part in (text or "").strip().split())
-    rest = ""
-    for prefix in ("как играть в игру ", "как играть в "):
-        if folded.startswith(prefix):
-            rest = folded[len(prefix):].strip()
-            break
-    if not rest:
-        return None
-    if rest.endswith("(игра)"):
-        rest = rest[: -len("(игра)")].strip()
-    if rest in {"рулетку", "рулетка", "рул"}:
-        return roulette_help_text()
-    best_len = -1
-    example = None
-    for aliases, line in _HOWTO_ALIASES:
-        for alias in aliases:
-            if rest == alias or rest.startswith(alias + " "):
-                if len(alias) > best_len:
-                    best_len = len(alias)
-                    example = line
-    if example is None:
-        return None
-    return format_line(example)
 
 
 def looks_like_game_command(text: str) -> bool:

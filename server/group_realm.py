@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ from config import ADMIN_JWT_SECRET, is_plain_user, owner_user_ids
 from db import db
 
 router = APIRouter(prefix="/group-realm", tags=["group-realm"])
+_log = logging.getLogger(__name__)
 
 _READY = False
 
@@ -539,6 +541,285 @@ def ladder_places(ordered_ids: list[int]) -> list[tuple[int, int, int]]:
         (pid, max(1, STAFF_RANK_TOP - index), index)
         for index, pid in enumerate(seen)
     ]
+
+
+PUSH_OWNER_REASON = "Создатель группы в каждой группе свой и не переносится"
+PUSH_TWIN_REASON = "В этом переносе две должности с таким названием"
+PUSH_GONE_REASON = "Этой должности здесь уже нет"
+
+
+def _push_title_key(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def push_key(kind: str, title: str) -> str:
+    """Обычная должность узнаётся по названию. Обычный пользователь и спам-блок — по типу: в группе они одни."""
+    stored = kind if kind in KINDS else KIND_POST
+    if stored == KIND_POST:
+        return f"title:{_push_title_key(title)}"
+    return f"kind:{stored}"
+
+
+def push_pages(rights: list[str], pages: list[str] | None) -> set[str]:
+    """Вкладки, которые должность видит на деле. Без своего списка они идут от прав."""
+    if pages is not None:
+        return {item for item in pages if item in CONFIGURABLE_PAGES}
+    have = set(rights or [])
+    opened: set[str] = set()
+    if "view_archive" in have:
+        opened.update({"work", "archive"})
+    if (
+        "view_members" in have
+        or "view_analytics" in have
+        or any(str(item).startswith("punish_") for item in have)
+    ):
+        opened.add("activity")
+    if "manage_positions" in have:
+        opened.add("rights")
+    return opened
+
+
+def _push_shape(row: Any) -> dict:
+    data = dict(row)
+    kind = data.get("kind") if data.get("kind") in KINDS else KIND_POST
+    rank = int(data.get("rank") or 0)
+    prefix = " ".join(str(data.get("prefix") or "").split())[:16]
+    if kind == KIND_SPAMBLOCK and not prefix:
+        prefix = SPAMBLOCK_PREFIX
+    return {
+        "id": int(data.get("id") or 0),
+        "title": " ".join(str(data.get("title") or "").split()),
+        "kind": kind,
+        "rank": rank,
+        "ladder": int(data.get("ladder") or 0),
+        "rights": rights_for_kind(kind, rank, _rights(data.get("rights")), creator=True),
+        "pages": normalize_pages(data.get("pages")),
+        "prefix": prefix,
+        "accepting": bool(data.get("accepting")) if kind == KIND_POST else False,
+    }
+
+
+def _push_order_key(row: dict) -> tuple[int, int, int]:
+    return (-int(row["rank"]), int(row["ladder"]), int(row["id"]))
+
+
+def _push_clash(row: dict | None) -> str:
+    if row is None:
+        return PUSH_TWIN_REASON
+    if int(row["rank"]) >= 5:
+        return "Так в той группе называется создатель группы"
+    if row["kind"] == KIND_MEMBER:
+        return "Так в той группе называется обычный пользователь"
+    if row["kind"] == KIND_SPAMBLOCK:
+        return "Так в той группе называется спам-блок"
+    return "Такое название в той группе уже занято"
+
+
+def _push_line(
+    source_staff: list[dict],
+    target_staff: list[dict],
+    moving_old: dict[int, dict],
+    moving_new: list[dict],
+) -> list[tuple[str, int]]:
+    """Порядок администраторов после переноса, сверху вниз.
+
+    Перенесённая должность встаёт под теми, кто здесь выше неё, и над теми, кто ниже.
+    Если общих должностей нет, решает ранг отсюда. Остальные держат свой порядок.
+    """
+    source_index = {row["id"]: index for index, row in enumerate(source_staff)}
+    source_by_name: dict[str, int] = {}
+    for index, row in enumerate(source_staff):
+        source_by_name.setdefault(_push_title_key(row["title"]), index)
+    anchor: dict[tuple[str, int], int] = {}
+    rank_of: dict[tuple[str, int], int] = {}
+    line: list[tuple[str, int]] = []
+    for row in target_staff:
+        slot = ("old", int(row["id"]))
+        rank_of[slot] = int(row["rank"])
+        if int(row["id"]) in moving_old:
+            continue
+        line.append(slot)
+        at = source_by_name.get(_push_title_key(row["title"]))
+        if at is not None:
+            anchor[slot] = at
+    movers = [
+        (source_index[source["id"]], ("old", int(target_id)), int(source["rank"]))
+        for target_id, source in moving_old.items()
+    ] + [
+        (source_index[source["id"]], ("new", int(source["id"])), int(source["rank"]))
+        for source in moving_new
+    ]
+    movers.sort(key=lambda item: item[0])
+    for index, slot, wanted in movers:
+        place = -1
+        for pos, item in enumerate(line):
+            seen = anchor.get(item)
+            if seen is not None and seen < index:
+                place = pos + 1
+        if place < 0:
+            for pos, item in enumerate(line):
+                seen = anchor.get(item)
+                if seen is not None and seen > index:
+                    place = pos
+                    break
+        if place < 0:
+            place = len(line)
+            for pos, item in enumerate(line):
+                if rank_of.get(item, 0) < wanted:
+                    place = pos
+                    break
+        line.insert(place, slot)
+        anchor[slot] = index
+        rank_of[slot] = wanted
+    return line
+
+
+def plan_position_push(source_rows: list[Any], target_rows: list[Any], picked_ids: list[Any]) -> dict:
+    """Что станет с должностями другой группы. Ничего не пишет.
+
+    Совпавшая должность получает отсюда название, права, вкладки и префикс и встаёт
+    в лестнице так же относительно соседей. Создатель группы не переносится.
+    Люди, их места и префиксы не трогаются.
+    """
+    source = sorted((_push_shape(row) for row in source_rows), key=_push_order_key)
+    target = sorted((_push_shape(row) for row in target_rows), key=_push_order_key)
+    by_id = {row["id"]: row for row in source}
+    wanted: list[int] = []
+    for raw in picked_ids or []:
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if pid > 0 and pid not in wanted:
+            wanted.append(pid)
+    skipped = [
+        {"sourceId": pid, "title": "Должность", "reason": PUSH_GONE_REASON}
+        for pid in wanted
+        if pid not in by_id
+    ]
+    picked = set(wanted)
+    chosen = [row for row in source if row["id"] in picked]
+    by_key: dict[str, dict] = {}
+    by_title: dict[str, dict] = {}
+    for row in target:
+        by_title.setdefault(_push_title_key(row["title"]), row)
+        if int(row["rank"]) < 5:
+            by_key.setdefault(push_key(row["kind"], row["title"]), row)
+    claimed: set[int] = set()
+    names: set[str] = set()
+    create: list[dict] = []
+    matched: list[dict] = []
+    for row in chosen:
+        if int(row["rank"]) >= 5:
+            skipped.append({"sourceId": row["id"], "title": row["title"], "reason": PUSH_OWNER_REASON})
+            continue
+        name = _push_title_key(row["title"])
+        match = by_key.get(push_key(row["kind"], row["title"]))
+        if match is not None and match["id"] in claimed:
+            skipped.append({"sourceId": row["id"], "title": row["title"], "reason": PUSH_TWIN_REASON})
+            continue
+        if match is None:
+            if name in by_title or name in names:
+                skipped.append({"sourceId": row["id"], "title": row["title"], "reason": _push_clash(by_title.get(name))})
+                continue
+            if len(row["title"]) < 2:
+                skipped.append({"sourceId": row["id"], "title": row["title"] or "Должность", "reason": "У должности нет названия"})
+                continue
+            names.add(name)
+            create.append(row)
+            continue
+        claimed.add(match["id"])
+        title = row["title"]
+        if name != _push_title_key(match["title"]):
+            other = by_title.get(name)
+            if (other is not None and other["id"] != match["id"]) or name in names:
+                title = match["title"]
+        names.add(_push_title_key(title))
+        matched.append({"source": row, "target": match, "title": title})
+
+    source_staff = [row for row in source if row["kind"] == KIND_POST and int(row["rank"]) < 5]
+    target_staff = [row for row in target if row["kind"] == KIND_POST and int(row["rank"]) < 5]
+    moving_old = {
+        int(entry["target"]["id"]): entry["source"]
+        for entry in matched
+        if entry["target"]["kind"] == KIND_POST
+    }
+    moving_new = [row for row in create if row["kind"] == KIND_POST]
+    line = _push_line(source_staff, target_staff, moving_old, moving_new)
+    current = [("old", int(row["id"])) for row in target_staff]
+    rewrite = line != current
+    final: dict[tuple[str, int], int] = {}
+    if rewrite:
+        for index, slot in enumerate(line):
+            final[slot] = max(1, STAFF_RANK_TOP - index)
+    else:
+        for row in target_staff:
+            final[("old", int(row["id"]))] = int(row["rank"])
+
+    update: list[dict] = []
+    same: list[dict] = []
+    for entry in matched:
+        row, match = entry["source"], entry["target"]
+        rank_to = final.get(("old", int(match["id"])), int(match["rank"])) if match["kind"] == KIND_POST else 0
+        changes = []
+        if entry["title"] != match["title"]:
+            changes.append("title")
+        if set(row["rights"]) != set(match["rights"]):
+            changes.append("rights")
+        if push_pages(row["rights"], row["pages"]) != push_pages(match["rights"], match["pages"]):
+            changes.append("pages")
+        if row["prefix"] != match["prefix"]:
+            changes.append("prefix")
+        if bool(row["accepting"]) != bool(match["accepting"]):
+            changes.append("accepting")
+        if rank_to != int(match["rank"]):
+            changes.append("rank")
+        item = {
+            "sourceId": row["id"],
+            "targetId": int(match["id"]),
+            "kind": match["kind"],
+            "title": entry["title"],
+            "rights": list(row["rights"]),
+            "pages": row["pages"],
+            "prefix": row["prefix"],
+            "accepting": bool(row["accepting"]),
+            "rankFrom": int(match["rank"]),
+            "rank": rank_to,
+            "changes": changes,
+        }
+        (update if changes else same).append(item)
+    created = [
+        {
+            "sourceId": row["id"],
+            "kind": row["kind"],
+            "title": row["title"],
+            "rights": list(row["rights"]),
+            "pages": row["pages"],
+            "prefix": row["prefix"],
+            "accepting": bool(row["accepting"]),
+            "rank": final.get(("new", int(row["id"])), 0) if row["kind"] == KIND_POST else 0,
+        }
+        for row in create
+    ]
+    shifts = [
+        {
+            "id": int(row["id"]),
+            "title": row["title"],
+            "from": int(row["rank"]),
+            "to": final.get(("old", int(row["id"])), int(row["rank"])),
+        }
+        for row in target_staff
+        if int(row["id"]) not in moving_old
+        and final.get(("old", int(row["id"])), int(row["rank"])) != int(row["rank"])
+    ]
+    return {
+        "create": created,
+        "update": update,
+        "same": same,
+        "skipped": skipped,
+        "shifts": shifts,
+        "order": line if rewrite else None,
+    }
 
 
 def term_bounds(start_raw: str | None, end_raw: str | None) -> tuple[datetime | None, datetime | None, str | None]:
@@ -1817,13 +2098,14 @@ async def _staff_ids(chat_id: int) -> list[int]:
     return [int(row["id"]) for row in rows]
 
 
-async def _write_ladder(chat_id: int, ordered_ids: list[int]) -> list[tuple[int, int, int]]:
+async def _write_ladder(chat_id: int, ordered_ids: list[int], *, connection=None) -> list[tuple[int, int, int]]:
     places = ladder_places(ordered_ids)
+    runner = connection if connection is not None else db.pool
     for pid, rank, ladder in places:
-        await db.pool.execute(
+        await runner.execute(
             """
             UPDATE epsilon_positions
-            SET rank = $2, ladder = $3, accepting = TRUE
+            SET rank = $2, ladder = $3
             WHERE id = $1 AND chat_id = $4 AND kind = $5 AND rank < 5
             """,
             pid,
@@ -1859,6 +2141,227 @@ async def order_positions(body: PositionOrderBody, user_id: int = Depends(get_an
         "ok": True,
         "ranks": [{"id": pid, "rank": rank, "ladder": ladder} for pid, rank, ladder in places],
     }
+
+
+class PositionPushTarget(BaseModel):
+    chat_id: int
+    ids: list[int] = Field(min_length=1, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+class PositionPushBody(BaseModel):
+    source_chat_id: int
+    targets: list[PositionPushTarget] = Field(min_length=1, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+_SYNC_TROUBLE = ("не встал", "могла остаться", "не обновил", "могли не")
+
+
+async def _sync_holders_tally(chat_id: int, position_id: int, rights: list[str], kind: str) -> tuple[int, int, str]:
+    """Сколько людей на должности получили новые права в Telegram и сколько нет."""
+    try:
+        holders = await db.pool.fetch(
+            """
+            SELECT user_id, prefix
+            FROM epsilon_seats
+            WHERE position_id = $1 AND chat_id = $2
+              AND (term_end IS NULL OR term_end > NOW())
+            """,
+            int(position_id),
+            int(chat_id),
+        )
+    except Exception:
+        return 0, 0, ""
+    synced = 0
+    failed = 0
+    trouble = ""
+    for holder in holders:
+        try:
+            note = await _sync_chat_rights(
+                int(chat_id),
+                int(holder["user_id"]),
+                holder["prefix"] or "",
+                rights,
+                kind=kind,
+            )
+        except Exception:
+            note = "Права в панели записаны. В чате они могли не обновиться."
+        if any(mark in note for mark in _SYNC_TROUBLE):
+            failed += 1
+            trouble = note
+        else:
+            synced += 1
+    return synced, failed, trouble
+
+
+def _push_log_detail(source_title: str, plan: dict) -> str:
+    parts = []
+    if plan["create"]:
+        parts.append("новые: " + ", ".join(item["title"] for item in plan["create"]))
+    if plan["update"]:
+        parts.append("обновлены: " + ", ".join(item["title"] for item in plan["update"]))
+    if plan["shifts"]:
+        parts.append(
+            "ранги: " + ", ".join(f"{item['title']} {item['from']}→{item['to']}" for item in plan["shifts"])
+        )
+    return f"Из группы «{source_title}». " + "; ".join(parts)
+
+
+async def _push_into(
+    *,
+    chat_id: int,
+    source_rows: list[dict],
+    source_title: str,
+    ids: list[int],
+    actor_id: int,
+) -> dict:
+    group = await db.pool.fetchrow(
+        "SELECT title FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+        int(chat_id),
+    )
+    if not group:
+        return {"chatId": int(chat_id), "title": str(chat_id), "error": "Эта группа больше не официальная"}
+    rows = await db.pool.fetch(
+        """
+        SELECT id, title, rank, rights, kind, prefix, pages, ladder, accepting
+        FROM epsilon_positions
+        WHERE chat_id = $1
+        """,
+        int(chat_id),
+    )
+    plan = plan_position_push(source_rows, [dict(row) for row in rows], ids)
+    made: dict[int, int] = {}
+    if plan["create"] or plan["update"] or plan["order"] is not None:
+        async with db.pool.acquire() as connection:
+            async with connection.transaction():
+                for item in plan["update"]:
+                    await connection.execute(
+                        """
+                        UPDATE epsilon_positions
+                        SET title = $3, rights = $4::jsonb, pages = $5::jsonb, prefix = $6, accepting = $7
+                        WHERE id = $1 AND chat_id = $2
+                        """,
+                        int(item["targetId"]),
+                        int(chat_id),
+                        item["title"],
+                        json.dumps(item["rights"]),
+                        None if item["pages"] is None else json.dumps(item["pages"]),
+                        item["prefix"],
+                        bool(item["accepting"]),
+                    )
+                for item in plan["create"]:
+                    created = await connection.fetchrow(
+                        """
+                        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix, pages)
+                        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb)
+                        RETURNING id
+                        """,
+                        int(chat_id),
+                        item["title"],
+                        int(item["rank"]),
+                        json.dumps(item["rights"]),
+                        bool(item["accepting"]),
+                        item["kind"],
+                        item["prefix"],
+                        None if item["pages"] is None else json.dumps(item["pages"]),
+                    )
+                    made[int(item["sourceId"])] = int(created["id"])
+                if plan["order"] is not None:
+                    ordered = [made[pid] if slot == "new" else pid for slot, pid in plan["order"]]
+                    await _write_ladder(int(chat_id), ordered, connection=connection)
+    synced = 0
+    failed = 0
+    trouble = ""
+    for item in plan["update"]:
+        if "rights" not in item["changes"]:
+            continue
+        ok, bad, note = await _sync_holders_tally(int(chat_id), int(item["targetId"]), item["rights"], item["kind"])
+        synced += ok
+        failed += bad
+        trouble = note or trouble
+    if plan["create"] or plan["update"]:
+        try:
+            await _realm_log(int(chat_id), None, "positions_pushed", _push_log_detail(source_title, plan), int(actor_id))
+        except Exception:
+            _log.exception("positions push log failed for %s", chat_id)
+    return {
+        "chatId": int(chat_id),
+        "title": group["title"] or str(chat_id),
+        "created": [
+            {"title": item["title"], "rank": item["rank"], "kind": item["kind"]}
+            for item in plan["create"]
+        ],
+        "updated": [
+            {"title": item["title"], "rank": item["rank"], "rankFrom": item["rankFrom"], "changes": item["changes"]}
+            for item in plan["update"]
+        ],
+        "same": [{"title": item["title"]} for item in plan["same"]],
+        "skipped": [{"title": item["title"], "reason": item["reason"]} for item in plan["skipped"]],
+        "shifted": [
+            {"title": item["title"], "from": item["from"], "to": item["to"]}
+            for item in plan["shifts"]
+        ],
+        "telegram": {"synced": synced, "failed": failed, "note": trouble},
+        "error": "",
+    }
+
+
+@router.post("/positions/push")
+async def push_positions(body: PositionPushBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Должности этой группы — в другие официальные: права, вкладки, префикс и место в лестнице."""
+    _require_creator(user_id)
+    await ensure_tables()
+    source_id = int(body.source_chat_id)
+    await _require_official(source_id)
+    plan: dict[int, list[int]] = {}
+    for target in body.targets:
+        chat = int(target.chat_id)
+        if chat == source_id:
+            continue
+        bucket = plan.setdefault(chat, [])
+        for raw in target.ids:
+            pid = int(raw)
+            if pid > 0 and pid not in bucket:
+                bucket.append(pid)
+    plan = {chat: ids for chat, ids in plan.items() if ids}
+    if not plan:
+        raise HTTPException(status_code=400, detail="Положите должности хотя бы в одну другую группу")
+    source_title = await db.pool.fetchval(
+        "SELECT title FROM epsilon_official_groups WHERE chat_id = $1",
+        source_id,
+    )
+    source_rows = [
+        dict(row)
+        for row in await db.pool.fetch(
+            """
+            SELECT id, title, rank, rights, kind, prefix, pages, ladder, accepting
+            FROM epsilon_positions
+            WHERE chat_id = $1
+            """,
+            source_id,
+        )
+    ]
+    groups = []
+    for chat, ids in plan.items():
+        try:
+            groups.append(
+                await _push_into(
+                    chat_id=chat,
+                    source_rows=source_rows,
+                    source_title=source_title or str(source_id),
+                    ids=ids,
+                    actor_id=int(user_id),
+                )
+            )
+        except Exception:
+            _log.exception("positions push into %s failed", chat)
+            groups.append({
+                "chatId": chat,
+                "title": str(chat),
+                "error": "Группа не обновилась. Из этого переноса в ней ничего не записано.",
+            })
+    return {"ok": True, "groups": groups}
 
 
 @router.post("/positions/{position_id}")

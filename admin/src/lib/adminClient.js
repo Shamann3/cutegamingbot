@@ -2688,6 +2688,10 @@ export async function copyGroupPositions(body) {
   return adminFetch('/group-realm/positions/copy', { method: 'POST', body })
 }
 
+export async function pushGroupPositions(body) {
+  return adminFetch('/group-realm/positions/push', { method: 'POST', body, timeoutMs: 90000 })
+}
+
 export async function orderGroupPositions(body) {
   return adminFetch('/group-realm/positions/order', { method: 'POST', body })
 }

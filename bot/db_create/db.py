@@ -782,6 +782,7 @@ class Database:
         # ------------------------------
         self._pending_user_counts: Dict[Tuple[int, int, date], int] = {}  # (user_id, chat_id, msk_day) -> +N
         self._pending_chat_counts: Dict[int, int] = {}              # chat_id           -> +N
+        self._chat_seen: Dict[Tuple[int, int], float] = {}          # (user_id, chat_id) -> unix
         self._msg_counter_worker_started: bool = False
         self.MSG_COUNTER_FLUSH_INTERVAL_SEC: float = 20.0
         self._black_market_shop_deposits_table_ready: bool = False
@@ -20645,6 +20646,62 @@ class Database:
             print(f"Ошибка при получении числа сообщений пользователя {user_id} за всё время в чате {chat_id}: {e}")
             return 0
 
+    async def get_user_chat_pulse(self, chat_id: int, user_id: int) -> Optional[dict]:
+        """Сообщения человека в этом чате: день, неделя, месяц, всё. None — база не ответила."""
+        try:
+            uid, cid = int(user_id), int(chat_id)
+        except (TypeError, ValueError):
+            return None
+        if uid <= 0 or cid >= 0:
+            return None
+        from bot.funcs.chat_pulse import pending_today, windows
+
+        today, week_start, month_start = windows(_msk_today())
+        try:
+            async with self.pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    """
+                    SELECT
+                        COALESCE(SUM(text) FILTER (WHERE date = $3), 0) AS day_n,
+                        COALESCE(SUM(text) FILTER (WHERE date >= $4), 0) AS week_n,
+                        COALESCE(SUM(text) FILTER (WHERE date >= $5), 0) AS month_n,
+                        COALESCE(SUM(text), 0) AS total_n,
+                        MAX(date) AS last_day
+                    FROM chatchange
+                    WHERE chat_id = $1
+                      AND user_id = $2
+                      AND text IS NOT NULL
+                    """,
+                    cid,
+                    uid,
+                    today,
+                    week_start,
+                    month_start,
+                )
+        except Exception as e:
+            print(f"Ошибка при чтении активности {uid} в чате {cid}: {e}")
+            return None
+        extra = pending_today(getattr(self, "_pending_user_counts", {}), uid, cid, today)
+        day_n = int((row["day_n"] if row else 0) or 0) + extra
+        week_n = int((row["week_n"] if row else 0) or 0) + extra
+        month_n = int((row["month_n"] if row else 0) or 0) + extra
+        total_n = int((row["total_n"] if row else 0) or 0) + extra
+        last_day = row["last_day"] if row else None
+        if extra:
+            # Сегодняшние сообщения ещё в памяти: последний день — сегодня.
+            stored_day = last_day.date() if isinstance(last_day, datetime) else last_day
+            if stored_day is None or stored_day < today:
+                last_day = today
+        seen = (getattr(self, "_chat_seen", {}) or {}).get((uid, cid))
+        return {
+            "day": day_n,
+            "week": week_n,
+            "month": month_n,
+            "total": total_n,
+            "last_day": last_day,
+            "seen_unix": float(seen) if seen else None,
+        }
+
     async def get_top_users1(self , chat_id: int , limit: int = 30):
         try:
             async with self.pool.acquire() as connection:
@@ -20782,6 +20839,14 @@ class Database:
         key = (uid, cid, day)
         self._pending_user_counts[key] = self._pending_user_counts.get(key, 0) + 1
         self._pending_chat_counts[cid] = self._pending_chat_counts.get(cid, 0) + 1
+        seen = getattr(self, "_chat_seen", None)
+        if seen is None:
+            self._chat_seen = {}
+            seen = self._chat_seen
+        seen[(uid, cid)] = time.time()
+        if len(seen) > 12000:
+            cutoff = time.time() - 2 * 86400
+            self._chat_seen = {pair: ts for pair, ts in seen.items() if ts >= cutoff}
 
         # Немедленная запись: планируем flush на ближайший тик event loop.
         try:

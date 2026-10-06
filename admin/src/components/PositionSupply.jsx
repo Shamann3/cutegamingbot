@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import FocusWindow from './FocusWindow'
+import PositionPush from './PositionPush'
 import { copyGroupPositions, fetchPositionTemplates, fetchRightsBoard, placePositionTemplate } from '../lib/adminClient'
 import { placeBlock, supplyNotice } from '../lib/positionSupply'
 
@@ -22,7 +23,7 @@ export default function PositionSupply({ chatId, onPlaced }) {
   const [busy, setBusy] = useState('')
 
   useEffect(() => {
-    if (!open) return undefined
+    if (!open || open === 'push') return undefined
     let stop = false
     setError('')
     const load = async () => {
@@ -125,11 +126,21 @@ export default function PositionSupply({ chatId, onPlaced }) {
 
   return (
     <div className="position-supply">
-      <p className="realm-copy">Заготовки не стоят в группе сами. Их ставят, когда нужны. Готовые должности можно перенести из другой официальной группы: переносятся название и права, люди остаются на своих местах.</p>
+      <p className="realm-copy">Заготовки не стоят в группе сами. Их ставят, когда нужны. «Из другой группы» добавляет сюда должности, которых здесь нет. «В другие группы» делает должности там такими же, как здесь: права, вкладки, префикс и место в лестнице. Люди остаются на своих местах.</p>
       <div className="position-supply-actions">
         <button type="button" className="sec-btn" onClick={() => setOpen('kit')}>Заготовки</button>
         <button type="button" className="sec-btn" onClick={() => setOpen('copy')}>Из другой группы</button>
+        <button type="button" className="sec-btn" onClick={() => setOpen('push')}>В другие группы</button>
       </div>
+      {open === 'push' && (
+        <PositionPush
+          chatId={chatId}
+          onClose={async (text) => {
+            close()
+            if (text) await onPlaced?.(text)
+          }}
+        />
+      )}
       {open === 'kit' && (
         <FocusWindow
           title="Заготовки должностей"

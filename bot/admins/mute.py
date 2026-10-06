@@ -75,11 +75,15 @@ mute_router = Router(name="staff_mute")
 
 from bot.admins.group_roster import (
   coerce_rights,
+  find_post,
   group_rights_rows,
   group_roster_rows,
   highest_vacancy,
+  pick_post,
   render_group_rights,
   render_group_roster,
+  roster_shape,
+  split_icon_label,
   staff_return_row,
   stored_owner_name,
 )
@@ -1172,8 +1176,10 @@ async def _warm_activity_state() -> None:
       _groups, ids = await _load_staff_groups()
     except Exception as e:
       MuteDebug.log("ACT", "warm skip", err=str(e))
-      ids = []
+      _groups, ids = None, []
     if ids:
+      # Тот же список сразу идёт в снимок: первый «кто админ» не ждёт базу.
+      _keep_staff_snap(_groups, ids)
       MuteDebug.log("ACT", "warm done", admins=len(ids))
       return
     await asyncio.sleep(3)
@@ -2149,6 +2155,9 @@ def _is_moderation_excluded_chat(chat_id: int) -> bool:
 
 _official_live: set[int] = set()
 _official_at: float = 0.0
+# Названия официальных групп из того же запроса: «кто админ» не ходит в базу ради названия.
+_official_titles: Dict[int, str] = {}
+_official_loaded: bool = False
 
 
 def _official_rules():
@@ -2171,7 +2180,7 @@ def live_staff_chat_ids() -> list[int]:
 
 async def refresh_official_chats() -> None:
   """Подтягивает epsilon_official_groups. Ошибка базы не стирает уже известный список."""
-  global _official_live, _official_at
+  global _official_live, _official_at, _official_titles, _official_loaded
   import time
   now = time.monotonic()
   if _official_at and now - _official_at < 12:
@@ -2186,9 +2195,15 @@ async def refresh_official_chats() -> None:
       _official_at = now
       return
     rows = await pool.fetch(
-      "SELECT chat_id FROM epsilon_official_groups WHERE is_official",
+      "SELECT chat_id, title FROM epsilon_official_groups WHERE is_official",
     )
-    _official_live = {int(row["chat_id"]) for row in rows}
+    titles: Dict[int, str] = {}
+    for row in rows:
+      name = " ".join(str(row["title"] or "").split())
+      titles[int(row["chat_id"])] = name or "Эта группа"
+    _official_live = set(titles)
+    _official_titles = titles
+    _official_loaded = True
     _official_at = now
   except Exception:
     _official_at = now
@@ -6177,18 +6192,297 @@ _roster_paused: set = set()
 # Чаты, где «кто админ» открыл администраторов группы: у персонала проекта есть кнопка назад.
 _roster_group_chats: set = set()
 
+# -----------------------------------------------------------------------------
+#  Снимки «кто админ» в памяти.
+#  Сообщение и кнопки рисуются сразу из снимка; статусы «в сети / не в сети»
+#  считаются в момент показа из памяти бота, без базы. Если снимок старше
+#  _ROSTER_FRESH_SEC, после ответа он тихо перечитывается, и сообщение
+#  правится только когда в составе или правах правда что-то поменялось.
+# -----------------------------------------------------------------------------
+_ROSTER_FRESH_SEC = 60.0
+_ROSTER_KEEP_SEC = 6 * 3600.0
+_roster_snap: Dict[int, Dict[str, Any]] = {}
+_roster_faces: Dict[Tuple[int, int], Tuple[Any, ...]] = {}
+_roster_refreshing: set = set()
+_staff_snap: Dict[str, Any] = {"groups": None, "ids": [], "at": 0.0}
+_staff_loading: Optional["asyncio.Task"] = None
+_roster_bg_tasks: set = set()
+_RIGHTS_CROWN_ID = "5373346752671804066"
+_ROSTER_DIAMOND_ID = "5296773795091094130"
+
+
+def _spawn_roster_task(coro) -> None:
+  """Фоновая задача без ожидания; ссылка держится, пока задача не закончится."""
+  try:
+    task = asyncio.get_running_loop().create_task(coro)
+  except RuntimeError:
+    coro.close()
+    return
+  _roster_bg_tasks.add(task)
+  task.add_done_callback(_roster_bg_tasks.discard)
+
+
+def _remember_roster(chat_id: int, title: str, posts: list) -> None:
+  now = time.time()
+  _roster_snap[int(chat_id)] = {"title": title, "posts": posts, "at": now}
+  if len(_roster_snap) > 200:
+    cutoff = now - _ROSTER_KEEP_SEC
+    for key, item in list(_roster_snap.items()):
+      if float(item.get("at") or 0) < cutoff:
+        _roster_snap.pop(key, None)
+
+
+def _roster_cached(chat_id: int) -> Optional[Tuple[str, list, float]]:
+  """(название, должности, возраст снимка) или None, если снимка нет."""
+  item = _roster_snap.get(int(chat_id))
+  if not item:
+    return None
+  age = time.time() - float(item.get("at") or 0)
+  if age > _ROSTER_KEEP_SEC:
+    return None
+  return str(item.get("title") or "Эта группа"), list(item.get("posts") or []), age
+
+
+def _live_posts(posts: list) -> list:
+  """Те же должности, статусы людей — на эту секунду (из памяти, без базы)."""
+  now = datetime.now(timezone.utc)
+  fresh: list = []
+  for post in posts or []:
+    people = []
+    for person in post.get("people") or []:
+      uid = person.get("uid")
+      if uid:
+        status, hint = _status_for(int(uid), None, now)
+        person = {**person, "status": status, "hint": hint or ""}
+      people.append(person)
+    fresh.append({**post, "people": people})
+  return fresh
+
+
+def _set_face(message: Optional[Message], face: Tuple[Any, ...]) -> None:
+  """Запоминает, что сейчас открыто в сообщении: фон не перерисует чужой экран."""
+  if message is None:
+    return
+  _roster_faces[(message.chat.id, message.message_id)] = face
+  if len(_roster_faces) > 600:
+    for key in list(_roster_faces)[:300]:
+      _roster_faces.pop(key, None)
+
+
+def _face_of(message: Optional[Message]) -> Optional[Tuple[Any, ...]]:
+  if message is None:
+    return None
+  return _roster_faces.get((message.chat.id, message.message_id))
+
+
+def _render_group_face(
+  face: Tuple[Any, ...],
+  title: str,
+  posts: list,
+) -> Optional[Tuple[str, Optional[InlineKeyboardMarkup]]]:
+  """Текст и кнопки для экрана группы: состав, все права или одна должность."""
+  kind, viewer = face[0], int(face[1])
+  if kind == "roster":
+    return render_group_roster(title, _live_posts(posts)), _markup_rows(group_roster_rows(viewer, posts))
+  if kind == "all":
+    return render_group_rights(title, posts), _markup_rows(group_rights_rows(viewer))
+  if kind == "one":
+    idx = find_post(posts, face[2])
+    if idx is None:
+      return None
+    return render_group_rights(title, posts, only=idx), _markup_rows(group_rights_rows(viewer))
+  return None
+
+
+async def _group_title(chat_id: int) -> Optional[str]:
+  """Название официальной группы из списка в памяти.
+
+  Известная группа отвечает сразу, список освежается в фоне. Неизвестную
+  сверяем с базой до ответа: группу могли только что отметить в панели.
+  """
+  try:
+    cid = int(chat_id)
+  except (TypeError, ValueError):
+    return None
+  if cid >= 0:
+    return None
+  stale = not _official_at or time.monotonic() - _official_at >= 12
+  if _official_loaded and cid in _official_titles:
+    if stale:
+      _spawn_roster_task(refresh_official_chats())
+    return _official_titles[cid]
+  if stale or not _official_loaded:
+    try:
+      await refresh_official_chats()
+    except Exception:
+      pass
+  if _official_loaded:
+    return _official_titles.get(cid)
+  return await _official_title(cid)
+
+
+async def _fetch_group_roster(chat_id: int) -> Tuple[Optional[str], Optional[list]]:
+  """Читает состав из базы и кладёт в снимок. (None, None) — группа не официальная."""
+  title = await _group_title(chat_id)
+  if not title:
+    return None, None
+  posts = await _load_group_posts(chat_id)
+  if posts is None:
+    return title, None
+  _remember_roster(chat_id, title, posts)
+  return title, posts
+
+
+async def _refresh_group_roster(chat_id: int, shown: Optional[Message] = None) -> None:
+  """Тихо перечитывает состав; сообщение правится, только если что-то изменилось."""
+  cid = int(chat_id)
+  if cid in _roster_refreshing:
+    return
+  _roster_refreshing.add(cid)
+  try:
+    before = _roster_snap.get(cid) or {}
+    title, posts = await _fetch_group_roster(cid)
+    if not title or posts is None or shown is None:
+      return
+    if before.get("title") == title and roster_shape(before.get("posts") or []) == roster_shape(posts):
+      return
+    face = _face_of(shown)
+    if not face or face[0] not in {"roster", "all", "one"}:
+      return
+    view = _render_group_face(face, title, posts)
+    if view is not None:
+      await _safe_edit(shown, view[0], reply_markup=view[1])
+  except Exception as e:
+    MuteDebug.error("ROSTER", "background roster refresh failed", e)
+  finally:
+    _roster_refreshing.discard(cid)
+
+
+def _keep_staff_snap(groups: Optional[Dict[str, List[Dict[str, Any]]]], ids: List[int]) -> None:
+  if groups is not None:
+    _staff_snap.update({"groups": groups, "ids": list(ids or []), "at": time.time()})
+
+
+async def _reload_staff_groups() -> Tuple[Optional[Dict[str, List[Dict[str, Any]]]], List[int]]:
+  """Одна загрузка сотрудников на всех, кто нажал одновременно."""
+  global _staff_loading
+  if _staff_loading is None or _staff_loading.done():
+    _staff_loading = asyncio.ensure_future(_load_staff_groups())
+  try:
+    groups, ids = await asyncio.shield(_staff_loading)
+  except Exception as e:
+    MuteDebug.error("ROSTER", "staff reload failed", e)
+    return None, []
+  _keep_staff_snap(groups, ids)
+  return groups, ids
+
+
+async def _staff_groups_now() -> Tuple[Optional[Dict[str, List[Dict[str, Any]]]], List[int]]:
+  """Сотрудники проекта: снимок сразу; база — только если снимка нет."""
+  groups = _staff_snap.get("groups")
+  age = time.time() - float(_staff_snap.get("at") or 0)
+  if groups and age <= _ROSTER_KEEP_SEC:
+    if age > _ROSTER_FRESH_SEC:
+      _spawn_roster_task(_reload_staff_groups())
+    return groups, list(_staff_snap.get("ids") or [])
+  return await _reload_staff_groups()
+
+
+async def _warm_roster_snapshots() -> None:
+  """Один раз после старта готовит составы официальных групп: первый ответ — мгновенный."""
+  await asyncio.sleep(8)
+  try:
+    await refresh_official_chats()
+    for cid, title in list(_official_titles.items()):
+      if _roster_cached(cid) is None:
+        posts = await _load_group_posts(cid)
+        if posts is not None:
+          _remember_roster(cid, title, posts)
+      await asyncio.sleep(0.2)
+  except Exception as e:
+    MuteDebug.error("ROSTER", "roster warmup failed", e)
+
+
+async def _ack_callback(callback: CallbackQuery) -> None:
+  """Гасит крутилку Telegram до правки сообщения — нажатие ощущается сразу."""
+  try:
+    await callback.answer()
+  except Exception:
+    pass
+
+
+def _pressed_label(callback: CallbackQuery) -> str:
+  """Надпись нажатой кнопки — по ней находим должность, даже если список сдвинулся."""
+  markup = getattr(callback.message, "reply_markup", None)
+  for row in getattr(markup, "inline_keyboard", None) or []:
+    for button in row:
+      if getattr(button, "callback_data", None) == callback.data:
+        return str(getattr(button, "text", "") or "")
+  return ""
+
+
+# Обычный эмодзи для каждой premium-иконки: им кнопка подписывается, если иконку не приняли.
+_ICON_PLAIN: Dict[str, str] = {}
+
+
+def _icon_btn(text: str, data: str, icon: Optional[str] = None, plain: str = "") -> InlineKeyboardButton:
+  """Кнопка с тем же premium emoji, что в тексте сообщения.
+
+  Иконка Telegram встаёт перед текстом сама, поэтому в надписи эмодзи нет —
+  иначе их было бы два. Без иконки надпись получает обычный эмодзи.
+  """
+  if icon:
+    if plain:
+      _ICON_PLAIN[str(icon)] = plain
+    return InlineKeyboardButton(text=text, callback_data=data, icon_custom_emoji_id=str(icon))
+  return InlineKeyboardButton(text=f"{plain} {text}" if plain else text, callback_data=data)
+
+
+def _spec_btn(item: tuple) -> InlineKeyboardButton:
+  """Кнопка из (надпись с эмодзи, callback, id иконки)."""
+  icon = item[2] if len(item) > 2 else None
+  if not icon:
+    return _icon_btn(str(item[0]), str(item[1]))
+  plain, text = split_icon_label(str(item[0]))
+  return _icon_btn(text, str(item[1]), icon, plain)
+
+
+def _markup_no_icons(markup: Optional[InlineKeyboardMarkup]) -> Optional[InlineKeyboardMarkup]:
+  """Те же кнопки без premium-иконок; None — иконок и не было."""
+  rows = getattr(markup, "inline_keyboard", None)
+  if not rows:
+    return None
+  changed = False
+  plain_rows: List[List[InlineKeyboardButton]] = []
+  for row in rows:
+    plain_row: List[InlineKeyboardButton] = []
+    for button in row:
+      icon = getattr(button, "icon_custom_emoji_id", None)
+      if icon and getattr(button, "callback_data", None):
+        changed = True
+        mark = _ICON_PLAIN.get(str(icon), "")
+        text = str(button.text or "")
+        plain_row.append(InlineKeyboardButton(
+          text=f"{mark} {text}" if mark else text,
+          callback_data=button.callback_data,
+        ))
+      else:
+        plain_row.append(button)
+    plain_rows.append(plain_row)
+  return InlineKeyboardMarkup(inline_keyboard=plain_rows) if changed else None
+
 
 # ⚙️ НАСТРОЙКА: показывать ли отдельные кнопки по каждой должности под составом.
-#   False (по умолчанию) - под «кто админ» одна кнопка «📋 Все права».
+#   False (по умолчанию) - под «кто админ» одна кнопка «Все права» с иконкой 👑.
 #   True                 - добавляются кнопки по каждой должности (детали по клику).
 ROSTER_SHOW_ROLE_BUTTONS: bool = False
 
 
-def _markup_rows(rows: List[List[Tuple[str, str]]]) -> Optional[InlineKeyboardMarkup]:
+def _markup_rows(rows: List[List[tuple]]) -> Optional[InlineKeyboardMarkup]:
   if not rows:
     return None
   return InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text=text, callback_data=data) for text, data in row]
+    [_spec_btn(item) for item in row]
     for row in rows
   ])
 
@@ -6201,7 +6495,7 @@ def _build_roster_keyboard(
 ) -> Optional[InlineKeyboardMarkup]:
   """Клавиатура под составом.
 
-  По умолчанию - одна кнопка «📋 Все права» (без выбора отдельных должностей).
+  По умолчанию - одна кнопка «Все права» с иконкой 👑 (без выбора отдельных должностей).
   Если ROSTER_SHOW_ROLE_BUTTONS=True - сверху добавляются кнопки по должностям
   (callback_data «staff:detail:{viewer}:{idx}»). Нажимать может только вызвавший.
   """
@@ -6215,33 +6509,31 @@ def _build_roster_keyboard(
     row: List[InlineKeyboardButton] = []
     for idx, role_key in enumerate(visible):
       title = role_title_from_cache(role_key)
-      emoji = _role_emoji_plain(role_key, title)
-      label = f"{emoji} {title}"
-      if len(label) > 30:
-        label = label[:29] + "…"
-      row.append(InlineKeyboardButton(
-        text=label, callback_data=f"staff:detail:{viewer_id}:{idx}",
-      ))
+      plain, custom = _role_emoji_parts(role_key, title)
+      label = " ".join(str(title or "").split())
+      if len(label) > 28:
+        label = label[:27] + "…"
+      row.append(_icon_btn(label, f"staff:detail:{viewer_id}:{idx}", custom, plain))
       if len(row) == 2:
         rows.append(row)
         row = []
     if row:
       rows.append(row)
-  rows.append([InlineKeyboardButton(
-    text=StaffPermsText.BTN_ALL, callback_data=f"staff:all:{viewer_id}",
+  rows.append([_icon_btn(
+    StaffPermsText.BTN_ALL, f"staff:all:{viewer_id}", _RIGHTS_CROWN_ID, "👑",
   )])
   if back_to_group:
-    rows.append([InlineKeyboardButton(
-      text=label, callback_data=data,
-    ) for label, data in staff_return_row(int(viewer_id))])
+    rows.append([_spec_btn(item) for item in staff_return_row(int(viewer_id))])
   return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _perms_back_keyboard(viewer_id: int, *, back_to_group: bool = False) -> InlineKeyboardMarkup:
   """Кнопка возврата из карточки «Все права» к составу администрации."""
-  rows = [[InlineKeyboardButton(text=StaffPermsText.BTN_BACK, callback_data=f"staff:back:{viewer_id}")]]
+  rows = [[_icon_btn(
+    StaffPermsText.BTN_BACK, f"staff:back:{viewer_id}", _ROSTER_DIAMOND_ID, "💎",
+  )]]
   if back_to_group:
-    rows.append([InlineKeyboardButton(text=label, callback_data=data) for label, data in staff_return_row(viewer_id)])
+    rows.append([_spec_btn(item) for item in staff_return_row(viewer_id)])
   return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -6254,22 +6546,24 @@ async def _roster_safe_reply(
 
   Гарантирует ответ пользователю и ВОЗВРАЩАЕТ отправленное сообщение - оно нужно
   для последующего живого обновления (in-place редактирования).
+  Если Telegram не принял premium-иконку кнопки, кнопки уходят с обычным эмодзи.
   """
-  try:
-    return await message.reply(
-      html_text, parse_mode="HTML", link_preview_options=NO_PREVIEW,
-      reply_markup=reply_markup,
-    )
-  except Exception as e:
-    MuteDebug.error("ROSTER", "html reply failed, falling back to plain", e)
-  try:
-    return await message.reply(
-      _html_to_plain(html_text)[:4000], link_preview_options=NO_PREVIEW,
-      reply_markup=reply_markup,
-    )
-  except Exception as e:
-    MuteDebug.error("ROSTER", "plain reply failed too", e)
-    return None
+  bare = _markup_no_icons(reply_markup)
+  attempts: List[Tuple[str, Optional[InlineKeyboardMarkup], Optional[str]]] = [
+    (html_text, reply_markup, "HTML"),
+  ]
+  if bare is not None:
+    attempts.append((html_text, bare, "HTML"))
+  attempts.append((_html_to_plain(html_text)[:4000], bare or reply_markup, None))
+  for body, markup, mode in attempts:
+    try:
+      return await message.reply(
+        body, parse_mode=mode, link_preview_options=NO_PREVIEW,
+        reply_markup=markup,
+      )
+    except Exception as e:
+      MuteDebug.error("ROSTER", "reply attempt failed", e)
+  return None
 
 
 async def _safe_edit(
@@ -6280,31 +6574,44 @@ async def _safe_edit(
   """Безопасно редактирует сообщение состава; «not modified» - это не ошибка.
 
   reply_markup передаётся всегда, иначе edit_text СНЯЛ БЫ инлайн-кнопки.
+  Если Telegram не принял premium-иконку кнопки, кнопки уходят с обычным эмодзи.
   """
   from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-  try:
-    await sent.edit_text(
-      html_text, parse_mode="HTML", link_preview_options=NO_PREVIEW,
-      reply_markup=reply_markup,
-    )
-    return True
-  except TelegramRetryAfter as e:
-    await asyncio.sleep(float(getattr(e, "retry_after", 3)) + 0.5)
-    return True
-  except TelegramBadRequest as e:
-    if "not modified" in str(e).lower():
-      return True
+  bare = _markup_no_icons(reply_markup)
+  attempts: List[Tuple[str, Optional[InlineKeyboardMarkup], Optional[str]]] = [
+    (html_text, reply_markup, "HTML"),
+  ]
+  if bare is not None:
+    attempts.append((html_text, bare, "HTML"))
+  attempts.append((_html_to_plain(html_text)[:4000], bare or reply_markup, None))
+  waited = False
+  index = 0
+  while index < len(attempts):
+    body, markup, mode = attempts[index]
     try:
       await sent.edit_text(
-        _html_to_plain(html_text)[:4000], link_preview_options=NO_PREVIEW,
-        reply_markup=reply_markup,
+        body, parse_mode=mode, link_preview_options=NO_PREVIEW,
+        reply_markup=markup,
       )
       return True
-    except Exception:
+    except TelegramRetryAfter as e:
+      delay = float(getattr(e, "retry_after", 3) or 3)
+      if waited or delay > 5:
+        # Долгий лимит Telegram: ждём его, как раньше, и не долбим API.
+        await asyncio.sleep(delay + 0.5)
+        return True
+      # Короткий лимит после нажатия: подождать и всё-таки показать экран.
+      waited = True
+      await asyncio.sleep(delay + 0.3)
+      continue
+    except TelegramBadRequest as e:
+      if "not modified" in str(e).lower():
+        return True
+      index += 1
+    except Exception as e:
+      MuteDebug.log("ROSTER", "edit failed", err=str(e))
       return False
-  except Exception as e:
-    MuteDebug.log("ROSTER", "edit failed", err=str(e))
-    return False
+  return False
 
 
 # Активные «живые» сессии состава: chat_id → задача обновления.
@@ -6412,7 +6719,8 @@ async def _handle_staff_roster_command(
       await _roster_safe_reply(message, StaffRosterText.UNAVAILABLE)
       return None, None, None
 
-    groups, ids = await _load_staff_groups()
+    # Снимок сотрудников отвечает сразу; база перечитывается в фоне, если он старый.
+    groups, ids = await _staff_groups_now()
     if groups is None:
       await _roster_safe_reply(message, StaffRosterText.UNAVAILABLE)
       return None, None, None
@@ -6521,6 +6829,7 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
     pid = int(row["id"])
     if pid not in by_id:
       by_id[pid] = {
+        "id": pid,
         "title": row["title"] or "Должность",
         "rank": int(row["rank"] or 0),
         "rights": coerce_rights(row["rights"]),
@@ -6534,6 +6843,7 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
     username = row["username"] or ""
     status, hint = _status_for(uid, None, now)
     by_id[pid]["people"].append({
+      "uid": uid,
       "html": _display_name_link(uid, name, username),
       "status": status,
       "hint": hint or "",
@@ -6543,6 +6853,7 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
   if slot is not None and owner_id and owner_id > 0:
     status, hint = _status_for(owner_id, None, now)
     posts[slot]["people"].append({
+      "uid": owner_id,
       "html": _display_name_link(owner_id, owner_name, owner_username),
       "status": status,
       "hint": hint or "",
@@ -6550,29 +6861,53 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
   return posts
 
 
-async def _reply_group_roster(message: Message, *, edit: Optional[Message] = None, viewer: Optional[int] = None) -> None:
+async def _group_roster_now(chat_id: int, title: str) -> Tuple[Optional[list], bool]:
+  """(должности, нужно ли перечитать в фоне). Снимок отдаётся сразу, база — только без снимка."""
+  cached = _roster_cached(chat_id)
+  if cached is not None:
+    _title, posts, age = cached
+    return posts, age > _ROSTER_FRESH_SEC or _title != title
+  _title, posts = await _fetch_group_roster(chat_id)
+  return posts, False
+
+
+async def _reply_group_roster(
+  message: Message,
+  *,
+  edit: Optional[Message] = None,
+  viewer: Optional[int] = None,
+  title: Optional[str] = None,
+) -> None:
   target = edit or message
+  chat_id = target.chat.id
   viewer_id = viewer if viewer is not None else getattr(getattr(message, "from_user", None), "id", None)
-  title = await _official_title(target.chat.id)
-  posts = await _load_group_posts(target.chat.id) if title else []
+  if title is None:
+    title = await _group_title(chat_id)
+  posts, stale = await _group_roster_now(chat_id, title) if title else (None, False)
   if title is None or posts is None:
     text = StaffRosterText.UNAVAILABLE
     markup = None
   else:
-    text = render_group_roster(title, posts)
+    text = render_group_roster(title, _live_posts(posts))
     markup = _markup_rows(group_roster_rows(int(viewer_id), posts)) if viewer_id else None
   if edit is not None:
     await _safe_edit(edit, text, reply_markup=markup)
+    shown = edit
   else:
-    await _roster_safe_reply(message, text, reply_markup=markup)
+    shown = await _roster_safe_reply(message, text, reply_markup=markup)
+  if shown is not None and viewer_id and posts is not None:
+    _set_face(shown, ("roster", int(viewer_id)))
+  if stale:
+    _spawn_roster_task(_refresh_group_roster(chat_id, shown))
 
 
 async def staff_roster(message: Message) -> None:
   """«кто админ» в официальной группе показывает её администраторов.
 
-  В остальных чатах — персонал проекта, как раньше.
+  В остальных чатах — персонал проекта, как раньше. Оба варианта отвечают
+  из снимка в памяти, база перечитывается уже после ответа.
   """
-  title = await _official_title(message.chat.id)
+  title = await _group_title(message.chat.id)
   if title is not None:
     chat_id = message.chat.id
     _roster_group_chats.add(chat_id)
@@ -6580,10 +6915,12 @@ async def staff_roster(message: Message) -> None:
     prev = _live_roster_tasks.get(chat_id)
     if prev is not None and not prev.done():
       prev.cancel()
-    await _reply_group_roster(message)
+    await _reply_group_roster(message, title=title)
     return
   _roster_group_chats.discard(message.chat.id)
   sent, viewer, groups = await _handle_staff_roster_command(message)
+  if sent is not None and viewer:
+    _set_face(sent, ("staff", int(viewer)))
   await _start_live_roster(sent, viewer, groups)
 
 
@@ -6592,16 +6929,20 @@ async def staff_permissions(message: Message) -> None:
   viewer = getattr(getattr(message, "from_user", None), "id", None)
   MuteDebug.log("FLOW", "staff permissions requested", viewer=viewer)
   try:
-    title = await _official_title(message.chat.id)
+    title = await _group_title(message.chat.id)
     if title is not None:
-      posts = await _load_group_posts(message.chat.id)
+      posts, stale = await _group_roster_now(message.chat.id, title)
       if posts is None:
         await _roster_safe_reply(message, StaffRosterText.UNAVAILABLE)
         return
       _roster_group_chats.add(message.chat.id)
       _roster_paused.add(message.chat.id)
       markup = _markup_rows(group_rights_rows(int(viewer))) if viewer else None
-      await _roster_safe_reply(message, render_group_rights(title, posts), reply_markup=markup)
+      sent = await _roster_safe_reply(message, render_group_rights(title, posts), reply_markup=markup)
+      if sent is not None and viewer:
+        _set_face(sent, ("all", int(viewer)))
+      if stale:
+        _spawn_roster_task(_refresh_group_roster(message.chat.id, sent))
       return
     await _ensure_mute_schema()
     if not await _db().ensure_pool():
@@ -6852,53 +7193,56 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
 
 
 async def _group_roster_button(callback: CallbackQuery, action: str, parts: list, viewer_id: int, title: Optional[str]) -> None:
-  """Кнопки состава группы. Нажимает только тот, кто открыл «кто админ»."""
-  chat_id = callback.message.chat.id
+  """Кнопки состава группы. Нажимает только тот, кто открыл «кто админ».
+
+  Экран собирается из снимка в памяти: Telegram сразу получает ответ на
+  нажатие, сообщение меняется следом. Свежесть снимка проверяется после показа.
+  """
+  message = callback.message
+  chat_id = message.chat.id
   if action == "gstf":
-    groups, _ids = await _load_staff_groups()
+    groups, _ids = await _staff_groups_now()
     if not groups:
       await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
       return
+    await _ack_callback(callback)
     _roster_group_chats.add(chat_id)
     _roster_paused.discard(chat_id)
+    _set_face(message, ("staff", viewer_id))
     await _safe_edit(
-      callback.message,
+      message,
       _render_roster(groups, live=False),
       reply_markup=_build_roster_keyboard(groups, viewer_id, back_to_group=True),
     )
-    await _start_live_roster(callback.message, viewer_id, groups)
-    await callback.answer()
+    await _start_live_roster(message, viewer_id, groups)
     return
   if not title:
     await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
     return
-  posts = await _load_group_posts(chat_id)
+  posts, stale = await _group_roster_now(chat_id, title)
   if posts is None:
     await callback.answer(StaffPermsText.CB_UNAVAILABLE, show_alert=True)
     return
-  _roster_paused.add(chat_id)
   if action == "gperm":
-    if len(parts) < 4:
+    idx = pick_post(posts, parts[3] if len(parts) > 3 else None, _pressed_label(callback))
+    if idx is None:
       await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
       return
-    try:
-      idx = int(parts[3])
-    except ValueError:
-      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
-      return
-    if idx < 0 or idx >= len(posts):
-      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
-      return
-    text = render_group_rights(title, posts, only=idx)
+    face: Tuple[Any, ...] = ("one", viewer_id, posts[idx].get("id"))
   elif action == "gall":
-    text = render_group_rights(title, posts)
+    face = ("all", viewer_id)
   else:
-    text = render_group_roster(title, posts)
-  markup = _markup_rows(
-    group_rights_rows(viewer_id) if action in {"gperm", "gall"} else group_roster_rows(viewer_id, posts)
-  )
-  await _safe_edit(callback.message, text, reply_markup=markup)
-  await callback.answer()
+    face = ("roster", viewer_id)
+  view = _render_group_face(face, title, posts)
+  if view is None:
+    await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+    return
+  await _ack_callback(callback)
+  _roster_paused.add(chat_id)
+  _set_face(message, face)
+  await _safe_edit(message, view[0], reply_markup=view[1])
+  if stale:
+    _spawn_roster_task(_refresh_group_roster(chat_id, message))
 
 
 @mute_router.callback_query(F.data.startswith("staff:"))
@@ -6929,7 +7273,7 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     return
 
   chat_id = callback.message.chat.id
-  official_title = await _official_title(chat_id)
+  official_title = await _group_title(chat_id)
   official = official_title is not None
   if official:
     _roster_group_chats.add(chat_id)
@@ -6940,12 +7284,16 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     await _group_roster_button(callback, action, parts, viewer_id, official_title)
     return
 
-  try:
-    await load_staff_rules()
-  except Exception as e:
-    MuteDebug.error("ROSTER", "perms callback rules load", e)
-    await callback.answer(StaffPermsText.CB_UNAVAILABLE, show_alert=True)
-    return
+  # Правила уже в памяти — экран рисуется сразу, а свежесть проверяется в фоне.
+  if _staff_rules_cache:
+    _spawn_roster_task(load_staff_rules())
+  else:
+    try:
+      await load_staff_rules()
+    except Exception as e:
+      MuteDebug.error("ROSTER", "perms callback rules load", e)
+      await callback.answer(StaffPermsText.CB_UNAVAILABLE, show_alert=True)
+      return
 
   if action == "detail":
     if len(parts) < 4:
@@ -6956,34 +7304,38 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     except ValueError:
       await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
       return
-    groups, _ids = await _load_staff_groups()
+    groups, _ids = await _staff_groups_now()
     visible = _roster_visible_roles(groups or {})
     if idx < 0 or idx >= len(visible):
       await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
       return
+    await _ack_callback(callback)
     _roster_paused.add(chat_id)
+    _set_face(callback.message, ("staff-card", viewer_id))
     await _safe_edit(
       callback.message, _role_perms_card(visible[idx]),
       reply_markup=_perms_back_keyboard(viewer_id, back_to_group=official),
     )
-    await callback.answer()
     return
 
   if action == "all":
+    await _ack_callback(callback)
     _roster_paused.add(chat_id)
+    _set_face(callback.message, ("staff-card", viewer_id))
     await _safe_edit(
       callback.message, _all_perms_card(),
       reply_markup=_perms_back_keyboard(viewer_id, back_to_group=official),
     )
-    await callback.answer()
     return
 
   if action == "back":
-    _roster_paused.discard(chat_id)
-    groups, _ids = await _load_staff_groups()
+    groups, _ids = await _staff_groups_now()
     if not groups:
       await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
       return
+    await _ack_callback(callback)
+    _roster_paused.discard(chat_id)
+    _set_face(callback.message, ("staff", viewer_id))
     # Если живое обновление ещё активно - оно само продолжит править состав;
     # здесь сразу показываем актуальный снимок с кнопками должностей.
     live = chat_id in _live_roster_tasks and not _live_roster_tasks[chat_id].done()
@@ -6991,7 +7343,6 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
       callback.message, _render_roster(groups, live=live),
       reply_markup=_build_roster_keyboard(groups, viewer_id, back_to_group=official),
     )
-    await callback.answer()
     return
 
   await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
@@ -7014,6 +7365,7 @@ def attach_mute_system(dp) -> None:
       loop = asyncio.get_running_loop()
       loop.create_task(load_staff_rules(force_refresh=True))
       loop.create_task(_warm_activity_state())
+      _spawn_roster_task(_warm_roster_snapshots())
       ensure_proof_pending_worker()
     except RuntimeError:
       pass

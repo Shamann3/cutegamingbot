@@ -8,6 +8,7 @@ vi.mock('../lib/adminClient', () => ({
   fetchPositionTemplates: vi.fn(),
   placePositionTemplate: vi.fn(),
   copyGroupPositions: vi.fn(),
+  pushGroupPositions: vi.fn(),
 }))
 
 const board = {
@@ -73,5 +74,16 @@ describe('PositionSupply', () => {
       ids: [2],
     }))
     await waitFor(() => expect(onPlaced).toHaveBeenCalled())
+  })
+
+  it('opens the push window from this group and loads the board once', async () => {
+    vi.mocked(fetchRightsBoard).mockClear()
+    vi.mocked(fetchRightsBoard).mockResolvedValue(board)
+    render(<PositionSupply chatId={-5} onPlaced={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'В другие группы' }))
+    expect(await screen.findByRole('dialog', { name: 'В другие группы' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Модератор, ранг 2' })).toBeTruthy()
+    expect(screen.getByText('Новая группа', { selector: '.push-zone-name strong' })).toBeTruthy()
+    expect(fetchRightsBoard).toHaveBeenCalledTimes(1)
   })
 })

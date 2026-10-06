@@ -6,7 +6,7 @@ import re
 import time
 import traceback
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple, List
 
 from aiogram import types
@@ -969,7 +969,14 @@ async def _profile_collect_state_for_render(
     db,
     chat_id: int
 ) -> Dict[str, Any]:
-    bundle = await db.fetch_profile_render_bundle(user_id)
+    # Счёт сообщений этой группы читается параллельно с профилем — без лишнего ожидания.
+    pulse_task = asyncio.ensure_future(_profile_load_chat_pulse(db, chat_id, user_id))
+    try:
+        bundle = await db.fetch_profile_render_bundle(user_id)
+    except BaseException:
+        pulse_task.cancel()
+        raise
+    chat_pulse = await pulse_task
     if bundle:
         country_text = country_dict.get(bundle.get("country_emoji", ""), "Неизвестная страна")
         growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
@@ -981,6 +988,7 @@ async def _profile_collect_state_for_render(
             "country_text": country_text,
             "growth_fund_contributed": growth_fund_contributed,
             "growth_fund_milestone": growth_fund_milestone,
+            "chat_pulse": chat_pulse,
         }
 
     async def _safe_db_call(fn, default=None, tag: str = "PROFILE-STATE"):
@@ -1067,8 +1075,65 @@ async def _profile_collect_state_for_render(
         "canwithdrawalunt": _profile_safe_int(canwithdrawalunt, 0),
         "growth_fund_contributed": growth_fund_contributed,
         "growth_fund_milestone": growth_fund_milestone,
+        "chat_pulse": chat_pulse,
         "is_banned": bool(is_banned),
     }
+
+
+async def _profile_load_chat_pulse(db, chat_id: int, user_id: int):
+    """Сообщения человека в этой группе. В личке строки нет. Сбой — тоже нет."""
+    try:
+        if int(chat_id) >= 0:
+            return None
+    except (TypeError, ValueError):
+        return None
+    getter = getattr(db, "get_user_chat_pulse", None)
+    if getter is None:
+        return None
+    try:
+        return await getter(int(chat_id), int(user_id))
+    except Exception:
+        return None
+
+
+def _profile_fund_and_pulse(
+    state: Dict[str, Any],
+    growth_fund_line: str,
+    growth_fund_milestone_line: str,
+) -> str:
+    """Фонд, затем пустая строка, две строки активности этой группы, снова пустая."""
+    fund_parts = [part for part in (
+        growth_fund_line,
+        str(growth_fund_milestone_line or "").rstrip("\n"),
+    ) if part]
+    pulse_html = ""
+    pulse = state.get("chat_pulse")
+    if pulse:
+        try:
+            from bot.funcs.chat_pulse import last_seen_label, pulse_block
+            now = time.time()
+            today = datetime.now(timezone(timedelta(hours=3))).date()
+            last = last_seen_label(
+                seen_unix=pulse.get("seen_unix"),
+                last_day=pulse.get("last_day"),
+                now_unix=now,
+                today=today,
+            )
+            pulse_html = pulse_block(
+                last,
+                pulse.get("day") or 0,
+                pulse.get("week") or 0,
+                pulse.get("month") or 0,
+                pulse.get("total") or 0,
+            )
+        except Exception:
+            pulse_html = ""
+    if pulse_html and fund_parts:
+        return "\n".join(fund_parts) + "\n\n" + pulse_html + "\n"
+    if pulse_html:
+        return pulse_html + "\n"
+    # Без активности профиль выглядит ровно как раньше.
+    return "\n".join(part for part in (growth_fund_line, growth_fund_milestone_line) if part)
 
 
 async def _build_profile_caption_for_target(
@@ -1175,6 +1240,9 @@ async def _build_profile_caption_for_target(
             f"Шкала Фонда Роста : {_profile_fmt_int(_gfm['progress'])}/{_profile_fmt_int(_gfm['target'])} кут</b>\n"
             f"<b>{_gfm['bar']} → 👑 Купон Возможностей</b>\n"
         )
+    fund_and_pulse = _profile_fund_and_pulse(
+        state, growth_fund_line, growth_fund_milestone_line,
+    )
 
     donated_line = ""
     if state["donated"] > 0:
@@ -1215,8 +1283,7 @@ async def _build_profile_caption_for_target(
         username_line,
         f"{state['id_emoji']} <code>{user_id}</code>\n",
         f"{state['balance_emoji']} <b>{formatted_balance} кут</b>\n",
-        growth_fund_line,
-        growth_fund_milestone_line,
+        fund_and_pulse,
         donated_line,
         winamount_line,
         wins_line,

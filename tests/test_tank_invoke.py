@@ -1,9 +1,8 @@
 """Одинаковый вызов игр: регистр, пробелы, слитая ставка, чужие слова."""
+from bot.games.howto import read_howto
 from bot.games.invoke import (
     command_filter,
     command_line,
-    format_line,
-    howto_reply,
     looks_like_game_command,
     open_command,
     orel_side,
@@ -91,29 +90,28 @@ def test_kube_trade_roulette_keep_their_arguments():
     assert tokens[2] == "черное"
 
 
-def test_menu_howto_replies_with_the_play_line():
+def test_menu_howto_opens_the_game_help():
     menu = {
-        "как играть в Башни": "башня 10",
-        "Как играть в Риск": "риск 10",
-        "Как играть в Плиты": "плита 10",
-        "Как играть в Бомбы": "бомбы 10",
-        "Как играть в Трейд": "трейд вверх 10",
-        "Как играть в Шарик": "шарик 10",
-        "Как играть в Провода": "провода 10",
-        "Как играть в слоты": "слоты 10",
-        "Как играть в Баскет": "баскет 10",
-        "Как играть в Футбол": "футбол 10",
-        "Как играть в Боулинг": "боулинг 10",
-        "Как играть в Дартс": "дартс 10",
-        "Как играть в Куб": "куб 10 4",
+        "как играть в Башни": "tank",
+        "Как играть в Риск": "risk",
+        "Как играть в Плиты": "plate",
+        "Как играть в Бомбы": "bombs",
+        "Как играть в Трейд": "trade",
+        "Как играть в Шарик": "balls",
+        "Как играть в Провода": "provoda",
+        "Как играть в слоты": "slots",
+        "Как играть в Баскет": "basket",
+        "Как играть в Футбол": "soccer",
+        "Как играть в Боулинг": "bowling",
+        "Как играть в Дартс": "darts",
+        "Как играть в Куб": "kube",
+        "Как играть в Рулетку": "fortuna_solo",
     }
-    for phrase, example in menu.items():
-        assert howto_reply(phrase) == format_line(example), phrase
-    roulette = howto_reply("Как играть в Рулетку")
-    assert "рулетка 10 красное" in roulette
-    assert "рулетка 10 7" in roulette
-    assert howto_reply("Шашки 10") is None
-    assert howto_reply("как играть в футболке") is None
+    for phrase, key in menu.items():
+        ask = read_howto(phrase)
+        assert ask is not None and ask.kind == "game" and ask.key == key, phrase
+    assert read_howto("Шашки 10") is None
+    assert read_howto("как играть в футболке") is None
 
 
 def test_fortuna_lobby_accepts_the_menu_stake():
