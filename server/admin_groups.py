@@ -1392,6 +1392,7 @@ async def moderate_action(
     from group_realm import telegram_hold_seconds
     until = telegram_hold_seconds(until_sec)
     until_date = int(datetime.now().timestamp()) + until if until > 0 else None
+    staff_ids = await official_chat_ids()
 
     async def _restrict(target_chat: int, muted: bool) -> Dict[str, Any]:
         if muted:
@@ -1515,7 +1516,7 @@ async def moderate_action(
         results.append(res)
     elif action == "muteall":
         ok_any = False
-        for tc in _staff_chat_ids():
+        for tc in staff_ids:
             res = await _restrict(tc, True)
             results.append({"chat_id": tc, **res})
             if res.get("ok"):
@@ -1558,7 +1559,7 @@ async def moderate_action(
         results.append(res)
     elif action == "unmuteall":
         ok_any = False
-        staff = set(_staff_chat_ids()) | {cid}
+        staff = set(staff_ids) | {cid}
         for tc in staff:
             res = await _restrict(tc, False)
             results.append({"chat_id": tc, **res})
@@ -1578,6 +1579,16 @@ async def moderate_action(
         ok = bool(res.get("ok"))
         detail = res.get("description") or ""
         results.append(res)
+    elif action == "kickall":
+        ok_any = False
+        for tc in staff_ids:
+            res = await _tg_api("banChatMember", chat_id=tc, user_id=uid)
+            if res.get("ok"):
+                await _tg_api("unbanChatMember", chat_id=tc, user_id=uid, only_if_banned=True)
+                ok_any = True
+            results.append({"chat_id": tc, **res})
+        ok = ok_any
+        detail = "kickall"
     elif action == "warn":
         await _record_warn("chat", "chat")
         ok = True
@@ -1599,7 +1610,7 @@ async def moderate_action(
         results.append(res)
     elif action == "banall":
         ok_any = False
-        for tc in _staff_chat_ids():
+        for tc in staff_ids:
             res = await _ban_chat(tc)
             results.append({"chat_id": tc, **res})
             if res.get("ok"):
@@ -1609,7 +1620,7 @@ async def moderate_action(
         detail = "banall"
     elif action == "banfull":
         ok_any = False
-        for tc in _staff_chat_ids():
+        for tc in staff_ids:
             res = await _ban_chat(tc)
             results.append({"chat_id": tc, **res})
             if res.get("ok"):
@@ -1635,7 +1646,7 @@ async def moderate_action(
         results.append(res)
     elif action == "unbanall":
         ok_any = False
-        staff = set(_staff_chat_ids()) | {cid}
+        staff = set(staff_ids) | {cid}
         for tc in staff:
             res = await _tg_api("unbanChatMember", chat_id=tc, user_id=uid, only_if_banned=True)
             results.append({"chat_id": tc, **res})
@@ -1738,7 +1749,7 @@ async def moderate_action(
 
 
 def _staff_chat_ids() -> List[int]:
-    """Официальные чаты проекта (как в MuteConfig), без импорта тяжёлого бота."""
+    """Старый список из настроек мута, если панель ещё не отметила группы."""
     try:
         from bot.admins.mute import MuteConfig  # type: ignore
         ids = list(getattr(MuteConfig, "STAFF_CHAT_IDS", ()) or ())
@@ -1746,5 +1757,22 @@ def _staff_chat_ids() -> List[int]:
             return [int(x) for x in ids]
     except Exception:
         pass
-    # fallback — актуальный список из MuteConfig (синхронизировать при смене)
     return [-1001612636292, -1001921925861]
+
+
+async def official_chat_ids() -> List[int]:
+    """Старые чаты плюс группы, которые в панели отмечены официальными."""
+    live: List[int] = []
+    try:
+        rows = await db.pool.fetch(
+            "SELECT chat_id FROM epsilon_official_groups WHERE is_official",
+        )
+        live = [int(row["chat_id"]) for row in rows]
+    except Exception:
+        live = []
+    try:
+        from official_ids import merged_official_ids
+    except Exception:
+        from bot.admins.mute import live_staff_chat_ids
+        return list(live_staff_chat_ids())
+    return merged_official_ids(_staff_chat_ids(), live)

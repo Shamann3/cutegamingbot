@@ -54,8 +54,8 @@ def _bot():
 
 
 def _staff_chat_ids() -> Iterable[int]:
-  from bot.admins.mute import cfg
-  return cfg.STAFF_CHAT_IDS
+  from bot.admins.mute import live_staff_chat_ids
+  return live_staff_chat_ids()
 
 
 def probe_chat_ids(source_chat_id: Optional[int] = None) -> Tuple[int, ...]:

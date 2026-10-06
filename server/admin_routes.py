@@ -4957,6 +4957,37 @@ async def admin_captcha_overview(
     return await overview_captcha()
 
 
+class CaptchaPenaltyBody(BaseModel):
+    enabled: bool = False
+    strikes: int = Field(default=5, ge=1, le=20)
+    action: str = Field(default="mute", max_length=24)
+    seconds: int = Field(default=3600, ge=0, le=366 * 24 * 3600)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/captcha/penalty")
+async def admin_captcha_penalty_get(
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from captcha_penalty import load_penalty
+    return await load_penalty()
+
+
+@router.post("/captcha/penalty")
+async def admin_captcha_penalty_save(
+    body: CaptchaPenaltyBody,
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from captcha_penalty import save_penalty
+    try:
+        saved = await save_penalty(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return saved
+
+
 # ─── Ника: инциденты и автобаланс (только создатель) ─────────────────────────
 
 

@@ -8362,6 +8362,66 @@ html.accent-changing::after {
   font-size: .84rem;
   color: #9a9a9a;
 }
+.cap-penalty {
+  margin-bottom: 1rem;
+}
+.cap-strikes {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: .92rem;
+}
+.cap-strikes input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 244, 244, .16);
+  background: #0c0c0e;
+  color: #f4f4f4;
+  padding: 10px 12px;
+  font: inherit;
+}
+.cap-place {
+  margin: 12px 0 4px;
+}
+.cap-place h4 {
+  margin: 0 0 8px;
+  font-size: .92rem;
+  font-weight: 650;
+  color: #f4f4f4;
+}
+.cap-pick {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.cap-pick strong {
+  overflow-wrap: anywhere;
+}
+.cap-pick span {
+  color: rgba(244, 244, 244, .62);
+  font-size: .84rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.cap-pick.is-on {
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), .7);
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), .16);
+}
+.cap-penalty .sec-btn {
+  min-height: 44px;
+  margin-top: 8px;
+}
 .cap-who {
   display: inline-flex;
   flex-wrap: wrap;

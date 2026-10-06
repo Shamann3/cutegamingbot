@@ -82,6 +82,7 @@ from bot.admins.mute import (
   _has_command_text,
   _has_proof_media,
   _is_staff_chat,
+  live_staff_chat_ids,
   _proof_owner_token,
   _looks_like_telegram_username,
   _lookup_target_by_token,
@@ -2096,7 +2097,7 @@ async def _broadcast_warn_groups(
     total=WARN_THRESHOLD,
   )
 
-  notify_chats = set(cfg.STAFF_CHAT_IDS)
+  notify_chats = set(live_staff_chat_ids())
   notify_chats.discard(source_chat_id)
 
   for group_chat_id in notify_chats:
@@ -2189,7 +2190,7 @@ async def expire_timed_warn(warn_id: int, payload: Dict[str, Any]) -> None:
   # охвата «во всех группах», из-за чего там ничего не писалось).
   notify_chats: List[int] = []
   if scope == "all":
-    notify_chats = [cid for cid in cfg.STAFF_CHAT_IDS if _is_staff_chat(cid)]
+    notify_chats = [cid for cid in live_staff_chat_ids() if _is_staff_chat(cid)]
   if source_chat_id and _is_staff_chat(source_chat_id) and source_chat_id not in notify_chats:
     notify_chats.append(source_chat_id)
 
@@ -2886,8 +2887,8 @@ async def _broadcast_unwarn_groups(
     WarnText.UNWARN_GROUP_TAIL_FULL if mode == "full"
     else WarnText.UNWARN_GROUP_TAIL_ALL
   )
-  all_chats = [c for c in cfg.STAFF_CHAT_IDS if _is_staff_chat(c)]
-  notify_chats = set(cfg.STAFF_CHAT_IDS)
+  all_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
+  notify_chats = set(live_staff_chat_ids())
   notify_chats.discard(source_chat_id)
   for cid in notify_chats:
     chat_line = await _format_chats_line(all_chats, current_chat_id=cid)

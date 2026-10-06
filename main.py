@@ -25563,12 +25563,13 @@ async def _build_staff_groups_keyboard(
     Клавиатура со ссылками на все официальные группы (STAFF_CHAT_IDS),
     по 2 кнопки в ряд, плюс кнопка «Назад» (если передана).
     """
-    from bot.admins.mute import MuteConfig
+    from bot.admins.mute import live_staff_chat_ids, refresh_official_chats
 
     rows: List[List[InlineKeyboardButton]] = []
     temp: List[InlineKeyboardButton] = []
+    await refresh_official_chats()
 
-    for cid in MuteConfig.STAFF_CHAT_IDS:
+    for cid in live_staff_chat_ids():
         info = await _resolve_chat_link(bot_obj, int(cid))
         if not info:
             continue
@@ -25651,9 +25652,10 @@ async def _build_staff_progress_ui(
     Данные о группах берём из Telegram (кеш), счётчики — из БД. Всё best-effort:
     любой сбой не роняет вывод, а даёт упрощённый вид.
     """
-    from bot.admins.mute import MuteConfig
+    from bot.admins.mute import live_staff_chat_ids, refresh_official_chats
 
     botx = bot_obj or bot1
+    await refresh_official_chats()
 
     try:
         from bot.config.config import MESSAGE_MIN_WORDS as _MMW
@@ -25671,7 +25673,7 @@ async def _build_staff_progress_ui(
     temp: List[InlineKeyboardButton] = []
     lines: List[str] = []
 
-    for cid in MuteConfig.STAFF_CHAT_IDS:
+    for cid in live_staff_chat_ids():
         cid_i = int(cid)
         cnt = int(counts.get(cid_i, 0))
         rem = max(0, need - cnt)

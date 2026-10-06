@@ -11,6 +11,7 @@ import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
 import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
+import CaptchaPenalty from '../../components/CaptchaPenalty'
 import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
 import OpenUserLink from '../../components/OpenUserLink'
 import { filterStaffPunishGroups, selfBanBlocked } from '../../lib/staffModerationActions'
@@ -591,11 +592,14 @@ export default function GroupsStudioSection({
                   )}
 
                   {sub === 'captcha' && (
-                    <CaptchaChatBlock
-                      data={detail.captcha}
-                      members={detail.members}
-                      onOpenUser={onOpenUser}
-                    />
+                    <>
+                      <CaptchaPenalty />
+                      <CaptchaChatBlock
+                        data={detail.captcha}
+                        members={detail.members}
+                        onOpenUser={onOpenUser}
+                      />
+                    </>
                   )}
 
                   {sub === 'economy' && (
@@ -1076,8 +1080,9 @@ export default function GroupsStudioSection({
           <section className="grp-panel grp-enter">
             <h2 className="grp-panel-title">Капча по всем группам</h2>
             <p className="grp-help">
-              Один раз в группе навсегда. Старые участники проходят, когда пишут. Владелец может выключить одной кнопкой.
+              Один раз в группе навсегда. Старые участники проходят, когда пишут. Владелец может выключить одной кнопкой. Наказание за серию ошибок одно на все группы.
             </p>
+            <CaptchaPenalty />
             <CaptchaOverviewBlock
               data={overview?.captcha}
               onOpenChat={canOpenGroups ? openGroup : undefined}

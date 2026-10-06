@@ -79,6 +79,7 @@ from bot.admins.mute import (
   _has_command_text,
   _has_proof_media,
   _is_staff_chat,
+  live_staff_chat_ids,
   _proof_owner_token,
   _lookup_target_by_token,
   _require_staff_chat,
@@ -1334,7 +1335,7 @@ async def _validate_ban_before(
   source_chat_id: int,
 ) -> Optional[str]:
   """Предпроверка бана: только блокирующая ошибка (бот/создатель/админ) или текст об охвате."""
-  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [source_chat_id]
+  chat_ids = list(live_staff_chat_ids()) if scope == "all" else [source_chat_id]
   for cid in chat_ids:
     if scope == "chat" and not _is_staff_chat(cid):
       return "команда доступна только в официальных группах проекта"
@@ -1374,7 +1375,7 @@ async def _ban_in_all_staff_chats(
   """Банит во всех группах проекта (в т.ч. превентивно, даже если сейчас не состоит)."""
   banned: List[int] = []
   errors: List[str] = []
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
       errors.append(err)
@@ -1617,7 +1618,7 @@ async def _notify_ban(
 
   if parsed.scope == "all":
     violator_intro = BanText.INTRO_ALL.format(actor=actor, scope=scope_label("all"))
-    notify_chats = set(banned_chat_ids) if banned_chat_ids else set(cfg.STAFF_CHAT_IDS)
+    notify_chats = set(banned_chat_ids) if banned_chat_ids else set(live_staff_chat_ids())
   else:
     disp = await _get_chat_display(source_chat_id)
     violator_intro = BanText.INTRO_CHAT.format(actor=actor, title=escape(disp.title))
@@ -2387,7 +2388,7 @@ async def _lift_ban_everywhere(target_id: int) -> Tuple[bool, List[int]]:
   """
   was_banned = False
   lifted: List[int] = []
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     if cid > 0:
       continue
     status = None

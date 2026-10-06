@@ -1108,6 +1108,7 @@ SCHEMA_SQL = (
         variant TEXT NOT NULL,
         payload JSONB NOT NULL,
         attempts INT NOT NULL DEFAULT 0,
+        penalized BOOLEAN NOT NULL DEFAULT FALSE,
         trigger TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         expires_at TIMESTAMPTZ NOT NULL
@@ -1121,6 +1122,10 @@ SCHEMA_SQL = (
     """
     CREATE INDEX IF NOT EXISTS group_captcha_challenges_expires_idx
         ON group_captcha_challenges (expires_at)
+    """,
+    """
+    ALTER TABLE group_captcha_challenges
+        ADD COLUMN IF NOT EXISTS penalized BOOLEAN NOT NULL DEFAULT FALSE
     """,
     """
     CREATE TABLE IF NOT EXISTS group_captcha_resets (

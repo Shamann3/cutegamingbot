@@ -68,6 +68,7 @@ from bot.admins.mute import (
   _has_command_text,
   _has_proof_media,
   _is_staff_chat,
+  live_staff_chat_ids,
   _proof_owner_token,
   _lookup_target_by_token,
   _require_staff_chat,
@@ -605,7 +606,7 @@ async def _validate_kick_before(
   source_chat_id: int,
 ) -> Tuple[Optional[str], bool]:
   """Предпроверка кика: блокирующая ошибка и состоит ли пользователь в целевых группах."""
-  chat_ids = list(cfg.STAFF_CHAT_IDS) if scope == "all" else [source_chat_id]
+  chat_ids = list(live_staff_chat_ids()) if scope == "all" else [source_chat_id]
   any_member = False
   for cid in chat_ids:
     if scope == "chat" and not _is_staff_chat(cid):
@@ -657,7 +658,7 @@ async def _kick_in_all_staff_chats(
   """Кикает из всех групп проекта, где пользователь состоит."""
   kicked: List[int] = []
   errors: List[str] = []
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     err = await _validate_kick_target_in_chat(cid, target_id)
     if err in _BLOCKING_KICK_ERRORS:
       errors.append(err)
@@ -751,7 +752,7 @@ async def _notify_kick(
 
   if parsed.scope == "all":
     violator_intro = KickText.INTRO_ALL.format(actor=actor, scope=scope_label("all"))
-    notify_chats = set(kicked_chat_ids) if kicked_chat_ids else set(cfg.STAFF_CHAT_IDS)
+    notify_chats = set(kicked_chat_ids) if kicked_chat_ids else set(live_staff_chat_ids())
   else:
     disp = await _get_chat_display(source_chat_id)
     violator_intro = KickText.INTRO_CHAT.format(actor=actor, title=escape(disp.title))

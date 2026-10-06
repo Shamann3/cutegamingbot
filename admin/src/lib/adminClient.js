@@ -1660,6 +1660,14 @@ export async function fetchCaptchaOverview() {
   return adminFetch('/captcha/overview')
 }
 
+export async function fetchCaptchaPenalty() {
+  return adminFetch('/captcha/penalty')
+}
+
+export async function saveCaptchaPenalty(body) {
+  return adminFetch('/captcha/penalty', { method: 'POST', body })
+}
+
 export async function groupsStudioModerate(payload) {
   return adminFetch('/groups-studio/moderate', {
     method: 'POST',

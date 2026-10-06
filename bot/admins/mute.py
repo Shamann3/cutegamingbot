@@ -2145,19 +2145,70 @@ def _is_moderation_excluded_chat(chat_id: int) -> bool:
   return chat_id in cfg.MODERATION_EXCLUDED_CHAT_IDS
 
 
+_official_live: set[int] = set()
+_official_at: float = 0.0
+
+
+def _official_rules():
+  import sys
+  from pathlib import Path
+  server = Path(__file__).resolve().parents[2] / "server"
+  folder = str(server)
+  if folder not in sys.path:
+    sys.path.insert(0, folder)
+  from official_ids import chat_is_official, merged_official_ids
+  return chat_is_official, merged_official_ids
+
+
+def live_staff_chat_ids() -> list[int]:
+  """Старые чаты настроек плюс группы, отмеченные официальными в панели."""
+  chat_is_official, merged = _official_rules()
+  del chat_is_official
+  return merged(cfg.STAFF_CHAT_IDS, _official_live, cfg.MODERATION_EXCLUDED_CHAT_IDS)
+
+
+async def refresh_official_chats() -> None:
+  """Подтягивает epsilon_official_groups. Ошибка базы не стирает уже известный список."""
+  global _official_live, _official_at
+  import time
+  now = time.monotonic()
+  if _official_at and now - _official_at < 12:
+    return
+  try:
+    database = _db()
+    pool = getattr(database, "pool", None)
+    if pool is None and hasattr(database, "ensure_pool"):
+      await database.ensure_pool()
+      pool = getattr(database, "pool", None)
+    if pool is None:
+      _official_at = now
+      return
+    rows = await pool.fetch(
+      "SELECT chat_id FROM epsilon_official_groups WHERE is_official",
+    )
+    _official_live = {int(row["chat_id"]) for row in rows}
+    _official_at = now
+  except Exception:
+    _official_at = now
+
+
 def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
   """Официальная группа проекта, где разрешены команды мута/кика/размута."""
   # Принудительно считаем чат официальным для заданного пользователя
   if user_id == 6801702632:
     return True
-
-  if _is_moderation_excluded_chat(chat_id):
-    return False
-  return chat_id in cfg.STAFF_CHAT_IDS
+  chat_is_official, _merged = _official_rules()
+  return chat_is_official(
+    chat_id,
+    hardcoded=cfg.STAFF_CHAT_IDS,
+    live=_official_live,
+    excluded=cfg.MODERATION_EXCLUDED_CHAT_IDS,
+  )
 
 
 async def _require_staff_chat(message: Message) -> bool:
   """True - чат разрешён для модерации; False - уже отправлен ответ сотруднику."""
+  await refresh_official_chats()
   chat_id = message.chat.id
   if _is_moderation_excluded_chat(chat_id):
     staff = await StaffRef.from_message(message)
@@ -2665,7 +2716,7 @@ async def _expire_mute(
           chats.append(c)
   if not chats:
     if global_scope:
-      chats = [c for c in cfg.STAFF_CHAT_IDS if _is_staff_chat(c)]
+      chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
     elif _is_staff_chat(trigger_chat_id):
       chats = [trigger_chat_id]
 
@@ -4348,7 +4399,7 @@ def _memory_mute_until(user_id: int) -> Optional[datetime]:
   now = datetime.now()
   best: Optional[datetime] = None
   best_wall: Optional[datetime] = None
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     until = _chat_mutes.get((cid, user_id))
     wall = _as_naive_wall(until) if until else None
     if wall and wall > now and (best_wall is None or wall > best_wall):
@@ -4402,9 +4453,9 @@ async def _scan_telegram_mute_state(
   user_id: int,
 ) -> Tuple[bool, Tuple[int, ...], Optional[datetime]]:
   """Проверяет ограничение во всех официальных группах проекта."""
-  if not cfg.STAFF_CHAT_IDS:
+  chat_ids = tuple(live_staff_chat_ids())
+  if not chat_ids:
     return False, (), None
-  chat_ids = tuple(cfg.STAFF_CHAT_IDS)
   results = await asyncio.gather(
     *(_check_telegram_mute_in_chat(cid, user_id) for cid in chat_ids),
   )
@@ -4527,7 +4578,7 @@ async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime
 async def _restrict_in_all_staff_chats(user_id: int, until: Optional[datetime]) -> bool:
   """Ограничивает пользователя во всех официальных группах проекта."""
   ok_any = False
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     if await _restrict_in_chat(cid, user_id, until):
       ok_any = True
       _register_chat_mute(cid, user_id, until)
@@ -4536,13 +4587,13 @@ async def _restrict_in_all_staff_chats(user_id: int, until: Optional[datetime]) 
 
 async def _unrestrict_in_all_staff_chats(user_id: int) -> None:
   """Снимает ограничение во всех официальных группах проекта."""
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     await _unrestrict_in_chat(cid, user_id)
     _clear_chat_mute(cid, user_id)
 
 
 def _clear_mute_all_staff_chats(user_id: int) -> None:
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     _clear_chat_mute(cid, user_id)
 
 
@@ -4602,7 +4653,7 @@ async def _notify_unmute(
   reason_line = _format_mute_reason_block(mute_reason)
   reason_suffix = f"\n{reason_line}" if reason_line else ""
 
-  chats = list(notify_chats) if notify_chats is not None else list(cfg.STAFF_CHAT_IDS)
+  chats = list(notify_chats) if notify_chats is not None else list(live_staff_chat_ids())
 
   staff: Optional[StaffRef] = None
   if acting_admin_id and acting_admin_name:
@@ -4709,7 +4760,7 @@ async def _notify_mute_groups(
   duration = _format_duration_short(parsed.time_delta)
   until = _format_until_display(parsed.mute_until, parsed.time_delta)
   reason_block = _format_mute_reason_block(parsed.reason, label="Причина наказания")
-  for cid in cfg.STAFF_CHAT_IDS:
+  for cid in live_staff_chat_ids():
     if cid == source_chat_id:
       continue
     try:
@@ -5304,7 +5355,7 @@ async def _execute_unmute_core(
   if affected_chats:
     unmute_notify_chats: Optional[List[int]] = affected_chats
   elif _global_scope:
-    unmute_notify_chats = [c for c in cfg.STAFF_CHAT_IDS if _is_staff_chat(c)]
+    unmute_notify_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
   else:
     unmute_notify_chats = None
 

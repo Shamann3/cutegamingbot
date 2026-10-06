@@ -196,6 +196,23 @@ def _bg(coro) -> None:
         pass
 
 
+async def _captcha_strike(bot, pool, *, chat_id: int, user, attempts: int, challenge_id: int) -> None:
+    from bot.funcs.captcha_strike import apply_captcha_strike
+    try:
+        await apply_captcha_strike(
+            bot,
+            pool,
+            chat_id=int(chat_id),
+            user_id=int(getattr(user, "id", 0) or 0),
+            name=getattr(user, "full_name", "") or getattr(user, "first_name", "") or "",
+            username=getattr(user, "username", "") or "",
+            attempts=int(attempts),
+            challenge_id=int(challenge_id),
+        )
+    except Exception:
+        log.exception("captcha strike failed chat=%s", chat_id)
+
+
 async def _maybe_unrestrict(bot, chat_id: int, user_id: int) -> None:
     if await _is_staff_muted(chat_id, user_id):
         return
@@ -666,6 +683,8 @@ async def _try_text_captcha(bot, message: Message, chat, user) -> bool:
         return True
 
     attempts = int(row.get("attempts") or 0) + 1
+    if pool:
+        _bg(_captcha_strike(bot, pool, chat_id=chat_id, user=user, attempts=attempts, challenge_id=challenge_id))
     fresh = gc.build_challenge()
     gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
     row["attempts"] = attempts
@@ -934,6 +953,8 @@ async def _handle_captcha_pick(
         return
 
     attempts += 1
+    if pool:
+        _bg(_captcha_strike(callback.bot, pool, chat_id=chat_id, user=user, attempts=attempts, challenge_id=challenge_id))
     await _ack(callback)
     fresh = gc.build_challenge()
     gc.patch_live(challenge_id, payload=fresh, attempts=attempts)
