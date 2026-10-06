@@ -2668,6 +2668,18 @@ export async function createGroupPosition(body) {
   return adminFetch('/group-realm/positions', { method: 'POST', body })
 }
 
+export async function fetchPositionTemplates() {
+  return adminFetch('/group-realm/position-templates')
+}
+
+export async function placePositionTemplate(body) {
+  return adminFetch('/group-realm/positions/from-template', { method: 'POST', body })
+}
+
+export async function copyGroupPositions(body) {
+  return adminFetch('/group-realm/positions/copy', { method: 'POST', body })
+}
+
 export async function orderGroupPositions(body) {
   return adminFetch('/group-realm/positions/order', { method: 'POST', body })
 }

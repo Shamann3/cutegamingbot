@@ -3,6 +3,7 @@ import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPos
 import DarkPick from '../../components/DarkPick'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
+import PositionSupply from '../../components/PositionSupply'
 import RightSwitch from '../../components/RightSwitch'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import { groupPositionPreview, positionSaveBody } from '../../lib/panelPreview'
@@ -390,6 +391,14 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             />
             <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
           </form>
+          <PositionSupply
+            chatId={current.chatId}
+            onPlaced={async (text) => {
+              setError('')
+              setNotice(text)
+              await load()
+            }}
+          />
           <PositionEditor
             positions={(current.positions || []).filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
             creator

@@ -31,6 +31,7 @@ import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { grantedWide } from '../lib/realmRights'
 import ApproveSeat from '../components/ApproveSeat'
+import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
@@ -1211,6 +1212,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 <input value={posQuery} onChange={(event) => setPosQuery(event.target.value)} placeholder="Название" />
               </label>
               {isCreator && (
+              <>
               <form className="realm-form" onSubmit={createPosition}>
                 <h3 className="realm-h">Новая должность</h3>
                 <p className="realm-copy">Создаёт только создатель проекта. Обычная должность встаёт сразу под создателем группы, на ранг 4. Обычный пользователь и спам-блок остаются на ранге 0: сразу могут писать или ждать срок, а остальные права включаются в карточке.</p>
@@ -1227,6 +1229,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 />
                 <button type="submit" className="realm-back" disabled={newTitle.trim().length < 2}>Создать должность</button>
               </form>
+              <PositionSupply
+                chatId={chatId}
+                onPlaced={async (text) => {
+                  setNotice(text)
+                  await loadPositions(chatId)
+                }}
+                />
+              </>
               )}
               <PositionEditor
                 positions={positions.filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}

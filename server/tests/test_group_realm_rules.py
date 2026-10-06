@@ -272,3 +272,90 @@ def test_delete_position_unseats_before_drop_and_keeps_creator():
     assert seats < applications < drop
     assert "_apply_chat_title" in source
     assert "rights=None" in source
+
+
+def test_templates_wait_until_asked_and_voice_admin_is_only_the_voice_chat():
+    import inspect
+
+    from group_realm import (
+        KIND_POST,
+        MEMBER_RIGHTS,
+        POSITION_TEMPLATES,
+        WIDE_RIGHT_IDS,
+        _ensure_builtin_posts,
+        _seed_positions,
+        place_block,
+        plan_position_copy,
+        template_by_id,
+    )
+
+    voice = template_by_id("voice")
+    assert voice["title"] == "Администратор ГЧ"
+    assert voice["kind"] == KIND_POST
+    rights = set(voice["rights"])
+    assert set(MEMBER_RIGHTS) <= rights
+    assert "can_manage_video_chats" in rights
+    assert "punish_ban" not in rights
+    assert "can_delete_messages" not in rights
+    assert "can_restrict_members" not in rights
+    assert "can_promote_members" not in rights
+    assert "manage_positions" not in rights
+    assert not rights & set(WIDE_RIGHT_IDS)
+
+    spam = template_by_id("spamblock")
+    assert spam["kind"] == "spamblock"
+    assert set(MEMBER_RIGHTS) <= set(spam["rights"])
+    assert "can_manage_chat" not in spam["rights"]
+    assert "can_delete_messages" not in spam["rights"]
+    assert "can_restrict_members" not in spam["rights"]
+
+    admin = template_by_id("admin")
+    assert "manage_positions" not in admin["rights"]
+    assert "banfull" not in admin["rights"]
+    assert "punish_ban" in admin["rights"]
+
+    seeded = inspect.getsource(_seed_positions) + inspect.getsource(_ensure_builtin_posts)
+    assert "Администратор ГЧ" not in seeded
+    assert "POSITION_TEMPLATES" not in seeded
+    for item in POSITION_TEMPLATES:
+        assert not set(item["rights"]) & set(WIDE_RIGHT_IDS)
+
+    assert place_block(title="Создатель", kind="post", rank=5, target_titles=[], target_kinds=[]) == (
+        "Создатель группы уже есть в каждой группе и не копируется"
+    )
+    assert place_block(
+        title="Спам блок",
+        kind="spamblock",
+        rank=0,
+        target_titles=["Другая"],
+        target_kinds=["spamblock"],
+    ) == "Спам-блок в этой группе уже есть"
+    assert place_block(
+        title="Администратор ГЧ",
+        kind="post",
+        rank=4,
+        target_titles=["администратор гч"],
+        target_kinds=["post"],
+    ) == "Должность с таким названием уже есть"
+    assert place_block(
+        title="Администратор ГЧ",
+        kind="post",
+        rank=4,
+        target_titles=["Модератор"],
+        target_kinds=["post"],
+    ) is None
+
+    place, skipped = plan_position_copy(
+        [
+            {"id": 1, "title": "Создатель группы", "kind": "post", "rank": 5, "ladder": 0},
+            {"id": 2, "title": "Администратор", "kind": "post", "rank": 4, "ladder": 0},
+            {"id": 3, "title": "Хелпер", "kind": "post", "rank": 1, "ladder": 0},
+            {"id": 4, "title": "Спам блок", "kind": "spamblock", "rank": 0, "ladder": 0},
+        ],
+        ["Модератор"],
+        ["post", "spamblock"],
+    )
+    assert [item["title"] for item in place] == ["Хелпер", "Администратор"]
+    reasons = {item["title"]: item["reason"] for item in skipped}
+    assert "не копируется" in reasons["Создатель группы"]
+    assert "уже есть" in reasons["Спам блок"]

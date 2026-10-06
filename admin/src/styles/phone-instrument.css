@@ -3948,6 +3948,58 @@ html[data-viewport="phone"] .preview-bar-exit {
   border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.7);
   background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.16);
 }
+.position-supply {
+  margin: 4px 0 16px;
+}
+.position-supply-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.position-supply-actions .sec-btn {
+  min-height: 44px;
+}
+.supply-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--e-surface-1);
+  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.07));
+}
+.supply-card + .supply-card,
+.supply-skip + .supply-card,
+.supply-card + .supply-skip {
+  margin-top: 10px;
+}
+.supply-card h3 {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.supply-card p,
+.supply-skip span {
+  margin: 8px 0 0;
+  color: rgba(244, 244, 244, 0.78);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.supply-card .sec-btn {
+  margin-top: 12px;
+  min-height: 44px;
+}
+.supply-skip {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.supply-skip strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.supply-skip span {
+  display: block;
+  font-size: 0.84rem;
+}
 .staff-app-reject textarea,
 .staff-new-post input,
 .entry-card input,

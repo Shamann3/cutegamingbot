@@ -161,6 +161,81 @@ MEMBER_RIGHTS = (
     "can_add_web_page_previews",
 )
 
+# Заготовки не пишутся при создании группы. Их ставят отдельно, когда нужны.
+POSITION_TEMPLATES = (
+    {
+        "id": "voice",
+        "title": "Администратор ГЧ",
+        "kind": KIND_POST,
+        "prefix": "ГЧ",
+        "blurb": "Пишет как обычный участник. Единственное право администратора — голосовой чат. Мут, бан, удаление и назначение выключены.",
+        "rights": (*MEMBER_RIGHTS, "can_manage_video_chats"),
+    },
+    {
+        "id": "spamblock",
+        "title": "Спам блок",
+        "kind": KIND_SPAMBLOCK,
+        "prefix": SPAMBLOCK_PREFIX,
+        "blurb": "Пишет как обычный участник и держит префикс. Прав администратора нет: не банит, не удаляет и не ограничивает. При назначении нужен срок. Ранг 0.",
+        "rights": MEMBER_RIGHTS,
+    },
+    {
+        "id": "member",
+        "title": "Обычный пользователь",
+        "kind": KIND_MEMBER,
+        "prefix": "",
+        "blurb": "Может писать и отправлять медиа. Не администратор. Ранг 0. Ставится, только если эту должность удалили.",
+        "rights": MEMBER_RIGHTS,
+    },
+    {
+        "id": "helper",
+        "title": "Хелпер",
+        "kind": KIND_POST,
+        "prefix": "",
+        "blurb": "Видит людей и может выдать предупреждение в этом чате. Мут, бан и права шире группы выключены.",
+        "rights": ("view_members", "punish_warn"),
+    },
+    {
+        "id": "moderator",
+        "title": "Модератор",
+        "kind": KIND_POST,
+        "prefix": "",
+        "blurb": "Мут, кик и предупреждение в этом чате, плюс архив. Бана нет. Права на все группы и на весь проект выключены.",
+        "rights": ("view_members", "view_archive", "punish_mute", "punish_kick", "punish_warn"),
+    },
+    {
+        "id": "admin",
+        "title": "Администратор",
+        "kind": KIND_POST,
+        "prefix": "",
+        "blurb": "Наказания и права этого чата. Менять должности нельзя. Банфулл и остальные права шире группы выключены — их включают отдельно.",
+        "rights": tuple(right for right in ALL_RIGHTS if right != "manage_positions"),
+    },
+)
+
+
+def template_by_id(template_id: str) -> dict | None:
+    key = (template_id or "").strip()
+    for item in POSITION_TEMPLATES:
+        if item["id"] == key:
+            return item
+    return None
+
+
+def position_template_cards() -> list[dict]:
+    return [
+        {
+            "id": item["id"],
+            "title": item["title"],
+            "kind": item["kind"],
+            "prefix": item["prefix"],
+            "rank": 0 if item["kind"] != KIND_POST else STAFF_RANK_TOP,
+            "blurb": item["blurb"],
+        }
+        for item in POSITION_TEMPLATES
+    ]
+
+
 # Единственный флаг Telegram, который оставляет человека администратором
 # без бана, удаления и назначения. Без него спам-блок снова не пускает писать.
 # Снятие — все флаги False.
@@ -387,6 +462,64 @@ def stored_rank(kind: str, rank: int) -> int:
     if kind in {KIND_MEMBER, KIND_SPAMBLOCK}:
         return 0
     return max(0, min(STAFF_RANK_TOP, int(rank)))
+
+
+def place_block(
+    *,
+    title: str,
+    kind: str,
+    rank: int,
+    target_titles: list[str],
+    target_kinds: list[str],
+) -> str | None:
+    """Почему должность нельзя поставить в эту группу. None — можно."""
+    if int(rank) >= 5:
+        return "Создатель группы уже есть в каждой группе и не копируется"
+    name = " ".join((title or "").split()).casefold()
+    if not name:
+        return "У должности нет названия"
+    have = {" ".join(str(item).split()).casefold() for item in target_titles}
+    if name in have:
+        return "Должность с таким названием уже есть"
+    stored_kind = kind if kind in KINDS else KIND_POST
+    kinds = set(target_kinds)
+    if stored_kind == KIND_MEMBER and KIND_MEMBER in kinds:
+        return "Обычный пользователь в этой группе уже есть"
+    if stored_kind == KIND_SPAMBLOCK and KIND_SPAMBLOCK in kinds:
+        return "Спам-блок в этой группе уже есть"
+    return None
+
+
+def plan_position_copy(
+    rows: list[dict],
+    target_titles: list[str],
+    target_kinds: list[str],
+) -> tuple[list[dict], list[dict]]:
+    """Какие должности переносить. Сначала младшие, чтобы старшая осталась сверху."""
+    ordered = sorted(
+        rows,
+        key=lambda row: (-int(row.get("rank") or 0), int(row.get("ladder") or 0), int(row.get("id") or 0)),
+    )
+    titles = list(target_titles)
+    kinds = list(target_kinds)
+    place: list[dict] = []
+    skipped: list[dict] = []
+    for row in ordered:
+        reason = place_block(
+            title=str(row.get("title") or ""),
+            kind=str(row.get("kind") or KIND_POST),
+            rank=int(row.get("rank") or 0),
+            target_titles=titles,
+            target_kinds=kinds,
+        )
+        label = str(row.get("title") or "Должность")
+        if reason:
+            skipped.append({"id": row.get("id"), "title": label, "reason": reason})
+            continue
+        place.append(row)
+        titles.append(label)
+        kinds.append(str(row.get("kind") or KIND_POST))
+    return list(reversed(place)), skipped
 
 
 def ladder_places(ordered_ids: list[int]) -> list[tuple[int, int, int]]:
@@ -1449,56 +1582,225 @@ async def group_positions(chat_id: int, user_id: int = Depends(get_any_telegram_
     return {"positions": [_position_out(r) for r in rows]}
 
 
+async def _require_official(chat_id: int) -> None:
+    official = await db.pool.fetchval(
+        "SELECT 1 FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+        int(chat_id),
+    )
+    if not official:
+        raise HTTPException(status_code=404, detail="Свои должности есть только у официальной группы")
+
+
+async def _place_position(
+    *,
+    chat_id: int,
+    title: str,
+    kind: str,
+    rights: list[str],
+    prefix: str,
+    pages: list[str] | None,
+    actor_id: int,
+    origin: str,
+) -> dict:
+    """Новая должность. Обычная встаёт наверх лестницы, ранг 0 остаётся внизу."""
+    clean_title = " ".join((title or "").split())
+    if len(clean_title) < 2 or len(clean_title) > 40:
+        raise HTTPException(status_code=400, detail="Название должности — от 2 до 40 символов")
+    stored_kind = kind if kind in KINDS else ""
+    if not stored_kind:
+        raise HTTPException(status_code=400, detail="Тип должности: обычная, обычный пользователь или спам-блок")
+    stored_prefix, prefix_error = clean_prefix(prefix)
+    if prefix_error:
+        raise HTTPException(status_code=400, detail=prefix_error)
+    if stored_kind == KIND_SPAMBLOCK and not stored_prefix:
+        stored_prefix = SPAMBLOCK_PREFIX
+    rank = 0 if stored_kind != KIND_POST else STAFF_RANK_TOP
+    stored_rights = initial_rights(stored_kind, rank, list(rights))
+    accepting = stored_kind == KIND_POST
+    stored_pages = normalize_pages(pages) if pages is not None else None
+    row = await db.pool.fetchrow(
+        """
+        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix, pages)
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb)
+        RETURNING id
+        """,
+        int(chat_id),
+        clean_title,
+        rank,
+        json.dumps(stored_rights),
+        accepting,
+        stored_kind,
+        stored_prefix,
+        None if stored_pages is None else json.dumps(stored_pages),
+    )
+    new_id = int(row["id"])
+    if stored_kind == KIND_POST:
+        current = await _staff_ids(int(chat_id))
+        ordered = [new_id] + [item for item in current if item != new_id]
+        places = await _write_ladder(int(chat_id), ordered)
+        rank = next(item[1] for item in places if item[0] == new_id)
+    detail = f"Должность «{clean_title}», тип {stored_kind}, ранг {rank}"
+    if origin:
+        detail = f"{origin}. {detail}"
+    await _realm_log(int(chat_id), None, "position_created", detail, int(actor_id))
+    return {
+        "id": new_id,
+        "title": clean_title,
+        "rank": rank,
+        "kind": stored_kind,
+        "rights": stored_rights,
+    }
+
+
 @router.post("/positions")
 async def create_position(body: PositionCreateBody, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_tables()
-    kind = body.kind if body.kind in KINDS else ""
-    if not kind:
-        raise HTTPException(status_code=400, detail="Тип должности: обычная, обычный пользователь или спам-блок")
-    official = await db.pool.fetchval(
-        "SELECT 1 FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+    await _require_official(int(body.chat_id))
+    placed = await _place_position(
+        chat_id=int(body.chat_id),
+        title=body.title,
+        kind=body.kind,
+        rights=list(body.rights),
+        prefix=body.prefix,
+        pages=None,
+        actor_id=int(user_id),
+        origin="",
+    )
+    return {"ok": True, **placed}
+
+
+class PositionTemplateBody(BaseModel):
+    chat_id: int
+    template_id: str = Field(min_length=1, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+class PositionCopyBody(BaseModel):
+    chat_id: int
+    source_chat_id: int
+    ids: list[int] = Field(min_length=1, max_length=40)
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/position-templates")
+async def list_position_templates(user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    return {"templates": position_template_cards()}
+
+
+@router.post("/positions/from-template")
+async def place_position_template(body: PositionTemplateBody, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    await ensure_tables()
+    template = template_by_id(body.template_id)
+    if not template:
+        raise HTTPException(status_code=400, detail="Такой заготовки нет")
+    await _require_official(int(body.chat_id))
+    rows = await db.pool.fetch(
+        "SELECT title, kind FROM epsilon_positions WHERE chat_id = $1",
         int(body.chat_id),
     )
-    if not official:
-        raise HTTPException(status_code=404, detail="Свои должности есть только у официальной группы")
-    title = " ".join(body.title.split())
-    prefix, prefix_error = clean_prefix(body.prefix)
-    if prefix_error:
-        raise HTTPException(status_code=400, detail=prefix_error)
-    if kind == KIND_SPAMBLOCK and not prefix:
-        prefix = SPAMBLOCK_PREFIX
-    rank = 0 if kind != KIND_POST else STAFF_RANK_TOP
-    rights = initial_rights(kind, rank, list(body.rights))
-    accepting = kind == KIND_POST
-    row = await db.pool.fetchrow(
+    reason = place_block(
+        title=template["title"],
+        kind=template["kind"],
+        rank=0 if template["kind"] != KIND_POST else STAFF_RANK_TOP,
+        target_titles=[row["title"] for row in rows],
+        target_kinds=[row["kind"] for row in rows],
+    )
+    if reason:
+        return {"ok": True, "placed": [], "skipped": [{"title": template["title"], "reason": reason}]}
+    placed = await _place_position(
+        chat_id=int(body.chat_id),
+        title=template["title"],
+        kind=template["kind"],
+        rights=list(template["rights"]),
+        prefix=template["prefix"],
+        pages=None,
+        actor_id=int(user_id),
+        origin="Поставлена заготовка",
+    )
+    return {"ok": True, "placed": [placed], "skipped": []}
+
+
+@router.post("/positions/copy")
+async def copy_positions(body: PositionCopyBody, user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    await ensure_tables()
+    if int(body.chat_id) == int(body.source_chat_id):
+        raise HTTPException(status_code=400, detail="Выберите другую официальную группу")
+    await _require_official(int(body.chat_id))
+    await _require_official(int(body.source_chat_id))
+    wanted = []
+    seen = set()
+    for raw in body.ids:
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if pid <= 0 or pid in seen:
+            continue
+        seen.add(pid)
+        wanted.append(pid)
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Выберите должности")
+    source_rows = await db.pool.fetch(
         """
-        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix)
-        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)
-        RETURNING id
+        SELECT id, title, rank, rights, kind, prefix, pages, ladder
+        FROM epsilon_positions
+        WHERE chat_id = $1 AND id = ANY($2::bigint[])
         """,
-        int(body.chat_id),
-        title,
-        rank,
-        json.dumps(rights),
-        accepting,
-        kind,
-        prefix,
+        int(body.source_chat_id),
+        wanted,
     )
-    new_id = int(row["id"])
-    if kind == KIND_POST:
-        current = await _staff_ids(int(body.chat_id))
-        ordered = [new_id] + [item for item in current if item != new_id]
-        places = await _write_ladder(int(body.chat_id), ordered)
-        rank = next(item[1] for item in places if item[0] == new_id)
-    await _realm_log(
+    found = {int(row["id"]): row for row in source_rows}
+    target = await db.pool.fetch(
+        "SELECT title, kind FROM epsilon_positions WHERE chat_id = $1",
         int(body.chat_id),
-        None,
-        "position_created",
-        f"Должность «{title}», тип {kind}, ранг {rank}",
-        int(user_id),
     )
-    return {"ok": True, "id": new_id, "title": title, "rank": rank, "kind": kind, "rights": rights}
+    missing = [
+        {"id": pid, "title": "Должность", "reason": "Этой должности нет в выбранной группе"}
+        for pid in wanted
+        if pid not in found
+    ]
+    present = []
+    for pid in wanted:
+        row = found.get(pid)
+        if not row:
+            continue
+        present.append(
+            {
+                "id": int(row["id"]),
+                "title": row["title"],
+                "rank": int(row["rank"]),
+                "kind": row["kind"] if row["kind"] in KINDS else KIND_POST,
+                "rights": _rights(row["rights"]),
+                "prefix": row["prefix"] or "",
+                "pages": _row_pages(row),
+                "ladder": int(row["ladder"] or 0),
+            }
+        )
+    queue, skipped = plan_position_copy(
+        present,
+        [row["title"] for row in target],
+        [row["kind"] for row in target],
+    )
+    placed = []
+    for item in queue:
+        created = await _place_position(
+            chat_id=int(body.chat_id),
+            title=item["title"],
+            kind=item["kind"],
+            rights=list(item["rights"]),
+            prefix=item["prefix"],
+            pages=item["pages"],
+            actor_id=int(user_id),
+            origin="Перенесена из другой группы",
+        )
+        placed.append(
+            {"id": created["id"], "title": created["title"], "rank": created["rank"], "kind": created["kind"]}
+        )
+    return {"ok": True, "placed": placed, "skipped": missing + skipped}
 
 
 async def _staff_ids(chat_id: int) -> list[int]:
