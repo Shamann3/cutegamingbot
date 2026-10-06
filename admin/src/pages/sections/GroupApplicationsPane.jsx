@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { decideGroupApplication, fetchGroupApplications } from '../../lib/adminClient'
 import { applicationPerson } from '../../lib/applicationPerson'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
+import ApproveSeat from '../../components/ApproveSeat'
 
 function when(iso) {
   if (!iso) return ''
@@ -29,6 +30,7 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
   const [busyId, setBusyId] = useState(null)
   const [rejectId, setRejectId] = useState(null)
   const [note, setNote] = useState('')
+  const [seatItem, setSeatItem] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,7 +47,7 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
 
   useEffect(() => { load() }, [load])
 
-  const approve = async (item) => {
+  const approve = async (item, positionId = null) => {
     setBusyId(item.id)
     setError('')
     setNotice('')
@@ -55,12 +57,15 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
         application_id: item.id,
         approve: true,
         note: '',
+        ...(positionId ? { position_id: positionId } : {}),
       })
+      setSeatItem(null)
       setItems((list) => list.filter((row) => row.id !== item.id))
       setKeyOnce(data?.entryKey || '')
+      const placed = data?.position && data?.group ? ` Должность: «${data.position}» в «${data.group}».` : ''
       setNotice(data?.entryKey
-        ? 'Заявка одобрена. Ключ ушёл человеку в бота. Здесь он тоже показан — передайте его, если сообщение не дошло.'
-        : 'Заявка одобрена.')
+        ? `Заявка одобрена.${placed} Ключ ушёл человеку в бота. Здесь он тоже показан — передайте его, если сообщение не дошло.`
+        : `Заявка одобрена.${placed}`)
     } catch (err) {
       setError(err.message || 'Одобрить не удалось')
     } finally {
@@ -149,6 +154,14 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
                     type="button"
                     className="sec-btn sec-btn-ghost sec-btn-sm"
                     disabled={busyId === item.id}
+                    onClick={() => { setSeatItem(item); setError('') }}
+                  >
+                    Изменить должность
+                  </button>
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-ghost sec-btn-sm"
+                    disabled={busyId === item.id}
                     onClick={() => { setRejectId(item.id); setNote(''); setError('') }}
                   >
                     Отказать
@@ -171,6 +184,15 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
           )
         })}
       </ul>
+      {seatItem && (
+        <ApproveSeat
+          item={seatItem}
+          busy={busyId === seatItem.id}
+          error={error}
+          onClose={() => { if (busyId !== seatItem.id) setSeatItem(null) }}
+          onApprove={(positionId) => approve(seatItem, positionId)}
+        />
+      )}
     </div>
   )
 }

@@ -30,6 +30,7 @@ import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { grantedWide } from '../lib/realmRights'
+import ApproveSeat from '../components/ApproveSeat'
 import MySalary from './sections/payroll/MySalary'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
@@ -212,6 +213,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const [newKind, setNewKind] = useState('post')
   const [ordering, setOrdering] = useState(false)
   const [punishFor, setPunishFor] = useState('')
+  const [seatFor, setSeatFor] = useState(null)
 
   const activeTab = tabs.some((item) => item.id === tab) ? tab : 'overview'
   const heardTab = useRef(activeTab)
@@ -603,7 +605,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     }
   }
 
-  const decide = async (item, approve) => {
+  const decide = async (item, approve, positionId = null) => {
     const note = approve ? '' : window.prompt('Причина отказа')
     if (!approve && !note) return
     setError('')
@@ -612,10 +614,13 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
         application_id: item.id,
         approve,
         note: note || '',
+        ...(positionId ? { position_id: positionId } : {}),
       })
       if (data.entryKey) setEntryKey(data.entryKey)
+      setSeatFor(null)
       setApps((list) => list.filter((row) => row.id !== item.id))
-      setNotice(approve ? 'Заявка одобрена. Ключ показан один раз.' : 'Заявка отклонена')
+      const placed = data?.position && data?.group ? ` «${data.position}» в «${data.group}».` : ''
+      setNotice(approve ? `Заявка одобрена.${placed} Ключ показан один раз.` : 'Заявка отклонена')
     } catch (err) {
       setError(err.message || 'Решение не сохранилось')
     }
@@ -890,7 +895,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           {chapter && isCreator && (
             <section className="grp-appoint">
               <h2 className="realm-h">Администраторы</h2>
-              <p className="realm-copy">Должность ниже создателя группы. Одобрить выше запрошенного нельзя. Отказ без причины не сохраняется.</p>
+              <p className="realm-copy">Должность ниже создателя группы. Если в заявке должность не та, рядом с одобрением есть «Изменить должность»: можно выбрать другую в любой официальной группе. Отказ без причины не сохраняется.</p>
               <form className="realm-form grp-appoint-form" onSubmit={appoint}>
                 <UserLookupPreview
                   value={appointUser}
@@ -1071,6 +1076,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                     {waiting && (
                       <span>
                         <button type="button" onClick={() => decide(item, true)}>Одобрить</button>
+                        <button type="button" onClick={() => { setSeatFor(item); setError('') }}>Изменить должность</button>
                         <button type="button" onClick={() => decide(item, false)}>Отказать</button>
                       </span>
                     )}
@@ -1324,6 +1330,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
         menuOpen={!phone && railOpen}
         onOpenMenu={phone ? undefined : () => setRailOpen((open) => !open)}
       />
+      {seatFor && (
+        <ApproveSeat
+          item={seatFor}
+          error={error}
+          onClose={() => setSeatFor(null)}
+          onApprove={(positionId) => decide(seatFor, true, positionId)}
+        />
+      )}
       {punishFor && (
         <PersonPunish
           chatId={chatId}

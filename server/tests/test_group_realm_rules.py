@@ -33,6 +33,16 @@ def test_wide_issue_follows_the_position_switch():
     assert "unbanall" not in creator
 
 
+def test_application_can_move_to_any_admin_post():
+    from group_realm import application_seat_block
+
+    assert application_seat_block(None) == "Должность не найдена в официальной группе"
+    assert application_seat_block({"kind": "post", "rank": 5}) == "Должность создателя группы через заявку не выдаётся"
+    assert "срок" in application_seat_block({"kind": "spamblock", "rank": 0})
+    assert application_seat_block({"kind": "post", "rank": 4}) is None
+    assert application_seat_block({"kind": "post", "rank": 1}) is None
+
+
 def test_local_actions_map_to_one_right():
     assert action_right("ban") == "punish_ban"
     assert action_right("mute") == "punish_mute"

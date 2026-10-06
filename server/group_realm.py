@@ -2145,6 +2145,18 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
     }
 
 
+def application_seat_block(pos) -> str | None:
+    """Кого можно посадить из заявки. Создатель выбирает любую должность администратора."""
+    if not pos:
+        return "Должность не найдена в официальной группе"
+    kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
+    if kind in {KIND_SPAMBLOCK, KIND_MEMBER}:
+        return "Спам-блок и обычного пользователя назначают отдельно: у спам-блока нужен срок"
+    if int(pos["rank"]) >= 5:
+        return "Должность создателя группы через заявку не выдаётся"
+    return None
+
+
 @router.post("/decide")
 async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
@@ -2178,44 +2190,63 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
         return {"ok": True, "status": "rejected"}
     position_id = int(body.position_id or app["position_id"])
     pos = await db.pool.fetchrow(
-        "SELECT id, rank, kind FROM epsilon_positions WHERE id = $1 AND chat_id = $2",
+        """
+        SELECT p.id, p.chat_id, p.rank, p.kind, p.title, p.prefix, p.rights, g.title AS group_title
+        FROM epsilon_positions p
+        JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
+        WHERE p.id = $1
+        """,
         position_id,
-        int(app["chat_id"]),
     )
-    asked = await db.pool.fetchrow(
-        "SELECT rank FROM epsilon_positions WHERE id = $1",
-        int(app["position_id"]),
-    )
-    if not pos or not asked or int(pos["rank"]) > int(asked["rank"]) or int(pos["rank"]) >= 5:
-        raise HTTPException(status_code=400, detail="Можно одобрить запрошенную должность или более низкую")
-    if pos["kind"] in {KIND_SPAMBLOCK, KIND_MEMBER}:
-        raise HTTPException(
-            status_code=400,
-            detail="Спам-блок и обычного пользователя назначают отдельно: у спам-блока нужен срок",
-        )
+    blocked = application_seat_block(pos)
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
+    kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
+    prefix, _prefix_error = chat_title(kind, pos["title"] or "", pos["prefix"] or "", "")
+    held_rights = rights_for_kind(kind, int(pos["rank"]), _rights(pos["rights"]), creator=True)
+    seat_chat = int(pos["chat_id"])
     await db.pool.execute(
         """
-        INSERT INTO epsilon_seats (user_id, chat_id, position_id, appointed_by, reason)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO epsilon_seats (user_id, chat_id, position_id, appointed_by, reason, prefix)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (user_id, chat_id) DO UPDATE
-        SET position_id = EXCLUDED.position_id, appointed_by = EXCLUDED.appointed_by, reason = EXCLUDED.reason
+        SET position_id = EXCLUDED.position_id,
+            appointed_by = EXCLUDED.appointed_by,
+            reason = EXCLUDED.reason,
+            prefix = EXCLUDED.prefix
         """,
         int(app["user_id"]),
-        int(app["chat_id"]),
+        seat_chat,
         position_id,
         int(user_id),
         note or "заявка одобрена",
+        prefix,
     )
     await db.pool.execute(
         """
         UPDATE epsilon_group_applications
-        SET status = 'approved', review_note = $2, reviewer_id = $3, decided_at = NOW(), position_id = $4
+        SET status = 'approved', review_note = $2, reviewer_id = $3, decided_at = NOW(),
+            position_id = $4, chat_id = $5
         WHERE id = $1
         """,
         int(app["id"]),
         note,
         int(user_id),
         position_id,
+        seat_chat,
+    )
+    try:
+        await _sync_chat_rights(seat_chat, int(app["user_id"]), prefix, held_rights, kind=kind)
+    except Exception:
+        pass
+    group_title = pos["group_title"] or str(seat_chat)
+    post_title = pos["title"] or "должность"
+    await _realm_log(
+        seat_chat,
+        int(app["user_id"]),
+        "appointed",
+        f"Заявка: «{post_title}» в «{group_title}»",
+        int(user_id),
     )
     entry_key = await _issue_key(int(app["user_id"]))
     from telegram_notify import send_telegram_message
@@ -2223,13 +2254,15 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     try:
         await send_telegram_message(
             "Заявка в панель администратора принята.\n\n"
+            f"Группа: {group_title}\n"
+            f"Должность: {post_title}\n\n"
             f"Ваш ключ:\n{entry_key}\n\n"
             "Откройте панель администратора и введите этот ключ сами.",
             chat_id=str(int(app["user_id"])),
         )
     except Exception:
         pass
-    return {"ok": True, "status": "approved", "entryKey": entry_key}
+    return {"ok": True, "status": "approved", "entryKey": entry_key, "position": post_title, "group": group_title}
 
 
 async def load_activity(chat_id: int, period: str, today, slice_day=None) -> dict:

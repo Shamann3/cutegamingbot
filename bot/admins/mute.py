@@ -73,6 +73,15 @@ from aiogram.types import (
 
 mute_router = Router(name="staff_mute")
 
+from bot.admins.group_roster import (
+  coerce_rights,
+  group_rights_rows,
+  group_roster_rows,
+  render_group_rights,
+  render_group_roster,
+  staff_return_row,
+)
+
 
 # =============================================================================
 #  НАСТРОЙКИ СИСТЕМЫ МУТА - меняйте параметры в этом блоке
@@ -6065,6 +6074,8 @@ def _html_to_plain(html_text: str) -> str:
 # Чаты, где сейчас открыта карточка прав (детали/обзор) вместо состава: живое
 # обновление приостанавливается, чтобы не «затирать» открытую карточку.
 _roster_paused: set = set()
+# Чаты, где «кто админ» открыл администраторов группы: у персонала проекта есть кнопка назад.
+_roster_group_chats: set = set()
 
 
 # ⚙️ НАСТРОЙКА: показывать ли отдельные кнопки по каждой должности под составом.
@@ -6073,9 +6084,20 @@ _roster_paused: set = set()
 ROSTER_SHOW_ROLE_BUTTONS: bool = False
 
 
+def _markup_rows(rows: List[List[Tuple[str, str]]]) -> Optional[InlineKeyboardMarkup]:
+  if not rows:
+    return None
+  return InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text=text, callback_data=data) for text, data in row]
+    for row in rows
+  ])
+
+
 def _build_roster_keyboard(
   groups: Dict[str, List[Dict[str, Any]]],
   viewer_id: Optional[int],
+  *,
+  back_to_group: bool = False,
 ) -> Optional[InlineKeyboardMarkup]:
   """Клавиатура под составом.
 
@@ -6108,14 +6130,19 @@ def _build_roster_keyboard(
   rows.append([InlineKeyboardButton(
     text=StaffPermsText.BTN_ALL, callback_data=f"staff:all:{viewer_id}",
   )])
+  if back_to_group:
+    rows.append([InlineKeyboardButton(
+      text=label, callback_data=data,
+    ) for label, data in staff_return_row(int(viewer_id))])
   return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _perms_back_keyboard(viewer_id: int) -> InlineKeyboardMarkup:
+def _perms_back_keyboard(viewer_id: int, *, back_to_group: bool = False) -> InlineKeyboardMarkup:
   """Кнопка возврата из карточки «Все права» к составу администрации."""
-  return InlineKeyboardMarkup(inline_keyboard=[[
-    InlineKeyboardButton(text=StaffPermsText.BTN_BACK, callback_data=f"staff:back:{viewer_id}"),
-  ]])
+  rows = [[InlineKeyboardButton(text=StaffPermsText.BTN_BACK, callback_data=f"staff:back:{viewer_id}")]]
+  if back_to_group:
+    rows.append([InlineKeyboardButton(text=label, callback_data=data) for label, data in staff_return_row(viewer_id)])
+  return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def _roster_safe_reply(
@@ -6208,7 +6235,9 @@ async def _live_roster_loop(
       ids = [m["_uid"] for members in groups.values() for m in members]
     if not groups or not ids:
       return
-    keyboard = _build_roster_keyboard(groups, viewer_id)
+    keyboard = _build_roster_keyboard(
+      groups, viewer_id, back_to_group=chat_id in _roster_group_chats,
+    )
     deadline = time.time() + LiveRosterConfig.WINDOW_SEC
     failures = 0
     pulse = 0
@@ -6302,20 +6331,134 @@ async def _handle_staff_roster_command(
     return None, None, None
 
 
-async def staff_roster(message: Message) -> None:
-  """Точка входа из main.py для команды «кто админ» / «/staff» / «состав».
+async def _official_title(chat_id: int) -> Optional[str]:
+  """Название официальной группы. None — этот чат не официальный или база не ответила."""
+  try:
+    cid = int(chat_id)
+  except (TypeError, ValueError):
+    return None
+  if cid >= 0:
+    return None
+  pool = _db().pool
+  if not pool:
+    return None
+  try:
+    async with pool.acquire() as conn:
+      row = await conn.fetchrow(
+        "SELECT title FROM epsilon_official_groups WHERE chat_id = $1 AND is_official",
+        cid,
+      )
+  except Exception as e:
+    MuteDebug.error("ROSTER", "official lookup failed", e)
+    return None
+  if not row:
+    return None
+  return (row["title"] or "").strip() or "Эта группа"
 
-  Отправляет состав и запускает живое обновление статусов в реальном времени.
+
+async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
+  """Должности администраторов этой группы. None — база не ответила."""
+  pool = _db().pool
+  if not pool:
+    return None
+  try:
+    async with pool.acquire() as conn:
+      rows = await conn.fetch(
+        """
+        SELECT p.id, p.title, p.rank, p.rights,
+               s.user_id, u.username, u.first_name, u.display_name
+        FROM epsilon_positions p
+        LEFT JOIN epsilon_seats s
+          ON s.position_id = p.id AND s.chat_id = p.chat_id
+        LEFT JOIN users u ON u.user_id = s.user_id
+        WHERE p.chat_id = $1 AND p.kind = 'post'
+        ORDER BY p.rank DESC, p.id, s.user_id
+        """,
+        int(chat_id),
+      )
+  except Exception as e:
+    MuteDebug.error("ROSTER", "group posts failed", e)
+    return None
+  now = datetime.now(timezone.utc)
+  order: List[int] = []
+  by_id: Dict[int, dict] = {}
+  for row in rows:
+    pid = int(row["id"])
+    if pid not in by_id:
+      by_id[pid] = {
+        "title": row["title"] or "Должность",
+        "rank": int(row["rank"] or 0),
+        "rights": coerce_rights(row["rights"]),
+        "people": [],
+      }
+      order.append(pid)
+    if not row["user_id"]:
+      continue
+    uid = int(row["user_id"])
+    name = (row["display_name"] or row["first_name"] or "").strip()
+    username = row["username"] or ""
+    status, hint = _status_for(uid, None, now)
+    by_id[pid]["people"].append({
+      "html": _display_name_link(uid, name, username),
+      "status": status,
+      "hint": hint or "",
+    })
+  return [by_id[pid] for pid in order]
+
+
+async def _reply_group_roster(message: Message, *, edit: Optional[Message] = None, viewer: Optional[int] = None) -> None:
+  target = edit or message
+  viewer_id = viewer if viewer is not None else getattr(getattr(message, "from_user", None), "id", None)
+  title = await _official_title(target.chat.id)
+  posts = await _load_group_posts(target.chat.id) if title else []
+  if title is None or posts is None:
+    text = StaffRosterText.UNAVAILABLE
+    markup = None
+  else:
+    text = render_group_roster(title, posts)
+    markup = _markup_rows(group_roster_rows(int(viewer_id), posts)) if viewer_id else None
+  if edit is not None:
+    await _safe_edit(edit, text, reply_markup=markup)
+  else:
+    await _roster_safe_reply(message, text, reply_markup=markup)
+
+
+async def staff_roster(message: Message) -> None:
+  """«кто админ» в официальной группе показывает её администраторов.
+
+  В остальных чатах — персонал проекта, как раньше.
   """
+  title = await _official_title(message.chat.id)
+  if title is not None:
+    chat_id = message.chat.id
+    _roster_group_chats.add(chat_id)
+    _roster_paused.add(chat_id)
+    prev = _live_roster_tasks.get(chat_id)
+    if prev is not None and not prev.done():
+      prev.cancel()
+    await _reply_group_roster(message)
+    return
+  _roster_group_chats.discard(message.chat.id)
   sent, viewer, groups = await _handle_staff_roster_command(message)
   await _start_live_roster(sent, viewer, groups)
 
 
 async def staff_permissions(message: Message) -> None:
-  """Точка входа из main.py для команды «права админов» - обзор прав должностей."""
-  MuteDebug.log("FLOW", "staff permissions requested",
-                viewer=getattr(getattr(message, "from_user", None), "id", None))
+  """«права админов»: в официальной группе — права её должностей, иначе персонал проекта."""
+  viewer = getattr(getattr(message, "from_user", None), "id", None)
+  MuteDebug.log("FLOW", "staff permissions requested", viewer=viewer)
   try:
+    title = await _official_title(message.chat.id)
+    if title is not None:
+      posts = await _load_group_posts(message.chat.id)
+      if posts is None:
+        await _roster_safe_reply(message, StaffRosterText.UNAVAILABLE)
+        return
+      _roster_group_chats.add(message.chat.id)
+      _roster_paused.add(message.chat.id)
+      markup = _markup_rows(group_rights_rows(int(viewer))) if viewer else None
+      await _roster_safe_reply(message, render_group_rights(title, posts), reply_markup=markup)
+      return
     await _ensure_mute_schema()
     if not await _db().ensure_pool():
       await _roster_safe_reply(message, StaffRosterText.UNAVAILABLE)
@@ -6564,6 +6707,56 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
   MuteDebug.log("FLOW", "mute revoked via button", actor=clicker, target=target_id, status=status)
 
 
+async def _group_roster_button(callback: CallbackQuery, action: str, parts: list, viewer_id: int, title: Optional[str]) -> None:
+  """Кнопки состава группы. Нажимает только тот, кто открыл «кто админ»."""
+  chat_id = callback.message.chat.id
+  if action == "gstf":
+    groups, _ids = await _load_staff_groups()
+    if not groups:
+      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+      return
+    _roster_group_chats.add(chat_id)
+    _roster_paused.discard(chat_id)
+    await _safe_edit(
+      callback.message,
+      _render_roster(groups, live=False),
+      reply_markup=_build_roster_keyboard(groups, viewer_id, back_to_group=True),
+    )
+    await _start_live_roster(callback.message, viewer_id, groups)
+    await callback.answer()
+    return
+  if not title:
+    await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+    return
+  posts = await _load_group_posts(chat_id)
+  if posts is None:
+    await callback.answer(StaffPermsText.CB_UNAVAILABLE, show_alert=True)
+    return
+  _roster_paused.add(chat_id)
+  if action == "gperm":
+    if len(parts) < 4:
+      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+      return
+    try:
+      idx = int(parts[3])
+    except ValueError:
+      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+      return
+    if idx < 0 or idx >= len(posts):
+      await callback.answer(StaffPermsText.CB_STALE, show_alert=True)
+      return
+    text = render_group_rights(title, posts, only=idx)
+  elif action == "gall":
+    text = render_group_rights(title, posts)
+  else:
+    text = render_group_roster(title, posts)
+  markup = _markup_rows(
+    group_rights_rows(viewer_id) if action in {"gperm", "gall"} else group_roster_rows(viewer_id, posts)
+  )
+  await _safe_edit(callback.message, text, reply_markup=markup)
+  await callback.answer()
+
+
 @mute_router.callback_query(F.data.startswith("staff:"))
 async def staff_perms_callback(callback: CallbackQuery) -> None:
   """Кнопки под «кто админ»: показать права должности / обзор / вернуться к составу.
@@ -6592,6 +6785,17 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     return
 
   chat_id = callback.message.chat.id
+  official_title = await _official_title(chat_id)
+  official = official_title is not None
+  if official:
+    _roster_group_chats.add(chat_id)
+  else:
+    _roster_group_chats.discard(chat_id)
+
+  if action in {"gperm", "gall", "gback", "gadm", "gstf"}:
+    await _group_roster_button(callback, action, parts, viewer_id, official_title)
+    return
+
   try:
     await load_staff_rules()
   except Exception as e:
@@ -6616,7 +6820,7 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     _roster_paused.add(chat_id)
     await _safe_edit(
       callback.message, _role_perms_card(visible[idx]),
-      reply_markup=_perms_back_keyboard(viewer_id),
+      reply_markup=_perms_back_keyboard(viewer_id, back_to_group=official),
     )
     await callback.answer()
     return
@@ -6625,7 +6829,7 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     _roster_paused.add(chat_id)
     await _safe_edit(
       callback.message, _all_perms_card(),
-      reply_markup=_perms_back_keyboard(viewer_id),
+      reply_markup=_perms_back_keyboard(viewer_id, back_to_group=official),
     )
     await callback.answer()
     return
@@ -6641,7 +6845,7 @@ async def staff_perms_callback(callback: CallbackQuery) -> None:
     live = chat_id in _live_roster_tasks and not _live_roster_tasks[chat_id].done()
     await _safe_edit(
       callback.message, _render_roster(groups, live=live),
-      reply_markup=_build_roster_keyboard(groups, viewer_id),
+      reply_markup=_build_roster_keyboard(groups, viewer_id, back_to_group=official),
     )
     await callback.answer()
     return

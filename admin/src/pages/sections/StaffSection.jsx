@@ -68,6 +68,7 @@ import RightsSection from './RightsSection'
 import StaffAccessPane from './StaffAccessPane'
 import StaffPreviewPane from './StaffPreviewPane'
 import GroupApplicationsPane from './GroupApplicationsPane'
+import OfficialGroupsPane from './OfficialGroupsPane'
 import GroupPreviewPane from './GroupPreviewPane'
 import AccessKeySheet from '../../components/AccessKeySheet'
 import OwnKeyControl from '../../components/OwnKeyControl'
@@ -2127,6 +2128,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (isProjectCreator) staff.push({ id: 'stats', label: 'Статистика' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
+      group.push({ id: 'groups', label: 'Группы' })
       group.push({ id: 'posts', label: 'Должности' })
       if (canPreview) group.push({ id: 'view', label: 'Копия кабинета' })
       group.push({ id: 'apps', label: 'Заявки' })
@@ -2247,6 +2249,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
             </>
           )}
 
+          {onGroup && activeId === 'groups' && <OfficialGroupsPane />}
           {onGroup && activeId === 'posts' && (
             <div className="staff-posts">
               <RightsSection embedded office="group" onPreview={onOpenPreview} />
