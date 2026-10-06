@@ -2,9 +2,11 @@ from bot.admins.group_roster import (
     granted_lines,
     group_rights_rows,
     group_roster_rows,
+    highest_vacancy,
     render_group_rights,
     render_group_roster,
     staff_return_row,
+    stored_owner_name,
 )
 
 
@@ -42,6 +44,27 @@ def test_group_rights_follow_the_position_switches():
     assert "Наказания у этой должности выключены" in card
     assert "Банфулл" in card
     assert "весь проект" in card
+
+
+def test_the_highest_empty_post_is_the_only_one_filled_from_the_database():
+    posts = [
+        {"title": "Создатель группы", "rank": 5, "people": []},
+        {"title": "Администратор", "rank": 4, "people": [{"html": "Аня"}]},
+        {"title": "Хелпер", "rank": 1, "people": []},
+    ]
+    assert highest_vacancy(posts) == 0
+    occupied = [
+        {"title": "Создатель группы", "rank": 5, "people": [{"html": "Илья"}]},
+        {"title": "Хелпер", "rank": 1, "people": []},
+    ]
+    assert highest_vacancy(occupied) is None
+    assert highest_vacancy([]) is None
+    name, username = stored_owner_name("", "Илья", "@ilya", 15)
+    assert name == "Илья"
+    assert username == "ilya"
+    bare, no_user = stored_owner_name("", "", "", 15)
+    assert bare == "15"
+    assert no_user == ""
 
 
 def test_only_the_opener_is_named_in_the_buttons():

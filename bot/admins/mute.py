@@ -77,9 +77,11 @@ from bot.admins.group_roster import (
   coerce_rights,
   group_rights_rows,
   group_roster_rows,
+  highest_vacancy,
   render_group_rights,
   render_group_roster,
   staff_return_row,
+  stored_owner_name,
 )
 
 
@@ -3343,53 +3345,70 @@ async def _lookup_target_by_token(
     return None, None, None
   db = _db()
 
-  if token.startswith("https://t.me/"):
-    username = _normalize_username_token(token.replace("https://t.me/", "").split("/")[0])
+  from bot.admins.punish_validate import (
+    _identity_rules,
+    _stored_user,
+    ensure_punishment_profile,
+  )
+
+  async def _known_or_from_telegram(username: str):
     uid = await db.get_user_id_by_username(username)
     if uid:
       name = await db.get_firstname_by_user_id(uid)
+      if name and not _identity_rules().name_is_placeholder(name, int(uid)):
+        return await _confirm_lookup_user_id(
+          uid, name, username, source_chat_id=source_chat_id,
+        )
+      found = await ensure_punishment_profile(
+        int(uid), username=username, source_chat_id=source_chat_id,
+      )
+      if found:
+        return await _confirm_lookup_user_id(
+          found[0], found[1], found[2], source_chat_id=source_chat_id,
+        )
       return await _confirm_lookup_user_id(
         uid, name or username, username, source_chat_id=source_chat_id,
       )
+    found = await ensure_punishment_profile(
+      0, username=username, source_chat_id=source_chat_id,
+    )
+    if found:
+      MuteDebug.log("PARSE", "telegram profile saved before punishment", uid=found[0])
+      return found
     return None, None, username
+
+  if token.startswith("https://t.me/"):
+    username = _normalize_username_token(token.replace("https://t.me/", "").split("/")[0])
+    return await _known_or_from_telegram(username)
 
   if token.startswith("@"):
     username = _normalize_username_token(token)
-    uid = await db.get_user_id_by_username(username)
-    if uid:
-      name = await db.get_firstname_by_user_id(uid)
-      return await _confirm_lookup_user_id(
-        uid, name or username, username, source_chat_id=source_chat_id,
-      )
-    return None, None, username
+    return await _known_or_from_telegram(username)
 
   if token.isdigit():
     uid = int(token)
-    uid, name, username = await _confirm_lookup_user_id(
-      uid, None, None, source_chat_id=source_chat_id,
+    in_db, stored_name, stored_username = await _stored_user(uid)
+    if in_db and stored_name and not _identity_rules().name_is_placeholder(stored_name, uid):
+      return await _confirm_lookup_user_id(
+        uid, stored_name, stored_username, source_chat_id=source_chat_id,
+      )
+    found = await ensure_punishment_profile(
+      uid, source_chat_id=source_chat_id,
     )
-    if not uid:
+    if not found:
       return None, None, None
-    name = await db.get_firstname_by_user_id(uid)
-    if not name:
-      chat = await _safe_fetch_user_chat(uid)
-      if chat is not None:
-        name = (
-          getattr(chat, "full_name", None)
-          or getattr(chat, "first_name", None)
-        )
-    return uid, name or str(uid), None
+    if in_db:
+      return await _confirm_lookup_user_id(
+        found[0], found[1], found[2], source_chat_id=source_chat_id,
+      )
+    return found
 
   if _looks_like_telegram_username(token):
     username = _normalize_username_token(token)
-    uid = await db.get_user_id_by_username(username)
-    if uid:
-      name = await db.get_firstname_by_user_id(uid)
-      return await _confirm_lookup_user_id(
-        uid, name or username, username, source_chat_id=source_chat_id,
-      )
-    MuteDebug.log("PARSE", "username not in db", username=username)
-    return None, None, username
+    found_id, found_name, found_username = await _known_or_from_telegram(username)
+    if not found_id:
+      MuteDebug.log("PARSE", "username not in db", username=username)
+    return found_id, found_name, found_username
 
   users_map = await db.get_user_id_by_first_name(token)
   if users_map and len(users_map) == 1:
@@ -3452,6 +3471,18 @@ async def _resolve_reply_or_explicit(
           return target_id, target_name or str(target_id), target_username, body[1:], None
         return 0, "", None, body[1:], first
   u = reply_user
+  if not getattr(u, "is_bot", False):
+    from bot.admins.punish_validate import ensure_punishment_profile
+    found = await ensure_punishment_profile(
+      u.id,
+      first_name=u.first_name,
+      last_name=getattr(u, "last_name", None),
+      username=u.username,
+      source_chat_id=source_chat_id,
+      from_telegram=True,
+    )
+    if found:
+      return found[0], found[1], found[2], body, None
   return u.id, u.full_name or u.first_name or str(u.id), u.username, body, None
 
 
@@ -3472,6 +3503,18 @@ async def _resolve_target_from_entities(
     type_key = etype.value if hasattr(etype, "value") else str(etype)
     if type_key == "text_mention" and getattr(ent, "user", None):
       u = ent.user
+      if not getattr(u, "is_bot", False):
+        from bot.admins.punish_validate import ensure_punishment_profile
+        found = await ensure_punishment_profile(
+          u.id,
+          first_name=u.first_name,
+          last_name=getattr(u, "last_name", None),
+          username=u.username,
+          source_chat_id=source_chat_id,
+          from_telegram=True,
+        )
+        if found:
+          return found
       return (
         u.id,
         u.full_name or u.first_name or str(u.id),
@@ -3486,6 +3529,12 @@ async def _resolve_target_from_entities(
         return await _confirm_lookup_user_id(
           uid, name or username, username, source_chat_id=source_chat_id,
         )
+      from bot.admins.punish_validate import ensure_punishment_profile
+      found = await ensure_punishment_profile(
+        0, username=username, source_chat_id=source_chat_id,
+      )
+      if found:
+        return found
   return None, None, None
 
 
@@ -6412,10 +6461,25 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
   pool = _db().pool
   if not pool:
     return None
-  try:
-    async with pool.acquire() as conn:
-      rows = await conn.fetch(
+  rich = """
+        SELECT p.id, p.title, p.rank, p.rights,
+               s.user_id, u.username, u.first_name, u.display_name,
+               c.creator_id AS group_creator_id,
+               c.creator_name AS chat_creator_name,
+               c.creator_username AS chat_creator_username,
+               cu.username AS creator_username,
+               cu.first_name AS creator_first_name,
+               cu.display_name AS creator_display_name
+        FROM epsilon_positions p
+        LEFT JOIN epsilon_seats s
+          ON s.position_id = p.id AND s.chat_id = p.chat_id
+        LEFT JOIN users u ON u.user_id = s.user_id
+        LEFT JOIN chat c ON c.chat_id = p.chat_id
+        LEFT JOIN users cu ON cu.user_id = c.creator_id
+        WHERE p.chat_id = $1 AND p.kind = 'post'
+        ORDER BY p.rank DESC, p.id, s.user_id
         """
+  plain = """
         SELECT p.id, p.title, p.rank, p.rights,
                s.user_id, u.username, u.first_name, u.display_name
         FROM epsilon_positions p
@@ -6424,16 +6488,36 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
         LEFT JOIN users u ON u.user_id = s.user_id
         WHERE p.chat_id = $1 AND p.kind = 'post'
         ORDER BY p.rank DESC, p.id, s.user_id
-        """,
-        int(chat_id),
-      )
+        """
+  try:
+    async with pool.acquire() as conn:
+      rows = await conn.fetch(rich, int(chat_id))
   except Exception as e:
-    MuteDebug.error("ROSTER", "group posts failed", e)
-    return None
+    if "creator" not in str(e).lower():
+      MuteDebug.error("ROSTER", "group posts failed", e)
+      return None
+    try:
+      async with pool.acquire() as conn:
+        rows = await conn.fetch(plain, int(chat_id))
+    except Exception as e2:
+      MuteDebug.error("ROSTER", "group posts failed", e2)
+      return None
   now = datetime.now(timezone.utc)
   order: List[int] = []
   by_id: Dict[int, dict] = {}
+  owner_id: Optional[int] = None
+  owner_name = ""
+  owner_username = ""
   for row in rows:
+    keys = row.keys()
+    if owner_id is None and "group_creator_id" in keys and row["group_creator_id"]:
+      owner_id = int(row["group_creator_id"])
+      owner_name, owner_username = stored_owner_name(
+        row["creator_display_name"],
+        row["creator_first_name"] or row["chat_creator_name"],
+        row["creator_username"] or row["chat_creator_username"],
+        owner_id,
+      )
     pid = int(row["id"])
     if pid not in by_id:
       by_id[pid] = {
@@ -6454,7 +6538,16 @@ async def _load_group_posts(chat_id: int) -> Optional[List[dict]]:
       "status": status,
       "hint": hint or "",
     })
-  return [by_id[pid] for pid in order]
+  posts = [by_id[pid] for pid in order]
+  slot = highest_vacancy(posts)
+  if slot is not None and owner_id and owner_id > 0:
+    status, hint = _status_for(owner_id, None, now)
+    posts[slot]["people"].append({
+      "html": _display_name_link(owner_id, owner_name, owner_username),
+      "status": status,
+      "hint": hint or "",
+    })
+  return posts
 
 
 async def _reply_group_roster(message: Message, *, edit: Optional[Message] = None, viewer: Optional[int] = None) -> None:

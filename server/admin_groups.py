@@ -58,9 +58,10 @@ def parse_group_query(raw: str) -> Dict[str, Any]:
 async def _tg_api(method: str, **params) -> Dict[str, Any]:
     if not BOT_TOKEN:
         return {"ok": False, "description": "BOT_TOKEN не задан"}
+    timeout = float(params.pop("_timeout", 25) or 25)
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=25)) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
             async with session.post(url, json=params) as resp:
                 data = await resp.json(content_type=None)
                 return data if isinstance(data, dict) else {"ok": False, "description": "bad response"}
@@ -1354,6 +1355,66 @@ async def ensure_staff_action_span() -> bool:
     return True
 
 
+async def _remember_offender(user_id: int, chat_id: int) -> None:
+    """Перед наказанием из панели: если человека нет в Куте, берём имя из Telegram.
+
+    Ошибка Telegram наказание не отменяет: id уже известен, блокировка идёт дальше.
+    """
+    if int(user_id) <= 0:
+        return
+    try:
+        from cute_identity import (
+            ADOPT_USER_SQL,
+            needs_telegram_profile,
+            person_from_chat_member,
+            person_from_telegram_chat,
+            person_from_user_fields,
+        )
+    except Exception:
+        return
+    try:
+        row = await db.pool.fetchrow(
+            "SELECT first_name FROM users WHERE user_id = $1",
+            int(user_id),
+        )
+    except Exception:
+        return
+    in_db = row is not None
+    first = row["first_name"] if row else ""
+    if not needs_telegram_profile(in_db, first, int(user_id)):
+        return
+    person = None
+    chat = await _tg_api("getChat", chat_id=int(user_id), _timeout=6)
+    if chat.get("ok"):
+        person = person_from_telegram_chat(chat.get("result") or {})
+    if person is None and int(chat_id) < 0:
+        member = await _tg_api(
+            "getChatMember",
+            chat_id=int(chat_id),
+            user_id=int(user_id),
+            _timeout=6,
+        )
+        if member.get("ok"):
+            person = person_from_chat_member(member.get("result") or {})
+        else:
+            detail = str(member.get("description") or "").upper()
+            if "PARTICIPANT_ID_INVALID" in detail or "USER_ID_INVALID" in detail:
+                return
+            if "USER_NOT_PARTICIPANT" in detail:
+                person = person_from_user_fields(int(user_id), None, None, None)
+    if person is None:
+        return
+    try:
+        await db.pool.execute(
+            ADOPT_USER_SQL,
+            int(person["user_id"]),
+            person["first_name"],
+            person.get("username"),
+        )
+    except Exception:
+        return
+
+
 async def moderate_action(
     *,
     chat_id: int,
@@ -1389,6 +1450,9 @@ async def moderate_action(
     action = aliases.get(action, action)
     cid, uid = int(chat_id), int(user_id)
     reason = (reason or "")[:200]
+    lifts = {"unmute", "unvoice", "unmuteall", "unban", "unbanall", "bot_unban"}
+    if action not in lifts:
+        await _remember_offender(uid, cid)
     from group_realm import telegram_hold_seconds
     until = telegram_hold_seconds(until_sec)
     until_date = int(datetime.now().timestamp()) + until if until > 0 else None

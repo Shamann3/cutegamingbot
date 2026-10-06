@@ -82,6 +82,34 @@ def _clip(text: str, limit: int = 28) -> str:
     return clean[: limit - 1] + "…"
 
 
+def highest_vacancy(posts: list[dict]) -> Optional[int]:
+    """Индекс самой высокой должности, если на этом ранге ещё никого нет.
+
+    Занятый верхний ранг не трогаем: вакансии ниже остаются вакансиями.
+    """
+    if not posts:
+        return None
+    top = max(int(post.get("rank") or 0) for post in posts)
+    indexes = [i for i, post in enumerate(posts) if int(post.get("rank") or 0) == top]
+    if any(post.get("people") for i, post in enumerate(posts) if i in indexes):
+        return None
+    return indexes[0]
+
+
+def stored_owner_name(
+    display_name: Any,
+    first_name: Any,
+    username: Any,
+    user_id: int,
+) -> tuple[str, str]:
+    """Имя создателя группы из уже лежащих в базе полей, без запроса в Telegram."""
+    name = " ".join(str(display_name or "").split()) or " ".join(str(first_name or "").split())
+    uname = str(username or "").strip().lstrip("@")
+    if not name:
+        name = f"@{uname}" if uname else str(int(user_id))
+    return name, uname
+
+
 def render_group_roster(group_title: str, posts: list[dict], *, stamp: str = "") -> str:
     """Дерево должностей этой группы. Пустая должность видна как вакансия."""
     diamond, custom = _DIAMOND

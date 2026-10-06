@@ -203,6 +203,185 @@ def invalid_numeric_target_token(body: list[str]) -> Optional[str]:
   return None
 
 
+def _identity_rules():
+  import sys
+  from pathlib import Path
+  server = Path(__file__).resolve().parents[2] / "server"
+  folder = str(server)
+  if folder not in sys.path:
+    sys.path.insert(0, folder)
+  import cute_identity
+  return cute_identity
+
+
+def _database():
+  from bot.admins.mute import _db
+  return _db()
+
+
+def _person_from_telegram_object(obj: Any, *, private_only: bool) -> Optional[dict]:
+  """Имя и username с объекта aiogram. Чужой чат человеком не считается."""
+  if obj is None:
+    return None
+  if private_only:
+    chat_type = getattr(obj, "type", None)
+    type_key = chat_type.value if hasattr(chat_type, "value") else str(chat_type or "")
+    if type_key != "private":
+      return None
+  rules = _identity_rules()
+  return rules.person_from_user_fields(
+    getattr(obj, "id", None),
+    getattr(obj, "first_name", None),
+    getattr(obj, "last_name", None),
+    getattr(obj, "username", None),
+    is_bot=bool(getattr(obj, "is_bot", False)),
+  )
+
+
+async def _stored_user(user_id: int) -> Tuple[bool, str, Optional[str]]:
+  if user_id <= 0:
+    return False, "", None
+  db = _database()
+  pool = getattr(db, "pool", None)
+  if pool is None and hasattr(db, "ensure_pool"):
+    try:
+      await db.ensure_pool()
+    except Exception:
+      return False, "", None
+    pool = getattr(db, "pool", None)
+  if pool is None:
+    return False, "", None
+  try:
+    row = await pool.fetchrow(
+      "SELECT first_name, username FROM users WHERE user_id = $1",
+      int(user_id),
+    )
+  except Exception:
+    return False, "", None
+  if not row:
+    return False, "", None
+  return True, (row["first_name"] or ""), (row["username"] or None)
+
+
+async def _adopt_person(person: dict) -> None:
+  rules = _identity_rules()
+  db = _database()
+  pool = getattr(db, "pool", None)
+  if pool is None and hasattr(db, "ensure_pool"):
+    await db.ensure_pool()
+    pool = getattr(db, "pool", None)
+  if pool is None:
+    return
+  await pool.execute(
+    rules.ADOPT_USER_SQL,
+    int(person["user_id"]),
+    person["first_name"],
+    person.get("username"),
+  )
+
+
+async def describe_telegram_user(
+  user_id: int,
+  *,
+  source_chat_id: Optional[int] = None,
+) -> Optional[dict]:
+  """Имя из Telegram: личный getChat, затем участник текущего и официальных чатов."""
+  if user_id <= 0:
+    return None
+  bot = _bot()
+  chat = None
+  try:
+    chat = await bot.get_chat(user_id)
+  except Exception as e:
+    if is_invalid_telegram_user_error(e):
+      return None
+  if chat is not None:
+    person = _person_from_telegram_object(chat, private_only=True)
+    if person and not _identity_rules().name_is_placeholder(person["first_name"], user_id):
+      return person
+  not_participant = False
+  for cid in probe_chat_ids(source_chat_id):
+    member, err = await inspect_chat_member(cid, user_id)
+    if err == "invalid_user":
+      return None
+    if err == "not_participant":
+      not_participant = True
+      continue
+    if member is None:
+      continue
+    person = _person_from_telegram_object(getattr(member, "user", None), private_only=False)
+    if person:
+      return person
+  if chat is not None:
+    named = _person_from_telegram_object(chat, private_only=True)
+    if named:
+      return named
+  if not_participant:
+    return _identity_rules().person_from_user_fields(user_id, None, None, None)
+  return None
+
+
+async def describe_telegram_username(username: str) -> Optional[dict]:
+  rules = _identity_rules()
+  clean = rules.normalize_username(username)
+  if not clean:
+    return None
+  try:
+    chat = await _bot().get_chat(f"@{clean}")
+  except Exception:
+    return None
+  return _person_from_telegram_object(chat, private_only=True)
+
+
+async def ensure_punishment_profile(
+  user_id: int,
+  *,
+  first_name: Optional[str] = None,
+  last_name: Optional[str] = None,
+  username: Optional[str] = None,
+  source_chat_id: Optional[int] = None,
+  from_telegram: bool = False,
+) -> Optional[Tuple[int, str, Optional[str]]]:
+  """Строка users перед наказанием.
+
+  Если человека нет в Куте, имя берётся из Telegram и записывается.
+  Уже известное имя не перезаписывается и Telegram повторно не спрашивается.
+  None — Telegram такого пользователя не знает, писать в базу некого.
+  """
+  rules = _identity_rules()
+  uid = int(user_id or 0)
+  in_db, stored_name, stored_username = await _stored_user(uid)
+  passed_username = rules.normalize_username(username) or stored_username
+  if in_db and not rules.needs_telegram_profile(True, stored_name, uid):
+    return uid, stored_name, passed_username or None
+
+  handed = None
+  if from_telegram and uid > 0:
+    handed = rules.person_from_user_fields(
+      uid, first_name, last_name, username, is_bot=False,
+    )
+  person = None
+  if handed and not rules.name_is_placeholder(handed["first_name"], uid):
+    person = handed
+  elif uid > 0:
+    person = await describe_telegram_user(uid, source_chat_id=source_chat_id)
+  elif username:
+    person = await describe_telegram_username(username)
+
+  if person is None and handed is not None:
+    person = handed
+  if person is None:
+    if in_db:
+      label = " ".join(str(stored_name or "").split()) or str(uid)
+      return uid, label, passed_username or None
+    return None
+  try:
+    await _adopt_person(person)
+  except Exception:
+    pass
+  return int(person["user_id"]), person["first_name"], person.get("username") or passed_username
+
+
 async def reject_invalid_target_reply(
   message: Any,
   user_id: int,

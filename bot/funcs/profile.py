@@ -880,7 +880,7 @@ async def _try_find_users_by_first_name(db, first_name_text: str):
 
 async def _send_multiple_found_users(message: Message, db, users_dict: dict):
     if not users_dict:
-        await message.reply("<b>😔 Не удалось найти пользователя</b>", parse_mode="HTML")
+        await message.reply("<b>😔 Этого пользователя нет в нашем боте</b>", parse_mode="HTML")
         return
 
     if len(users_dict) == 1:
@@ -1892,6 +1892,26 @@ def _resolve_reply_target_user_id(message: Message) -> Optional[int]:
     return None
 
 
+# Поиск «кто ты» только по базе Кута. Человека из Telegram сюда не подтягиваем
+# и строку users не создаём: если его нет в боте, так и пишем.
+NOT_IN_BOT_HTML = "<b>😔 Этого пользователя нет в нашем боте</b>"
+
+
+async def _cute_profile_exists(db, user_id: int) -> bool:
+    pool = getattr(db, "pool", None)
+    if pool is None:
+        return True
+    try:
+        found = await pool.fetchval(
+            "SELECT 1 FROM users WHERE user_id = $1",
+            int(user_id),
+        )
+    except Exception as e:
+        _who_dbg(f"Не удалось проверить пользователя {user_id} в базе: {e}")
+        return True
+    return found is not None
+
+
 async def get_user_who_are_you(message: Message, db):
     text = _normalize_spaces(message.text or "")
     lower_text = text.lower().strip()
@@ -1939,7 +1959,7 @@ async def get_user_who_are_you(message: Message, db):
         if found_id:
             await get_user_information_in_who_are_you(message, db, found_id)
             return
-        await message.reply("<b>😔 Не удалось найти пользователя по этому @username</b>", parse_mode="HTML")
+        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
         return
 
     # Ссылка t.me
@@ -1950,7 +1970,7 @@ async def get_user_who_are_you(message: Message, db):
         if found_id:
             await get_user_information_in_who_are_you(message, db, found_id)
             return
-        await message.reply("<b>😔 Не удалось найти пользователя по этой ссылке</b>", parse_mode="HTML")
+        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
         return
 
     # Поиск по имени / username-like
@@ -1979,7 +1999,7 @@ async def get_user_who_are_you(message: Message, db):
             await get_user_information_in_who_are_you(message, db, found_id)
             return
 
-    await message.reply("<b>😔 Не удалось найти пользователя</b>", parse_mode="HTML")
+    await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
 
 
 # =========================================================
@@ -1988,6 +2008,9 @@ async def get_user_who_are_you(message: Message, db):
 async def get_user_information_in_who_are_you(message: Message, db, target_group_id: int):
     user_id = int(target_group_id)
     viewer_id = int(message.from_user.id)
+    if not await _cute_profile_exists(db, user_id):
+        await message.reply(NOT_IN_BOT_HTML, parse_mode="HTML")
+        return
 
     try:
         caption = await _build_profile_caption_for_target(
