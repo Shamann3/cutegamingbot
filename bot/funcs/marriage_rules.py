@@ -17,6 +17,7 @@ from bot.funcs.marriage_design import (
     FREE_WEDDINGS,
     HELP_TAIL,
     LEAVE_WORDS,
+    LIST_WORDS,
     OFF_WORDS,
     ON_WORDS,
     PROFILE_EMPTY,
@@ -175,6 +176,26 @@ def tone_after(points: Any, day: Any, today: date, decay: int, gain: int, since:
     return min(100, current + max(0, int(gain))), today
 
 
+def tone_brief(points: Any, day: Any, today: date, decay: int, gain: int) -> dict:
+    """Число на сегодня и одна фраза, что сделает ближайший жест."""
+    score = tone_score(points, day, today, decay)
+    nxt, _day = tone_after(points, day, today, decay, gain)
+    anchor = _as_date(day)
+    if anchor is None or anchor == today:
+        hint = "Сегодня уже учтён. Завтра жест снова поднимет."
+        fresh = False
+    else:
+        hint = f"Один жест сегодня поднимет до {nxt}."
+        fresh = True
+    return {
+        "score": score,
+        "label": tone_label(score),
+        "hint": hint,
+        "fresh": fresh,
+        "next": nxt,
+    }
+
+
 def tone_label(score: int) -> str:
     value = max(0, min(100, int(score)))
     if value >= 80:
@@ -283,8 +304,12 @@ def verb_list() -> str:
     return " · ".join(item["verbs"][0] for item in RP)
 
 
-def shares_general_rp(item: dict) -> bool:
-    return any(verb in SHARED_WITH_GENERAL_RP for verb in item.get("verbs") or ())
+def shares_general_rp(item: dict, verb: str = "") -> bool:
+    """Общее рп забирает только свои старые слова, не короткие формы брака."""
+    said = str(verb or "")
+    if said:
+        return said in SHARED_WITH_GENERAL_RP
+    return any(word in SHARED_WITH_GENERAL_RP for word in item.get("verbs") or ())
 
 
 def rp_by_id(verb_id: str) -> Optional[dict]:
@@ -296,7 +321,7 @@ def rp_by_id(verb_id: str) -> Optional[dict]:
 
 
 def match_rp(text: str) -> Optional[tuple]:
-    """(жест, приписка) если сообщение начинается с жеста пары."""
+    """(жест, слово, приписка) если сообщение начинается с жеста пары."""
     raw = " ".join(str(text or "").lower().split())
     if not raw or len(raw) > 200:
         return None
@@ -310,8 +335,8 @@ def match_rp(text: str) -> Optional[tuple]:
                 found = (item, verb, note)
     if found is None:
         return None
-    item, _verb, note = found
-    return item, _clip(note)
+    item, verb, note = found
+    return item, verb, _clip(note)
 
 
 def _tail(text: str, verb: str) -> Optional[str]:
@@ -343,31 +368,44 @@ def rp_html(item: dict, a_html: str, b_html: str, note: str = "") -> str:
     return body
 
 
+def _phrase(raw: str, words) -> Optional[str]:
+    """Пустая строка — фраза равна команде. Иначе хвост. None — не она."""
+    for word in sorted(words, key=len, reverse=True):
+        if raw == word:
+            return ""
+        if raw.startswith(word + " "):
+            return raw[len(word) + 1:].strip()
+    return None
+
+
 def classify(text: str) -> Optional[dict]:
     """Что это за фраза. None — бот брака её не берёт."""
     raw = " ".join(str(text or "").lower().split())
     if not raw or len(raw) > 200:
         return None
-    if raw in ON_WORDS:
+    if _phrase(raw, ON_WORDS) is not None:
         return {"kind": "on"}
-    if raw in OFF_WORDS:
+    if _phrase(raw, OFF_WORDS) is not None:
         return {"kind": "off"}
-    if raw in CARD_WORDS or raw in TONE_WORDS:
-        return {"kind": "card"}
-    if raw in LEAVE_WORDS:
+    if _phrase(raw, LEAVE_WORDS) is not None:
         return {"kind": "leave"}
-    if raw in TOP_WORDS:
+    if _phrase(raw, CARD_WORDS) is not None:
+        return {"kind": "card"}
+    if _phrase(raw, TONE_WORDS) is not None:
+        return {"kind": "tone"}
+    if _phrase(raw, TOP_WORDS) is not None:
         return {"kind": "top"}
-    parts = raw.split(" ", 1)
-    head, tail = parts[0], (parts[1] if len(parts) > 1 else "")
-    if head in WED_WORDS:
+    if _phrase(raw, LIST_WORDS) is not None:
+        return {"kind": "list"}
+    tail = _phrase(raw, WED_WORDS)
+    if tail is not None:
         if tail.split(" ", 1)[0] in HELP_TAIL:
             return None
         return {"kind": "wed", "tail": tail}
     hit = match_rp(raw)
     if hit is not None:
-        item, note = hit
-        return {"kind": "rp", "rp": item, "note": note}
+        item, verb, note = hit
+        return {"kind": "rp", "rp": item, "note": note, "verb": verb}
     return None
 
 

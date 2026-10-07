@@ -697,8 +697,7 @@ def describe_tone(live: Optional[dict], today, decay: int, tone_on: bool = True)
         decay,
         live.get("live_at"),
     )
-    label = tone_label(score)
-    return f"Тонус: {label}. Один жест в сутки его держит, день без жеста снижает."
+    return f"Тонус {score} · {tone_label(score)}"
 
 
 async def load_profile(pool, user_id: int) -> Optional[dict]:
@@ -715,13 +714,14 @@ async def load_profile(pool, user_id: int) -> Optional[dict]:
     cfg = await load_settings(pool)
     tone = ""
     if cfg.get("toneOn") and live.get("id"):
-        tone = tone_label(tone_score(
+        score = tone_score(
             live.get("tone_points") if live.get("tone_points") is not None else cfg.get("toneStart", 80),
             live.get("tone_day"),
             datetime.now(_MSK).date(),
             int(cfg.get("toneDecay") or 0),
             live.get("live_at"),
-        ))
+        )
+        tone = f"тонус {score}"
     return {
         "name_html": found.get(other) or person_html(other, "игрок", ""),
         "since": live.get("live_at"),
@@ -735,7 +735,7 @@ async def top_pairs(pool, chat_id: int, limit: int) -> list:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT payer_id, partner_id, live_at
+            SELECT payer_id, partner_id, live_at, tone_points, tone_day
             FROM marriage_book
             WHERE state = 'live' AND chat_id = $1 AND live_at IS NOT NULL
             ORDER BY live_at ASC
@@ -761,6 +761,8 @@ async def top_pairs(pool, chat_id: int, limit: int) -> list:
             "a": int(row["payer_id"]),
             "b": int(row["partner_id"]),
             "since": row["live_at"],
+            "tone_points": row["tone_points"],
+            "tone_day": row["tone_day"],
         })
     for row in old_rows:
         key = pair_key(row["user_id1"], row["user_id2"])
@@ -771,6 +773,8 @@ async def top_pairs(pool, chat_id: int, limit: int) -> list:
             "a": int(row["user_id1"]),
             "b": int(row["user_id2"]),
             "since": as_aware(row["datetime"]),
+            "tone_points": None,
+            "tone_day": None,
         })
     out.sort(key=lambda item: as_aware(item["since"]) or datetime.max.replace(tzinfo=timezone.utc))
     return out[: int(limit)]

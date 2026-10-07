@@ -15,7 +15,6 @@ from bot.funcs import marriage_store as store
 from bot.funcs.marriage_design import (
     ALERT_BUSY,
     ALERT_CLOSED,
-    ALERT_EXPIRED,
     ALERT_NO_MARRIAGE,
     ALERT_OFF,
     ALERT_NOT_INVITED,
@@ -27,27 +26,33 @@ from bot.funcs.marriage_design import (
     ALERT_TILL_RP,
     ALREADY_THEM,
     ALREADY_YOU,
+    BOT,
+    BTN_BACK,
     BTN_CARD_LEAVE,
+    BTN_GEST,
     BTN_LEAVE,
+    BTN_LIST,
+    BTN_MINE,
     BTN_NO,
+    BTN_SKIP,
     BTN_STAY,
     BTN_STOP,
+    BTN_TONE,
+    BTN_TOP,
     BTN_YES,
-    BOT,
     BUSY,
-    CARD,
     CREATOR_ONLY,
-    DOVE,
     EXPIRED,
-    GONE,
+    HEART,
     LEAVE_ASK,
     LEAVE_OK,
     LEAVE_THEM,
+    LIST_ROW,
+    LIST_TITLE,
     NEED_REPLY,
+    NO_ID,
     NOT_FOUND,
     NOT_MARRIED,
-    NO,
-    HEART,
     OFF,
     OFF_ALREADY,
     OFF_OK,
@@ -60,24 +65,31 @@ from bot.funcs.marriage_design import (
     PROPOSAL_MINUTES,
     PROPOSE_FREE,
     PROPOSE_PAID,
+    RED_ID,
     REFUSED,
-    RING,
+    RP,
+    RP_DONE,
     RP_NEED_WED,
     RP_ONLY_PAIR,
     RP_PAY_ASK,
     RP_POOR,
     RP_TOMORROW,
     SELF,
+    SKIP_OK,
     STAY_OK,
     STOPPED,
     TILL_CLOSED,
+    TONE_OLD,
     TOP_EMPTY,
     TOP_LIMIT,
     TOP_ROW,
     TOP_TITLE,
     WED_OK_FREE,
     WED_OK_PAID,
+    card_text,
     pay_label,
+    tone_text,
+    verb_button,
 )
 from bot.funcs.marriage_rules import (
     MSK,
@@ -88,7 +100,9 @@ from bot.funcs.marriage_rules import (
     shares_general_rp,
     as_aware,
     together_label,
-    verb_list,
+    tone_brief,
+    tone_label,
+    tone_score,
     verb_price,
     wedding_date,
     wedding_price,
@@ -123,9 +137,16 @@ async def current_help_text() -> str:
 
 
 def _fill(tmpl: str, **vals) -> str:
-    base = {"ring": RING, "dove": DOVE, "no": NO, "heart": HEART}
+    base = {"heart": HEART}
     base.update(vals)
     return tmpl.format(**base)
+
+
+def _btn(text: str, data: str, style: str = "default", icon: str = "") -> InlineKeyboardButton:
+    kwargs = {"text": text, "callback_data": data, "style": style}
+    if icon:
+        kwargs["icon_custom_emoji_id"] = icon
+    return InlineKeyboardButton(**kwargs)
 
 
 _CLEAR = InlineKeyboardMarkup(inline_keyboard=[])
@@ -134,29 +155,87 @@ _CLEAR = InlineKeyboardMarkup(inline_keyboard=[])
 def _kb_ask(book_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text=BTN_YES, callback_data=f"mrg:yes:{book_id}"),
-            InlineKeyboardButton(text=BTN_NO, callback_data=f"mrg:no:{book_id}"),
+            _btn(BTN_NO, f"mrg:no:{book_id}", "danger", NO_ID),
+            _btn(BTN_YES, f"mrg:yes:{book_id}", "success", RED_ID),
         ],
-        [InlineKeyboardButton(text=BTN_STOP, callback_data=f"mrg:stop:{book_id}")],
+        [_btn(BTN_STOP, f"mrg:stop:{book_id}", "primary")],
     ])
 
 
-def _kb_card(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=BTN_CARD_LEAVE, callback_data=f"mrg:warn:{token}"),
-    ]])
+def _kb_card(token: str, tone_on: bool, leave: bool = True) -> InlineKeyboardMarkup:
+    rows = [[
+        _btn(verb_button("hug"), f"mrg:act:hug:{token}", "primary", RED_ID),
+        _btn(verb_button("kiss"), f"mrg:act:kiss:{token}", "primary"),
+    ]]
+    if tone_on:
+        rows.append([
+            _btn(BTN_TONE, f"mrg:tone:{token}", "default"),
+            _btn(BTN_GEST, f"mrg:gest:{token}", "primary"),
+        ])
+    else:
+        rows.append([_btn(BTN_GEST, f"mrg:gest:{token}", "primary")])
+    if leave:
+        rows.append([_btn(BTN_CARD_LEAVE, f"mrg:warn:{token}", "danger", NO_ID)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _kb_leave(token: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=BTN_STAY, callback_data=f"mrg:stay:{token}"),
-        InlineKeyboardButton(text=BTN_LEAVE, callback_data=f"mrg:leave:{token}"),
+        _btn(BTN_STAY, f"mrg:stay:{token}", "success", RED_ID),
+        _btn(BTN_LEAVE, f"mrg:leave:{token}", "danger", NO_ID),
     ]])
 
 
 def _kb_pay(verb_id: str, amount: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn(pay_label(amount), f"mrg:pay:{verb_id}", "success", RED_ID)],
+        [_btn(BTN_SKIP, f"mrg:skip:{verb_id}", "default")],
+    ])
+
+
+def _kb_back() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=pay_label(amount), callback_data=f"mrg:pay:{verb_id}"),
+        _btn(BTN_BACK, "mrg:mine:0", "default"),
+    ]])
+
+
+def _kb_tone(token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_btn(verb_button("hug"), f"mrg:act:hug:{token}", "primary", RED_ID)],
+        [_btn(BTN_BACK, "mrg:mine:0", "default")],
+    ])
+
+
+def _kb_gest(token: str, cfg: dict) -> InlineKeyboardMarkup:
+    rows = []
+    row = []
+    for item in RP:
+        if item["id"] in ("hug", "kiss"):
+            continue
+        price = verb_price(item, cfg)
+        row.append(_btn(
+            verb_button(item["id"], price),
+            f"mrg:act:{item['id']}:{token}",
+            "primary",
+        ))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _kb_roster(kind: str) -> InlineKeyboardMarkup:
+    other = (
+        _btn(BTN_LIST, "mrg:list:0", "primary")
+        if kind == "top"
+        else _btn(BTN_TOP, "mrg:top:0", "primary")
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        _btn(BTN_MINE, "mrg:mine:0", "default"),
+        other,
     ]])
 
 
@@ -195,17 +274,23 @@ async def _on_text(message) -> bool:
     if name == "card":
         await _card(message)
         return True
+    if name == "tone":
+        await _tone(message)
+        return True
     if name == "leave":
         await _leave_ask(message)
         return True
     if name == "top":
-        await _top(message)
+        await _roster(message, "top")
+        return True
+    if name == "list":
+        await _roster(message, "list")
         return True
     if name == "wed":
         await _wed(message, kind.get("tail") or "")
         return True
     if name == "rp":
-        return await _rp(message, kind["rp"], kind.get("note") or "")
+        return await _rp(message, kind["rp"], kind.get("note") or "", kind.get("verb") or "")
     return False
 
 
@@ -310,6 +395,7 @@ async def _wed(message, tail: str) -> None:
             PROPOSE_FREE,
             a=a, b=b,
             which=which_wedding(done),
+            free=int(cfg.get("freeWeddings") or 0),
             minutes=minutes,
         )
     else:
@@ -356,28 +442,74 @@ def _arm(bot, chat_id: int, message_id: int, book_id: int, minutes: int) -> None
 
 async def _card(message) -> None:
     pool = _pool()
-    live = await store.live_for(pool, message.from_user.id)
-    if not live:
+    cfg = await _cfg()
+    screen = await _screen(pool, message.from_user, cfg)
+    if screen is None:
         await _reply(message, _fill(NOT_MARRIED))
         return
-    uid = int(message.from_user.id)
+    text, markup, _live = screen
+    await _reply(message, text, markup)
+
+
+async def _tone(message) -> None:
+    pool = _pool()
+    cfg = await _cfg()
+    view = await _tone_screen(pool, message.from_user, cfg)
+    if view is None:
+        live = await store.live_for(pool, message.from_user.id)
+        if not live:
+            await _reply(message, _fill(NOT_MARRIED))
+            return
+        if not live.get("id"):
+            await _reply(message, _fill(TONE_OLD))
+            return
+        await _card(message)
+        return
+    text, markup = view
+    await _reply(message, text, markup)
+
+
+async def _screen(pool, user, cfg):
+    live = await store.live_for(pool, user.id)
+    if not live:
+        return None
+    uid = int(user.id)
     other = _other(live, uid)
     found = await store.names(pool, [uid, other])
-    a = found.get(uid) or person_html(uid, message.from_user.first_name or "", message.from_user.username or "")
+    a = found.get(uid) or person_html(uid, getattr(user, "first_name", "") or "", getattr(user, "username", "") or "")
     b = found.get(other) or person_html(other, "игрок")
     when = live.get("live_at") or datetime.now(MSK)
-    cfg = await _cfg()
-    tone = store.describe_tone(live, datetime.now(MSK).date(), int(cfg.get("toneDecay") or 0), bool(cfg.get("toneOn", True)))
-    text = _fill(
-        CARD,
-        a=a, b=b,
-        span=together_label(when, datetime.now(MSK)),
-        date=wedding_date(when),
-        verbs=verb_list(),
-        tone=tone or "Жест раз в сутки пишется ответом на сообщение пары.",
+    tone_on = bool(cfg.get("toneOn", True)) and bool(live.get("id"))
+    tone = ""
+    if tone_on:
+        tone = store.describe_tone(
+            live, datetime.now(MSK).date(), int(cfg.get("toneDecay") or 0), True,
+        )
+    text = card_text(
+        a, b,
+        together_label(when, datetime.now(MSK)),
+        wedding_date(when),
+        tone,
     )
     token = str(live["id"]) if live.get("id") else "old"
-    await _reply(message, text, _kb_card(token))
+    return text, _kb_card(token, tone_on), live
+
+
+async def _tone_screen(pool, user, cfg):
+    if not cfg.get("toneOn", True):
+        return None
+    live = await store.live_for(pool, user.id)
+    if not live or not live.get("id"):
+        return None
+    today = datetime.now(MSK).date()
+    brief = tone_brief(
+        live.get("tone_points") if live.get("tone_points") is not None else int(cfg.get("toneStart") or 80),
+        live.get("tone_day"),
+        today,
+        int(cfg.get("toneDecay") or 0),
+        int(cfg.get("toneGain") or 0),
+    )
+    return tone_text(brief["score"], brief["label"], brief["hint"]), _kb_tone(str(live["id"]))
 
 
 async def _leave_ask(message) -> None:
@@ -396,7 +528,7 @@ async def _leave_ask(message) -> None:
     )
 
 
-async def _top(message) -> None:
+async def _roster(message, kind: str) -> None:
     if not _group(message):
         await _reply(message, _fill(PRIVATE, minutes=PROPOSAL_MINUTES))
         return
@@ -405,34 +537,43 @@ async def _top(message) -> None:
         await _reply(message, _fill(OFF))
         return
     cfg = await _cfg()
-    rows = await store.top_pairs(pool, message.chat.id, int(cfg.get("topLimit") or TOP_LIMIT))
+    text = await _roster_text(pool, message.chat.id, cfg, kind)
+    await _reply(message, text, _kb_roster(kind))
+
+
+async def _roster_text(pool, chat_id: int, cfg: dict, kind: str) -> str:
+    rows = await store.top_pairs(pool, chat_id, int(cfg.get("topLimit") or TOP_LIMIT))
     if not rows:
-        await _reply(message, _fill(TOP_EMPTY))
-        return
+        return _fill(TOP_EMPTY)
     ids = []
     for row in rows:
         ids.extend((row["a"], row["b"]))
     found = await store.names(pool, ids)
     now = datetime.now(MSK)
-    lines = [_fill(TOP_TITLE)]
+    today = now.date()
+    lines = [_fill(TOP_TITLE if kind == "top" else LIST_TITLE)]
+    show_tone = kind == "list" and bool(cfg.get("toneOn", True))
     for i, row in enumerate(rows, start=1):
         span = together_label(row["since"], now)
         if span != "вместе":
             span = f"вместе {span}"
-        lines.append(TOP_ROW.format(
-            n=i,
-            a=found.get(row["a"]) or person_html(row["a"], "игрок"),
-            b=found.get(row["b"]) or person_html(row["b"], "игрок"),
-            span=span,
-        ))
-    await _reply(message, "\n".join(lines))
+        a = found.get(row["a"]) or person_html(row["a"], "игрок")
+        b = found.get(row["b"]) or person_html(row["b"], "игрок")
+        if show_tone and row.get("tone_points") is not None:
+            score = tone_score(
+                row.get("tone_points"), row.get("tone_day"), today, int(cfg.get("toneDecay") or 0),
+            )
+            lines.append(LIST_ROW.format(n=i, a=a, b=b, meta=f"{span} · тонус {score}"))
+        else:
+            lines.append(TOP_ROW.format(n=i, a=a, b=b, span=span))
+    return "\n".join(lines)
 
 
-async def _touch_tone(pool, live, cfg) -> None:
+async def _touch_tone(pool, live, cfg):
     if not cfg.get("toneOn") or not live or not live.get("id"):
-        return
+        return None
     try:
-        await store.add_tone(
+        return await store.add_tone(
             pool,
             int(live["id"]),
             datetime.now(MSK).date(),
@@ -440,10 +581,24 @@ async def _touch_tone(pool, live, cfg) -> None:
             int(cfg.get("toneGain") or 0),
         )
     except Exception:
-        return
+        return None
 
 
-async def _rp(message, item: dict, note: str) -> bool:
+def _tone_after_line(live, cfg, score) -> str:
+    today = datetime.now(MSK).date()
+    brief = tone_brief(
+        live.get("tone_points") if live.get("tone_points") is not None else int(cfg.get("toneStart") or 80),
+        live.get("tone_day"),
+        today,
+        int(cfg.get("toneDecay") or 0),
+        int(cfg.get("toneGain") or 0),
+    )
+    if not brief["fresh"]:
+        return f"Тонус {int(score)} · сегодня уже учтён"
+    return f"Тонус {int(score)} · {tone_label(int(score))}"
+
+
+async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
     if not _group(message):
         return False
     cfg = await _cfg()
@@ -456,30 +611,30 @@ async def _rp(message, item: dict, note: str) -> bool:
         return False
     pool = _pool()
     if not cfg.get("enabled", True):
-        if shares_general_rp(item):
+        if shares_general_rp(item, verb):
             return False
         await _reply(message, _fill(PROJECT_OFF))
         return True
     if not await store.chat_enabled(pool, message.chat.id):
-        if shares_general_rp(item):
+        if shares_general_rp(item, verb):
             return False
         await _reply(message, _fill(OFF))
         return True
     live = await store.live_for(pool, message.from_user.id)
     if not live:
-        if shares_general_rp(item):
+        if shares_general_rp(item, verb):
             return False
         await _reply(message, _fill(RP_NEED_WED))
         return True
     other = _other(live, int(message.from_user.id))
     if int(target.id) != other:
-        if shares_general_rp(item):
+        if shares_general_rp(item, verb):
             return False
         await _reply(message, _fill(RP_ONLY_PAIR))
         return True
     day = datetime.now(MSK).date()
     if await store.rp_taken(pool, message.from_user.id, other, item["id"], day, limit):
-        await _reply(message, RP_TOMORROW.format(dove=DOVE, title=item["verbs"][0]))
+        await _reply(message, _fill(RP_TOMORROW, title=verb_button(item["id"])))
         return True
     price = int(item.get("price") or 0)
     if price > 0:
@@ -491,23 +646,20 @@ async def _rp(message, item: dict, note: str) -> bool:
             return True
         await _reply(
             message,
-            RP_PAY_ASK.format(
-                emoji=item["emoji"],
-                title=item["verbs"][0],
-                price=_kut(price),
-                dove=DOVE,
-                button=pay_label(_kut(price)),
-            ),
+            _fill(RP_PAY_ASK, title=verb_button(item["id"]), price=_kut(price)),
             _kb_pay(item["id"], _kut(price)),
         )
         return True
     if not await store.mark_rp(pool, message.from_user.id, other, item["id"], day, limit):
-        await _reply(message, RP_TOMORROW.format(dove=DOVE, title=item["verbs"][0]))
+        await _reply(message, _fill(RP_TOMORROW, title=verb_button(item["id"])))
         return True
-    await _touch_tone(pool, live, cfg)
+    score = await _touch_tone(pool, live, cfg)
     a = await _html(pool, message.from_user)
     b = await _html(pool, target)
-    await _reply(message, rp_html(item, a, b, note))
+    text = rp_html(item, a, b, note)
+    if score is not None:
+        text += "\n" + RP_DONE.format(tone=_tone_after_line(live, cfg, score))
+    await _reply(message, text)
     return True
 
 
@@ -520,6 +672,28 @@ async def _dispatch(query) -> None:
     action, token = parts[1], parts[2]
     user_id = int(query.from_user.id)
     pool = _pool()
+    if action == "act":
+        if len(parts) < 4:
+            await query.answer()
+            return
+        await _on_act(query, parts[2], parts[3], user_id, pool)
+        return
+    if action == "skip":
+        await query.answer()
+        await _edit(query, _fill(SKIP_OK), _kb_back())
+        return
+    if action == "mine":
+        await _on_mine(query, pool)
+        return
+    if action == "tone":
+        await _on_tone_btn(query, token, user_id, pool)
+        return
+    if action == "gest":
+        await _on_gest(query, token, user_id, pool)
+        return
+    if action in ("list", "top"):
+        await _on_roster_btn(query, action, pool)
+        return
     if action in ("yes", "no", "stop"):
         await _on_ask(query, action, int(token), user_id, pool)
         return
@@ -533,6 +707,121 @@ async def _dispatch(query) -> None:
         await _on_pay(query, token, user_id, pool)
         return
     await query.answer()
+
+
+async def _on_mine(query, pool) -> None:
+    cfg = await _cfg()
+    screen = await _screen(pool, query.from_user, cfg)
+    if screen is None:
+        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    text, markup, _live = screen
+    await query.answer()
+    await _edit(query, text, markup)
+
+
+async def _on_tone_btn(query, token: str, user_id: int, pool) -> None:
+    live = await store.live_for(pool, user_id)
+    if not live or not _owns(live, token, user_id):
+        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    cfg = await _cfg()
+    view = await _tone_screen(pool, query.from_user, cfg)
+    if view is None:
+        await query.answer()
+        if not live.get("id"):
+            await _edit(query, _fill(TONE_OLD), _kb_back())
+            return
+        screen = await _screen(pool, query.from_user, cfg)
+        if screen is None:
+            return
+        text, markup, _row = screen
+        await _edit(query, text, markup)
+        return
+    text, markup = view
+    await query.answer()
+    await _edit(query, text, markup)
+
+
+async def _on_gest(query, token: str, user_id: int, pool) -> None:
+    live = await store.live_for(pool, user_id)
+    if not live or not _owns(live, token, user_id):
+        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    cfg = await _cfg()
+    await query.answer()
+    await _edit(
+        query,
+        _fill("{heart} <b>Жест паре</b>\n<i>Один и тот же — раз в сутки. Другой сегодня можно.</i>"),
+        _kb_gest(token, cfg),
+    )
+
+
+async def _on_roster_btn(query, kind: str, pool) -> None:
+    message = getattr(query, "message", None)
+    if message is None or not _group(message):
+        await query.answer()
+        await _edit(query, _fill(PRIVATE))
+        return
+    if not await store.chat_enabled(pool, message.chat.id):
+        await query.answer()
+        await _edit(query, _fill(OFF))
+        return
+    cfg = await _cfg()
+    text = await _roster_text(pool, message.chat.id, cfg, kind)
+    await query.answer()
+    await _edit(query, text, _kb_roster(kind))
+
+
+async def _on_act(query, verb_id: str, token: str, user_id: int, pool) -> None:
+    item = rp_by_id(verb_id)
+    if item is None:
+        await query.answer()
+        return
+    live = await store.live_for(pool, user_id)
+    if not live or not _owns(live, token, user_id):
+        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    cfg = await _cfg()
+    item = dict(item)
+    item["price"] = verb_price(item, cfg)
+    other = _other(live, user_id)
+    limit = int(cfg.get("rpPerDay") or 1)
+    day = datetime.now(MSK).date()
+    if await store.rp_taken(pool, user_id, other, item["id"], day, limit):
+        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        return
+    price = int(item.get("price") or 0)
+    if price > 0 and not cfg.get("enabled", True):
+        await query.answer(ALERT_OFF, show_alert=True)
+        return
+    if price > 0:
+        have = await _db().get_user_balance(user_id)
+        if have is None or int(have) < price:
+            await query.answer()
+            await _edit(query, _fill(
+                RP_POOR, title=verb_button(item["id"]), price=_kut(price), have=_kut(have or 0),
+            ), _kb_back())
+            return
+        await query.answer()
+        await _edit(
+            query,
+            _fill(RP_PAY_ASK, title=verb_button(item["id"]), price=_kut(price)),
+            _kb_pay(item["id"], _kut(price)),
+        )
+        return
+    if not await store.mark_rp(pool, user_id, other, item["id"], day, limit):
+        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        return
+    score = await _touch_tone(pool, live, cfg)
+    names = await store.names(pool, [user_id, other])
+    a = names.get(user_id) or person_html(user_id, query.from_user.first_name or "", query.from_user.username or "")
+    b = names.get(other) or person_html(other, "игрок")
+    text = rp_html(item, a, b)
+    if score is not None:
+        text += "\n" + RP_DONE.format(tone=_tone_after_line(live, cfg, score))
+    await query.answer()
+    await _edit(query, text, _kb_back())
 
 
 async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
@@ -616,7 +905,7 @@ async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
     b = names.get(partner) or person_html(partner, "игрок")
     text = _fill(WED_OK_FREE, a=a, b=b) if price <= 0 else _fill(WED_OK_PAID, a=a, b=b, price=_kut(price))
     await query.answer()
-    await _edit(query, text)
+    await _edit(query, text, _kb_card(str(book_id), bool(cfg.get("toneOn", True)), leave=False))
 
 
 def _owns(live: dict, token: str, user_id: int) -> bool:
@@ -649,8 +938,10 @@ async def _on_leave(query, action: str, token: str, user_id: int, pool) -> None:
         return
     other = _other(live, user_id)
     if action == "stay":
+        kept = str(live["id"]) if live.get("id") else "old"
+        cfg = await _cfg()
         await query.answer()
-        await _edit(query, _fill(STAY_OK))
+        await _edit(query, _fill(STAY_OK), _kb_card(kept, bool(cfg.get("toneOn", True)) and kept != "old"))
         return
     if live.get("id"):
         await store.finish(pool, int(live["id"]), "left")
@@ -713,12 +1004,15 @@ async def _on_pay(query, verb_id: str, user_id: int, pool) -> None:
         return
     if price > 0:
         await store.note_money(pool, "rp", user_id, price, int(live.get("chat_id") or 0))
-    await _touch_tone(pool, live, cfg)
+    score = await _touch_tone(pool, live, cfg)
     names = await store.names(pool, [user_id, other])
     a = names.get(user_id) or person_html(user_id, query.from_user.first_name or "", query.from_user.username or "")
     b = names.get(other) or person_html(other, "игрок")
+    text = rp_html(item, a, b)
+    if score is not None:
+        text += "\n" + RP_DONE.format(tone=_tone_after_line(live, cfg, score))
     await query.answer()
-    await _edit(query, rp_html(item, a, b))
+    await _edit(query, text, _kb_back())
 
 
 async def _take(bot, user_id: int, price: int, chat_id: int, cause: str) -> str:
