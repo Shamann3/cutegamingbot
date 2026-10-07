@@ -280,6 +280,12 @@ const Pay = () => (
   </Icon>
 )
 
+const Relations = () => (
+  <Icon>
+    <path d="M12 19s-6.2-3.7-6.2-8.1A3.4 3.4 0 0 1 12 8.2a3.4 3.4 0 0 1 6.2 2.7C18.2 15.3 12 19 12 19z" />
+  </Icon>
+)
+
 const More = () => (
   <Icon>
     <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
@@ -302,6 +308,7 @@ export const NAV_ICONS = {
   switches: Settings,
   more: More,
   users: Players,
+  marriages: Relations,
   accounts: Accounts,
   economy: Economy,
   market: Market,

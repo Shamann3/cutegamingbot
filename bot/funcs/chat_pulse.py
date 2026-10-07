@@ -128,7 +128,7 @@ def _when_html(last: str) -> str:
         and text[:2].isdigit()
         and text[3:].isdigit()
     ):
-        return f"<code>{text}</code>"
+        return f"{text}"
     return escape(text)
 
 
@@ -140,8 +140,8 @@ def pulse_block(last: str, day: int, week: int, month: int, total: int) -> str:
     """
     return (
         f"{DOVE} <b>Последняя активность : {_when_html(last)}</b>\n"
-        f"{BOOK} <b>Today {compact_count(day)} · Week {compact_count(week)}"
-        f" · Month {compact_count(month)} · All {compact_count(total)}</b>"
+        f"{BOOK} <b>Д {compact_count(day)} | Н {compact_count(week)}"
+        f" | М {compact_count(month)} | Все {compact_count(total)} соо</b>"
     )
 
 

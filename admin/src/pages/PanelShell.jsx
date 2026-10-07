@@ -32,6 +32,7 @@ import GroupsStudioSection from './sections/GroupsStudioSection'
 import NikaSection from './sections/NikaSection'
 import PrGroupsSection from './sections/PrGroupsSection'
 import GamesSection from './sections/GamesSection'
+import MarriageSection from './sections/MarriageSection'
 import NikaCrisisStrip from '../components/NikaCrisisStrip'
 import SoftRestartSection from './sections/SoftRestartSection'
 import AchievementsSection from './sections/AchievementsSection'
@@ -420,6 +421,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
 
   const isDashboard = section === 'dashboard'
   const isUsers = section === 'users'
+  const isMarriages = section === 'marriages'
   const isAccounts = section === 'accounts'
   const isEconomy = section === 'economy'
   const isMarket = section === 'market'
@@ -592,6 +594,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                           ? ' panel-layout-logs'
                           : isAnalytics
                             ? ' panel-layout-analytics'
+                            : isMarriages
+                              ? ' panel-layout-analytics'
                             : isSettings
                               ? ' panel-layout-settings'
                               : isEvents
@@ -652,6 +656,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           )}
 
           {isDashboard && <DashboardSection />}
+          {isMarriages && <MarriageSection />}
           {isUsers && (
             <UsersSection
               initialUserId={usersInitialId}
@@ -803,7 +808,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isGroupGuard && showCreator && <GroupGuardDesk />}
           {isSoftRestart && showCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

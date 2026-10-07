@@ -23,6 +23,10 @@ export const PANEL_SECTIONS = [
     blurb: 'Поиск игроков, профиль, баланс, предметы, баны и правки аккаунта.',
   },
   {
+    id: 'marriages', label: 'Relations', labelRu: 'Отношения', group: 'people', permission: 'manage_marriages',
+    blurb: 'Браки: кто вместе, сколько кут ушло и все цены, тонус и жесты.',
+  },
+  {
     id: 'accounts', label: 'Accounts', labelRu: 'Пользователи', group: 'people', permission: 'view_accounts',
     blurb: 'Чувствительный список аккаунтов: регистрации, связки и обзор базы.',
   },
@@ -156,6 +160,7 @@ export const SECTION_HINTS = {
   work: 'Чужие наказания: ответить и передать дальше',
   groupGuard: 'Правила чатов и исключения',
   users: 'Найти человека и открыть карточку',
+  marriages: 'Браки, тонус и цены',
   accounts: 'Список аккаунтов',
   moderation: 'Прошлые наказания',
   economy: 'Цены и деньги игры',

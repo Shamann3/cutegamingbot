@@ -483,20 +483,8 @@ ffunc = f'''
 <blockquote><code>Снять [сумма снятия]</code></blockquote>
 '''
 
-brak = f'''
-<b>🌹 Браки</b>
-
-❤️ <b><i>Создание брака</i></b>
-<code>Брак [в ответ на текст пользователя]</code>
-
-💋 <b><i>Информация о своем браке</i></b>
-<code>Мой брак</code> 
-
-💔 <b><i>Развод с пользователем</i></b> 
-<code>Развод</code> 
-
-❤️‍🔥 <b><i>Любовь - это сила, которая преображает мир.</i></b> 
-    '''
+from bot.funcs.marriage_design import help_page as _marriage_help_page
+brak = _marriage_help_page()
 
 texteditprofile = f'''
 <b>🩵 Оформление профиля</b>
@@ -795,13 +783,18 @@ async def help(message: Message):
     user_message_ffunc.save()
 
 
-    if message.text.lower() in [ "Хелп брак","хелп брак","брак хелп","брак хелп","Браки хелп","браки хелп","хелп браки","Хелп браки","Хелп/брак","хелп/брак","брак/хелп","брак/хелп","Браки/хелп","браки/хелп","хелп/браки","Хелп/браки"]:
+    if message.text.lower() in [ "Хелп брак","хелп брак","брак хелп","брак хелп","Браки хелп","браки хелп","хелп браки","Хелп браки","Хелп/брак","хелп/брак","брак/хелп","брак/хелп","Браки/хелп","браки/хелп","хелп/браки","Хелп/браки","хелп отношения","отношения хелп","хелп/отношения","отношения/хелп"]:
         user_id = message.from_user.id
         # Создаем кнопку "_" и клавиатуру
         button = InlineKeyboardButton(text=" " , callback_data="brak", style="default" ,
                 icon_custom_emoji_id="5226660202035554522")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ button ] ])
-        sent_messagetextbrak = await message.reply(brak, reply_markup=keyboard, parse_mode="HTML")
+        try:
+            from bot.funcs.marriage_live import current_help_text
+            brak_page = await current_help_text()
+        except Exception:
+            brak_page = brak
+        sent_messagetextbrak = await message.reply(brak_page, reply_markup=keyboard, parse_mode="HTML")
 
         user_message_brak [ user_id ] = sent_messagetextbrak.message_id
     user_message_brak.save()
@@ -832,6 +825,26 @@ async def admin_help_callback(call: types.CallbackQuery):
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             pass  # ack уже отправлен в начале обработчика - не дублируем answer()
+
+@dp.callback_query(lambda c: c.data == 'help_btnrel')
+async def relations_help_callback(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    if not _help_owner_guard(user_id, message_id):
+        await _help_reject_intruder(call)
+        return
+    try:
+        await call.answer()
+        from bot.funcs.marriage_live import current_help_text
+        await call.message.edit_text(
+            text=await current_help_text(),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_help,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
 
 @dp.callback_query(lambda c: c.data.startswith('9help_editprofile'))
 async def qwehelp_editprofile(call: types.CallbackQuery):

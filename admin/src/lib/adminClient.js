@@ -2765,3 +2765,11 @@ export async function copyStatSeason(body) {
 export async function clearStatSeason(body) {
   return adminFetch('/stat-board/season', { method: 'DELETE', body })
 }
+
+export async function fetchMarriageBoard(period = 'week') {
+  return adminFetch(`/marriages/board?period=${encodeURIComponent(period)}`)
+}
+
+export async function saveMarriageSettings(body) {
+  return adminFetch('/marriages/settings', { method: 'POST', body })
+}

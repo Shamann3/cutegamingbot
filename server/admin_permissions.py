@@ -56,6 +56,7 @@ ALL_PERMISSIONS = {
     "manage_content",
     "manage_broadcast",
     "manage_events",
+    "manage_marriages",        # браки: цены, тонус и аналитика
     "manage_settings",
     "manage_security",
     # Стафф
@@ -88,6 +89,7 @@ PERMISSIONS_BY_ROLE = {
         "set_salary",
         "pay_salary",
         "manage_appeals",
+        "manage_marriages",
     },
     ROLE_JUNIOR: {
         "view_players",

@@ -79,8 +79,9 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'bot.tggames.soccer',
 )
 
-# prefix -> (module, handler): 387
+# prefix -> (module, handler): 388
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
+    'mrg:': ('bot.funcs.marriage_live', 'dispatch'),
     'prg:': ('bot.handlers.pr_groups', 'dispatch_pr_callback'),
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
@@ -242,6 +243,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'finish_battle': ('bot.buisnesses.clan_filter', 'process_finish_battle'),
     'gift_confirm|': ('main', 'gift_confirm_callback'),
     'help_btnadmin': ('bot.funcs.help', 'admin_help_callback'),
+    'help_btnrel': ('bot.funcs.help', 'relations_help_callback'),
     'helpstarthelp': ('main', 'callback_top'),
     'induel_create': ('bot.design.induel', 'induel_create_game_callback'),
     'inlinechange:': ('bot.design.schahinline', 'change_piece_callback'),

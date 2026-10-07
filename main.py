@@ -34702,7 +34702,13 @@ async def add_firstname_to_usercheck_balance(message: Message):
         #    print("Это пользовательская команда!")
     from bot.handlers.commands1 import kiss, rp_commands
     _mes_lower = (message.text or "").lower()
-    if _mes_lower.startswith(tuple(rp_commands)):
+    _marriage_took = False
+    try:
+        from bot.funcs.marriage_live import on_text as _marriage_on_text
+        _marriage_took = await _marriage_on_text(message)
+    except Exception:
+        _marriage_took = False
+    if not _marriage_took and _mes_lower.startswith(tuple(rp_commands)):
         await kiss(message)
     # timezone support
     try:

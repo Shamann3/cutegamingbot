@@ -75,12 +75,11 @@ def test_pulse_block_is_two_lines_with_the_given_premium_emoji():
     assert "Последний актив" not in text
     assert "Актив (" not in text
     assert "Последняя активность : только что" in text
-    assert "Today 242 · Week 2,3k · Month 10,9k · All 61k" in text
+    assert "Д 242 | Н 2,3k | М 10,9k | Все 61k соо" in text
     assert text.count("\n") == 1
     clock = pulse_block("21:00", 4, 4, 4, 4)
-    assert "Последняя активность : <code>21:00</code>" in clock
+    assert "Последняя активность : 21:00" in clock
     yesterday = pulse_block("вчера", 0, 1, 1, 1)
-    assert "<code>" not in yesterday
     assert "Последняя активность : вчера" in yesterday
 
 

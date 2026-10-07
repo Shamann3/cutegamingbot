@@ -949,12 +949,15 @@ async def _profile_collect_state_for_render(
 ) -> Dict[str, Any]:
     # Счёт сообщений этой группы читается параллельно с профилем — без лишнего ожидания.
     pulse_task = asyncio.ensure_future(_profile_load_chat_pulse(db, chat_id, user_id))
+    marriage_task = asyncio.ensure_future(_profile_load_marriage_line(db, user_id))
     try:
         bundle = await db.fetch_profile_render_bundle(user_id)
     except BaseException:
         pulse_task.cancel()
+        marriage_task.cancel()
         raise
     chat_pulse = await pulse_task
+    marriage_line = await marriage_task
     if bundle:
         country_text = country_dict.get(bundle.get("country_emoji", ""), "Неизвестная страна")
         growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
@@ -967,6 +970,7 @@ async def _profile_collect_state_for_render(
             "growth_fund_contributed": growth_fund_contributed,
             "growth_fund_milestone": growth_fund_milestone,
             "chat_pulse": chat_pulse,
+            "marriage_line": marriage_line,
         }
 
     async def _safe_db_call(fn, default=None, tag: str = "PROFILE-STATE"):
@@ -1054,8 +1058,25 @@ async def _profile_collect_state_for_render(
         "growth_fund_contributed": growth_fund_contributed,
         "growth_fund_milestone": growth_fund_milestone,
         "chat_pulse": chat_pulse,
+        "marriage_line": marriage_line,
         "is_banned": bool(is_banned),
     }
+
+
+async def _profile_load_marriage_line(db, user_id: int) -> str:
+    """Строка брака под активностью. Сбой или пустая книга — пустая строка, профиль жив."""
+    try:
+        pool = getattr(db, "pool", None)
+        if pool is None:
+            return ""
+        from bot.funcs.marriage_rules import profile_line
+        from bot.funcs.marriage_store import load_profile
+        view = await load_profile(pool, int(user_id))
+        if view is None:
+            return ""
+        return profile_line(view)
+    except Exception:
+        return ""
 
 
 async def _profile_load_chat_pulse(db, chat_id: int, user_id: int):
@@ -1106,6 +1127,9 @@ def _profile_fund_and_pulse(
             )
         except Exception:
             pulse_html = ""
+    marriage_line = str(state.get("marriage_line") or "").strip()
+    if marriage_line:
+        pulse_html = (pulse_html + "\n" + marriage_line).strip() if pulse_html else marriage_line
     if pulse_html and fund_parts:
         return "\n".join(fund_parts) + "\n\n" + pulse_html + "\n"
     if pulse_html:

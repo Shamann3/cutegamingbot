@@ -1895,3 +1895,56 @@ html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sideb
 .panel-sidebar-mobile-open {
   z-index: 420 !important;
 }
+
+.mrg-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 16px;
+  margin: 8px 0 18px;
+}
+
+.mrg-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.mrg-form label em {
+  font-style: normal;
+  opacity: 0.62;
+  font-size: 12px;
+}
+
+.mrg-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.mrg-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.mrg-ladder {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+  margin: 8px 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.mrg-ladder li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}

@@ -104,6 +104,7 @@ PANEL_SECTION_DEFS: list[dict] = [
         ],
     },
     {"id": "events", "label": "Ивенты", "group": "content", "permissions": ["manage_events"]},
+    {"id": "marriages", "label": "Отношения", "group": "people", "permissions": ["manage_marriages"]},
     {"id": "broadcast", "label": "Рассылка", "group": "content", "permissions": ["manage_broadcast"]},
     {
         "id": "staff",

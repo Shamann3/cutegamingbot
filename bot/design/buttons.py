@@ -297,6 +297,12 @@ btn_helpking = InlineKeyboardButton(text="Царь статы", callback_data="h
 btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_editprofile")
 
 btn_help5123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
+btn_help_rel = InlineKeyboardButton(
+    text="Отношения",
+    callback_data="help_btnrel",
+    style="default",
+    icon_custom_emoji_id="5388870246243274946",
+)
 btn_help_farm = InlineKeyboardButton(
     text="Ферма",
     url=farm_url(),
@@ -316,6 +322,7 @@ inline_keyboard = [
     [btn_help5],
     [btn_help_farm],
     [btn_help5123],
+    [btn_help_rel],
     #[btn_help4],
     # [btn_help6],  # Разкомментируйте, если нужно,
     [btn_help11]
@@ -361,6 +368,7 @@ inline_keyboard = [
     [btn_help59],
     [btn_help_farm],
     [btn_help5123123],
+    [btn_help_rel],
     #[btn_help49],
     # [btn_help69],  # Разкомментируйте, если нужно
     [btn_help119]
@@ -407,6 +415,7 @@ inline_keyboard = [
     [btn_market_inline],
     [btn_help_farm],
     [btn_help5123123123],
+    [btn_help_rel],
     #[btn_marriages_inline],
     [btn_hide_inline]
 ]
