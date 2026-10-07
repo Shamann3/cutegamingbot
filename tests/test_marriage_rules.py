@@ -12,7 +12,9 @@ from bot.funcs.marriage_design import (
     BTN_NO,
     BTN_STAY,
     BTN_STOP,
+    BTN_GEST,
     BTN_TONE,
+    BTN_WHAT,
     BTN_YES,
     LEAVE_ASK,
     PROPOSE_FREE,
@@ -21,6 +23,7 @@ from bot.funcs.marriage_design import (
     card_text,
     help_page,
     pay_label,
+    spark_level,
 )
 from bot.funcs.marriage_live import _kb_ask, _kb_card, _kb_leave
 from bot.funcs.marriage_rules import (
@@ -31,6 +34,10 @@ from bot.funcs.marriage_rules import (
     shares_general_rp,
     together_label,
     tone_after,
+    add_spark_care,
+    each_share,
+    level_of,
+    settle_spark,
     tone_brief,
     tone_label,
     tone_score,
@@ -141,8 +148,10 @@ def test_help_page_uses_the_same_numbers_as_the_ladder():
     assert leave[0].text == BTN_STAY and leave[0].style == "success"
     assert leave[1].text == BTN_LEAVE and leave[1].style == "danger"
     card_kb = _kb_card("7", True).inline_keyboard
+    assert card_kb[0][0].text == BTN_GEST and card_kb[0][0].style == "primary"
     assert card_kb[1][0].text == BTN_TONE and card_kb[1][0].style == "default"
-    assert card_kb[2][0].text == BTN_CARD_LEAVE and card_kb[2][0].style == "danger"
+    assert card_kb[2][0].text == BTN_WHAT and card_kb[2][0].style == "default"
+    assert card_kb[-1][0].text == BTN_CARD_LEAVE and card_kb[-1][0].style == "danger"
     assert pay_label("15") == "Списать 15 кут"
     for popup in (ALERT_BUSY, ALERT_CLOSED, ALERT_EXPIRED, ALERT_NOT_INVITED, ALERT_NOT_PAYER, ALERT_TILL):
         assert len(popup) <= 200
@@ -181,3 +190,201 @@ def test_settings_change_the_price_and_tone_stays_one_day():
     assert broken["proposalMinutes"] == 1440
     assert broken["verbs"] == {"hug": 40}
     assert "тонус" in help_page(custom).lower()
+    assert "искра" in help_page(custom).lower()
+
+
+def test_spark_needs_both_people_and_can_be_saved():
+    msk = timezone(timedelta(hours=3))
+    assert each_share(10) == 5
+    assert level_of(0)["name"] == "Знакомство"
+    assert level_of(3)["name"] == "Тепло"
+    assert level_of(3)["goal"] == 16
+    morning = datetime(2026, 10, 7, 10, 0, tzinfo=msk)
+    afternoon = datetime(2026, 10, 7, 13, 0, tzinfo=msk)
+    closed = {
+        "spark_days": 2,
+        "spark_day": date(2026, 10, 6),
+        "care_payer": 5,
+        "care_partner": 5,
+    }
+    rolled = settle_spark(closed, morning, 12)
+    assert rolled["state"]["spark_days"] == 3
+    assert rolled["state"]["spark_day"] == date(2026, 10, 7)
+    assert rolled["state"]["care_payer"] == 0
+    assert rolled["state"]["care_partner"] == 0
+    assert rolled["level"]["name"] == "Тепло"
+    assert rolled["need"] == 8
+    short = {
+        "spark_days": 3,
+        "spark_day": date(2026, 10, 6),
+        "care_payer": 8,
+        "care_partner": 1,
+    }
+    fading = settle_spark(short, morning, 12)
+    assert fading["fading"]
+    assert fading["state"]["spark_days"] == 3
+    assert fading["clock"] == "12:00"
+    one = add_spark_care(short, "payer", 10, morning, 12)
+    assert not one["saved"]
+    assert one["state"]["care_partner"] == 1
+    both = add_spark_care(one["state"], "partner", 7, morning, 12)
+    assert both["saved"]
+    assert both["state"]["spark_days"] == 4
+    assert both["state"]["care_payer"] == 10
+    assert both["state"]["care_partner"] == 0
+    assert both["state"]["spark_day"] == date(2026, 10, 7)
+    dead = settle_spark(short, afternoon, 12)
+    assert dead["state"]["spark_days"] == 0
+    assert dead["state"]["care_payer"] == 0
+    assert dead["lost"] == 3
+    assert dead["level"]["name"] == "Знакомство"
+    assert classify("искра")["kind"] == "tone"
+
+
+def test_spare_stays_and_burns_one_share_each_day():
+    from bot.funcs.marriage_design import spark_home
+
+    msk = timezone(timedelta(hours=3))
+    morning = datetime(2026, 10, 7, 10, 0, tzinfo=msk)
+    bank = settle_spark({
+        "spark_days": 0,
+        "spark_day": date(2026, 10, 5),
+        "care_payer": 20,
+        "care_partner": 20,
+    }, morning, 12)
+    assert bank["state"]["spark_days"] == 2
+    assert bank["state"]["spark_day"] == date(2026, 10, 7)
+    assert bank["state"]["care_payer"] == 10
+    assert bank["state"]["care_partner"] == 10
+    later = datetime(2026, 10, 8, 10, 0, tzinfo=msk)
+    burned = settle_spark(bank["state"], later, 12)
+    assert burned["state"]["spark_days"] == 3
+    assert burned["state"]["care_payer"] == 5
+    assert burned["need"] == 8
+    assert burned["level"]["name"] == "Тепло"
+    grown = settle_spark({
+        "spark_days": 6,
+        "spark_day": date(2026, 10, 5),
+        "care_payer": 30,
+        "care_partner": 30,
+    }, datetime(2026, 10, 8, 10, 0, tzinfo=msk), 12)
+    assert grown["state"]["spark_days"] == 9
+    assert grown["state"]["care_payer"] == 0
+    assert grown["level"]["name"] == "Близость"
+    uneven = settle_spark({
+        "spark_days": 0,
+        "spark_day": date(2026, 10, 6),
+        "care_payer": 20,
+        "care_partner": 5,
+    }, morning, 12)
+    assert uneven["state"]["spark_days"] == 1
+    assert uneven["state"]["care_payer"] == 15
+    assert uneven["state"]["care_partner"] == 0
+    fade = settle_spark(uneven["state"], later, 12)
+    assert fade["fading"]
+    assert fade["state"]["spark_days"] == 1
+    assert fade["state"]["care_payer"] == 15
+    dead = settle_spark(uneven["state"], datetime(2026, 10, 8, 13, 0, tzinfo=msk), 12)
+    assert dead["state"]["spark_days"] == 0
+    assert dead["state"]["care_payer"] == 0
+    page = spark_home("А", "Б", "1 день", "", bank, 10, 10, "Б")
+    assert "Запас: ты 5" in page
+
+
+def test_custom_levels_drive_the_spark_and_drop_bad_rows():
+    custom = settings_view({
+        "levels": [
+            {"name": "Искра", "days": 5, "goal": 4},
+            {"name": "<Пламя>", "days": 5, "goal": -3},
+            {"name": "", "days": 0, "goal": 8},
+        ]
+    })
+    rows = custom["levels"]
+    assert [row["days"] for row in rows] == [0, 5, 6]
+    assert rows[0]["name"] == "Уровень 1"
+    assert rows[0]["goal"] == 8
+    assert rows[1]["name"] == "Искра"
+    assert rows[1]["goal"] == 4
+    assert rows[2]["name"] == "Пламя"
+    assert rows[2]["goal"] == 2
+    assert "<" not in rows[2]["name"]
+    assert level_of(0, custom)["name"] == "Уровень 1"
+    assert level_of(5, custom)["name"] == "Искра"
+    assert level_of(6, custom)["goal"] == 2
+    fresh = settings_view({"levels": []})
+    assert fresh["levels"][0]["name"] == "Знакомство"
+    assert fresh["levels"][0]["goal"] == 10
+    junk = settings_view({"levels": [{"name": "x" * 40, "days": -9, "goal": 9999}, "nope", {"days": "a"}]})
+    assert junk["levels"][0]["days"] == 0
+    assert len(junk["levels"][0]["name"]) == 24
+    assert junk["levels"][0]["goal"] == 500
+    assert len(junk["levels"]) == 2
+    assert junk["levels"][1]["days"] == 1
+    wide = settings_view({"levels": [{"name": str(i), "days": i, "goal": 4} for i in range(15)]})
+    assert len(wide["levels"]) == 12
+    msk = timezone(timedelta(hours=3))
+    morning = datetime(2026, 10, 7, 10, 0, tzinfo=msk)
+    cfg = settings_view({"levels": [
+        {"name": "Тихо", "days": 0, "goal": 4},
+        {"name": "Громко", "days": 2, "goal": 20},
+    ]})
+    rolled = settle_spark({
+        "spark_days": 1,
+        "spark_day": date(2026, 10, 6),
+        "care_payer": 2,
+        "care_partner": 2,
+    }, morning, 12, cfg)
+    assert rolled["state"]["spark_days"] == 2
+    assert rolled["level"]["name"] == "Громко"
+    assert rolled["need"] == 10
+    assert rolled["table"][0]["name"] == "Тихо"
+    page = help_page(cfg)
+    assert "Тихо" in page
+    assert "по 2" in page
+    screen = spark_level(rolled)
+    assert "Громко" in screen
+    assert "Знакомство" not in screen
+
+
+def test_gifts_help_only_your_half_and_stack_in_the_bag():
+    from bot.funcs.marriage_design import GIFT_ALERT
+    from bot.funcs.marriage_rules import gift_catalog, gift_plan
+    from bot.funcs.marriage_store import _count_items, _take_one
+
+    view = settings_view({
+        "candlePrice": 40,
+        "candleCare": 7,
+        "matchPrice": 90,
+        "ribbonPrice": 10,
+        "glowCare": 4,
+        "hearthPrice": 55,
+    })
+    assert view["candlePrice"] == 40
+    assert view["candleCare"] == 7
+    assert view["glowCare"] == 4
+    assert view["hearthCare"] == 20
+    catalog = gift_catalog(view)
+    assert [row["id"] for row in catalog] == ["glow", "candle", "hearth", "match", "ribbon"]
+    assert catalog[0]["care"] == 4
+    assert catalog[1]["care"] == 7
+    assert catalog[1]["price"] == 40
+    assert catalog[2]["price"] == 55
+    assert catalog[2]["care"] == 20
+    assert catalog[3]["price"] == 90
+    assert gift_plan("candle", True, 0, 5, care=7) == {"ok": True, "reason": "", "care": 7}
+    assert gift_plan("candle", False, 9, 5, care=7)["care"] == 7
+    assert gift_plan("glow", False, 0, 5, care=3)["care"] == 3
+    assert gift_plan("hearth", True, 20, 5, care=20)["care"] == 20
+    assert gift_plan("match", False, 0, 5)["reason"] == "calm"
+    assert gift_plan("match", True, 1, 5)["care"] == 4
+    assert gift_plan("match", True, 5, 5)["reason"] == "full"
+    assert gift_plan("ribbon", False, 0, 5, ribbon=True)["reason"] == "worn"
+    assert gift_plan("ribbon", False, 0, 5)["ok"]
+    gift = {"name": "Свеча брака", "name1": "mrgcandle"}
+    items = {"Свеча брака": 1, "15": 2}
+    assert _count_items(items, gift, 15) == 3
+    left = _take_one(items, gift, 15)
+    assert _count_items(left, gift, 15) == 2
+    for text in GIFT_ALERT.values():
+        assert len(text) <= 200
+        assert "<" not in text

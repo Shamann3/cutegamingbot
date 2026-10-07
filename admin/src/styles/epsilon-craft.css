@@ -1948,3 +1948,167 @@ html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sideb
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
 }
+
+.panel-shell .mrg-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 0;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 16px !important;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  line-height: 1.35;
+  text-align: left;
+  cursor: default;
+}
+
+.panel-shell button.mrg-path {
+  cursor: pointer;
+}
+
+.panel-shell button.mrg-path:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.panel-shell .mrg-path span {
+  font-weight: 650;
+  font-size: 0.92rem;
+}
+
+.panel-shell .mrg-path i {
+  margin: 0 8px;
+  opacity: 0.42;
+  font-style: normal;
+}
+
+.panel-shell .mrg-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.panel-shell .mrg-level {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: mrg-level-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.panel-shell .mrg-level.is-first {
+  box-shadow: inset 0 0 0 1px rgba(255, 90, 95, 0.5);
+}
+
+.panel-shell .mrg-level.is-leaving {
+  animation: mrg-level-leave 0.18s ease forwards;
+  pointer-events: none;
+}
+
+.panel-shell .mrg-level-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-shell .mrg-level-head b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 90, 95, 0.16);
+  font-size: 0.85rem;
+}
+
+.panel-shell .mrg-level-head span {
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.86rem;
+  text-align: right;
+}
+
+.panel-shell .mrg-level-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 12px;
+}
+
+.panel-shell .mrg-level-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.panel-shell .mrg-level-fields em {
+  font-style: normal;
+  opacity: 0.62;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.panel-shell .mrg-level-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel-shell .mrg-level-actions button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.panel-shell .mrg-level-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.panel-shell .mrg-level-actions button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.panel-shell .mrg-level-actions button.is-danger {
+  color: #ffb4ae;
+  background: rgba(255, 90, 95, 0.16);
+}
+
+@keyframes mrg-level-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes mrg-level-leave {
+  to { opacity: 0; transform: translateY(-8px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-shell .mrg-level,
+  .panel-shell .mrg-level.is-leaving {
+    animation: none;
+  }
+}

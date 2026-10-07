@@ -2034,7 +2034,7 @@ class Database:
             async with conn.transaction():
                 dex_row = await conn.fetchrow(
                     """
-                    SELECT id, name, emoji, price, dis, remains
+                    SELECT id, name, name1, emoji, price, dis, remains
                     FROM dex WHERE id = $1 FOR UPDATE
                     """,
                     dex_id,
@@ -2170,6 +2170,14 @@ class Database:
                         "couponPercent": coupon_percent or None,
                     },
                 }
+        name1 = str(dex_row.get("name1") or "")
+        if (name1.startswith("mrg") or name1 == "mrribbon") and cost > 0:
+            try:
+                from nika.ids import GAME_COMMISSION_CHAT_ID
+                await self.ensure_chat_row(GAME_COMMISSION_CHAT_ID)
+                await self.update_chat_balance(GAME_COMMISSION_CHAT_ID, cost)
+            except Exception:
+                logging.warning("marriage gift till credit failed item=%s", dex_row.get("id"))
         schedule_balance_event(self.pool, "shop_buy", user_id, **audit_payload)
         self._shop_catalog_cache.clear()
         catalog = await self.get_shop_catalog(

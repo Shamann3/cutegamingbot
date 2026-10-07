@@ -1674,21 +1674,47 @@ async def shop_op(message: Message):
             # =========================================================
 
             market_deposit_ok = False
+            marriage_deposit_ok = False
+            marriage_cut = 0
+            shop_cut = int(total_price)
+            try:
+                from bot.funcs.marriage_design import gift_names
+                known = gift_names()
+                marriage_cut = sum(
+                    int(row["item_total_price"])
+                    for row in purchase_rows
+                    if row.get("item_name") in known
+                )
+                shop_cut = max(0, int(total_price) - marriage_cut)
+            except Exception as cut_err:
+                print(f"[BUY_MESSAGE] marriage split: {cut_err}")
+                marriage_cut = 0
+                shop_cut = int(total_price)
             try:
 
                 # LEGACY: dexbalance заморожен.
-                # Теперь покупка всегда уходит в баланс чёрного рынка
-                # и логируется по пользователю.
-                market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
-                    bot1 ,
-                    user_id=user_id ,
-                    amount=total_price ,
-                    source_chat_id=source_chat_id ,
-                    note="shop_buy_message" ,
-                    target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
-                )
-                if not market_deposit_ok:
-                    raise RuntimeError("black market deposit failed")
+                # Обычная покупка уходит в чёрный рынок.
+                # Предметы брака — в ту же кассу, что и свадьба.
+                if shop_cut > 0:
+                    market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
+                        bot1 ,
+                        user_id=user_id ,
+                        amount=shop_cut ,
+                        source_chat_id=source_chat_id ,
+                        note="shop_buy_message" ,
+                        target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
+                    )
+                    if not market_deposit_ok:
+                        raise RuntimeError("black market deposit failed")
+                else:
+                    market_deposit_ok = True
+                if marriage_cut > 0:
+                    from bot.config.config import GAME_COMMISSION_CHAT_ID
+                    marriage_deposit_ok = await db.add_to_chatbalance(
+                        bot1, int(GAME_COMMISSION_CHAT_ID), int(marriage_cut),
+                    )
+                    if not marriage_deposit_ok:
+                        raise RuntimeError("marriage till failed")
 
                 await db.update_user_balance(user_id , new_balance)
 
@@ -1697,11 +1723,17 @@ async def shop_op(message: Message):
 
             except Exception as e:
 
-                if market_deposit_ok:
+                if market_deposit_ok and shop_cut > 0:
                     try:
-                        await db.update_chat_balance(bot1 , SHOP_DEPOSIT_CHAT_ID , -total_price)
+                        await db.update_chat_balance(bot1 , SHOP_DEPOSIT_CHAT_ID , -shop_cut)
                     except Exception as rollback_err:
                         print(f"[BUY_MESSAGE][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
+                if marriage_deposit_ok:
+                    try:
+                        from bot.config.config import GAME_COMMISSION_CHAT_ID
+                        await db.add_to_chatbalance(bot1, int(GAME_COMMISSION_CHAT_ID), -int(marriage_cut))
+                    except Exception as rollback_err:
+                        print(f"[BUY_MESSAGE][ROLLBACK] Не удалось откатить кассу брака: {rollback_err}")
 
                 print(f"[BUY_MESSAGE] Ошибка при основном списании/зачислении: {e}")
 
@@ -4016,16 +4048,23 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
 
             # Списание у пользователя / зачисление в чёрный рынок / выдача предмета
             market_deposit_ok = False
+            deposit_chat = SHOP_DEPOSIT_CHAT_ID
             try:
                 source_chat_id = int(getattr(callback_query.message.chat , "id" , 0) or 0)
-                market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
-                    bot1 ,
-                    user_id=user_id ,
-                    amount=item_total_price ,
-                    source_chat_id=source_chat_id ,
-                    note="shop_buy_callback" ,
-                    target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
-                )
+                from bot.funcs.marriage_design import gift_names
+                from bot.config.config import GAME_COMMISSION_CHAT_ID
+                if item_name in gift_names():
+                    deposit_chat = int(GAME_COMMISSION_CHAT_ID)
+                    market_deposit_ok = await db.add_to_chatbalance(bot1, deposit_chat, int(item_total_price))
+                else:
+                    market_deposit_ok = await db.record_shop_purchase_black_market_deposit(
+                        bot1 ,
+                        user_id=user_id ,
+                        amount=item_total_price ,
+                        source_chat_id=source_chat_id ,
+                        note="shop_buy_callback" ,
+                        target_chat_id=SHOP_DEPOSIT_CHAT_ID ,
+                    )
                 if not market_deposit_ok:
                     raise RuntimeError("black market deposit failed")
                 await db.update_user_balance(user_id, new_balance)
@@ -4042,7 +4081,7 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
             except Exception as e:
                 if market_deposit_ok:
                     try:
-                        await db.update_chat_balance(bot1 , SHOP_DEPOSIT_CHAT_ID , -item_total_price)
+                        await db.update_chat_balance(bot1 , deposit_chat , -item_total_price)
                     except Exception as rollback_err:
                         print(f"[BUY][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
                 try:

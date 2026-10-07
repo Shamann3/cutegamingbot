@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Вкладка «Отношения» в панели сотрудников: цифры и настройки браков."""
+"""Вкладка «Браки» в панели сотрудников: цифры, уровни и настройки."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from admin_audit import log_admin_action
 from admin_permissions import require_admin_permission
@@ -17,20 +17,20 @@ from db import db
 
 router = APIRouter(prefix="/marriages", tags=["marriages"])
 MSK = timezone(timedelta(hours=3))
-_ROOT = str(Path(__file__).resolve().parents[1])
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+_PY = str(Path(__file__).resolve().parent / "py")
+if _PY not in sys.path:
+    sys.path.insert(0, _PY)
 
 
 def _rules():
-    from bot.funcs.marriage_rules import (
+    from marriage_engine.rules import (
         price_ladder,
         settings_view,
         tone_label,
         tone_score,
         verb_catalog,
     )
-    from bot.funcs.marriage_store import ensure, load_settings, save_settings
+    from marriage_engine.store import ensure, load_settings, save_settings
 
     return {
         "view": settings_view,
@@ -92,6 +92,17 @@ class SettingsBody(BaseModel):
     toneStart: int = 80
     toneGain: int = 12
     toneDecay: int = 8
+    rescueHours: int = 12
+    sparkOn: bool = True
+    glowPrice: int = 12
+    glowCare: int = 3
+    candlePrice: int = 25
+    candleCare: int = 8
+    hearthPrice: int = 70
+    hearthCare: int = 20
+    matchPrice: int = 80
+    ribbonPrice: int = 150
+    levels: list = Field(default_factory=list)
     verbs: dict = {}
 
 
@@ -109,7 +120,8 @@ async def marriage_board(
     rows = await db.pool.fetch(
         """
         SELECT state, price, live_at, left_at, created_at,
-               payer_id, partner_id, tone_points, tone_day
+               payer_id, partner_id, tone_points, tone_day,
+               spark_days, spark_best, fade_until
         FROM marriage_book
         WHERE state = 'live'
            OR live_at >= $1
@@ -145,6 +157,7 @@ async def marriage_board(
     divorces = prev_divorces = 0
     proposals = prev_proposals = 0
     kut = prev_kut = 0
+    spark_lit = spark_fading = spark_best = 0
     by_day = {}
     cursor = start
     while cursor <= today:
@@ -161,6 +174,17 @@ async def marriage_board(
             key = tuple(sorted((int(row["payer_id"]), int(row["partner_id"]))))
             seen.add(key)
             score = rules["score"](row["tone_points"], row["tone_day"], today, decay, row["live_at"])
+            streak = int(row["spark_days"] or 0)
+            best = int(row["spark_best"] or 0)
+            if streak > 0:
+                spark_lit += 1
+            spark_best = max(spark_best, best, streak)
+            fade = row["fade_until"]
+            if isinstance(fade, datetime):
+                if fade.tzinfo is None:
+                    fade = fade.replace(tzinfo=timezone.utc)
+                if fade > datetime.now(MSK):
+                    spark_fading += 1
             book_live.append({
                 "a": int(row["payer_id"]),
                 "b": int(row["partner_id"]),
@@ -205,15 +229,15 @@ async def marriage_board(
         moment = _day(row["at"])
         amount = int(row["amount"] or 0)
         kind = str(row["kind"] or "")
-        if kind == "rp" and _in(moment, start, today):
+        if kind in ("rp", "glow", "candle", "hearth", "match", "ribbon") and _in(moment, start, today):
             kut += amount
             bucket = by_day.get(moment.isoformat()) if moment else None
             if bucket is not None:
                 bucket["kut"] += amount
-        elif kind == "rp" and _in(moment, previous, start - timedelta(days=1)):
+        elif kind in ("rp", "glow", "candle", "hearth", "match", "ribbon") and _in(moment, previous, start - timedelta(days=1)):
             prev_kut += amount
         if len(recent) < 12:
-            title = "Свадьба" if kind == "wed" else "Жест"
+            title = {"wed": "Свадьба", "glow": "Блик", "candle": "Свеча", "hearth": "Очаг", "match": "Спичка", "ribbon": "Лента"}.get(kind, "Жест")
             recent.append({
                 "payerId": int(row["payer_id"]),
                 "title": title,
@@ -289,6 +313,9 @@ async def marriage_board(
         "proposals": proposals,
         "previousProposals": prev_proposals,
         "toneAvg": round(sum(scored) / len(scored)) if scored else None,
+        "sparkLit": spark_lit,
+        "sparkFading": spark_fading,
+        "sparkBest": spark_best,
         "bands": bands,
         "points": points,
         "pairs": pairs,
