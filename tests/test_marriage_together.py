@@ -232,7 +232,7 @@ def test_each_level_feels_further_along_and_items_are_things():
         "level": level_of(14), "need": 15, "lost": 0,
         "state": {"spark_days": 14}, "both_done": False,
     }, 1, 1, "Б")
-    assert "свой тон" in home
+    assert "Пара" in home and "свой тон" not in home
     dead = spark_home("А", "Б", "день", "", {
         "level": level_of(0), "need": 5, "lost": 12, "state": {"spark_days": 0},
     }, 0, 0, "Б")

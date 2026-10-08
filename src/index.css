@@ -6190,9 +6190,10 @@ body {
   .market-sell-card {
     position: relative;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.65rem;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.7rem;
     margin-bottom: 0.75rem;
     padding: 0.7rem 0.75rem;
     border-radius: 14px;
@@ -6219,9 +6220,10 @@ body {
 
   .market-sell-card-content {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.55rem;
     min-width: 0;
+    width: 100%;
     position: relative;
     z-index: 1;
   }
@@ -6239,33 +6241,40 @@ body {
     flex-shrink: 0;
   }
 
+  .market-sell-card-text {
+    min-width: 0;
+    flex: 1;
+  }
+
   .market-sell-card-title {
     margin: 0;
-    font-size: 0.78rem;
+    font-size: 0.92rem;
     font-weight: 800;
     color: #fef3c7;
-    line-height: 1.2;
+    line-height: 1.25;
   }
 
   .market-sell-card-sub {
-    margin: 0.12rem 0 0;
-    font-size: 0.58rem;
+    margin: 0.2rem 0 0;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: rgba(253, 230, 138, 0.62);
-    line-height: 1.25;
+    color: rgba(253, 230, 138, 0.82);
+    line-height: 1.35;
   }
 
   .market-sell-card-btn {
     position: relative;
     z-index: 1;
     flex-shrink: 0;
-    padding: 0.55rem 0.85rem;
+    width: 100%;
+    padding: 0.7rem 0.85rem;
     border-radius: 999px;
     border: 1px solid rgba(251, 191, 36, 0.45);
     background: linear-gradient(180deg, #c9a227 0%, #8b6914 55%, #5c3d18 100%);
     color: #fff7d6;
-    font-size: 0.68rem;
+    font-size: 0.78rem;
     font-weight: 800;
+    text-align: center;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     cursor: pointer;
@@ -6417,18 +6426,6 @@ body {
     display: grid;
     gap: 0.55rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  @media (max-width: 360px) {
-    .market-sell-card {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .market-sell-card-btn {
-      width: 100%;
-      text-align: center;
-    }
   }
 
   .shop-shelf-grid {

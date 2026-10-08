@@ -29,6 +29,53 @@ from marriage_engine.rules import (
 _MSK = timezone(timedelta(hours=3))
 _ready = False
 _cfg_cache = {"mono": 0.0, "body": None}
+_spark_cache: dict = {}
+
+
+def drop_spark_cache(book_id=None) -> None:
+    if book_id is None:
+        _spark_cache.clear()
+        return
+    book = int(book_id)
+    for key in [item for item in _spark_cache if item[0] == book]:
+        _spark_cache.pop(key, None)
+
+
+def _spark_same(before: dict, after: dict) -> bool:
+    left = _spark_copy_local(before)
+    keys = (
+        "spark_days", "spark_best", "care_total", "care_payer", "care_partner",
+        "spark_day", "spark_lost", "shield", "fade_extra",
+    )
+    for key in keys:
+        if left.get(key) != after.get(key):
+            return False
+
+    def clock(value):
+        if isinstance(value, datetime):
+            return value.replace(microsecond=0)
+        return value
+
+    return clock(left.get("fade_until")) == clock(after.get("fade_until"))
+
+
+def _spark_copy_local(raw: dict) -> dict:
+    src = raw or {}
+    day = src.get("spark_day")
+    if isinstance(day, datetime):
+        day = day.date()
+    return {
+        "spark_days": int(src.get("spark_days") or 0),
+        "spark_best": int(src.get("spark_best") or 0),
+        "care_total": int(src.get("care_total") or 0),
+        "care_payer": int(src.get("care_payer") or 0),
+        "care_partner": int(src.get("care_partner") or 0),
+        "spark_day": day,
+        "fade_until": src.get("fade_until"),
+        "spark_lost": int(src.get("spark_lost") or 0),
+        "shield": int(src.get("shield") or 0),
+        "fade_extra": int(src.get("fade_extra") or 0),
+    }
 
 
 async def ensure(pool) -> bool:
@@ -754,7 +801,7 @@ async def load_settings(pool) -> dict:
     import time
     now = time.monotonic()
     cached = _cfg_cache.get("body")
-    if cached is not None and now - float(_cfg_cache.get("mono") or 0) < 15:
+    if cached is not None and now - float(_cfg_cache.get("mono") or 0) < 45:
         return cached
     raw = None
     if pool is not None and await ensure(pool):
@@ -890,6 +937,7 @@ def _spark_raw(row: dict) -> dict:
 
 
 async def _save_spark(conn, book_id: int, state: dict) -> None:
+    drop_spark_cache(book_id)
     await conn.execute(
         """
         UPDATE marriage_book
@@ -919,41 +967,60 @@ async def _save_spark(conn, book_id: int, state: dict) -> None:
     )
 
 
+_SPARK_SQL = """
+    SELECT payer_id, spark_days, spark_best, care_total, care_payer, care_partner,
+           spark_day, fade_until, spark_lost, fade_extra, shield, talk_payer, talk_partner
+    FROM marriage_book
+    WHERE id = $1 AND state = 'live'
+"""
+
+
 async def spark_sync(pool, live: dict, user_id: int, cfg: dict, care: int = 0, acknowledge: bool = False):
-    """Сводит прошедшие дни и, если care > 0, добавляет заботу этому человеку."""
+    """Сводит прошедшие дни. Пока день не сменился, карточка читается без записи."""
     if pool is None or not live or not live.get("id") or not cfg.get("sparkOn", True):
         return None
     if not await ensure(pool):
         return None
+    import time
+    book = int(live["id"])
+    uid = int(user_id)
+    stamp = time.monotonic()
+    if int(care or 0) <= 0:
+        hit = _spark_cache.get((book, uid))
+        if hit and stamp - hit[0] < 2:
+            return hit[1]
     hours = int(cfg.get("rescueHours") or 12)
     now = datetime.now(_MSK)
     async with pool.acquire() as conn:
-        async with conn.transaction():
-            row = await conn.fetchrow(
-                """
-                SELECT payer_id, spark_days, spark_best, care_total, care_payer, care_partner,
-                       spark_day, fade_until, spark_lost, fade_extra, shield, talk_payer, talk_partner
-                FROM marriage_book
-                WHERE id = $1 AND state = 'live'
-                FOR UPDATE
-                """,
-                int(live["id"]),
-            )
-            if not row:
-                return None
-            raw = _spark_raw(dict(row))
-            if int(care or 0) > 0:
-                view = add_spark_care(
-                    raw, spark_side(user_id, row["payer_id"]), int(care), now, hours, cfg,
-                )
-            else:
-                view = settle_spark(raw, now, hours, cfg)
-            shown = int(view.get("lost") or 0)
-            await _save_spark(conn, int(live["id"]), view["state"])
-            view["lost"] = shown
-            you, other = spark_split(view["state"], user_id, row["payer_id"])
-            view["you"] = you
-            view["partner_care"] = other
+        row = await conn.fetchrow(_SPARK_SQL, book)
+        if not row:
+            return None
+        raw = _spark_raw(dict(row))
+        payer = int(row["payer_id"])
+        if int(care or 0) > 0:
+            view = add_spark_care(raw, spark_side(uid, payer), int(care), now, hours, cfg)
+            changed = True
+        else:
+            view = settle_spark(raw, now, hours, cfg)
+            changed = not _spark_same(raw, view["state"])
+        if changed:
+            async with conn.transaction():
+                locked = await conn.fetchrow(_SPARK_SQL + " FOR UPDATE", book)
+                if not locked:
+                    return None
+                raw = _spark_raw(dict(locked))
+                payer = int(locked["payer_id"])
+                if int(care or 0) > 0:
+                    view = add_spark_care(raw, spark_side(uid, payer), int(care), now, hours, cfg)
+                else:
+                    view = settle_spark(raw, now, hours, cfg)
+                await _save_spark(conn, book, view["state"])
+        view["lost"] = int(view.get("lost") or 0)
+        you, other = spark_split(view["state"], uid, payer)
+        view["you"] = you
+        view["partner_care"] = other
+    if int(care or 0) <= 0:
+        _spark_cache[(book, uid)] = (stamp, view)
     return view
 
 
@@ -1340,13 +1407,16 @@ async def _write_gifts(conn, cfg: dict) -> None:
 
 
 async def _overlay_dex(conn, view: dict) -> dict:
+    shelf_rows = list(view.get("shelf") or [])
+    codes = [str(row.get("name1") or "") for row in shelf_rows if row.get("name1")]
+    found_rows = await conn.fetch(
+        "SELECT name, name1, emoji, price, remains, bio FROM dex WHERE name1 = ANY($1::text[])",
+        codes,
+    ) if codes else []
+    faces = {str(row["name1"]): dict(row) for row in found_rows}
     shelf = []
-    for row in view.get("shelf") or []:
-        found = await conn.fetchrow(
-            "SELECT name, emoji, price, remains, bio FROM dex WHERE name1 = $1",
-            row.get("name1"),
-        )
-        shelf.append(face_from_dex(row, dict(found) if found else None))
+    for row in shelf_rows:
+        shelf.append(face_from_dex(row, faces.get(str(row.get("name1") or ""))))
     view = dict(view)
     view["shelf"] = shelf
     by = {row["id"]: row for row in shelf}
@@ -1389,17 +1459,31 @@ async def gift_stock(pool, user_id: int, cfg: dict) -> list:
     rows = gift_catalog(cfg)
     if pool is None:
         return [{**row, "have": 0} for row in rows]
+    from marriage_engine.m_join import RITES
+    from marriage_engine.m_prize import quiet_row
+    quiet = quiet_row(cfg, force=True)
+    codes = [str(row.get("name1") or "") for row in rows]
+    codes.extend(str(rite.get("name1") or "") for rite in RITES)
+    if quiet:
+        codes.append(str(quiet.get("name1") or ""))
     async with pool.acquire() as conn:
         raw = await conn.fetchval("SELECT items FROM users WHERE user_id = $1", int(user_id))
         items = decode_items(raw)
+        found_rows = await conn.fetch(
+            "SELECT id, name, name1, emoji, price, remains, bio FROM dex WHERE name1 = ANY($1::text[])",
+            [code for code in codes if code],
+        )
+        faces = {str(row["name1"]): row for row in found_rows}
+
+        def _face(row):
+            hit = faces.get(str(row.get("name1") or ""))
+            shown = face_from_dex(row, dict(hit) if hit else None)
+            dex_id = int(hit["id"]) if hit and hit["id"] is not None else None
+            return shown, dex_id
+
         out = []
         for row in rows:
-            found = await conn.fetchrow(
-                "SELECT name, emoji, price, remains, bio FROM dex WHERE name1 = $1",
-                row["name1"],
-            )
-            row = face_from_dex(row, dict(found) if found else None)
-            dex_id = await _dex_id(conn, row["name1"])
+            row, dex_id = _face(row)
             have = _count_items(items, row, dex_id)
             if row.get("on") is False and have <= 0:
                 continue
@@ -1410,18 +1494,15 @@ async def gift_stock(pool, user_id: int, cfg: dict) -> list:
             out.append({**shown, "have": have})
         seen_ids = {row["id"] for row in out}
         seen_names = {row.get("name1") for row in out}
-        from marriage_engine.m_join import RITES
         for rite in RITES:
             if rite["id"] in seen_ids or rite["name1"] in seen_names:
                 continue
-            dex_id = await _dex_id(conn, rite["name1"])
-            have = _count_items(items, rite, dex_id)
+            rite_row, dex_id = _face(rite)
+            have = _count_items(items, rite_row, dex_id)
             if have > 0:
-                out.append({**rite, "price": 0, "care": 0, "buy": "", "have": have})
-        from marriage_engine.m_prize import quiet_row
-        quiet = quiet_row(cfg, force=True)
-        dex_id = await _dex_id(conn, quiet["name1"])
-        have = _count_items(items, quiet, dex_id)
+                out.append({**rite_row, "price": 0, "care": 0, "buy": "", "have": have})
+        quiet_row_face, dex_id = _face(quiet)
+        have = _count_items(items, quiet_row_face, dex_id)
         shown = quiet_row(cfg)
         if shown or have > 0:
             row = dict(shown or quiet)

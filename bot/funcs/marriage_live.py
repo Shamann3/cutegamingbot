@@ -201,7 +201,10 @@ def _kb_ask(book_id: int) -> InlineKeyboardMarkup:
 
 def _kb_card(token: str, tone_on: bool, leave: bool = True, feast: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [_btn(BTN_GEST, f"mrg:gest:{token}", "primary", RED_ID)],
+        [
+            _btn(BTN_GEST, f"mrg:gest:{token}", "primary", RED_ID),
+            _btn(BTN_GIFT, "mrg:bag:0", "primary", RED_ID),
+        ],
         [
             _btn(BTN_TONE, "mrg:fire:0", "default", DOT_ID),
             _btn(BTN_LEVEL, "mrg:lvl:0", "default"),
@@ -210,13 +213,14 @@ def _kb_card(token: str, tone_on: bool, leave: bool = True, feast: bool = False)
             _btn(BTN_WHAT, "mrg:what:0", "default"),
             _btn(BTN_HOW, "mrg:use:0", "default"),
         ],
-        [_btn(BTN_HOLD, "mrg:hold:0", "default")],
-        [_btn(BTN_STAT, "mrg:stat:0", "default")],
-        [_btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID)],
+        [
+            _btn(BTN_HOLD, "mrg:hold:0", "default"),
+            _btn(BTN_STAT, "mrg:stat:0", "default"),
+        ],
+        [_btn(BTN_RIBBON, "mrg:rib:0", "default")],
     ]
     if feast:
         rows.insert(0, [_btn(BTN_FEAST, "mrg:feast:0", "primary", RED_ID)])
-    rows.append([_btn(BTN_RIBBON, "mrg:rib:0", "default")])
     if leave:
         rows.append([_btn(BTN_CARD_LEAVE, f"mrg:warn:{token}", "danger", NO_ID)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -348,7 +352,10 @@ async def dispatch(query) -> None:
     except Exception as e:
         print(f"[marriage] кнопка {type(e).__name__}: {e}")
         try:
-            await query.answer(ALERT_RETRY, show_alert=True)
+            if getattr(query, "_mrg_sent", False):
+                await _note(query, ALERT_RETRY)
+            else:
+                await query.answer(ALERT_RETRY, show_alert=True)
         except Exception:
             pass
 
@@ -432,10 +439,10 @@ async def _ribbon_phrase(message) -> None:
 async def _on_ribbon(query, token: str, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     if not live.get("id"):
-        await query.answer("Лента открывается в новом браке.", show_alert=True)
+        await _note(query, "Лента открывается в новом браке.")
         return
     worn = own_ribbon(live, user_id)
     if token == "stay":
@@ -447,7 +454,7 @@ async def _on_ribbon(query, token: str, user_id: int, pool) -> None:
             await _edit(query, ribbon_home(False), _kb_ribbon("none"))
             return
         if not await store.set_own_ribbon(pool, int(live["id"]), user_id, False):
-            await query.answer(ALERT_RETRY, show_alert=True)
+            await _note(query, ALERT_RETRY)
             return
         await query.answer("Лента снята.")
         await _edit(query, ribbon_gone(), _kb_ribbon("gone"))
@@ -636,14 +643,17 @@ async def _screen(pool, user, cfg):
         return None
     uid = int(user.id)
     other = _other(live, uid)
-    found = await store.names(pool, [uid, other])
+
+    async def _spark_now():
+        if live.get("id") and cfg.get("sparkOn", True):
+            return await store.spark_sync(pool, live, uid, cfg, 0, True)
+        return None
+
+    spark, found = await asyncio.gather(_spark_now(), store.names(pool, [uid, other]))
     a = found.get(uid) or person_html(uid, getattr(user, "first_name", "") or "", getattr(user, "username", "") or "")
     b = found.get(other) or person_html(other, "игрок")
     when = live.get("live_at") or datetime.now(MSK)
     token = str(live["id"]) if live.get("id") else "old"
-    spark = None
-    if live.get("id") and cfg.get("sparkOn", True):
-        spark = await store.spark_sync(pool, live, uid, cfg, 0, True)
     if spark:
         text = spark_home(
             a, b,
@@ -878,22 +888,22 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
     return True
 
 
-async def _gift_screen(query, user_id: int, pool, cfg, live) -> None:
+async def _gift_screen(query, user_id: int, pool, cfg, live, note: str = "") -> None:
     rows = await store.gift_stock(pool, user_id, cfg)
-    await _edit(
-        query,
-        gift_text(rows, own_ribbon(live, user_id)),
-        _kb_gifts(rows),
-    )
+    text = gift_text(rows, own_ribbon(live, user_id))
+    clean = str(note or "").strip()
+    if clean:
+        text = clean + "\n" + text
+    await _edit(query, text, _kb_gifts(rows))
 
 
 async def _on_bag(query, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     if not live.get("id"):
-        await query.answer(GIFT_ALERT["old"], show_alert=True)
+        await _note(query, GIFT_ALERT["old"])
         return
     await query.answer()
     await _gift_screen(query, user_id, pool, await _cfg(), live)
@@ -906,14 +916,14 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
         from bot.funcs.marriage_design import quiet_row
         gift = quiet_row(cfg)
     if gift is None:
-        await query.answer(GIFT_ALERT["bad"], show_alert=True)
+        await _note(query, GIFT_ALERT["bad"])
         return
     live = await store.live_for(pool, user_id)
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     if not live.get("id"):
-        await query.answer(GIFT_ALERT["old"], show_alert=True)
+        await _note(query, GIFT_ALERT["old"])
         return
     price = int(gift["price"] or 0)
     plan = quiet_pay(gift["name"], price, cfg) if kind == "quiet" else None
@@ -922,10 +932,10 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
         int(plan["chat"]) if plan else 0, int(plan["fund"]) if plan else 0,
     )
     if taken == "poor":
-        await query.answer("Кутов не хватает. Предмет не куплен.", show_alert=True)
+        await _note(query, "Кутов не хватает. Предмет не куплен.")
         return
     if taken == "miss":
-        await query.answer(ALERT_TILL, show_alert=True)
+        await _note(query, ALERT_TILL)
         return
     try:
         granted = await store.grant_gift(pool, user_id, kind, 1)
@@ -936,7 +946,7 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
             query.bot, user_id, price,
             int(plan["chat"]) if plan else 0, int(plan["fund"]) if plan else 0,
         )
-        await query.answer(ALERT_TILL, show_alert=True)
+        await _note(query, ALERT_TILL)
         return
     if price > 0:
         await store.note_money(pool, kind, user_id, price, int(live.get("chat_id") or 0))
@@ -974,29 +984,25 @@ async def _on_gift_use(query, kind: str, user_id: int, pool) -> None:
     cfg = await _cfg()
     live = await store.live_for(pool, user_id)
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     result = await store.use_gift(pool, live, user_id, kind, cfg)
     if not result.get("ok"):
         reason = result.get("reason") or "bad"
-        await query.answer(GIFT_ALERT.get(reason, GIFT_ALERT["bad"]), show_alert=True)
+        await _note(query, GIFT_ALERT.get(reason, GIFT_ALERT["bad"]))
         if reason in ("field", "cook"):
             await _place_hint_message(query, kind, cfg)
         return
-    if result.get("alert"):
-        await query.answer(str(result["alert"]), show_alert=True)
-        fresh = await store.live_for(pool, user_id)
-        await _gift_screen(query, user_id, pool, cfg, fresh or live)
-        return
-    care = int(result.get("care") or 0)
-    if kind == "ribbon":
-        await query.answer("Лента на вас.")
-    elif care > 0:
-        await query.answer(f"+{care} заботы только вам. Лишнее сгорит по вашей норме.", show_alert=True)
-    else:
-        await query.answer()
+    from bot.funcs.marriage_design import use_card
+    face = next((item for item in gift_catalog(cfg) if item.get("id") == kind), None) or {}
+    note = str(result.get("alert") or "")
+    if not note and kind == "ribbon":
+        note = "Лента на вас."
+    elif not note and int(result.get("care") or 0) > 0:
+        note = "+" + str(int(result.get("care") or 0))
+    card = use_card(face.get("emoji") or "", face.get("name") or "Предмет", note) if note else ""
     fresh = await store.live_for(pool, user_id)
-    await _gift_screen(query, user_id, pool, cfg, fresh or live)
+    await _gift_screen(query, user_id, pool, cfg, fresh or live, card)
 
 
 async def _dispatch(query) -> None:
@@ -1005,6 +1011,8 @@ async def _dispatch(query) -> None:
     if len(parts) < 3 or parts[0] != "mrg":
         await query.answer()
         return
+    _arm(query)
+    await query.answer()
     action, token = parts[1], parts[2]
     user_id = int(query.from_user.id)
     pool = _pool()
@@ -1083,7 +1091,7 @@ async def _on_guide(query, action: str, pool) -> None:
         await _edit(query, HOLD_TEXT, _kb_guide("play" if live else ""))
         return
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     if action == "care":
         if not live.get("id"):
@@ -1093,7 +1101,7 @@ async def _on_guide(query, action: str, pool) -> None:
         await query.answer()
         await _edit(
             query,
-            _fill("{heart} <b>Поддержать пару</b>\n{spark} <i>Число на кнопке — забота. Её нужно дать и вам, и паре.</i>"),
+            _fill("{heart} <b>Жест</b>\n{spark} <i>Число — забота. Её дают оба.</i>"),
             _kb_gest(str(live["id"]), cfg),
         )
         return
@@ -1119,7 +1127,7 @@ async def _on_mine(query, pool) -> None:
     cfg = await _cfg()
     screen = await _screen(pool, query.from_user, cfg)
     if screen is None:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     text, markup, _live = screen
     await query.answer()
@@ -1129,7 +1137,7 @@ async def _on_mine(query, pool) -> None:
 async def _on_tone_btn(query, token: str, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live or not _owns(live, token, user_id):
-        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE)
         return
     cfg = await _cfg()
     view = await _tone_screen(pool, query.from_user, cfg)
@@ -1152,13 +1160,13 @@ async def _on_tone_btn(query, token: str, user_id: int, pool) -> None:
 async def _on_gest(query, token: str, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live or not _owns(live, token, user_id):
-        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE)
         return
     cfg = await _cfg()
     await query.answer()
     await _edit(
         query,
-        _fill("{heart} <b>Поддержать пару</b>\n{spark} <i>Число на кнопке — забота. Её дают оба.</i>"),
+        _fill("{heart} <b>Жест</b>\n{spark} <i>Число — забота. Её дают оба.</i>"),
         _kb_gest(token, cfg),
     )
 
@@ -1186,7 +1194,7 @@ async def _on_act(query, verb_id: str, token: str, user_id: int, pool) -> None:
         return
     live = await store.live_for(pool, user_id)
     if not live or not _owns(live, token, user_id):
-        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE)
         return
     cfg = await _cfg()
     item = dict(item)
@@ -1195,11 +1203,11 @@ async def _on_act(query, verb_id: str, token: str, user_id: int, pool) -> None:
     limit = int(cfg.get("rpPerDay") or 1)
     day = datetime.now(MSK).date()
     if await store.rp_taken(pool, user_id, other, item["id"], day, limit):
-        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        await _note(query, ALERT_RP_TODAY)
         return
     price = int(item.get("price") or 0)
     if price > 0 and not cfg.get("enabled", True):
-        await query.answer(ALERT_OFF, show_alert=True)
+        await _note(query, ALERT_OFF)
         return
     if price > 0:
         have = await _db().get_user_balance(user_id)
@@ -1217,7 +1225,7 @@ async def _on_act(query, verb_id: str, token: str, user_id: int, pool) -> None:
         )
         return
     if not await store.mark_rp(pool, user_id, other, item["id"], day, limit):
-        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        await _note(query, ALERT_RP_TODAY)
         return
     names = await store.names(pool, [user_id, other])
     a = names.get(user_id) or person_html(user_id, query.from_user.first_name or "", query.from_user.username or "")
@@ -1230,20 +1238,20 @@ async def _on_act(query, verb_id: str, token: str, user_id: int, pool) -> None:
 async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
     row = await store.get_book(pool, book_id)
     if not row or row["state"] != "ask":
-        await query.answer(ALERT_CLOSED, show_alert=True)
+        await _note(query, ALERT_CLOSED)
         return
     payer = int(row["payer_id"])
     partner = int(row["partner_id"])
     if action in ("yes", "no") and user_id != partner:
-        await query.answer(ALERT_NOT_INVITED, show_alert=True)
+        await _note(query, ALERT_NOT_INVITED)
         return
     if action == "stop" and user_id != payer:
-        await query.answer(ALERT_NOT_PAYER, show_alert=True)
+        await _note(query, ALERT_NOT_PAYER)
         return
     if action == "stop":
         closed = await store.close_ask(pool, book_id, "stop")
         if not closed:
-            await query.answer(ALERT_CLOSED, show_alert=True)
+            await _note(query, ALERT_CLOSED)
             return
         await query.answer()
         await _edit(query, _fill(STOPPED))
@@ -1251,7 +1259,7 @@ async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
     if action == "no":
         closed = await store.close_ask(pool, book_id, "no")
         if not closed:
-            await query.answer(ALERT_CLOSED, show_alert=True)
+            await _note(query, ALERT_CLOSED)
             return
         names = await store.names(pool, [partner])
         await query.answer()
@@ -1269,12 +1277,12 @@ async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
             from datetime import timedelta, timezone
             too_old = datetime.now(timezone.utc) - created > timedelta(minutes=minutes)
         if still_waiting and not too_old:
-            await query.answer(ALERT_BUSY, show_alert=True)
+            await _note(query, ALERT_BUSY)
             return
         if too_old:
-            await query.answer(f"Прошло {minutes} минут, заявка закрылась. Куты не списаны.", show_alert=True)
+            await _note(query, f"{minutes} мин. Заявка закрыта.")
             return
-        await query.answer(ALERT_CLOSED, show_alert=True)
+        await _note(query, ALERT_CLOSED)
         return
     price = int(claimed["price"] or 0)
     taken = await _take(query.bot, payer, price, int(claimed["chat_id"]), "свадьба")
@@ -1285,7 +1293,7 @@ async def _on_ask(query, action: str, book_id: int, user_id: int, pool) -> None:
         return
     if taken == "miss":
         await store.finish(pool, book_id, "gone")
-        await query.answer(ALERT_TILL, show_alert=True)
+        await _note(query, ALERT_TILL)
         await _edit(query, _fill(TILL_CLOSED))
         return
     if price > 0:
@@ -1325,7 +1333,7 @@ def _owns(live: dict, token: str, user_id: int) -> bool:
 async def _on_warn(query, token: str, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live or not _owns(live, token, user_id):
-        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE)
         return
     other = _other(live, user_id)
     names = await store.names(pool, [other])
@@ -1340,7 +1348,7 @@ async def _on_warn(query, token: str, user_id: int, pool) -> None:
 async def _on_leave(query, action: str, token: str, user_id: int, pool) -> None:
     live = await store.live_for(pool, user_id)
     if not live or not _owns(live, token, user_id):
-        await query.answer(ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NOT_PAIR if live else ALERT_NO_MARRIAGE)
         return
     other = _other(live, user_id)
     if action == "stay":
@@ -1380,17 +1388,17 @@ async def _on_pay(query, verb_id: str, user_id: int, pool) -> None:
     item["price"] = verb_price(item, cfg)
     limit = int(cfg.get("rpPerDay") or 1)
     if not cfg.get("enabled", True):
-        await query.answer(ALERT_OFF, show_alert=True)
+        await _note(query, ALERT_OFF)
         return
     live = await store.live_for(pool, user_id)
     if not live:
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     other = _other(live, user_id)
     price = int(item.get("price") or 0)
     day = datetime.now(MSK).date()
     if await store.rp_taken(pool, user_id, other, item["id"], day, limit):
-        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        await _note(query, ALERT_RP_TODAY)
         return
     taken = await _take(query.bot, user_id, price, int(live.get("chat_id") or 0), "жест брака")
     if taken == "poor":
@@ -1401,12 +1409,12 @@ async def _on_pay(query, verb_id: str, user_id: int, pool) -> None:
         ))
         return
     if taken == "miss":
-        await query.answer(ALERT_TILL_RP, show_alert=True)
+        await _note(query, ALERT_TILL_RP)
         return
     if not await store.mark_rp(pool, user_id, other, item["id"], day, limit):
         if price > 0:
             await _refund(query.bot, user_id, price)
-        await query.answer(ALERT_RP_TODAY, show_alert=True)
+        await _note(query, ALERT_RP_TODAY)
         return
     if price > 0:
         await store.note_money(pool, "rp", user_id, price, int(live.get("chat_id") or 0))
@@ -1430,11 +1438,11 @@ async def _on_feast(query, user_id: int, pool) -> None:
     cfg = await _cfg()
     live = await store.live_for(pool, user_id)
     if not live or not live.get("id"):
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     holiday = await _holiday(pool, user_id, cfg, live)
     if not holiday:
-        await query.answer("Праздника сейчас нет.", show_alert=True)
+        await _note(query, "Праздника сейчас нет.")
         return
     lines = [f"{HEART} <b>{holiday['name']}</b>"]
     buttons = []
@@ -1444,8 +1452,6 @@ async def _on_feast(query, user_id: int, pool) -> None:
         if row.get("id") == "premium6" and int(holiday["day"]) < 30:
             continue
         lines.append(f"{row.get('emoji') or ''} <b>{row['name']}</b>")
-        if row.get("blurb"):
-            lines.append(f"<i>{row['blurb']}</i>")
         buttons.append([_btn(str(row["name"])[:32], f"mrg:wish:{row['id']}", "primary", RED_ID)])
     buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
     await query.answer()
@@ -1496,13 +1502,13 @@ async def _fulfill(query, info: dict, cfg: dict, holiday: dict, pool) -> None:
                 )
             except Exception:
                 pass
-        await query.answer(
-            "Фонд или склад пока не покрывает подарок." if plan["do"] == "short" else "Премиум пока не собран. Создатель уже видит это.",
-            show_alert=True,
+        await _note(
+            query,
+            "Фонд не покрывает подарок." if plan["do"] == "short" else "Премиума нет. Создатель видит это.",
         )
         return
     if not await _spend_fund(query.bot, fund_chat, int(plan.get("amount") or 0)):
-        await query.answer("Фонд пока не покрывает подарок.", show_alert=True)
+        await _note(query, "Фонд пока не покрывает подарок.")
         return
     payer, partner = int(info["payer_id"]), int(info["partner_id"])
     amount = int(plan.get("amount") or 0)
@@ -1532,7 +1538,7 @@ async def _fulfill(query, info: dict, cfg: dict, holiday: dict, pool) -> None:
     if not ok:
         if amount > 0:
             await _db().add_to_chatbalance(query.bot, fund_chat, amount)
-        await query.answer(ALERT_TILL, show_alert=True)
+        await _note(query, ALERT_TILL)
         return
     await store.finish_wish(pool, int(info["book_id"]), int(info["day"]))
     await query.answer()
@@ -1543,18 +1549,18 @@ async def _on_wish(query, prize_id: str, user_id: int, pool) -> None:
     cfg = await _cfg()
     live = await store.live_for(pool, user_id)
     if not live or not live.get("id"):
-        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        await _note(query, ALERT_NO_MARRIAGE)
         return
     holiday = await _holiday(pool, user_id, cfg, live)
     if not holiday:
-        await query.answer("Праздника сейчас нет.", show_alert=True)
+        await _note(query, "Праздника сейчас нет.")
         return
     if prize_id == "premium6" and int(holiday["day"]) < 30:
-        await query.answer("Этот подарок открывается с месяца.", show_alert=True)
+        await _note(query, "Этот подарок открывается с месяца.")
         return
     info = await store.choose_wish(pool, user_id, prize_id, int(holiday["day"]), cfg)
     if not info.get("ok") or not info.get("locked"):
-        await query.answer(info.get("alert") or GIFT_ALERT["bad"], show_alert=True)
+        await _note(query, info.get("alert") or GIFT_ALERT["bad"])
         return
     await _fulfill(query, info, cfg, holiday, pool)
 
@@ -1653,6 +1659,31 @@ def _kut(value) -> str:
         return f"{int(value)}"
     except (TypeError, ValueError):
         return "0"
+
+
+async def _note(query, text: str) -> None:
+    clean = " ".join(str(text or "").replace("<", " ").replace(">", " ").split())
+    if clean:
+        await _edit(query, HEART + " <b>" + clean + "</b>", _kb_back())
+
+
+def _arm(query) -> None:
+    """Первый answer снимает часики. Повторный Telegram уже не ждёт."""
+    if getattr(query, "_mrg_arm", False):
+        return
+    query._mrg_arm = True
+    original = query.answer
+
+    async def answer(*args, **kwargs):
+        if getattr(query, "_mrg_sent", False):
+            return
+        query._mrg_sent = True
+        try:
+            await original()
+        except Exception:
+            pass
+
+    query.answer = answer
 
 
 async def _edit(query, text: str, markup=_CLEAR) -> None:

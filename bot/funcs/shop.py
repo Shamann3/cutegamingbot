@@ -624,7 +624,8 @@ def get_navigation_buttons(page: int, total_pages: int, prefix: str = "page") ->
 async def build_shop_markup(
     page: int,
     total_pages: int,
-    prefix: str
+    prefix: str,
+    message=None,
 ) -> InlineKeyboardMarkup:
     sorting_btns = await build_sorting_buttons()
     nav_btns = get_navigation_buttons(page, total_pages, prefix)
@@ -640,7 +641,7 @@ async def build_shop_markup(
     keyboard = []
 
     # Добавляем кнопку веб-приложения только если buttonwebapp != 0
-    if buttonwebapp == 1:
+    if buttonwebapp == 1 and message is not None:
         webapp_btn = _open_section_button(
             "Открыть в приложении", "shop", message, "5253767677670862169",
         )
@@ -713,17 +714,18 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
 async def _serve_dish(message, user_id, code, emoji):
     """Съесть крафтовое блюдо из чата: та же забота, что и в карточке брака."""
     from bot.funcs import marriage_store as store
-    from bot.funcs.marriage_design import GIFT_ALERT, gift_catalog
+    from bot.funcs.marriage_design import DISH_NEED, DISH_NEED_SUB, DISH_OK, GIFT_ALERT, gift_catalog, use_card
 
     pool = getattr(db, "pool", None)
     if pool is None:
         return
     cfg = await store.load_settings(pool)
     row = next((item for item in gift_catalog(cfg) if item.get("name1") == code), None)
+    title = (row or {}).get("name") or "Блюдо"
     live = await store.live_for(pool, user_id)
     if not row or not live:
         await message.reply(
-            f"{emoji} <b>Это едят вместе.</b>\n<i>Нужен живой брак. Блюдо лежит в предметах пары.</i>",
+            use_card(emoji, title, DISH_NEED + " " + DISH_NEED_SUB),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -732,14 +734,14 @@ async def _serve_dish(message, user_id, code, emoji):
     if not result.get("ok"):
         note = GIFT_ALERT.get(result.get("reason") or "bad", GIFT_ALERT["bad"])
         await message.reply(
-            f"{emoji} <b>{html.escape(str(note))}</b>",
+            use_card(emoji, title, note),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
         return
-    note = html.escape(str(result.get("alert") or "Тепло взяли оба."))
+    note = str(result.get("alert") or DISH_OK)
     await message.reply(
-        f"{emoji} <b>{note}</b>",
+        use_card(emoji, title, note),
         parse_mode="HTML",
         disable_web_page_preview=True,
     )
@@ -793,7 +795,7 @@ async def shop_op(message: Message):
             )
         items = await get_available_items()
         catalog, total_pages = await generate_catalog_page(items, 0)
-        markup = await build_shop_markup(0, total_pages, "page")
+        markup = await build_shop_markup(0, total_pages, "page", message)
         sent = await message.reply(
             catalog, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup
         )
@@ -4627,7 +4629,7 @@ async def reset_filter_handler(callback: CallbackQuery):
         items = await get_available_items()
         debug_print(f"📦 После сброса доступно: {len(items)}")
         catalog, total_pages = await generate_catalog_page(items, 0)
-        markup = await build_shop_markup(0, total_pages, "page")
+        markup = await build_shop_markup(0, total_pages, "page", callback.message)
         try:
             await callback.message.edit_text(
                 catalog, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup
@@ -4699,7 +4701,7 @@ async def apply_filter_handler(callback: CallbackQuery):
             active_filter[msg_id] = symbol
             return
         catalog, total_pages = await generate_catalog_page(items, 0)
-        markup = await build_shop_markup(0, total_pages, "filter_page")
+        markup = await build_shop_markup(0, total_pages, "filter_page", callback.message)
         try:
             await callback.message.edit_text(
                 catalog, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup
@@ -4772,7 +4774,7 @@ async def paginate_handler(callback: CallbackQuery):
                     raise
             return
         catalog, total_pages = await generate_catalog_page(items, page)
-        markup = await build_shop_markup(page, total_pages, prefix)
+        markup = await build_shop_markup(page, total_pages, prefix, callback.message)
         try:
             await callback.message.edit_text(
                 catalog, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup
