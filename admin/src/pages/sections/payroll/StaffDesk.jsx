@@ -69,26 +69,29 @@ export default function StaffDesk({ onCount }) {
 
   const run = useCallback(async (id, choice, lift) => {
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    setBack(null)
-    if (!lift && !motionQuiet()) {
-      setFly({ id, side: choice.side })
-      await wait(FLY_MS)
-    }
-    let failure = ''
     try {
-      await sortStaffDeed(id, choice?.id || 'wrong', lift)
-    } catch (err) {
-      failure = messageOf(err)
-      reset()
+      setBusy(true)
+      setError('')
+      setBack(null)
+      if (!lift && !motionQuiet()) {
+        setFly({ id, side: choice.side })
+        await wait(FLY_MS)
+      }
+      let failure = ''
+      try {
+        await sortStaffDeed(id, choice?.id || 'wrong', lift)
+      } catch (err) {
+        failure = messageOf(err)
+        reset()
+      }
+      await load()
+      if (failure) setError(failure)
+      else setFlash({ key: Date.now(), text: doneText(choice?.id, lift), undoId: id, side: choice?.side || 'left' })
+      setFly(null)
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) setError(failure)
-    else setFlash({ key: Date.now(), text: doneText(choice?.id, lift), undoId: id, side: choice?.side || 'left' })
-    setFly(null)
-    setBusy(false)
-    release()
   }, [load, reset])
 
   const choose = useCallback((choice, lift = false) => {
@@ -104,24 +107,27 @@ export default function StaffDesk({ onCount }) {
     const last = flash
     if (!last?.undoId || busy || fly) return
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    let failure = ''
     try {
-      await unsortStaffDeed(last.undoId)
-      setBack({ id: last.undoId, side: last.side })
-    } catch (err) {
-      failure = messageOf(err)
+      setBusy(true)
+      setError('')
+      let failure = ''
+      try {
+        await unsortStaffDeed(last.undoId)
+        setBack({ id: last.undoId, side: last.side })
+      } catch (err) {
+        failure = messageOf(err)
+      }
+      await load()
+      if (failure) {
+        setError(failure)
+        setFlash({ ...last, undoId: 0 })
+      } else {
+        setFlash({ key: Date.now(), text: 'Ответ отменён. Карточка снова перед вами.', undoId: 0 })
+      }
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) {
-      setError(failure)
-      setFlash({ ...last, undoId: 0 })
-    } else {
-      setFlash({ key: Date.now(), text: 'Ответ отменён. Карточка снова перед вами.', undoId: 0 })
-    }
-    setBusy(false)
-    release()
   }, [flash, busy, fly, load])
 
   useEffect(() => {
@@ -231,6 +237,7 @@ export default function StaffDesk({ onCount }) {
               swipe={swipe}
             />
             {!watching && (
+            <>
             <div className="work-choice">
               {CHOICES.map((choice) => (
                 <button
@@ -265,6 +272,7 @@ export default function StaffDesk({ onCount }) {
                 </small>
               </button>
             </div>
+            </>
             )}
             {notes}
           </div>

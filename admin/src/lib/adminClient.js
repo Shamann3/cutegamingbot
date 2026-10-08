@@ -1247,6 +1247,19 @@ export async function searchAdminUsers(query) {
   return adminFetch(`/users/search?${params}`)
 }
 
+export async function glanceAdminUser(query, chatId = null) {
+  const params = new URLSearchParams({ q: query })
+  if (chatId != null && chatId !== '') params.set('chat_id', String(chatId))
+  return adminFetch(`/users/glance?${params}`)
+}
+
+export async function adoptAdminUser(query, chatId = null) {
+  return adminFetch('/users/adopt', {
+    method: 'POST',
+    body: { q: query, chat_id: chatId == null || chatId === '' ? null : Number(chatId) },
+  })
+}
+
 export async function fetchAdminUser(userId) {
   return adminFetch(`/users/${userId}`)
 }

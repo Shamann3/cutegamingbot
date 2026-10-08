@@ -1931,6 +1931,42 @@ html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sideb
   font-size: 14px;
 }
 
+.mrg-verbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 8px 0 18px;
+}
+
+.mrg-verbs article {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink, #1c1917) 4%, transparent);
+}
+
+.mrg-verbs header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.mrg-verbs header span {
+  opacity: 0.62;
+  font-size: 12px;
+}
+
+.mrg-verbs label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
 .mrg-ladder {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));

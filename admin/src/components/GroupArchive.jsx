@@ -108,6 +108,7 @@ export default function GroupArchive({
   seedQuery = '',
   onOpenUser,
   arrived = [],
+  chatId = null,
 }) {
   const [filter, setFilter] = useState('all')
   const [openId, setOpenId] = useState(null)
@@ -225,6 +226,8 @@ export default function GroupArchive({
           <p className="realm-copy">Найдите человека и выберите, что сделать. Без причины кнопка внизу не сработает.</p>
           <UserLookupPreview
             value={userId}
+            allowOutside
+            chatId={chatId}
             onChange={setUserId}
             onResolved={(u) => setResolvedId(u ? Number(u.userId ?? u.user_id) : null)}
             onOpenUser={onOpenUser}

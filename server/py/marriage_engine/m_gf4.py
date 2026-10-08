@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-G4 = ()
+from marriage_engine.marriage_design import G4

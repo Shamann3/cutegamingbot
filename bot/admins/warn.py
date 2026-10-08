@@ -87,6 +87,7 @@ from bot.admins.mute import (
   refuse_stale_grant,
   warm_official_chats,
   _proof_owner_token,
+  _command_text_with_people,
   _looks_like_telegram_username,
   _lookup_target_by_token,
   _require_staff_chat,
@@ -1847,7 +1848,7 @@ async def _send_warn_help(message: Message) -> None:
 # ---------------------------------------------------------------------------
 
 async def parse_warn_command(message: Message) -> ParsedWarn | ParseError:
-  text = _get_command_text(message)
+  text = _command_text_with_people(message)
   parts = text.split()
   WarnDebug.log("PARSE", "start", text=text, parts=parts, reply=bool(message.reply_to_message))
 
@@ -1874,9 +1875,11 @@ async def parse_warn_command(message: Message) -> ParsedWarn | ParseError:
         token,
       )
     if token.startswith("@") or _looks_like_username_token(token):
+      from bot.admins.punish_validate import username_miss_html
+      username = token.lstrip("@")
       return ParseError(
         "warn_user_not_found",
-        WarnText.NOT_FOUND_USERNAME.format(username=escape(token.lstrip("@"))),
+        username_miss_html(username, WarnText.NOT_FOUND_USERNAME.format(username=escape(username))),
         token,
       )
     if reply_user:

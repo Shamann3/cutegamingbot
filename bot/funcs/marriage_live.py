@@ -36,6 +36,7 @@ from bot.funcs.marriage_design import (
     BTN_GEST,
     BTN_FEAST,
     BTN_GIFT,
+    button_rows,
     award_plan,
     care_code,
     due_period,
@@ -53,13 +54,19 @@ from bot.funcs.marriage_design import (
     BTN_STAY,
     BTN_STAT,
     BTN_STOP,
+    TAKE_WORD,
+    VERB_PRICE,
     BTN_TONE,
     BTN_TOP,
     BTN_WHAT,
     BTN_YES,
+    BUY_PRICE,
+    BUY_WORD,
     BUSY,
     CREATOR_ONLY,
+    CRAFT_BTN,
     EXPIRED,
+    FARM_BTN,
     HEART,
     HOLD_TEXT,
     HOW_TEXT,
@@ -94,6 +101,7 @@ from bot.funcs.marriage_design import (
     RP_ONLY_PAIR,
     RP_PAY_ASK,
     RP_POOR,
+    RP_WAIT,
     RP_TOMORROW,
     SELF,
     SKIP_OK,
@@ -148,6 +156,8 @@ from bot.funcs.marriage_rules import (
     gift_catalog,
     verb_care,
     verb_price,
+    verb_wait,
+    wait_left_text,
     wedding_date,
     wedding_price,
     which_wedding,
@@ -200,60 +210,41 @@ def _btn(text: str, data: str, style: str = "default", icon: str = "") -> Inline
 _CLEAR = InlineKeyboardMarkup(inline_keyboard=[])
 
 
-def _kb_ask(book_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            _btn(BTN_NO, f"mrg:no:{book_id}", "danger", NO_ID),
-            _btn(BTN_YES, f"mrg:yes:{book_id}", "success", RED_ID),
-        ],
-        [_btn(BTN_STOP, f"mrg:stop:{book_id}", "primary")],
-    ])
-
-
-def _kb_card(token: str, tone_on: bool, leave: bool = True, feast: bool = False) -> InlineKeyboardMarkup:
-    rows = [
-        [
-            _btn(BTN_GEST, f"mrg:gest:{token}", "primary", RED_ID),
-            _btn(BTN_GIFT, "mrg:bag:0", "primary", RED_ID),
-        ],
-        [
-            _btn(BTN_TONE, "mrg:fire:0", "default", DOT_ID),
-            _btn(BTN_LEVEL, "mrg:lvl:0", "default"),
-        ],
-        [
-            _btn(BTN_WHAT, "mrg:what:0", "default"),
-            _btn(BTN_HOW, "mrg:use:0", "default"),
-        ],
-        [
-            _btn(BTN_HOLD, "mrg:hold:0", "default"),
-            _btn(BTN_STAT, "mrg:stat:0", "default"),
-        ],
-        [_btn(BTN_RIBBON, "mrg:rib:0", "default")],
-    ]
-    if feast:
-        rows.insert(0, [_btn(BTN_FEAST, "mrg:feast:0", "primary", RED_ID)])
-    if leave:
-        rows.append([_btn(BTN_CARD_LEAVE, f"mrg:warn:{token}", "danger", NO_ID)])
+def _kb(name: str, show=(), **slots) -> InlineKeyboardMarkup:
+    """Кнопки экрана из дизайна: подпись, цвет и значок."""
+    rows = []
+    for row in button_rows(name, show, **slots):
+        rows.append([
+            _btn(btn["text"], btn["data"], btn.get("style") or "default", btn.get("icon") or "")
+            for btn in row
+        ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _kb_ask(book_id: int) -> InlineKeyboardMarkup:
+    return _kb("ask_free", book_id=book_id)
+
+
+def _kb_card(token: str, tone_on: bool, leave: bool = True, feast: bool = False) -> InlineKeyboardMarkup:
+    show = []
+    if feast:
+        show.append("feast")
+    if leave:
+        show.append("leave")
+    return _kb("card", show, token=token)
+
+
 def _kb_leave(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        _btn(BTN_STAY, f"mrg:stay:{token}", "success", RED_ID),
-        _btn(BTN_LEAVE, f"mrg:leave:{token}", "danger", NO_ID),
-    ]])
+    return _kb("leave_ask", token=token)
 
 
 def _kb_pay(verb_id: str, amount: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn(pay_label(amount), f"mrg:pay:{verb_id}", "success", RED_ID)],
-        [_btn(BTN_SKIP, f"mrg:skip:{verb_id}", "default")],
-    ])
+    return _kb("rp_pay", verb_id=verb_id, amount=amount)
 
 
 def _use_label(row) -> str:
     have = int(row.get("have") or 0)
-    text = str(row.get("use") or "Взять")
+    text = str(row.get("use") or TAKE_WORD)
     if have > 0:
         text += " · " + str(have)
     return text[:64]
@@ -261,7 +252,7 @@ def _use_label(row) -> str:
 
 def _buy_label(row) -> str:
     price = int(row.get("price") or 0)
-    return ("Купить " + str(price)) if price else "Купить"
+    return BUY_PRICE.format(price=price) if price else BUY_WORD
 
 
 def _kb_gifts(rows) -> InlineKeyboardMarkup:
@@ -276,89 +267,45 @@ def _kb_gifts(rows) -> InlineKeyboardMarkup:
             _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
             _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
         ])
-    buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
+    buttons.extend(_kb("back").inline_keyboard)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def _kb_back() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        _btn(BTN_BACK, "mrg:mine:0", "default"),
-    ]])
+    return _kb("back")
 
 
 def _kb_tone(token: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [_btn(verb_button("hug"), f"mrg:act:hug:{token}", "primary", RED_ID)],
-        [_btn(BTN_BACK, "mrg:mine:0", "default")],
-    ])
+    return _kb("tone", token=token)
 
 
 def _kb_gest(token: str, cfg: dict) -> InlineKeyboardMarkup:
+    prices = {item["id"]: int(verb_price(item, cfg) or 0) for item in RP}
     rows = []
-    row = []
-    for item in RP:
-        price = verb_price(item, cfg)
-        care = verb_care(item, cfg)
-        row.append(_btn(
-            verb_button(item["id"], price, care),
-            f"mrg:act:{item['id']}:{token}",
-            "primary",
-        ))
-        if len(row) == 2:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
-    rows.append([
-        _btn(BTN_HOLD, "mrg:hold:0", "default"),
-        _btn(BTN_BACK, "mrg:mine:0", "default"),
-    ])
+    for row in button_rows("gest", token=token):
+        built = []
+        for btn in row:
+            text = btn["text"]
+            parts = str(btn["data"]).split(":")
+            if len(parts) >= 3 and parts[1] == "act" and prices.get(parts[2], 0) > 0:
+                text = VERB_PRICE.format(label=text, price=prices[parts[2]])
+            built.append(_btn(text, btn["data"], btn.get("style") or "default", btn.get("icon") or ""))
+        if built:
+            rows.append(built)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _kb_guide(extra: str = "") -> InlineKeyboardMarkup:
-    rows = [[
-        _btn(BTN_WHAT, "mrg:what:0", "default"),
-        _btn(BTN_HOW, "mrg:use:0", "default"),
-    ], [
-        _btn(BTN_HOLD, "mrg:hold:0", "default"),
-        _btn(BTN_BACK, "mrg:mine:0", "default"),
-    ]]
-    if extra == "play":
-        rows.insert(0, [_btn(BTN_GEST, "mrg:care:0", "primary", RED_ID)])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+def _kb_guide(extra: str = "", name: str = "what") -> InlineKeyboardMarkup:
+    return _kb(name, ("play",) if extra == "play" else ())
 
 
 def _kb_ribbon(mode: str) -> InlineKeyboardMarkup:
-    if mode == "ask":
-        return InlineKeyboardMarkup(inline_keyboard=[[
-            _btn(BTN_RIBBON_DO, "mrg:rib:off", "danger", NO_ID),
-            _btn(BTN_RIBBON_KEEP, "mrg:rib:stay", "success", RED_ID),
-        ]])
-    if mode == "worn":
-        return InlineKeyboardMarkup(inline_keyboard=[
-            [_btn(BTN_RIBBON_OFF, "mrg:rib:ask", "danger", NO_ID)],
-            [
-                _btn(BTN_BACK, "mrg:mine:0", "default"),
-                _btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID),
-            ],
-        ])
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        _btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID),
-        _btn(BTN_BACK, "mrg:mine:0", "default"),
-    ]])
+    name = {"ask": "ribbon_ask", "worn": "ribbon_worn"}.get(mode, "ribbon_none")
+    return _kb(name)
 
 
 def _kb_roster(kind: str) -> InlineKeyboardMarkup:
-    other = (
-        _btn(BTN_LIST, "mrg:list:0", "primary")
-        if kind == "top"
-        else _btn(BTN_TOP, "mrg:top:0", "primary")
-    )
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        _btn(BTN_MINE, "mrg:mine:0", "default"),
-        other,
-    ]])
+    return _kb("top" if kind == "top" else "list")
 
 
 async def on_text(message) -> bool:
@@ -730,7 +677,7 @@ async def _tone_screen(pool, user, cfg):
     text = spark_fire(
         spark, spark["you"], spark["partner_care"], partner, int(cfg.get("rescueHours") or 12),
     )
-    return text, _kb_guide("play")
+    return text, _kb_guide("play", "spark_nav")
 
 
 async def _leave_ask(message) -> None:
@@ -884,6 +831,11 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
         await _reply(message, _fill(RP_ONLY_PAIR))
         return True
     day = datetime.now(MSK).date()
+    shared = shares_general_rp(item, verb)
+    wait_left = await store.rp_wait_left(pool, message.from_user.id, item["id"], verb_wait(item, cfg))
+    if wait_left > 0:
+        await _reply(message, _fill(RP_WAIT, title=verb_button(item["id"], 0, verb_care(item, cfg)), left=wait_left_text(wait_left)))
+        return True
     if await store.rp_taken(pool, message.from_user.id, other, item["id"], day, limit):
         await _reply(message, _fill(RP_TOMORROW, title=verb_button(item["id"])))
         return True
@@ -904,10 +856,15 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
     if not await store.mark_rp(pool, message.from_user.id, other, item["id"], day, limit):
         await _reply(message, _fill(RP_TOMORROW, title=verb_button(item["id"])))
         return True
+    await store.rp_touch(pool, message.from_user.id, item["id"])
+    gain = await _give_care(pool, live, message.from_user.id, item, cfg)
+    if shared:
+        if gain:
+            await _reply(message, gain.lstrip("\n"))
+        return False
     a = await _html(pool, message.from_user)
     b = await _html(pool, target)
-    text = rp_html(item, a, b, note)
-    text += await _give_care(pool, live, message.from_user.id, item, cfg)
+    text = rp_html(item, a, b, note) + gain
     await _reply(message, text)
     return True
 
@@ -989,7 +946,7 @@ async def _place_hint_message(query, kind: str, cfg) -> None:
     message = getattr(query, "message", None)
     if not hint or message is None:
         return
-    label = "На ферму" if hint.get("where") == "farm" else "В крафт"
+    label = FARM_BTN if hint.get("where") == "farm" else CRAFT_BTN
     private = getattr(getattr(message, "chat", None), "type", "") == "private"
     fields = section_button_fields(label, hint.get("where") or "farm", private=private, icon="5208464835079082371")
     web_app_url = fields.pop("web_app_url", None)
@@ -1103,17 +1060,11 @@ async def _on_guide(query, action: str, pool) -> None:
     user = query.from_user
     cfg = await _cfg()
     live = await store.live_for(pool, user.id)
-    if action == "what":
+    guide = {"what": ("what", WHAT_TEXT), "use": ("how", HOW_TEXT), "hold": ("hold", HOLD_TEXT)}
+    if action in guide:
+        name, text = guide[action]
         await query.answer()
-        await _edit(query, WHAT_TEXT, _kb_guide("play" if live else ""))
-        return
-    if action == "use":
-        await query.answer()
-        await _edit(query, HOW_TEXT, _kb_guide("play" if live else ""))
-        return
-    if action == "hold":
-        await query.answer()
-        await _edit(query, HOLD_TEXT, _kb_guide("play" if live else ""))
+        await _edit(query, text, _kb_guide("play" if live else "", name))
         return
     if not live:
         await _note(query, ALERT_NO_MARRIAGE)
@@ -1144,8 +1095,9 @@ async def _on_guide(query, action: str, pool) -> None:
         text = spark_stats(spark, spark["you"], spark["partner_care"], partner)
     else:
         text = spark_fire(spark, spark["you"], spark["partner_care"], partner, int(cfg.get("rescueHours") or 12))
+    nav = {"lvl": "level_nav", "stat": "stat_nav"}.get(action, "spark_nav")
     await query.answer()
-    await _edit(query, text, _kb_guide("play"))
+    await _edit(query, text, _kb_guide("play", nav))
 
 
 async def _on_mine(query, pool) -> None:

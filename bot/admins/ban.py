@@ -84,6 +84,7 @@ from bot.admins.mute import (
   refuse_stale_grant,
   warm_official_chats,
   _proof_owner_token,
+  _command_text_with_people,
   _lookup_target_by_token,
   _require_staff_chat,
   _resolve_admin_identity,
@@ -792,7 +793,7 @@ async def _send_ban_help(message: Message) -> None:
 
 
 async def parse_ban_command(message: Message) -> ParsedBan | ParseError:
-  text = _get_command_text(message)
+  text = _command_text_with_people(message)
   parts = text.split()
   BanDebug.log("PARSE", "start", text=text, parts=parts, reply=bool(message.reply_to_message))
 
@@ -819,9 +820,11 @@ async def parse_ban_command(message: Message) -> ParsedBan | ParseError:
         token,
       )
     if token.startswith("@") or _looks_like_username_token(token):
+      from bot.admins.punish_validate import username_miss_html
+      username = token.lstrip("@")
       return ParseError(
         "ban_user_not_found",
-        BanText.NOT_FOUND_USERNAME.format(username=escape(token.lstrip("@"))),
+        username_miss_html(username, BanText.NOT_FOUND_USERNAME.format(username=escape(username))),
         token,
       )
     if reply_user:
@@ -2364,8 +2367,9 @@ async def _resolve_unban_target(
 def _unban_target_error_message(body: str, target_username: Optional[str]) -> str:
   token = (body.split()[0] if body else "").strip()
   if target_username or token.startswith("@") or _looks_like_username_token(token):
+    from bot.admins.punish_validate import username_miss_html
     username = (target_username or token).lstrip("@")
-    return BanText.UNBAN_NOT_FOUND_USERNAME.format(username=escape(username))
+    return username_miss_html(username, BanText.UNBAN_NOT_FOUND_USERNAME.format(username=escape(username)))
   if token.isdigit():
     return BanText.UNBAN_NOT_FOUND_ID.format(token=escape(token))
   if token:

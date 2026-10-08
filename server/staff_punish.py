@@ -238,7 +238,9 @@ async def punish(
         admin_id=int(actor_id),
     )
     if not result.get("ok"):
-        raise PunishRefused(400, telegram_refusal(result))
+        from offender_profile import failure_text
+
+        raise PunishRefused(400, failure_text(result))
     return {
         "ok": True,
         "action": key,

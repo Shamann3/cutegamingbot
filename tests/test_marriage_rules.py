@@ -435,3 +435,45 @@ def test_gifts_help_only_your_half_and_stack_in_the_bag():
     for text in GIFT_ALERT.values():
         assert len(text) <= 200
         assert "<" not in text
+
+
+def test_kind_words_feed_the_flame_and_the_week_is_visible():
+    from datetime import date
+
+    from bot.funcs.marriage_design import classify, flame_strip, settings_view, verb_care, verb_catalog
+
+    pity = classify("пожалеть")
+    assert pity["kind"] == "rp"
+    assert pity["verb"] == "пожалеть"
+    tea = classify("принести чай ей")
+    assert tea["rp"]["id"] == "tea"
+    assert tea["note"] == "ей"
+    view = settings_view({"sparks": {"hug": 9}, "waits": {"hug": 15}})
+    assert view["sparks"]["hug"] == 9
+    assert view["waits"]["hug"] == 15
+    assert view["sparks"]["pity"] == 3
+    assert verb_care({"id": "hug", "care": 4}, view) == 9
+    row = next(item for item in verb_catalog(view) if item["id"] == "pity")
+    assert row["word"] == "пожалеть"
+    assert row["care"] == 3
+    assert row["wait"] == 30
+    strip = flame_strip(
+        {"spark_days": 3, "spark_day": date(2026, 10, 8)},
+        today=date(2026, 10, 9),
+        both_done=False,
+    )
+    assert "🔥" in strip
+    assert "пн" in strip
+    assert "◌" in strip
+    assert "ещё можно" in strip
+    from bot.funcs.marriage_design import HOW_TEXT, WHAT_TEXT, spark_fire
+    assert "половин" in WHAT_TEXT.lower()
+    assert "лимит" in WHAT_TEXT.lower()
+    assert "Награда" in HOW_TEXT
+    fire = spark_fire(
+        {"need": 5, "goal": 10, "both_done": False, "fading": False, "level": {"name": "Знакомство"}, "state": {"spark_days": 0}},
+        2, 0, "Б", 12,
+    )
+    assert "Лимит 10" in fire
+    assert "Вы 2 из 5" in fire
+    assert "ещё 3" in fire

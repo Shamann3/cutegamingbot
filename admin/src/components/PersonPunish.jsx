@@ -214,7 +214,12 @@ export default function PersonPunish({
     }
   }
 
-  const name = report?.name || (warns?.name) || 'Человек'
+  const readable = (value) => {
+    const text = String(value || '').trim()
+    if (!text || text === String(userId)) return ''
+    return text
+  }
+  const name = readable(report?.name) || readable(warns?.name) || 'Человек'
   const username = report?.username ? `@${String(report.username).replace(/^@/, '')}` : `#${userId}`
   const items = report?.available === false ? [] : (report?.items || [])
 
@@ -292,6 +297,7 @@ export default function PersonPunish({
         </p>
       )}
       {loading && !report && <p className="person-read">Открываем наказания…</p>}
+      {report?.notice && <p className="person-read">{report.notice}</p>}
       {report?.available === false && (
         <p className="person-read">История не открылась. Нулей вместо записей здесь нет.</p>
       )}

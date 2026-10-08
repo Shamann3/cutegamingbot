@@ -131,6 +131,16 @@ async def ensure(pool) -> bool:
                 "ALTER TABLE marriage_rp_day ADD COLUMN IF NOT EXISTS times INT NOT NULL DEFAULT 1"
             )
             await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS marriage_rp_touch (
+                    user_id BIGINT NOT NULL,
+                    verb_id TEXT NOT NULL,
+                    touched_at TIMESTAMPTZ NOT NULL,
+                    PRIMARY KEY (user_id, verb_id)
+                )
+                """
+            )
+            await conn.execute(
                 "ALTER TABLE marriage_book ADD COLUMN IF NOT EXISTS charged BOOLEAN NOT NULL DEFAULT FALSE"
             )
             await conn.execute(
@@ -749,6 +759,44 @@ async def rp_taken(pool, a: int, b: int, verb_id: str, day, limit: int = 1) -> b
             day,
         )
     return int(times or 0) >= cap
+
+
+async def rp_wait_left(pool, user_id: int, verb_id: str, minutes: int) -> int:
+    """Сколько секунд ещё ждать это слово. 0 — можно сейчас."""
+    wait = int(minutes or 0)
+    if wait <= 0 or pool is None or not await ensure(pool):
+        return 0
+    async with pool.acquire() as conn:
+        touched = await conn.fetchval(
+            """
+            SELECT touched_at FROM marriage_rp_touch
+            WHERE user_id = $1 AND verb_id = $2
+            """,
+            int(user_id),
+            str(verb_id),
+        )
+    if touched is None:
+        return 0
+    if touched.tzinfo is None:
+        touched = touched.replace(tzinfo=timezone.utc)
+    left = wait * 60 - (datetime.now(timezone.utc) - touched).total_seconds()
+    return max(0, int(left))
+
+
+async def rp_touch(pool, user_id: int, verb_id: str) -> None:
+    if pool is None or not await ensure(pool):
+        return
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO marriage_rp_touch (user_id, verb_id, touched_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (user_id, verb_id)
+            DO UPDATE SET touched_at = NOW()
+            """,
+            int(user_id),
+            str(verb_id),
+        )
 
 
 async def mark_rp(pool, a: int, b: int, verb_id: str, day, limit: int = 1) -> bool:

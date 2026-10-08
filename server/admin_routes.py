@@ -3492,6 +3492,48 @@ async def admin_users_search(
     return {"results": await search_users(q)}
 
 
+@router.get("/users/glance")
+async def admin_users_glance(
+    q: str = Query(..., min_length=1, max_length=128),
+    chat_id: int | None = None,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    """Человек вне Кута: Telegram, без записи в users. Запись делает само наказание."""
+    from offender_profile import glance_person
+
+    return await glance_person(q, chat_id)
+
+
+class UserAdoptBody(BaseModel):
+    q: str = Field(min_length=1, max_length=128)
+    chat_id: int | None = None
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/users/adopt")
+async def admin_users_adopt(
+    body: UserAdoptBody,
+    request: Request,
+    _admin_id: int = Depends(require_admin_permission("view_players")),
+):
+    """Карточка человека, которого ещё нет в Куте. Строка users появляется здесь."""
+    from offender_profile import OffenderRefused, adopt_query
+
+    try:
+        prepared = await adopt_query(body.q, body.chat_id)
+    except OffenderRefused as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    profile = await get_user_admin_profile(int(prepared["user_id"]))
+    if not profile:
+        raise HTTPException(status_code=404, detail="Карточка не открылась. Повторите поиск.")
+    profile = _strip_player_sensitive(request, profile)
+    return {
+        "profile": profile,
+        "message": prepared.get("message") or "",
+        "userId": int(prepared["user_id"]),
+    }
+
+
 @router.get("/users/{target_user_id}/inventory")
 async def admin_user_inventory(
     target_user_id: int,
@@ -4946,7 +4988,9 @@ async def admin_groups_studio_moderate(
     except Exception:
         pass
     if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("telegram") or result.get("error") or "Отказ")
+        from offender_profile import failure_text
+
+        raise HTTPException(status_code=400, detail=failure_text(result))
     return result
 
 

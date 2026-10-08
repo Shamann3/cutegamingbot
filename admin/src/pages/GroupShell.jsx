@@ -758,7 +758,9 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     const asNum = Number(queryText.replace(/^#/, ''))
     const id = Number.isFinite(asNum) && String(asNum) === queryText.replace(/^#/, '') ? asNum : Number(queryText)
     if (!chatId) throw new Error('Сначала выберите группу')
-    if (!id || !Number.isFinite(id)) throw new Error('Укажите числовой id или выберите человека из подсказки')
+    if (!id || !Number.isFinite(id)) {
+      throw new Error('Нужен ID человека. Если его ещё нет в Куте, дождитесь карточки под полем или вставьте числовой ID.')
+    }
     if (!String(why || '').trim()) throw new Error('Нужна причина')
     const act = allowedActions.find((item) => item.id === actId)
       || seatWide.find((item) => item.id === actId)
@@ -1219,6 +1221,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 onAct={archiveAct}
                 seedQuery={userId}
                 arrived={arrived}
+                chatId={chatId}
                 onOpenUser={(id) => setUserId(String(id))}
               />
               {acting && <p className="realm-copy">Запись…</p>}

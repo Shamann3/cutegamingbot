@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { searchAdminUsers } from '../lib/adminClient'
+import { glanceAdminUser, searchAdminUsers } from '../lib/adminClient'
 import { CopyableId, CopyableUsername } from './Copyable'
 
 function fmt(n) {
@@ -13,7 +13,7 @@ function pickFields(u) {
   const uid = Number(u.userId ?? u.user_id)
   const name = u.displayName || u.firstName || u.first_name || u.name || (uid ? `Игрок ${uid}` : '')
   const uname = u.username ? `@${String(u.username).replace(/^@/, '')}` : null
-  return { uid, name, uname, balance: u.balance, banned: u.banned, raw: u }
+  return { uid, name, uname, balance: u.balance, banned: u.banned, outside: Boolean(u.outside), raw: u }
 }
 
 /**
@@ -26,30 +26,40 @@ export default function UserLookupPreview({
   onChange,
   onResolved,
   onOpenUser,
+  onHint,
+  allowOutside = false,
+  chatId = null,
   placeholder = 'ID, @username или имя',
   label = 'Игрок',
 }) {
   const [hits, setHits] = useState([])
   const [loading, setLoading] = useState(false)
   const [picked, setPicked] = useState(null)
+  const [hint, setHint] = useState('')
   const timer = useRef(null)
   const wrapRef = useRef(null)
   const onResolvedRef = useRef(onResolved)
+  const onHintRef = useRef(onHint)
   onResolvedRef.current = onResolved
+  onHintRef.current = onHint
 
   useEffect(() => {
+    let cancelled = false
     const q = String(value || '').trim()
     if (timer.current) window.clearTimeout(timer.current)
     if (q.length < 2) {
       setHits([])
       setPicked(null)
+      setHint('')
       onResolvedRef.current?.(null)
+      onHintRef.current?.('')
       return undefined
     }
     timer.current = window.setTimeout(async () => {
       setLoading(true)
       try {
         const data = await searchAdminUsers(q)
+        if (cancelled) return
         const items = Array.isArray(data?.results) ? data.results : Array.isArray(data?.items) ? data.items : []
         setHits(items.slice(0, 6))
         const asId = q.replace(/^@/, '')
@@ -58,23 +68,50 @@ export default function UserLookupPreview({
           || (items.length === 1 ? items[0] : null)
         if (exact) {
           setPicked(exact)
+          setHint('')
           onResolvedRef.current?.(exact)
-        } else {
-          setPicked(null)
-          onResolvedRef.current?.(null)
+          onHintRef.current?.('')
+          return
         }
-      } catch {
+        if (!allowOutside || items.length > 0) {
+          setPicked(null)
+          setHint('')
+          onResolvedRef.current?.(null)
+          onHintRef.current?.('')
+          return
+        }
+        const glance = await glanceAdminUser(q, chatId)
+        if (cancelled) return
+        const person = glance?.user
+        if (person) {
+          setHits([person])
+          setPicked(person)
+          setHint(glance.message || '')
+          onResolvedRef.current?.(person)
+          onHintRef.current?.(glance.message || '')
+          return
+        }
         setHits([])
         setPicked(null)
+        setHint(glance?.message || '')
         onResolvedRef.current?.(null)
+        onHintRef.current?.(glance?.message || '')
+      } catch {
+        if (cancelled) return
+        setHits([])
+        setPicked(null)
+        setHint('')
+        onResolvedRef.current?.(null)
+        onHintRef.current?.('')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }, 280)
     return () => {
+      cancelled = true
       if (timer.current) window.clearTimeout(timer.current)
     }
-  }, [value])
+  }, [value, allowOutside, chatId])
 
   const card = pickFields(picked)
   const list = hits.map(pickFields).filter(Boolean)
@@ -118,6 +155,7 @@ export default function UserLookupPreview({
               {card.uname ? <CopyableUsername value={card.uname} /> : <CopyableId value={card.uid} />}
               {card.uname && card.uid ? <> · <CopyableId value={card.uid} /></> : null}
               {card.balance != null ? ` · ${fmt(card.balance)} кут` : ''}
+              {card.outside ? ' · ещё не в Куте' : ''}
               {card.banned ? ' · бан в боте' : ''}
             </em>
           </span>
@@ -150,6 +188,7 @@ export default function UserLookupPreview({
       {!showCard && !showList && loading ? (
         <span className="ulp-loading-inline">Ищем…</span>
       ) : null}
+      {hint ? <p className="ulp-note" role="status">{hint}</p> : null}
     </div>
   )
 }

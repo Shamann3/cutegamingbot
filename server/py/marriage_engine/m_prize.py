@@ -2,24 +2,17 @@
 """Праздники пары и тихий день. В магазин попадает только то, что создатель оставил включённым."""
 import math
 
-from marriage_engine.look import PRIZE_COPY
-
-PERIODS = (
-    {"day": 7, "name": "Первая неделя"},
-    {"day": 14, "name": "Две недели"},
-    {"day": 30, "name": "Месяц"},
-    {"day": 100, "name": "Сто дней"},
+from marriage_engine.marriage_design import (
+    ABOUT,
+    PERIODS,
+    SCREENS,
+    PRIZES,
+    QUIET_BUY,
+    QUIET_CODE,
+    QUIET_EMOJI,
+    QUIET_NAME,
+    QUIET_USE,
 )
-PRIZES = (
-    {"id": "envelope", "name": "Конверт", "emoji": "✉️", "on": True, "blurb": PRIZE_COPY["envelope"]},
-    {"id": "care", "name": "Забота", "emoji": "🕯", "on": True, "blurb": PRIZE_COPY["care"]},
-    {"id": "ribbon", "name": "Лента", "emoji": "🎀", "on": True, "blurb": PRIZE_COPY["ribbon"]},
-    {"id": "premium3", "name": "Премиум 3 мес.", "emoji": "⭐", "on": True, "blurb": PRIZE_COPY["premium3"]},
-    {"id": "premium6", "name": "Премиум 6 мес.", "emoji": "🌟", "on": True, "blurb": PRIZE_COPY["premium6"]},
-)
-QUIET_NAME = "Тихий день"
-QUIET_CODE = "mrgquiet"
-QUIET_EMOJI = "🤫"
 
 
 def _clip(value, default, limit=80):
@@ -70,7 +63,7 @@ def quiet_row(cfg, force=False):
         return None
     emoji = _clip(cfg.get("quietEmoji"), QUIET_EMOJI, 4) or QUIET_EMOJI
     try:
-        price = int(cfg.get("quietPrice", 40))
+        price = int(cfg.get("quietPrice", SCREENS["item_quiet"].get("price") or 40))
     except (TypeError, ValueError):
         price = 40
     return {
@@ -80,9 +73,9 @@ def quiet_row(cfg, force=False):
         "emoji": emoji,
         "price": max(0, min(100000, price)),
         "care": 0,
-        "buy": "Купить тихий день",
-        "use": "Затихнуть",
-        "blurb": "Раз в неделю. Если вы не успели набрать свою часть, тихий день закрывает её за вас.",
+        "buy": QUIET_BUY,
+        "use": QUIET_USE,
+        "blurb": ABOUT["quiet"],
     }
 
 

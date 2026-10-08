@@ -3,6 +3,8 @@ import { fetchGroupOpen, submitGroupApplication } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import ChoiceSheet from '../components/ChoiceSheet'
 import EntryFrame from '../components/EntryFrame'
+import EntryGuide from '../components/EntryGuide'
+import { SCREENS } from '../entry_design'
 import { playMeme } from '../lib/memeSounds'
 
 const RULES_CHANNEL = 'https://t.me/CuteRules'
@@ -212,6 +214,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
 
   const roles = chats.find((chat) => chat.chatId === chatId)?.roles || []
   const chosen = roles.find((role) => role.positionId === positionId) || null
+  const keyed = mine.some((item) => item.status === 'approved' && item.entryKey)
+  const guideAt = keyed ? 'enter' : done ? 'key' : !rulesKnown ? 'rules' : !positionId ? 'pick' : 'about'
 
   const submit = async (event) => {
     event?.preventDefault?.()
@@ -286,6 +290,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
         {preview && (
           <p className="auth-form-lead">Это показ. Заявка никуда не отправится.</p>
         )}
+
+        <EntryGuide screen={SCREENS.groupApply} at={guideAt} />
 
         {done && sent && (
           <div className="apply-receipt" ref={resultRef} role="status">

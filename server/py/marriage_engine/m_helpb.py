@@ -22,13 +22,13 @@ def build(settings):
     return _tail(settings)
 def _tail(s):
     from marriage_engine.m_ids import HEART as H, SPARK as K, FREE_WEDDINGS as A, FIRST_PAID as B, DOUBLE_UNTIL as C
-    from marriage_engine.look import BTN_YES as Y, BTN_NO as N, HELP_PAY
+    from marriage_engine.look import BTN_YES as Y, BTN_NO as N, HELP_PAY, HELP_PAGE
     from marriage_engine.m_join import LEVELS as L
     s = s if isinstance(s, dict) else {}
     r = s.get("levels") if isinstance(s.get("levels"), list) and s.get("levels") else L
     e = (int(r[0].get("goal") or 10) + 1) // 2
     n = str(int(s.get("freeWeddings", A) or 0)) + " " + str(int(s.get("firstPaid", B) or 0)) + " " + str(int(s.get("doubleUntil", C) or 0))
-    return H + "\n<code>Мой брак</code>\n<i>" + HELP_PAY + " " + n + " «" + Y + "» «" + N + "»</i>\n" + K + " искра тонус «" + str(r[0].get("name")) + "» — по " + str(e)
+    return HELP_PAGE.format(heart=H, pay=HELP_PAY, ladder=n, yes=Y, no=N, spark=K, level=str(r[0].get("name")), each=e)
 def each_share(goal):
     return (max(2, int(goal)) + 1) // 2
 def _clamp(value, default, low, high):
@@ -197,6 +197,8 @@ def settings_view(src):
             if key in known:
                 verbs[key] = _clamp(value, 0, 0, 100000)
     levels = normalize_levels(src.get("levels")) if src.get("levels") else normalize_levels(None)
+    got_sparks = src.get("sparks") if isinstance(src.get("sparks"), dict) else {}
+    got_waits = src.get("waits") if isinstance(src.get("waits"), dict) else {}
     return {
         "enabled": _flag(src, "enabled", True), "freeWeddings": _clamp(src.get("freeWeddings", FREE_WEDDINGS), FREE_WEDDINGS, 0, 100),
         "firstPaid": _clamp(src.get("firstPaid", FIRST_PAID), FIRST_PAID, 0, 100000), "doubleUntil": _clamp(src.get("doubleUntil", DOUBLE_UNTIL), DOUBLE_UNTIL, 0, 100000),
@@ -208,6 +210,14 @@ def settings_view(src):
         "moonFrom": _clamp(src.get("moonFrom", 21), 21, 0, 23), "moonTo": _clamp(src.get("moonTo", 6), 6, 0, 23),
         "dawnFrom": _clamp(src.get("dawnFrom", 6), 6, 0, 23), "dawnTo": _clamp(src.get("dawnTo", 10), 10, 0, 23),
         "levels": levels, "verbs": verbs,
+        "sparks": {
+            row["id"]: _clamp(got_sparks.get(row["id"], row.get("care") or 0), int(row.get("care") or 0), 0, 100)
+            for row in RP
+        },
+        "waits": {
+            row["id"]: _clamp(got_waits.get(row["id"], row.get("wait") or 0), int(row.get("wait") or 0), 0, 10080)
+            for row in RP
+        },
         "glowPrice": by["glow"]["price"], "glowCare": by["glow"]["care"],
         "candlePrice": by["candle"]["price"], "candleCare": by["candle"]["care"],
         "hearthPrice": by["hearth"]["price"], "hearthCare": by["hearth"]["care"],
@@ -512,37 +522,42 @@ def seal_today(state, today, need):
     state["fade_extra"] = 0
     return state
 def profile_line(view, now=None):
-    from marriage_engine.m_ids import HEART
+    from marriage_engine.look import HEART, PROFILE_EMPTY, PROFILE_WITH, PROFILE_TONE
     now = now or datetime.now(MSK)
     name = (view or {}).get("name_html") or ""
     if not name:
-        return HEART + " Брака нет. Ответьте «брак» на сообщение человека."
+        return PROFILE_EMPTY.format(heart=HEART)
     mark = "🎀" if (view or {}).get("ribbon") else HEART
-    line = mark + " В браке с " + name + " · " + together_label((view or {}).get("since"), now)
+    line = PROFILE_WITH.format(mark=mark, name=name, span=together_label((view or {}).get("since"), now))
     tone = (view or {}).get("tone_label") or ""
-    return line + (" · " + tone if tone else "")
+    return line + (PROFILE_TONE.format(tone=tone) if tone else "")
 def tone_text(score, label, hint=""):
-    from marriage_engine.m_ids import SPARK
+    from marriage_engine.look import SPARK, TONE_LINE
     tail = (" " + hint) if hint else ""
-    return SPARK + " <b>Тонус " + str(int(score)) + " · " + str(label) + "</b>" + tail
+    return TONE_LINE.format(spark=SPARK, score=int(score), label=label, tail=tail)
 def pay_label(amount):
-    return "Списать " + str(amount) + " кут"
+    from marriage_engine.look import PAY
+    return PAY["text"].format(amount=amount)
 def verb_button(verb_id, price=0, care=0):
     from marriage_engine.m_join import VERB_LABEL
-    label = VERB_LABEL.get(str(verb_id), str(verb_id))
-    return label + " · " + str(int(price)) if int(price or 0) > 0 else label
+    from marriage_engine.look import VERB_PRICE
+    found = rp_by_id(verb_id) or {}
+    label = VERB_LABEL.get(str(verb_id)) or found.get("title") or str(verb_id)
+    return VERB_PRICE.format(label=label, price=int(price)) if int(price or 0) > 0 else label
 def _pair(you, need, partner, other):
-    return "Ты " + str(int(you)) + " из " + str(int(need)) + " · " + str(partner) + " " + str(int(other)) + " из " + str(int(need))
+    from marriage_engine.look import PAIR_LINE
+    return PAIR_LINE.format(you=int(you), need=int(need), partner=partner, other=int(other))
 def _spare(you, other, need, partner):
     yours, theirs = max(0, int(you) - int(need)), max(0, int(other) - int(need))
     if yours <= 0 and theirs <= 0:
         return ""
-    line = "Запас: ты " + str(yours) + " · " + str(partner) + " " + str(theirs)
+    from marriage_engine.look import SPARE_LINE, SPARE_DAYS
+    line = SPARE_LINE.format(yours=yours, partner=partner, theirs=theirs)
     share = int(need or 0)
     if share > 0 and yours > 0 and theirs > 0:
         ahead = min(yours, theirs) // share
         if ahead > 0:
-            line += " · ещё " + str(ahead) + " дн."
+            line += SPARE_DAYS.format(ahead=ahead)
     return line
 def _feel(level):
     text = str((level or {}).get("life") or "")
@@ -559,108 +574,202 @@ def _feel(level):
     text = " ".join(text.replace("<", " ").replace(">", " ").split())
     return "<i>" + text + "</i>" if text else ""
 def _was(lost):
+    from marriage_engine.look import WAS_LINE, SPAN_DAY
     n = int(lost or 0)
-    return "<i>Серия была " + str(n) + " " + _ru(n, "день", "дня", "дней") + ". Вы уже не чужие.</i>"
+    return WAS_LINE.format(n=n, word=_ru(n, *SPAN_DAY))
 def card_text(a, b, span, date="", tone=""):
-    from marriage_engine.m_ids import HEART
-    lines = [HEART + " <b>" + a + " и " + b + "</b>", "<b>Вместе " + span + "</b>"]
+    from marriage_engine.look import HEART, CARD_HEAD, CARD_TOGETHER, CARD_DATE, CARD_TONE
+    lines = [CARD_HEAD.format(heart=HEART, a=a, b=b), CARD_TOGETHER.format(span=span)]
     if date:
-        lines.append("<i>" + date + "</i>")
+        lines.append(CARD_DATE.format(date=date))
     if tone:
-        lines.append("<i>" + tone + "</i>")
+        lines.append(CARD_TONE.format(tone=tone))
     return "\n".join(lines)
+def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
+    """Семь дней, как огонёк: 🔥 — день закрыт, ◌ — сегодня ещё можно, · — пусто."""
+    from marriage_engine.look import (
+        CLOCK_WORD, FLAME_COUNT, FLAME_LIT, FLAME_MARK, FLAME_NAMES, FLAME_OFF,
+        FLAME_OPEN, FLAME_RISK, FLAME_TODAY, FLAME_ZERO,
+    )
+    today = _day(today) or datetime.now(MSK).date()
+    state = state or {}
+    closed = max(0, int(state.get("spark_days") or 0))
+    anchor = _day(state.get("spark_day"))
+    lit = set()
+    if closed > 0 and anchor is not None:
+        for shift in range(closed):
+            lit.add(anchor - timedelta(days=shift))
+    if both_done:
+        lit.add(today)
+    names, marks = [], []
+    for shift in range(6, -1, -1):
+        day = today - timedelta(days=shift)
+        names.append(FLAME_NAMES[day.weekday()])
+        if day in lit:
+            marks.append(FLAME_MARK)
+        elif day == today:
+            marks.append(FLAME_TODAY)
+        else:
+            marks.append(FLAME_OFF)
+    if closed <= 0 and not both_done:
+        note = FLAME_ZERO
+    elif fading and not both_done:
+        note = FLAME_RISK.format(clock=clock or CLOCK_WORD)
+    elif today in lit:
+        note = FLAME_LIT
+    else:
+        note = FLAME_OPEN
+    return FLAME_COUNT.format(days=closed) + "\n" + " ".join(names) + "\n" + " ".join(marks) + "\n" + note
 def spark_home(a, b, span, date, view, you, partner_care, partner_name):
-    from marriage_engine.m_ids import HEART, SPARK
-    level = str((view.get("level") or {}).get("name") or "Знакомство")
+    from marriage_engine.look import (
+        CLOCK_WORD, HEART, LEVEL_EMPTY, SPARK, SPARK_COAT, SPARK_FADE, SPARK_LIVE,
+        HOME_THEM, HOME_YOU, LIMIT_LINE, SPARK_YESTERDAY, SPARK_ZERO,
+        WAS_SHORT, SPAN_DAY, CARD_HEAD,
+    )
+    level = str((view.get("level") or {}).get("name") or LEVEL_EMPTY)
     days, need = int((view.get("state") or {}).get("spark_days") or 0), int(view.get("need") or 0)
-    lines = [HEART + " <b>" + a + " и " + b + "</b>", "<b>" + span + "</b>"]
+    goal = int(view.get("goal") or 0)
+    pair = "<b>" + _pair(you, need, partner_name, partner_care) + "</b>"
+    left = max(0, need - int(you or 0))
+    lines = [
+        CARD_HEAD.format(heart=HEART, a=a, b=b),
+        "<b>" + span + "</b>",
+        flame_strip(
+            view.get("state"),
+            both_done=bool(view.get("both_done")),
+            fading=bool(view.get("fading")),
+            clock=view.get("clock") or "",
+        ),
+        LIMIT_LINE.format(goal=goal, need=need),
+    ]
     lost = int(view.get("lost") or 0)
     if lost > 0:
         lines += [
-            SPARK + " <b>С нуля · " + level + "</b>",
-            "<b>" + _pair(you, need, partner_name, partner_care) + "</b>",
-            "<i>Было " + str(lost) + " " + _ru(lost, "день", "дня", "дней") + ". Вы уже не чужие.</i>",
+            SPARK_ZERO.format(spark=SPARK, level=level),
+            pair,
+            WAS_SHORT.format(n=lost, word=_ru(lost, *SPAN_DAY)),
+            HOME_YOU.format(left=need) if need else "",
         ]
     elif view.get("fading"):
         lines += [
-            SPARK + " <b>Гаснет · " + str(days) + "</b>",
-            "<i>До " + str(view.get("clock") or "полудня") + " закройте вчера.</i>",
-            "<b>" + _pair(you, need, partner_name, partner_care) + "</b>",
+            SPARK_FADE.format(spark=SPARK, days=days),
+            SPARK_YESTERDAY.format(clock=view.get("clock") or CLOCK_WORD),
+            pair,
         ]
     else:
-        lines += [SPARK + " <b>" + str(days) + " · " + level + "</b>", "<b>" + _pair(you, need, partner_name, partner_care) + "</b>"]
+        lines += [SPARK_LIVE.format(spark=SPARK, days=days, level=level), pair]
         spare = _spare(you, partner_care, need, partner_name)
         if spare:
             lines.append("<i>" + spare + "</i>")
-        elif view.get("both_done"):
-            lines.append("<i>День закроется в полночь.</i>")
+        if not view.get("both_done"):
+            lines.append(HOME_YOU.format(left=left) if left > 0 else HOME_THEM)
     if int((view.get("state") or {}).get("shield") or 0) > 0:
-        lines.append("<i>Пальто: один пропуск.</i>")
+        lines.append(SPARK_COAT)
     return "\n".join(line for line in lines if line)
 def spark_level(view):
-    from marriage_engine.m_ids import SPARK
+    from marriage_engine.look import LEVEL_LEAD, LEVEL_NEXT, LEVEL_NOW, LEVEL_ROW, LEVELS_TITLE, SPARK
     from marriage_engine.m_join import LEVELS
     rows = view.get("table") if isinstance(view.get("table"), list) and view.get("table") else LEVELS
     current = int((view.get("level") or {}).get("id") or 1)
-    lines = [SPARK + " <b>Уровни</b>"]
+    lines = [LEVELS_TITLE.format(spark=SPARK), LEVEL_LEAD]
     for row in rows:
-        mark = " · сейчас" if int(row["id"]) == current else ""
-        lines.append("<b>" + row["name"] + "</b> <i>" + str(row["days"]) + " дн. · каждому по " + str((int(row["goal"]) + 1) // 2) + mark + "</i>")
+        mark = LEVEL_NOW if int(row["id"]) == current else ""
+        goal = int(row["goal"])
+        lines.append(LEVEL_ROW.format(
+            name=row["name"],
+            days=row["days"],
+            goal=goal,
+            share=each_share(goal),
+            mark=mark,
+        ))
+    nxt = view.get("next")
+    if isinstance(nxt, dict) and nxt.get("name"):
+        goal = int(nxt.get("goal") or 0)
+        lines.append(LEVEL_NEXT.format(
+            name=nxt["name"],
+            days=int(view.get("days_left") or 0),
+            goal=goal,
+            share=each_share(goal),
+        ))
     return "\n".join(lines)
 def spark_fire(view, you, partner_care, partner_name, hours):
-    from marriage_engine.m_ids import SPARK
-    need, goal = int(view.get("need") or 0), int(view.get("goal") or 0)
-    name = str((view.get("level") or {}).get("name") or "Знакомство")
+    from marriage_engine.look import (
+        CLOCK_WORD, FIRE_DONE, FIRE_DO, FIRE_FADE, FIRE_HEAD, FIRE_SPLIT, FIRE_WAIT,
+        FIRE_YESTERDAY, LEVEL_EMPTY, SPARK,
+    )
+    need = int(view.get("need") or 0)
+    goal = int(view.get("goal") or 0)
+    name = str((view.get("level") or {}).get("name") or LEVEL_EMPTY)
     days = int((view.get("state") or {}).get("spark_days") or 0)
+    left = max(0, need - int(you or 0))
     if view.get("fading"):
-        head = SPARK + " <b>Искра гаснет · день " + str(days) + "</b>"
-        sub = "До " + str(view.get("clock") or "полудня") + " закройте вчера: каждому по " + str(need) + "."
+        head = FIRE_FADE.format(spark=SPARK, days=days)
+        sub = FIRE_YESTERDAY.format(clock=view.get("clock") or CLOCK_WORD, need=need)
     else:
-        head = SPARK + " <b>" + name + " · день " + str(days) + "</b>"
-        sub = "Сегодня каждому нужно " + str(need) + "."
-    lines = [head, "<b>" + _pair(you, need, partner_name, partner_care) + "</b>", "<i>" + sub + "</i>"]
+        head = FIRE_HEAD.format(spark=SPARK, name=name, days=days)
+        if view.get("both_done"):
+            sub = FIRE_DONE
+        elif left <= 0:
+            sub = FIRE_WAIT
+        else:
+            sub = FIRE_DO.format(left=left)
+    lines = [
+        head,
+        FIRE_SPLIT.format(goal=goal, need=need),
+        "<b>" + _pair(you, need, partner_name, partner_care) + "</b>",
+        sub,
+    ]
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
         lines.append("<i>" + spare + "</i>")
     return "\n".join(lines)
 def care_line(amount, you, need, partner_care, saved, both, fading):
+    from marriage_engine.look import CARE_SAVED, CARE_FADING, CARE_PLUS
+    number = int(amount)
     if saved:
-        return "<i>+" + str(int(amount)) + ". Вчера закрыто.</i>"
+        return CARE_SAVED.format(n=number)
     if fading:
-        return "<i>+" + str(int(amount)) + ". Искра ещё гаснет.</i>"
-    return "<i>+" + str(int(amount)) + ".</i>"
+        return CARE_FADING.format(n=number)
+    return CARE_PLUS.format(n=number)
 def bond_line(bond, proposer_id, you_id, partner):
-    from marriage_engine.m_ids import HEART
+    from marriage_engine.look import HEART, BOND_FAMILY, BOND_YOU, BOND_THEM, BOND_BOUQUET
     if str(bond or "") == "family":
-        return HEART + " <b>Семья</b>"
+        return BOND_FAMILY.format(heart=HEART)
     try:
         giver = int(proposer_id or 0)
     except (TypeError, ValueError):
         giver = 0
     if str(bond or "") == "propose" and giver == int(you_id):
-        return HEART + " <b>Вы сделали предложение</b>"
+        return BOND_YOU.format(heart=HEART)
     if str(bond or "") == "propose" and giver:
-        return HEART + " <b>Вам сделали предложение</b>"
+        return BOND_THEM.format(heart=HEART)
     if str(bond or "") == "bouquet":
-        return HEART + " <b>Букет</b>"
+        return BOND_BOUQUET.format(heart=HEART)
     return ""
 def talk_line(you_spoke, partner_spoke):
-    from marriage_engine.m_ids import SPARK
+    from marriage_engine.look import SPARK, TALK_BOTH, TALK_YOU, TALK_THEM, TALK_NONE
     if you_spoke and partner_spoke:
-        return SPARK + " <i>Оба ответили.</i>"
+        return TALK_BOTH.format(spark=SPARK)
     if you_spoke:
-        return SPARK + " <i>Вы ответили. Ждём пару.</i>"
+        return TALK_YOU.format(spark=SPARK)
     if partner_spoke:
-        return SPARK + " <i>Пара ответила. Ответьте.</i>"
-    return SPARK + " <i>Ответьте друг другу.</i>"
+        return TALK_THEM.format(spark=SPARK)
+    return TALK_NONE.format(spark=SPARK)
 def spark_stats(view, you, partner_care, partner_name):
-    from marriage_engine.m_ids import HEART
+    from marriage_engine.look import HEART, LEVEL_EMPTY, STATS_LINE
     state, level = view.get("state") or {}, view.get("level") or {}
-    return HEART + " <b>" + str(level.get("name") or "Знакомство") + "</b>\n<i>" + _pair(you, int(view.get("need") or 0), partner_name, partner_care) + "</i>\n<i>Всего " + str(int(state.get("care_total") or 0)) + "</i>"
+    return STATS_LINE.format(
+        heart=HEART,
+        name=str(level.get("name") or LEVEL_EMPTY),
+        pair=_pair(you, int(view.get("need") or 0), partner_name, partner_care),
+        total=int(state.get("care_total") or 0),
+    )
 def gift_text(rows, ribbon=False, cfg=None):
-    from marriage_engine.m_ids import HEART
-    from marriage_engine.look import DINNER_LINE, item_about, item_name
-    lines = [HEART + " <b>Что делает каждый предмет</b>"]
+    from marriage_engine.look import (
+        DINNER_LINE, GIFT_EMPTY, GIFT_RIBBON, GIFT_ROW, GIFT_STOCK, GIFT_TITLE, HEART,
+        item_about, item_name,
+    )
+    lines = [GIFT_TITLE.format(heart=HEART)]
     shown = 0
     seeds = False
     for row in rows or []:
@@ -670,16 +779,14 @@ def gift_text(rows, ribbon=False, cfg=None):
         shown += 1
         if str(row.get("effect") or "") == "seed":
             seeds = True
-        stock = " У вас " + str(have) + " шт." if have else ""
-        lines.append(
-            str(row.get("emoji") or "") + " <b>" + item_name(row) + "</b>\n<i>" + item_about(row, rows, cfg) + stock + "</i>"
-        )
+        stock = GIFT_STOCK.format(have=have) if have else ""
+        lines.append(GIFT_ROW.format(emoji=str(row.get("emoji") or ""), name=item_name(row), about=item_about(row, rows, cfg), stock=stock))
     if seeds:
         lines.append("<i>" + DINNER_LINE + "</i>")
     if ribbon:
-        lines.append("🎀 <i>Лента уже на вас.</i>")
+        lines.append(GIFT_RIBBON)
     if shown == 0:
-        lines.append("<i>Пока пусто.</i>")
+        lines.append(GIFT_EMPTY)
     return "\n".join(lines)
 def own_ribbon(live, user_id):
     if not isinstance(live, dict):
@@ -692,13 +799,14 @@ def own_ribbon(live, user_id):
     key = "ribbon_payer" if uid == payer else "ribbon_partner"
     return bool(live.get(key))
 def ribbon_home(worn):
-    if worn:
-        return "🎀 <b>Лента на вас</b>"
-    return "🎀 <b>Ленты нет</b>\n<i>Своя, в предметах.</i>"
+    from marriage_engine.look import RIBBON_ON, RIBBON_OFF_HOME
+    return RIBBON_ON if worn else RIBBON_OFF_HOME
 def ribbon_ask():
-    return "🎀 <b>Снять ленту?</b>\n<i>Брак останется.</i>"
+    from marriage_engine.look import RIBBON_ASK
+    return RIBBON_ASK
 def ribbon_gone():
-    return "🎀 <b>Лента снята</b>"
+    from marriage_engine.look import RIBBON_GONE
+    return RIBBON_GONE
 def person_html(user_id, first="", username=""):
     label = str(first or (("@" + username) if username else "") or "игрок").replace("<", "").replace(">", "")
     return "<a href='tg://user?id=" + str(int(user_id)) + "'>" + label + "</a>"
@@ -729,20 +837,49 @@ def verb_price(item, cfg):
         return int(verbs[item["id"]])
     return int((item or {}).get("price") or 0)
 def verb_care(item, cfg=None):
+    sparks = (cfg or {}).get("sparks") or {}
+    ident = (item or {}).get("id")
+    if ident in sparks:
+        return int(sparks[ident])
     return int((item or {}).get("care") or 0)
+def verb_wait(item, cfg=None):
+    """Минуты паузы перед тем же словом. 0 — можно сразу."""
+    waits = (cfg or {}).get("waits") or {}
+    ident = (item or {}).get("id")
+    if ident in waits:
+        return int(waits[ident])
+    return int((item or {}).get("wait") or 0)
+def wait_left_text(seconds):
+    left = max(0, int(seconds or 0))
+    if left < 60:
+        return str(max(1, left)) + " сек"
+    minutes = (left + 59) // 60
+    if minutes < 60:
+        return str(minutes) + " мин"
+    hours, mins = divmod(minutes, 60)
+    if mins == 0:
+        return str(hours) + " ч"
+    return str(hours) + " ч " + str(mins) + " мин"
 def verb_catalog(settings=None):
-    from marriage_engine.m_join import RP
+    from marriage_engine.m_join import RP, VERB_LABEL
     view = settings if isinstance(settings, dict) and "verbs" in settings else settings_view(settings)
     rows = []
+    sparks = view.get("sparks") or {}
+    waits = view.get("waits") or {}
     for item in RP:
         row = dict(item)
         if item["id"] in (view.get("verbs") or {}):
             row["price"] = int(view["verbs"][item["id"]])
+        row["care"] = int(sparks.get(item["id"], item.get("care") or 0))
+        row["wait"] = int(waits.get(item["id"], item.get("wait") or 0))
+        row["title"] = VERB_LABEL.get(item["id"]) or item.get("title") or item["verbs"][0]
+        row["word"] = item["verbs"][0]
         rows.append(row)
     return rows
 def rp_html(item, a, b, note=""):
+    from marriage_engine.look import RP_LINE
     extra = " <i>" + note + "</i>" if note else ""
-    return str((item or {}).get("emoji") or "") + " <b>" + a + "</b> " + str((item or {}).get("does") or "") + " <b>" + b + "</b>" + extra
+    return RP_LINE.format(emoji=str((item or {}).get("emoji") or ""), a=a, does=str((item or {}).get("does") or ""), b=b, note=extra)
 def mention_in(tail):
     text = str(tail or "").strip()
     if not text:

@@ -73,6 +73,7 @@ from bot.admins.mute import (
   refuse_stale_grant,
   warm_official_chats,
   _proof_owner_token,
+  _command_text_with_people,
   _lookup_target_by_token,
   _require_staff_chat,
   _resolve_admin_identity,
@@ -459,7 +460,7 @@ def _build_pending_kick_proof_text(
 
 
 async def parse_kick_command(message: Message) -> ParsedKick | ParseError:
-  text = _get_command_text(message)
+  text = _command_text_with_people(message)
   parts = text.split()
   KickDebug.log("PARSE", "start", text=text, parts=parts, reply=bool(message.reply_to_message))
 
@@ -482,9 +483,11 @@ async def parse_kick_command(message: Message) -> ParsedKick | ParseError:
         token,
       )
     if token.startswith("@") or _looks_like_username_token(token):
+      from bot.admins.punish_validate import username_miss_html
+      username = token.lstrip("@")
       return ParseError(
         "kick_user_not_found",
-        KickText.NOT_FOUND_USERNAME.format(username=escape(token.lstrip("@"))),
+        username_miss_html(username, KickText.NOT_FOUND_USERNAME.format(username=escape(username))),
         token,
       )
     if reply_user:

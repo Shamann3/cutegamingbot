@@ -23,6 +23,8 @@ import {
   fetchStaffPunishOptions,
   resetAdminUserOnboarding,
   resetFarmUserPlots,
+  adoptAdminUser,
+  glanceAdminUser,
   searchAdminUsers,
   setAdminUserBanned,
   uploadBanEvidence,
@@ -1762,9 +1764,16 @@ export default function UsersSection({
       if (list.length === 1) {
         await loadUser(list[0].userId)
       } else if (list.length === 0) {
-        setProfile(null)
-        setAudit(null)
-        setError('Никого не найдено')
+        const glance = await glanceAdminUser(q)
+        if (glance?.user && (glance.status === 'outside' || glance.status === 'silent')) {
+          const adopted = await adoptAdminUser(q)
+          await loadUser(adopted.userId || glance.user.userId)
+          if (adopted.message) setInfo(adopted.message)
+        } else {
+          setProfile(null)
+          setAudit(null)
+          setError(glance?.message || 'Никого не найдено')
+        }
       } else {
         setProfile(null)
         setAudit(null)
@@ -1872,7 +1881,7 @@ export default function UsersSection({
           <p>
             {hasProfile
               ? 'Карточка и действия. Всё в своих полях, без наложений.'
-              : 'ID, @username или имя. Минимум два символа.'}
+              : 'ID или @username. Если человека ещё нет в Куте, карточка создастся из Telegram.'}
           </p>
         </div>
         <div className={`nika-status${statusTone}`}>

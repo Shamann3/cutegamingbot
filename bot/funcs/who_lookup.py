@@ -14,6 +14,7 @@ from typing import Any, Deque, Dict, Iterable, List, Optional, Sequence, Tuple
 
 _USERNAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,31}$")
 _LINK = re.compile(r"^(?:https?://)?(?:t|telegram)\.me/([A-Za-z0-9_]{4,32})/?(?:[?#].*)?$", re.I)
+_RESOLVE = re.compile(r"^tg://resolve\?domain=([A-Za-z0-9_]{4,32})(?:&.*)?$", re.I)
 _TG_USER = re.compile(r"^tg://user\?id=(\d{1,15})$", re.I)
 _NAME_JUNK = re.compile(r"[\W_]+")
 # «кто ты такой» — тот же вопрос, что «кто ты».
@@ -91,7 +92,8 @@ def clean_username(value: Any) -> str:
 
 
 def username_from_link(value: Any) -> str:
-    match = _LINK.match(str(value or "").strip())
+    text = str(value or "").strip()
+    match = _LINK.match(text) or _RESOLVE.match(text)
     return clean_username(match.group(1)) if match else ""
 
 
@@ -602,6 +604,10 @@ class UsernameBudget:
 
     def pause(self, seconds: float, now: float) -> None:
         self._paused_until = max(self._paused_until, now + max(1.0, float(seconds or 0)))
+
+    def paused_for(self, now: float) -> float:
+        """Сколько секунд Telegram ещё просит не спрашивать. 0 — можно."""
+        return max(0.0, self._paused_until - now)
 
 
 USERNAME_BUDGET = UsernameBudget()

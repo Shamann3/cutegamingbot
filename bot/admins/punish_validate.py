@@ -400,39 +400,164 @@ async def describe_telegram_user(
   return rules.profile_when_telegram_is_silent(user_id, telegram_denied=False)
 
 
-async def describe_telegram_username(username: str) -> Optional[dict]:
-  rules = _identity_rules()
-  clean = rules.normalize_username(username)
-  if not clean:
-    return None
-  chat = None
-  try:
-    chat = await _bot().get_chat(f"@{clean}")
-  except Exception:
-    chat = None
-  person = _person_from_telegram_object(chat, private_only=True) if chat is not None else None
-  if person:
-    return person
-  try:
-    from bot.funcs import who_lookup as who
-    client = who.find_userbot()
-    if client is None:
-      return None
-    kind, value = await asyncio.wait_for(
-      who.resolve_with_userbot(client, clean),
-      timeout=_USERBOT_WAIT,
-    )
-  except Exception:
-    return None
-  if kind != "person" or value is None or bool(getattr(value, "is_bot", False)):
-    return None
-  return rules.person_from_user_fields(
+# Юзербот спрашивает Telegram по username. Ответ обычно за доли секунды,
+# но короткий FloodWait Telethon ждёт молча, поэтому ждём не дольше этого.
+_USERNAME_WAIT = 6.0
+_MISS_MEMORY = 600.0
+_username_miss: dict[str, tuple[float, str, str]] = {}
+
+
+def _username_key(username: Any) -> str:
+  return str(username or "").strip().lstrip("@").casefold()
+
+
+def _miss(username: str, kind: str, detail: str = "") -> tuple[str, Optional[dict]]:
+  now = time.time()
+  _username_miss[_username_key(username)] = (now, kind, detail)
+  if len(_username_miss) > 2000:
+    for key, item in list(_username_miss.items()):
+      if now - item[0] > _MISS_MEMORY:
+        _username_miss.pop(key, None)
+  return kind, None
+
+
+def username_miss(username: str) -> tuple[str, str]:
+  """Почему по username не нашёлся человек: (вид, подробность).
+
+  missing — в Telegram такого username нет. place — это канал или группа.
+  bot — это бот. flood и unknown — Telegram сейчас не ответил.
+  Пустой вид — Telegram об этом username не спрашивали.
+  """
+  item = _username_miss.get(_username_key(username))
+  if not item or time.time() - item[0] > _MISS_MEMORY:
+    return "", ""
+  return item[1], item[2]
+
+
+def _userbot_person(value: Any, username: str) -> tuple[str, Optional[dict]]:
+  if value is None:
+    return _miss(username, "unknown")
+  if bool(getattr(value, "is_bot", False)):
+    return _miss(username, "bot")
+  person = _identity_rules().person_from_user_fields(
     getattr(value, "user_id", None),
     getattr(value, "first_name", None),
     getattr(value, "last_name", None),
-    getattr(value, "username", None),
+    getattr(value, "username", None) or username,
     is_bot=False,
   )
+  if not person:
+    return _miss(username, "unknown")
+  _username_miss.pop(_username_key(username), None)
+  return "person", person
+
+
+async def _username_from_telegram(clean: str, budget: Any, who: Any) -> tuple[str, Any]:
+  """Сначала юзербот: только он видит людей по username. Потом Bot API для каналов и групп."""
+  kind, value = "unknown", None
+  client = who.find_userbot()
+  wait = budget.paused_for(time.monotonic())
+  if wait > 0:
+    kind, value = "flood", int(wait)
+  elif client is not None:
+    budget.spend(0, time.monotonic())
+    try:
+      kind, value = await asyncio.wait_for(
+        who.resolve_with_userbot(client, clean),
+        timeout=_USERNAME_WAIT,
+      )
+    except Exception:
+      kind, value = "unknown", None
+    if kind == "flood":
+      budget.pause(float(value or 60), time.monotonic())
+    elif kind in ("person", "place", "missing"):
+      budget.remember(clean, kind, value, time.monotonic())
+      return kind, value
+
+  try:
+    chat = await asyncio.wait_for(_bot().get_chat(f"@{clean}"), timeout=_USERNAME_WAIT)
+  except Exception:
+    chat = None
+  found = who.from_bot_chat(chat) if chat is not None else None
+  if isinstance(found, who.TgPerson):
+    budget.remember(clean, "person", found, time.monotonic())
+    return "person", found
+  if isinstance(found, who.TgPlace):
+    budget.remember(clean, "place", found, time.monotonic())
+    return "place", found
+  return kind, value
+
+
+async def find_telegram_username(username: str) -> tuple[str, Optional[dict]]:
+  """Человек по username прямо из Telegram, даже если в Куте его ещё нет.
+
+  ("person", словарь для users) — нашёлся человек.
+  ("missing" | "place" | "bot" | "flood" | "unknown", None) — человека нет
+  или Telegram не ответил. Причину потом отдаёт username_miss().
+  Ответы помнятся в том же кэше, что у «кто ты»: Telegram спрашивается редко.
+  """
+  clean = _identity_rules().normalize_username(username)
+  if not clean:
+    return _miss(username, "missing")
+  from bot.funcs import who_lookup as who
+  budget = who.USERNAME_BUDGET
+  hit = budget.cached(clean, time.monotonic())
+  kind, value = hit if hit is not None else await _username_from_telegram(clean, budget, who)
+  if kind == "person":
+    return _userbot_person(value, clean)
+  if kind == "place":
+    return _miss(clean, "place", str(getattr(value, "kind", "") or ""))
+  if kind == "flood":
+    return _miss(clean, "flood", str(int(value or 0)))
+  if kind == "missing":
+    return _miss(clean, "missing")
+  return _miss(clean, "unknown")
+
+
+async def describe_telegram_username(username: str) -> Optional[dict]:
+  kind, person = await find_telegram_username(username)
+  return person if kind == "person" else None
+
+
+_MISS_HEAD = "<b><tg-emoji emoji-id='5256110225848543598'>✖️</tg-emoji> "
+
+
+def username_miss_html(username: str, fallback: str) -> str:
+  """Ответ админу, когда по username никого не нашли. Без причины — прежний текст."""
+  kind, detail = username_miss(username)
+  name = escape(str(username or "").strip().lstrip("@"))
+  if kind == "missing":
+    return (
+      _MISS_HEAD + f"Пользователь <code>@{name}</code> не найден</b>\n"
+      "<blockquote><i>В Telegram нет такого username. Проверьте написание, "
+      "укажите ID или ответьте на сообщение нарушителя.</i></blockquote>"
+    )
+  if kind == "place":
+    what = "канал" if detail == "channel" else "группа"
+    return (
+      _MISS_HEAD + f"<code>@{name}</code> — это {what}, а не человек</b>\n"
+      "<blockquote><i>Укажите username самого нарушителя или ответьте на его сообщение.</i></blockquote>"
+    )
+  if kind == "bot":
+    return (
+      _MISS_HEAD + f"<code>@{name}</code> — это бот, а не человек</b>\n"
+      "<blockquote><i>Наказания выдаются людям. Укажите username нарушителя "
+      "или ответьте на его сообщение.</i></blockquote>"
+    )
+  if kind == "flood":
+    minutes = max(1, (int(detail or 0) + 59) // 60)
+    return (
+      _MISS_HEAD + f"Не получилось проверить <code>@{name}</code> в Telegram</b>\n"
+      f"<blockquote><i>Telegram попросил подождать {minutes} мин. Пока укажите ID "
+      "или ответьте на сообщение нарушителя.</i></blockquote>"
+    )
+  if kind == "unknown":
+    return (
+      _MISS_HEAD + f"Не получилось проверить <code>@{name}</code> в Telegram</b>\n"
+      "<blockquote><i>Telegram сейчас не ответил. Повторите команду через минуту, "
+      "укажите ID или ответьте на сообщение нарушителя.</i></blockquote>"
+    )
+  return fallback
 
 
 async def ensure_punishment_profile(

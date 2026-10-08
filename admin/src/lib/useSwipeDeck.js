@@ -1,7 +1,8 @@
 import { useCallback, useLayoutEffect, useRef } from 'react'
 import { armSaveCue, disarmSaveCue } from './cueSounds'
+import { swipeAxis } from './gesture'
 
-const ARM_PX = 8
+const SKIP = 'a, input, textarea, select, [data-noswipe]'
 
 function paint(stage, drag, dx, threshold, live) {
   const power = Math.max(-1, Math.min(1, dx / threshold))
@@ -21,30 +22,86 @@ function paint(stage, drag, dx, threshold, live) {
 /**
  * Карточку тянут пальцем или мышью. Положение пишется прямо в DOM,
  * поэтому React не перерисовывает фото на каждом кадре.
- * Вертикальный жест отдаётся странице, касание без сдвига остаётся кликом.
+ *
+ * Направление решается по первым пикселям. Вертикальный жест отдаётся странице.
+ * Горизонтальный держит страницу на месте: touchmove гасится до конца жеста.
+ * pointer-событие прокрутку не отменяет, а touch-action меняется только
+ * с нового касания, поэтому нужен свой touchmove без passive.
+ * Касание без сдвига остаётся кликом.
  */
 export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96, cardKey = null }) {
-  const stageRef = useRef(null)
+  const stageNode = useRef(null)
   const dragRef = useRef(null)
   const gesture = useRef(null)
+  const touch = useRef(null)
   const swallow = useRef(false)
   const swipeRef = useRef(onSwipe)
+  const disabledRef = useRef(disabled)
+  const unbind = useRef(null)
   swipeRef.current = onSwipe
+  disabledRef.current = disabled
 
   const reset = useCallback(() => {
     gesture.current = null
-    paint(stageRef.current, dragRef.current, 0, threshold, false)
+    paint(stageNode.current, dragRef.current, 0, threshold, false)
   }, [threshold])
 
   useLayoutEffect(() => {
     reset()
   }, [cardKey, reset])
 
+  const stageRef = useCallback((node) => {
+    if (stageNode.current === node) return
+    unbind.current?.()
+    unbind.current = null
+    stageNode.current = node
+    if (!node) return
+
+    const start = (event) => {
+      const point = event.touches?.[0]
+      if (disabledRef.current || event.touches.length !== 1 || !point || event.target?.closest?.(SKIP)) {
+        touch.current = null
+        return
+      }
+      touch.current = { x: point.clientX, y: point.clientY, axis: null }
+    }
+    const move = (event) => {
+      const t = touch.current
+      if (!t) return
+      const point = event.touches?.[0]
+      if (event.touches.length !== 1 || !point) {
+        touch.current = null
+        return
+      }
+      if (!t.axis) {
+        const axis = swipeAxis(point.clientX - t.x, point.clientY - t.y)
+        if (!axis) return
+        // Если страница уже поехала, событие не отменить — карточку не трогаем.
+        t.axis = axis === 'x' && event.cancelable ? 'x' : 'y'
+      }
+      if (t.axis === 'x' && event.cancelable) event.preventDefault()
+    }
+    const end = () => {
+      touch.current = null
+    }
+
+    node.addEventListener('touchstart', start, { passive: true })
+    node.addEventListener('touchmove', move, { passive: false })
+    node.addEventListener('touchend', end, { passive: true })
+    node.addEventListener('touchcancel', end, { passive: true })
+    unbind.current = () => {
+      node.removeEventListener('touchstart', start)
+      node.removeEventListener('touchmove', move)
+      node.removeEventListener('touchend', end)
+      node.removeEventListener('touchcancel', end)
+    }
+  }, [])
+
   const onPointerDown = useCallback((event) => {
     swallow.current = false
     if (disabled) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
-    if (event.target?.closest?.('a, input, textarea, select, [data-noswipe]')) return
+    if (event.target?.closest?.(SKIP)) return
     gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY, armed: false }
   }, [disabled])
 
@@ -54,8 +111,9 @@ export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96
     const dx = event.clientX - g.x
     const dy = event.clientY - g.y
     if (!g.armed) {
-      if (Math.hypot(dx, dy) < ARM_PX) return
-      if (Math.abs(dy) > Math.abs(dx)) {
+      const axis = swipeAxis(dx, dy)
+      if (!axis) return
+      if (axis === 'y' || (event.pointerType === 'touch' && touch.current?.axis === 'y')) {
         gesture.current = null
         return
       }
@@ -68,7 +126,7 @@ export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96
       }
     }
     if (event.cancelable) event.preventDefault()
-    paint(stageRef.current, dragRef.current, dx, threshold, true)
+    paint(stageNode.current, dragRef.current, dx, threshold, true)
   }, [threshold])
 
   const finish = useCallback((event, decide) => {
@@ -78,13 +136,13 @@ export default function useSwipeDeck({ onSwipe, disabled = false, threshold = 96
     if (!g.armed) return
     const dx = event.clientX - g.x
     if (decide && Math.abs(dx) >= threshold) {
-      stageRef.current?.classList.remove('is-live')
+      stageNode.current?.classList.remove('is-live')
       if (dragRef.current) dragRef.current.style.transition = ''
       armSaveCue()
       if (swipeRef.current?.(dx > 0 ? 'right' : 'left')) return
       disarmSaveCue()
     }
-    paint(stageRef.current, dragRef.current, 0, threshold, false)
+    paint(stageNode.current, dragRef.current, 0, threshold, false)
   }, [threshold])
 
   const onPointerUp = useCallback((event) => finish(event, true), [finish])

@@ -1831,6 +1831,15 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   max-width: none;
 }
 
+/* Рамка фото в колоде одной высоты: пока фото грузится, другой формы или его нет,
+   карточка не меняет рост, и страница под пальцем не прыгает. */
+.deck-col .tinder-card .photo-look-frame,
+.deck-col .tinder-card .deed-photo-empty {
+  height: var(--look-max) !important;
+  min-height: 0;
+  max-height: none !important;
+}
+
 /* Тексты вне карточек держим на отступе от края рабочей зоны. */
 .deck-copy {
   padding-inline: 0.5rem;
@@ -3251,6 +3260,12 @@ html.is-coaching .work-lesson-bar {
 .work-desk,
 .deck-col {
   overflow-anchor: none;
+}
+
+/* Пока меняется карточка, плавный скролл страницы выключен: иначе вкладку ведёт вверх и вниз. */
+html.deck-scroll-lock,
+html.deck-scroll-lock body {
+  scroll-behavior: auto !important;
 }
 
 .deck-toast {
@@ -5515,6 +5530,330 @@ body.perf-light .act-ledger li {
 
 .role-ladder-save {
   align-self: flex-start;
+}
+
+/* Подсказка входа: шаги над формой и лист «Подробнее». Тексты — в entry_design.js. */
+.entry-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.8rem 0.85rem 0.7rem;
+  border: 1px solid rgba(244, 244, 244, 0.1);
+  border-radius: 0.95rem;
+  background: rgba(244, 244, 244, 0.03);
+  text-align: left;
+}
+
+.entry-card > .entry-guide {
+  margin-bottom: 0.85rem;
+}
+
+.entry-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.entry-guide-title {
+  min-width: 0;
+  margin: 0;
+  color: #a1a1aa;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.entry-guide-more {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--e-accent-line, rgba(244, 244, 244, 0.22));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--e-accent, #f4f4f4);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 560;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 180ms ease, transform 180ms var(--e-move-ease, ease);
+}
+
+.entry-guide-more:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) {
+  .entry-guide-more:hover {
+    background: var(--e-accent-soft, rgba(244, 244, 244, 0.08));
+  }
+}
+
+.entry-guide-more:focus-visible,
+.entry-guide-row:focus-visible,
+.entry-guide-tab:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 2px;
+}
+
+.entry-guide-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-guide-step {
+  position: relative;
+}
+
+.entry-guide-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 2.05rem;
+  bottom: -0.05rem;
+  left: calc(0.75rem - 0.5px);
+  width: 1px;
+  background: rgba(244, 244, 244, 0.12);
+  transition: background-color 280ms ease;
+}
+
+.entry-guide-step.is-done:not(:last-child)::before {
+  background: var(--e-accent-line, rgba(244, 244, 244, 0.3));
+}
+
+.entry-guide-row {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  column-gap: 0.7rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.entry-guide-row {
+  border-radius: 0.6rem;
+  cursor: pointer;
+}
+
+.entry-guide-dot {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid rgba(244, 244, 244, 0.2);
+  border-radius: 50%;
+  color: #a1a1aa;
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 280ms ease, border-color 280ms ease, color 280ms ease, box-shadow 280ms ease;
+}
+
+.entry-guide-step.is-now .entry-guide-dot {
+  border-color: transparent;
+  background: var(--e-accent, #f4f4f4);
+  color: var(--e-accent-ink, #0b0b0c);
+  box-shadow: 0 0 0 4px var(--e-accent-soft, rgba(244, 244, 244, 0.12));
+}
+
+.entry-guide-step.is-done .entry-guide-dot {
+  border-color: var(--e-accent-line, rgba(244, 244, 244, 0.34));
+  color: var(--e-accent, #f4f4f4);
+}
+
+.entry-guide-copy {
+  display: block;
+  min-width: 0;
+}
+
+.entry-guide-name {
+  display: block;
+  padding-top: 0.13rem;
+  color: #8e8e96;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  transition: color 280ms ease;
+}
+
+.entry-guide-step.is-done .entry-guide-name {
+  color: #b8b8bf;
+}
+
+.entry-guide-step.is-now .entry-guide-name {
+  color: #f4f4f4;
+  font-weight: 600;
+}
+
+/* Пояснение раскрывается только у текущего шага. */
+.entry-guide-line-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+}
+
+.entry-guide-step.is-now .entry-guide-line-slot {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.entry-guide-line {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.entry-guide-line > span {
+  display: block;
+  padding-top: 0.2rem;
+  color: #c4c4ca;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.entry-guide-line strong {
+  color: #f4f4f4;
+  font-weight: 600;
+}
+
+.entry-guide-layer .choice-sheet-motion {
+  width: min(100%, 34rem);
+}
+
+.entry-guide-sheet:focus {
+  outline: none;
+}
+
+.entry-guide-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
+  color: #d4d4d8;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  scrollbar-color: rgba(244, 244, 244, 0.28) transparent;
+}
+
+.entry-guide-h {
+  margin: 1.15rem 0 0.4rem;
+  color: #f4f4f4;
+  font-size: 1rem;
+  font-weight: 620;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.entry-guide-h:first-child {
+  margin-top: 0;
+}
+
+.entry-guide-p {
+  margin: 0.45rem 0;
+}
+
+.entry-guide-ol,
+.entry-guide-ul {
+  margin: 0.4rem 0;
+  padding-left: 1.4rem;
+}
+
+.entry-guide-ol li,
+.entry-guide-ul li {
+  margin: 0.3rem 0;
+  padding-left: 0.15rem;
+}
+
+.entry-guide-ol li::marker {
+  color: var(--e-accent, #f4f4f4);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-guide-ul li::marker {
+  color: rgba(244, 244, 244, 0.5);
+}
+
+.entry-guide-body strong {
+  color: #fff;
+  font-weight: 620;
+}
+
+.entry-guide-body em {
+  color: #e4e4e7;
+}
+
+.entry-guide-body u {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.entry-guide-body code,
+.entry-guide-line code {
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(244, 244, 244, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
+}
+
+.entry-guide-board .entry-guide-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0.75rem;
+}
+
+.entry-guide-tab {
+  min-height: 36px;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid rgba(244, 244, 244, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: #c4c4ca;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.entry-guide-tab.is-on {
+  border-color: transparent;
+  background: var(--e-accent, #f4f4f4);
+  color: var(--e-accent-ink, #0b0b0c);
+}
+
+.entry-guide-stage {
+  max-width: 26rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(244, 244, 244, 0.1);
+  border-radius: 1.1rem;
+  background: #111113;
+}
+
+.entry-guide-file {
+  margin-top: 0.7rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry-guide-line-slot,
+  .entry-guide-dot,
+  .entry-guide-name,
+  .entry-guide-step::before {
+    transition: none;
+  }
 }
 
 

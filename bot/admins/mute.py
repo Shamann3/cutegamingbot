@@ -2603,6 +2603,44 @@ def _get_command_text(message: Message) -> str:
   return (message.text or message.caption or "").strip()
 
 
+# Люди из упоминаний без username: id и имя Telegram прислал вместе с командой.
+_MENTION_MEMORY = 600.0
+_mentioned_people: dict[int, tuple[float, Any]] = {}
+
+
+def _remember_mentioned(people: dict) -> None:
+  now = time.time()
+  for uid, user in (people or {}).items():
+    _mentioned_people[int(uid)] = (now, user)
+  if len(_mentioned_people) > 500:
+    for key, item in list(_mentioned_people.items()):
+      if now - item[0] > _MENTION_MEMORY:
+        _mentioned_people.pop(key, None)
+
+
+def _mentioned_user(uid: int):
+  item = _mentioned_people.get(int(uid))
+  if not item or time.time() - item[0] > _MENTION_MEMORY:
+    return None
+  return item[1]
+
+
+def _command_text_with_people(message: Message) -> str:
+  """Текст команды, где упоминание по имени стало «@id», а ссылка на профиль — «@username»."""
+  from bot.admins.punish_clause import swap_people
+
+  if message.text is not None:
+    raw, entities = message.text, message.entities
+  else:
+    raw, entities = message.caption or "", message.caption_entities
+  try:
+    text, people = swap_people(raw, entities or ())
+  except Exception:
+    return _get_command_text(message)
+  _remember_mentioned(people)
+  return text.strip()
+
+
 def _get_proof_file_id(message: Message) -> Optional[str]:
   if message.photo:
     return message.photo[-1].file_id
@@ -3707,7 +3745,14 @@ async def _lookup_target_by_token(
   token: str,
   *,
   source_chat_id: Optional[int] = None,
+  telegram: bool = True,
 ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
+  """Нарушитель по @username, ссылке, id или имени.
+
+  Кого нет в Куте, ищем в самом Telegram и записываем в users.
+  telegram=False — только игроки Кута: так читается латинское слово
+  посреди причины, чтобы чужой аккаунт с таким username не стал целью.
+  """
   token = token.strip()
   if not token:
     return None, None, None
@@ -3719,7 +3764,8 @@ async def _lookup_target_by_token(
     ensure_punishment_profile,
   )
 
-  async def _known_or_from_telegram(username: str):
+  async def _known_or_from_telegram(username: str, ask: bool = True):
+    username = _identity_rules().normalize_username(username) or username
     uid = await db.get_user_id_by_username(username)
     if uid:
       name = await db.get_firstname_by_user_id(uid)
@@ -3737,6 +3783,8 @@ async def _lookup_target_by_token(
       return await _confirm_lookup_user_id(
         uid, name or username, username, source_chat_id=source_chat_id,
       )
+    if not ask:
+      return None, None, username
     found = await ensure_punishment_profile(
       0, username=username, source_chat_id=source_chat_id,
     )
@@ -3745,8 +3793,10 @@ async def _lookup_target_by_token(
       return found
     return None, None, username
 
-  if token.startswith("https://t.me/") or token.lower().startswith("t.me/"):
-    username = _normalize_username_token(token.split("t.me/", 1)[-1].split("/")[0])
+  low = token.lower()
+  if low.startswith(("https://t.me/", "http://t.me/", "t.me/", "https://telegram.me/", "telegram.me/")):
+    tail = token.split(".me/", 1)[-1]
+    username = _normalize_username_token(tail.split("?", 1)[0].split("#", 1)[0].split("/")[0])
     numbered = mention_id(username)
     if numbered:
       token = numbered
@@ -3754,7 +3804,7 @@ async def _lookup_target_by_token(
       return await _known_or_from_telegram(username)
 
   if token.startswith("@"):
-    username = _normalize_username_token(token)
+    username = _normalize_username_token(token).rstrip(",.;:!?")
     numbered = mention_id(username)
     if numbered:
       token = numbered
@@ -3768,9 +3818,21 @@ async def _lookup_target_by_token(
       return await _confirm_lookup_user_id(
         uid, stored_name, stored_username, source_chat_id=source_chat_id,
       )
-    found = await ensure_punishment_profile(
-      uid, source_chat_id=source_chat_id,
-    )
+    mentioned = _mentioned_user(uid)
+    found = None
+    if mentioned is not None and not getattr(mentioned, "is_bot", False):
+      found = await ensure_punishment_profile(
+        uid,
+        first_name=getattr(mentioned, "first_name", None),
+        last_name=getattr(mentioned, "last_name", None),
+        username=getattr(mentioned, "username", None),
+        source_chat_id=source_chat_id,
+        from_telegram=True,
+      )
+    if not found:
+      found = await ensure_punishment_profile(
+        uid, source_chat_id=source_chat_id,
+      )
     if not found:
       return None, None, None
     if in_db:
@@ -3781,7 +3843,7 @@ async def _lookup_target_by_token(
 
   if _looks_like_telegram_username(token):
     username = _normalize_username_token(token)
-    found_id, found_name, found_username = await _known_or_from_telegram(username)
+    found_id, found_name, found_username = await _known_or_from_telegram(username, telegram)
     if not found_id:
       MuteDebug.log("PARSE", "username not in db", username=username)
     return found_id, found_name, found_username
@@ -3899,13 +3961,20 @@ async def read_punish_clause(
     if is_strong_user_token(token):
       user_at = index
       break
-  if user_at is None:
-    named = [
-      index for index, token in enumerate(parts)
-      if index not in dur_idx and _is_explicit_user_token(token)
-    ]
-    if len(named) == 1:
+  open_idx = [index for index in range(len(parts)) if index not in dur_idx]
+  # При ответе на сообщение нарушитель — автор. Латинское слово вроде «flood»
+  # остаётся причиной: цель меняют только @username, ссылка, id или упоминание.
+  if user_at is None and reply_user is None:
+    named = [index for index in open_idx if _is_explicit_user_token(parts[index])]
+    if len(named) == 1 and named[0] == open_idx[0]:
       user_at = named[0]
+    elif len(named) == 1:
+      token = parts[named[0]]
+      target_id, target_name, target_username = await _lookup_target_by_token(
+        token, source_chat_id=source_chat_id, telegram=False,
+      )
+      if target_id:
+        return pack(target_id, target_name or str(target_id), target_username, {named[0]})
 
   if user_at is not None:
     token = parts[user_at]
@@ -3928,7 +3997,6 @@ async def read_punish_clause(
     target_id, target_name, target_username = await _person_from_reply(reply_user, source_chat_id)
     return pack(target_id, target_name, target_username, set())
 
-  open_idx = [index for index in range(len(parts)) if index not in dur_idx]
   if not open_idx:
     return pack(None, None, None, set(), error="no_target")
   token = parts[open_idx[0]]
@@ -4022,8 +4090,19 @@ async def _resolve_target_from_entities(
         u.full_name or u.first_name or str(u.id),
         u.username,
       )
+    if type_key == "text_link":
+      from bot.admins.punish_clause import handle_from_url
+      handle = handle_from_url(getattr(ent, "url", ""))
+      if handle:
+        found = await _lookup_target_by_token(handle, source_chat_id=source_chat_id)
+        if found[0]:
+          return found
+      continue
     if type_key == "mention":
-      fragment = text[ent.offset: ent.offset + ent.length]
+      try:
+        fragment = ent.extract_from(text)
+      except Exception:
+        fragment = text[ent.offset: ent.offset + ent.length]
       username = _normalize_username_token(fragment)
       uid = await db.get_user_id_by_username(username)
       if uid:
@@ -4106,8 +4185,11 @@ def _target_lookup_error_message(
 ) -> str:
   token = (body.split()[0] if body else "").strip()
   if target_username or token.startswith("@") or _looks_like_telegram_username(token):
+    from bot.admins.punish_validate import username_miss_html
     username = target_username or _normalize_username_token(token)
-    return MuteText.UNMUTE_NOT_FOUND_USERNAME.format(username=escape(username))
+    return username_miss_html(
+      username, MuteText.UNMUTE_NOT_FOUND_USERNAME.format(username=escape(username)),
+    )
   if token.isdigit():
     return MuteText.UNMUTE_NOT_FOUND_ID.format(token=escape(token))
   if token:
@@ -4157,7 +4239,7 @@ async def _resolve_cancel_mute_target(message: Message) -> ParsedMute | ParseErr
 
 
 async def parse_mute_command(message: Message) -> ParsedMute | ParseError:
-  text = _get_command_text(message)
+  text = _command_text_with_people(message)
   parts = text.split()
   MuteDebug.log("PARSE", "start", text=text, parts=parts, reply=bool(message.reply_to_message))
 
@@ -4187,9 +4269,10 @@ async def parse_mute_command(message: Message) -> ParsedMute | ParseError:
         token,
       )
     if reply_user or token.startswith("@") or _looks_like_telegram_username(token):
+      from bot.admins.punish_validate import username_miss_html
       return ParseError(
         "user_not_found",
-        MuteText.ERR_NOT_FOUND_USERNAME.format(token=escape(token)),
+        username_miss_html(token, MuteText.ERR_NOT_FOUND_USERNAME.format(token=escape(token))),
         token,
       )
     return ParseError(

@@ -481,6 +481,8 @@ export default function MarriageSection({ creator = false }) {
         ...form,
         levels: levelsPayload(form.levels),
         verbs: Object.fromEntries(verbs.map((item) => [item.id, Number(item.price) || 0])),
+        sparks: Object.fromEntries(verbs.map((item) => [item.id, Number(item.care) || 0])),
+        waits: Object.fromEntries(verbs.map((item) => [item.id, Number(item.wait) || 0])),
       }
       const saved = await saveMarriageSettings(payload)
       const next = stampLevels(saved.settings)
@@ -764,23 +766,59 @@ export default function MarriageSection({ creator = false }) {
                   </li>
                 ))}
               </ul>
-              <h3 className="realm-h">Цена жеста</h3>
-              <p className="act-read">0 — жест бесплатный. Больше нуля — бот сначала спрашивает и называет кнопку со суммой.</p>
-              <div className="mrg-form">
+              <h3 className="realm-h">Добрые слова и огонёк</h3>
+              <p className="act-read">
+                Это добрые действия из команд чата. Человек пишет их ответом своей паре.
+                Искры — сколько заботы падает в сегодняшний день. Пауза — сколько минут ждать, прежде чем то же слово снова засчитается. 0 — без паузы.
+                Цена — если больше нуля, бот сначала спрашивает про куты.
+              </p>
+              <div className="mrg-verbs">
                 {verbs.map((item) => (
-                  <label key={item.id}>
-                    {item.title}
-                    <input
-                      className="sec-input"
-                      type="number"
-                      min="0"
-                      value={item.price ?? 0}
-                      onChange={(event) => {
-                        const price = event.target.value === '' ? 0 : Number(event.target.value)
-                        setVerbs((current) => current.map((row) => (row.id === item.id ? { ...row, price } : row)))
-                      }}
-                    />
-                  </label>
+                  <article key={item.id}>
+                    <header>
+                      <b>{item.title}</b>
+                      <span>{item.word}</span>
+                    </header>
+                    <label>
+                      Искры
+                      <input
+                        className="sec-input"
+                        type="number"
+                        min="0"
+                        value={item.care ?? 0}
+                        onChange={(event) => {
+                          const care = event.target.value === '' ? 0 : Number(event.target.value)
+                          setVerbs((current) => current.map((row) => (row.id === item.id ? { ...row, care } : row)))
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Пауза, мин
+                      <input
+                        className="sec-input"
+                        type="number"
+                        min="0"
+                        value={item.wait ?? 0}
+                        onChange={(event) => {
+                          const wait = event.target.value === '' ? 0 : Number(event.target.value)
+                          setVerbs((current) => current.map((row) => (row.id === item.id ? { ...row, wait } : row)))
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Цена, кут
+                      <input
+                        className="sec-input"
+                        type="number"
+                        min="0"
+                        value={item.price ?? 0}
+                        onChange={(event) => {
+                          const price = event.target.value === '' ? 0 : Number(event.target.value)
+                          setVerbs((current) => current.map((row) => (row.id === item.id ? { ...row, price } : row)))
+                        }}
+                      />
+                    </label>
+                  </article>
                 ))}
               </div>
               {notice && <p className="act-read">{notice}</p>}

@@ -125,6 +125,8 @@ class SettingsBody(BaseModel):
     prizes: list = Field(default_factory=list)
     levels: list = Field(default_factory=list)
     verbs: dict = {}
+    sparks: dict = {}
+    waits: dict = {}
     shelf: list = Field(default_factory=list)
 
 

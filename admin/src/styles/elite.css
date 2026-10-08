@@ -8498,6 +8498,7 @@ html.accent-changing::after {
 .ulp-hit strong { font-size: .8rem; }
 .ulp-hit em { font-style: normal; font-size: .68rem; color: #888; }
 .ulp-loading-inline { font-size: .72rem; color: #777; }
+.ulp-note { margin: 0; font-size: .72rem; line-height: 1.35; color: #c4b48a; }
 
 /* --- Duration until --- */
 .dur-field { display: flex; flex-direction: column; gap: .55rem; margin: .35rem 0 .55rem; }

@@ -3320,6 +3320,17 @@ def person_history_where() -> str:
 
 
 async def load_person_history(chat_id: int, target_id: int) -> dict:
+    notice = None
+    try:
+        from offender_profile import prepare_offender
+
+        prepared = await prepare_offender(int(target_id), int(chat_id))
+        if not prepared.get("ok"):
+            notice = prepared.get("refusal") or None
+        elif prepared.get("created"):
+            notice = prepared.get("message") or None
+    except Exception:
+        notice = None
     where = person_history_where()
     total = await db.pool.fetchval(
         f"SELECT count(*)::int FROM staff_actions s WHERE {where}",
@@ -3381,6 +3392,7 @@ async def load_person_history(chat_id: int, target_id: int) -> dict:
         "clipped": counted > len(items),
         "counts": fold_person_counts((row["action"], row["n"]) for row in count_rows),
         "items": items,
+        "notice": notice,
     }
 
 
@@ -3568,6 +3580,10 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
         reason=body.reason.strip(),
         admin_id=int(user_id),
     )
+    if not result.get("ok"):
+        from offender_profile import failure_text
+
+        raise HTTPException(status_code=400, detail=failure_text(result))
     warns = None
     if action == "warn":
         try:

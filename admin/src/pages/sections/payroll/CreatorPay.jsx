@@ -79,33 +79,36 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
 
   const run = useCallback(async (id, kind, credits, stays) => {
     const release = pinShellScroll()
-    const side = kind === 'keep' ? 'right' : 'left'
-    setBusy(true)
-    setError('')
-    setBack(null)
-    if (!stays && !motionQuiet()) {
-      setFly({ id, side })
-      await wait(FLY_MS)
-    }
-    let failure = ''
-    let liftOpen = false
     try {
-      const result = kind === 'keep' ? await keepDeed(id, credits) : await dropDeed(id, credits)
-      liftOpen = Boolean(result?.liftOpen)
-    } catch (err) {
-      failure = messageOf(err)
-      reset()
+      const side = kind === 'keep' ? 'right' : 'left'
+      setBusy(true)
+      setError('')
+      setBack(null)
+      if (!stays && !motionQuiet()) {
+        setFly({ id, side })
+        await wait(FLY_MS)
+      }
+      let failure = ''
+      let liftOpen = false
+      try {
+        const result = kind === 'keep' ? await keepDeed(id, credits) : await dropDeed(id, credits)
+        liftOpen = Boolean(result?.liftOpen)
+      } catch (err) {
+        failure = messageOf(err)
+        reset()
+      }
+      await load()
+      if (failure) setError(failure)
+      else {
+        const tail = liftOpen ? ' Осталась заявка на разблокировку.' : ''
+        setFlash({ key: Date.now(), text: (kind === 'keep' ? KEEP_TEXT : DROP_TEXT) + tail, undoId: id, side, kind })
+      }
+      setFly(null)
+      setBusy(false)
+      if (!failure) onDecided?.()
+    } finally {
+      release()
     }
-    await load()
-    if (failure) setError(failure)
-    else {
-      const tail = liftOpen ? ' Осталась заявка на разблокировку.' : ''
-      setFlash({ key: Date.now(), text: (kind === 'keep' ? KEEP_TEXT : DROP_TEXT) + tail, undoId: id, side, kind })
-    }
-    setFly(null)
-    setBusy(false)
-    release()
-    if (!failure) onDecided?.()
   }, [load, onDecided, reset])
 
   const decide = useCallback((kind) => {
@@ -119,31 +122,34 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
     const last = flash
     if (!last?.undoId || busy || fly) return
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    let failure = ''
     try {
-      await undoDeed(last.undoId)
-      setBack({ id: last.undoId, side: last.side })
-    } catch (err) {
-      failure = messageOf(err)
+      setBusy(true)
+      setError('')
+      let failure = ''
+      try {
+        await undoDeed(last.undoId)
+        setBack({ id: last.undoId, side: last.side })
+      } catch (err) {
+        failure = messageOf(err)
+      }
+      await load()
+      if (failure) {
+        setError(failure)
+        setFlash({ ...last, undoId: 0 })
+      } else {
+        setFlash({
+          key: Date.now(),
+          text: last.kind === 'keep'
+            ? 'Решение отменено и убрано из зарплаты. Карточка снова перед вами.'
+            : 'Решение отменено. Карточка снова перед вами.',
+          undoId: 0,
+        })
+      }
+      setBusy(false)
+      if (!failure) onDecided?.()
+    } finally {
+      release()
     }
-    await load()
-    if (failure) {
-      setError(failure)
-      setFlash({ ...last, undoId: 0 })
-    } else {
-      setFlash({
-        key: Date.now(),
-        text: last.kind === 'keep'
-          ? 'Решение отменено и убрано из зарплаты. Карточка снова перед вами.'
-          : 'Решение отменено. Карточка снова перед вами.',
-        undoId: 0,
-      })
-    }
-    setBusy(false)
-    release()
-    if (!failure) onDecided?.()
   }, [flash, busy, fly, load, onDecided])
 
   const settleLift = useCallback(async (kind) => {
@@ -409,28 +415,31 @@ export function CreatorSelf() {
 
   const run = useCallback(async (id, choice) => {
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    setBack(null)
-    if (!motionQuiet()) {
-      setFly({ id, side: choice.side })
-      await wait(FLY_MS)
-    }
-    let failure = ''
-    let paid = false
     try {
-      const result = await sortCreatorDeed(id, choice.id)
-      paid = Boolean(result?.paid)
-    } catch (err) {
-      failure = messageOf(err)
-      reset()
+      setBusy(true)
+      setError('')
+      setBack(null)
+      if (!motionQuiet()) {
+        setFly({ id, side: choice.side })
+        await wait(FLY_MS)
+      }
+      let failure = ''
+      let paid = false
+      try {
+        const result = await sortCreatorDeed(id, choice.id)
+        paid = Boolean(result?.paid)
+      } catch (err) {
+        failure = messageOf(err)
+        reset()
+      }
+      await load()
+      if (failure) setError(failure)
+      else setFlash({ key: Date.now(), text: selfText(choice.id, paid), undoId: id, side: choice.side })
+      setFly(null)
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) setError(failure)
-    else setFlash({ key: Date.now(), text: selfText(choice.id, paid), undoId: id, side: choice.side })
-    setFly(null)
-    setBusy(false)
-    release()
   }, [load, reset])
 
   const choose = useCallback((choice) => {
@@ -445,24 +454,27 @@ export function CreatorSelf() {
     const last = flash
     if (!last?.undoId || busy || fly) return
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    let failure = ''
     try {
-      await undoDeed(last.undoId)
-      setBack({ id: last.undoId, side: last.side })
-    } catch (err) {
-      failure = messageOf(err)
+      setBusy(true)
+      setError('')
+      let failure = ''
+      try {
+        await undoDeed(last.undoId)
+        setBack({ id: last.undoId, side: last.side })
+      } catch (err) {
+        failure = messageOf(err)
+      }
+      await load()
+      if (failure) {
+        setError(failure)
+        setFlash({ ...last, undoId: 0 })
+      } else {
+        setFlash({ key: Date.now(), text: 'Ответ отменён и убран из зарплаты. Карточка снова перед вами.', undoId: 0 })
+      }
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) {
-      setError(failure)
-      setFlash({ ...last, undoId: 0 })
-    } else {
-      setFlash({ key: Date.now(), text: 'Ответ отменён и убран из зарплаты. Карточка снова перед вами.', undoId: 0 })
-    }
-    setBusy(false)
-    release()
   }, [flash, busy, fly, load])
 
   useEffect(() => {

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
+import { SCREENS, WORDS } from '../entry_design'
+import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
 export default function RegisterForm({
@@ -96,14 +98,10 @@ export default function RegisterForm({
 
   return (
     <form className="auth-form auth-step" onSubmit={handleFormSubmit}>
-      <p className="auth-form-lead">
-        {setup
-          ? 'Откройте приложение с кодами и введите шесть цифр.'
-          : 'Напишите ключ, который выдал создатель.'}
-      </p>
+      <EntryGuide screen={SCREENS.staffRegister} at={setup ? (totp ? 'code' : 'app') : 'key'} />
 
       <KeyField
-        label="Ключ доступа"
+        label={WORDS.registerKey}
         name="inviteKey"
         value={inviteKey}
         onChange={handleKeyChange}
@@ -113,7 +111,7 @@ export default function RegisterForm({
       {!setup && loading && (
         <p className="auth-checking">
           <span className="auth-spinner" aria-hidden="true" />
-          Проверяем ключ…
+          {WORDS.checking}
         </p>
       )}
 
@@ -129,7 +127,7 @@ export default function RegisterForm({
           {setup && (
             <>
               <div className="auth-qr-wrap">
-                <img className="auth-qr" src={setup.qrDataUrl} alt="QR для аутентификатора" />
+                <img className="auth-qr" src={setup.qrDataUrl} alt={WORDS.qrAlt} />
                 {setup.authenticatorLabel && (
                   <p className="auth-qr-caption">{setup.authenticatorLabel}</p>
                 )}
@@ -137,7 +135,7 @@ export default function RegisterForm({
 
               {setup.totpSecret && (
                 <div className="auth-totp-key-block">
-                  <p className="auth-totp-key-label">Ключ вручную</p>
+                  <p className="auth-totp-key-label">{WORDS.manualKey}</p>
                   <div className="auth-totp-key-row">
                     <code className="auth-totp-key" data-copyable="1">{setup.totpSecret}</code>
                     <button type="button" className="auth-totp-copy-btn" onClick={copyKey}>
@@ -148,7 +146,7 @@ export default function RegisterForm({
               )}
 
               <label className="auth-field">
-                <span className="auth-label">Код из приложения</span>
+                <span className="auth-label">{WORDS.code}</span>
                 <input
                   className="auth-input auth-input-code"
                   name="totp"
@@ -173,7 +171,7 @@ export default function RegisterForm({
                 className={`auth-btn auth-btn-primary${working ? ' is-working' : ''}`}
                 disabled={working || totp.length !== 6}
               >
-                {working ? 'Завершаем…' : 'Завершить регистрацию'}
+                {working ? WORDS.finishing : WORDS.finish}
               </button>
             </>
           )}

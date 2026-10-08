@@ -1355,64 +1355,14 @@ async def ensure_staff_action_span() -> bool:
     return True
 
 
-async def _remember_offender(user_id: int, chat_id: int) -> None:
-    """Перед наказанием из панели: если человека нет в Куте, берём имя из Telegram.
-
-    Ошибка Telegram наказание не отменяет: id уже известен, блокировка идёт дальше.
-    """
-    if int(user_id) <= 0:
-        return
-    try:
-        from cute_identity import (
-            ADOPT_USER_SQL,
-            needs_telegram_profile,
-            person_from_chat_member,
-            person_from_telegram_chat,
-            person_from_user_fields,
-        )
-    except Exception:
-        return
-    try:
-        row = await db.pool.fetchrow(
-            "SELECT first_name FROM users WHERE user_id = $1",
-            int(user_id),
-        )
-    except Exception:
-        return
-    in_db = row is not None
-    first = row["first_name"] if row else ""
-    if not needs_telegram_profile(in_db, first, int(user_id)):
-        return
-    person = None
-    chat = await _tg_api("getChat", chat_id=int(user_id), _timeout=6)
-    if chat.get("ok"):
-        person = person_from_telegram_chat(chat.get("result") or {})
-    if person is None and int(chat_id) < 0:
-        member = await _tg_api(
-            "getChatMember",
-            chat_id=int(chat_id),
-            user_id=int(user_id),
-            _timeout=6,
-        )
-        if member.get("ok"):
-            person = person_from_chat_member(member.get("result") or {})
-        else:
-            detail = str(member.get("description") or "").upper()
-            if "PARTICIPANT_ID_INVALID" in detail or "USER_ID_INVALID" in detail:
-                return
-            if "USER_NOT_PARTICIPANT" in detail:
-                person = person_from_user_fields(int(user_id), None, None, None)
-    if person is None:
-        return
-    try:
-        await db.pool.execute(
-            ADOPT_USER_SQL,
-            int(person["user_id"]),
-            person["first_name"],
-            person.get("username"),
-        )
-    except Exception:
-        return
+_PANEL_ACTIONS = frozenset({
+    "mute", "muteall", "unmute", "unmuteall",
+    "voice", "unvoice",
+    "kick", "kickall",
+    "warn", "warnall", "warnfull",
+    "ban", "banall", "banfull", "unban", "unbanall",
+    "bot_ban", "bot_unban",
+})
 
 
 async def moderate_action(
@@ -1450,13 +1400,34 @@ async def moderate_action(
     action = aliases.get(action, action)
     cid, uid = int(chat_id), int(user_id)
     reason = (reason or "")[:200]
-    lifts = {"unmute", "unvoice", "unmuteall", "unban", "unbanall", "bot_unban"}
-    if action not in lifts:
-        await _remember_offender(uid, cid)
     from group_realm import telegram_hold_seconds
     until = telegram_hold_seconds(until_sec)
     until_date = int(datetime.now().timestamp()) + until if until > 0 else None
     staff_ids = await official_chat_ids()
+    target_label = str(uid)
+    prepared: Dict[str, Any] = {"created": False, "placeholder": False}
+    if action in _PANEL_ACTIONS:
+        from offender_profile import prepare_offender
+
+        try:
+            prepared = await prepare_offender(uid, cid)
+        except Exception:
+            prepared = {"ok": True, "first_name": str(uid), "created": False, "placeholder": False}
+        if not prepared.get("ok"):
+            text = str(prepared.get("refusal") or "Пользователь не найден в Telegram")
+            return {
+                "ok": False,
+                "action": action,
+                "chat_id": cid,
+                "user_id": uid,
+                "until_sec": None,
+                "detail": text,
+                "telegram": text,
+                "spoken": text,
+                "results": [],
+                "reason": reason,
+            }
+        target_label = str(prepared.get("first_name") or uid)
 
     async def _restrict(target_chat: int, muted: bool) -> Dict[str, Any]:
         if muted:
@@ -1528,7 +1499,7 @@ async def moderate_action(
                   reason = EXCLUDED.reason,
                   scope = EXCLUDED.scope
                 """,
-                uid, int(target_chat), until_dt, str(uid), int(admin_id or 0), reason or action, scope,
+                uid, int(target_chat), until_dt, target_label, int(admin_id or 0), reason or action, scope,
             )
         except Exception:
             pass
@@ -1547,7 +1518,7 @@ async def moderate_action(
                   scope = EXCLUDED.scope,
                   mode = EXCLUDED.mode
                 """,
-                uid, int(target_chat), until_dt, str(uid), int(admin_id or 0), reason or action, scope, mode,
+                uid, int(target_chat), until_dt, target_label, int(admin_id or 0), reason or action, scope, mode,
             )
         except Exception:
             pass
@@ -1745,6 +1716,28 @@ async def moderate_action(
 
     if not ok and not detail and results:
         detail = (results[-1] or {}).get("description") or ""
+
+    if not ok and prepared.get("created") and prepared.get("placeholder"):
+        blob = " ".join(
+            [str(detail or "")]
+            + [str((item or {}).get("description") or "") for item in results]
+        )
+        from offender_profile import account_missing_text
+
+        if account_missing_text(blob):
+            try:
+                await db.pool.execute(
+                    """
+                    DELETE FROM users
+                    WHERE user_id = $1
+                      AND first_name = $2
+                      AND (username IS NULL OR btrim(username) = '')
+                    """,
+                    uid,
+                    str(uid),
+                )
+            except Exception:
+                pass
 
     if ok:
         try:

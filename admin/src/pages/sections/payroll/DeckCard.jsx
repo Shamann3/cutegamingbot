@@ -198,18 +198,133 @@ export function DeckPileNote({ text }) {
   return <p className="deck-note deck-live" role="status">{text}</p>
 }
 
-/** После ответа карточка меняется, а экран остаётся на месте. */
-export function pinShellScroll() {
-  const main = document.querySelector('.panel-shell-main')
-  const top = main instanceof HTMLElement ? main.scrollTop : 0
-  const y = window.scrollY
-  const restore = () => {
-    if (main instanceof HTMLElement) main.scrollTop = top
-    if (window.scrollY !== y) window.scrollTo(0, y)
+let holdSeq = 0
+
+function liveDeck() {
+  for (const node of document.querySelectorAll('.deck-col')) {
+    if (node instanceof HTMLElement && node.getClientRects().length) return node
   }
+  return null
+}
+
+function fitHeight(col) {
+  const box = col.getBoundingClientRect()
+  let bottom = box.top
+  for (const child of col.children) {
+    const style = window.getComputedStyle(child)
+    if (style.display === 'none' || style.position === 'fixed' || style.position === 'absolute') continue
+    bottom = Math.max(bottom, child.getBoundingClientRect().bottom)
+  }
+  const own = window.getComputedStyle(col)
+  return bottom - box.top + (parseFloat(own.paddingBottom) || 0) + (parseFloat(own.borderBottomWidth) || 0)
+}
+
+function scrollingBox(start) {
+  for (let el = start instanceof Element ? start.parentElement : null; el; el = el.parentElement) {
+    const y = window.getComputedStyle(el).overflowY
+    if ((y === 'auto' || y === 'scroll' || y === 'overlay') && el.scrollHeight > el.clientHeight + 1) return el
+  }
+  const main = document.querySelector('.panel-shell-main')
+  if (main instanceof HTMLElement) return main
+  return document.scrollingElement || document.documentElement
+}
+
+/**
+ * Пока карточка меняется, вкладка остаётся на том же месте.
+ * Рост колоды держат до конца смены, а положение поправляют каждый кадр:
+ * иначе страница уезжает вверх, когда карточка короче, и возвращается вниз.
+ */
+export function pinShellScroll() {
+  const col = liveDeck()
+  const box = scrollingBox(col)
+  const html = document.documentElement
+  const prevHtml = html.style.scrollBehavior
+  const prevBox = box.style.scrollBehavior
+  html.classList.add('deck-scroll-lock')
+  html.style.scrollBehavior = 'auto'
+  box.style.scrollBehavior = 'auto'
+  const seq = ++holdSeq
+  const tall = col ? Math.ceil(col.getBoundingClientRect().height) : 0
+  let anchor = col ? col.getBoundingClientRect().top : null
+  const saved = box.scrollTop
+  if (tall > 0 && col) {
+    col.style.transition = 'none'
+    col.style.minHeight = `${tall}px`
+  }
+  const focused = document.activeElement
+  if (focused instanceof HTMLElement && focused !== document.body && col?.contains(focused)) focused.blur()
+
+  let alive = true
+  let userUntil = 0
+  const onUser = () => {
+    userUntil = performance.now() + 140
+  }
+  box.addEventListener('wheel', onUser, { passive: true })
+  box.addEventListener('touchmove', onUser, { passive: true })
+  const stopListen = () => {
+    box.removeEventListener('wheel', onUser)
+    box.removeEventListener('touchmove', onUser)
+  }
+  const place = () => {
+    if (seq !== holdSeq) return
+    if (performance.now() < userUntil) {
+      if (col?.isConnected) anchor = col.getBoundingClientRect().top
+      return
+    }
+    if (col?.isConnected && anchor != null) {
+      const drift = col.getBoundingClientRect().top - anchor
+      if (Math.abs(drift) > 1) box.scrollTop += drift
+      return
+    }
+    if (Math.abs(box.scrollTop - saved) > 1) box.scrollTop = saved
+  }
+  const loop = () => {
+    if (seq !== holdSeq) {
+      stopListen()
+      return
+    }
+    if (!alive) return
+    place()
+    window.requestAnimationFrame(loop)
+  }
+  window.requestAnimationFrame(loop)
+
+  const unlock = () => {
+    if (seq !== holdSeq) return
+    alive = false
+    stopListen()
+    html.style.scrollBehavior = prevHtml
+    box.style.scrollBehavior = prevBox
+    html.classList.remove('deck-scroll-lock')
+  }
+  let released = false
   return () => {
-    restore()
-    window.requestAnimationFrame(restore)
+    if (released || seq !== holdSeq) return
+    released = true
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (seq !== holdSeq) return
+        if (col?.isConnected) {
+          col.style.transition = 'none'
+          const fit = Math.floor(fitHeight(col))
+          col.style.minHeight = fit > 0 ? `${fit}px` : ''
+        }
+        place()
+        window.requestAnimationFrame(() => {
+          if (seq !== holdSeq) return
+          if (col?.isConnected) {
+            col.style.minHeight = ''
+            col.style.transition = ''
+          }
+          place()
+          window.requestAnimationFrame(() => {
+            if (seq !== holdSeq) return
+            place()
+            unlock()
+          })
+        })
+      })
+    })
   }
 }
 

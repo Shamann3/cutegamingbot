@@ -4,7 +4,9 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
+import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
+import { SCREENS, WORDS } from '../entry_design'
 
 export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, again = '' }) {
   const personal = accentIsPersonal(loadStoredAccent())
@@ -143,7 +145,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
   if (gate !== 'key') {
     return (
       <EntryFrame
-        title="Панель администратора"
+        title={WORDS.groupTitle}
         lead={gate === 'creator' ? 'Кабинет открывается сразу.' : 'Сверяем, открыт ли вам кабинет.'}
         personal={personal}
         onBack={onBack}
@@ -158,14 +160,16 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
 
   return (
     <EntryFrame
-      title="Панель администратора"
-      lead={again ? 'Прошлый вход не подошёл. Напишите ключ ещё раз.' : 'Напишите ключ. Поле кода откроется само, когда ключ подойдёт.'}
+      title={WORDS.groupTitle}
+      lead={again ? WORDS.groupAgain : WORDS.groupLead}
       personal={personal}
       onBack={onBack}
     >
       <form className="auth-form auth-step" onSubmit={submit}>
+        <EntryGuide screen={SCREENS.groupKey} at={!verified ? 'key' : needCode && setup && !totp ? 'app' : 'code'} />
+
         <KeyField
-          label="Ключ кабинета"
+          label={WORDS.groupKey}
           name="groupKey"
           value={key}
           onChange={(next) => {
@@ -179,7 +183,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
         {!verified && verifying && (
           <p className="auth-checking">
             <span className="auth-spinner" aria-hidden="true" />
-            Проверяем ключ…
+            {WORDS.checking}
           </p>
         )}
 
@@ -191,9 +195,9 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
           <div className="auth-reveal-inner">
             {needCode && setup && (
               <>
-                <p className="auth-form-lead">Первый вход. Добавьте ключ в приложение с кодами и введите шесть цифр.</p>
+                <p className="auth-form-lead">{WORDS.groupFirst}</p>
                 <div className="auth-qr-wrap">
-                  <img className="auth-qr" src={setup.qrDataUrl} alt="QR для приложения с кодами" />
+                  <img className="auth-qr" src={setup.qrDataUrl} alt={WORDS.qrAlt} />
                 </div>
                 {setup.totpSecret && (
                   <button
@@ -205,14 +209,14 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
                       window.setTimeout(() => setCopied(false), 1600)
                     }}
                   >
-                    {copied ? 'Ключ скопирован' : 'Скопировать ключ'}
+                    {copied ? WORDS.copied : WORDS.copyKey}
                   </button>
                 )}
               </>
             )}
             {needCode && (
               <label className="auth-field">
-                <span className="auth-label">Код из приложения</span>
+                <span className="auth-label">{WORDS.code}</span>
                 <input
                   className="auth-input auth-input-code"
                   name="totp"
@@ -235,7 +239,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
               disabled={!verified || busy || (needCode && totp.length !== 6)}
               tabIndex={verified ? 0 : -1}
             >
-              {busy ? 'Входим…' : 'Войти'}
+              {busy ? WORDS.entering : WORDS.enter}
             </button>
           </div>
         </div>

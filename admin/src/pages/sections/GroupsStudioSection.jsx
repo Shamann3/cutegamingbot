@@ -190,6 +190,7 @@ export default function GroupsStudioSection({
   const [modAction, setModAction] = useState('mute')
   const [modUntilSec, setModUntilSec] = useState(3600)
   const [modReason, setModReason] = useState('')
+  const [modHint, setModHint] = useState('')
   const [modding, setModding] = useState(false)
   const [rawOpen, setRawOpen] = useState(false)
 
@@ -311,7 +312,7 @@ export default function GroupsStudioSection({
     if (!detail?.chat?.chat_id) return
     const uid = modUserId || Number(String(modUser).replace(/^@/, ''))
     if (!uid || !Number.isFinite(uid)) {
-      notifyAdmin('Укажите игрока', { error: true })
+      notifyAdmin(modHint || 'Укажите ID или @username', { error: true })
       return
     }
     const selfMsg = selfBanBlocked(modAction, myUserId, uid)
@@ -988,13 +989,16 @@ export default function GroupsStudioSection({
 
                       <div className="grp-card grp-card-control">
                         <h3 className="grp-card-title">Модерация</h3>
-                        <p className="grp-help">Через игрового бота. Для муталл/баналл — официальные группы проекта. Бан в боте блокирует только игрока в боте.</p>
+                        <p className="grp-help">Через игрового бота. Если человека ещё нет в Куте, вставьте ID или @username: панель спросит Telegram и запишет его перед наказанием.</p>
 
                         <UserLookupPreview
                           label="Игрок"
                           value={modUser}
-                          onChange={(v) => { setModUser(v); setModUserId(null) }}
+                          allowOutside
+                          chatId={detail?.chat?.chat_id}
+                          onChange={(v) => { setModUser(v); setModUserId(null); setModHint('') }}
                           onResolved={(u) => setModUserId(u ? Number(u.userId || u.user_id) : null)}
+                          onHint={setModHint}
                           onOpenUser={(id) => onOpenUser?.(id)}
                         />
 

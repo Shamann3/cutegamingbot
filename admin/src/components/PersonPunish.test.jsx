@@ -87,6 +87,20 @@ describe('PersonPunish', () => {
     })
   })
 
+  it('explains a person who was not in the project yet and does not title the card with a raw id', async () => {
+    vi.mocked(fetchPersonHistory).mockResolvedValue({
+      ...history,
+      name: '7',
+      username: null,
+      items: [],
+      total: 0,
+      notice: 'В Куте этого человека ещё не было. Записали его, чтобы наказание легло на карточку.',
+    })
+    render(<PersonPunish chatId={-5} userId={7} actions={actions} onAct={vi.fn()} onClose={() => {}} />)
+    expect(await screen.findByRole('heading', { name: 'Человек' })).toBeTruthy()
+    expect(screen.getByText(/ещё не было/)).toBeTruthy()
+  })
+
   it('can hold a punishment down to the second and lifts a shorter span to 35', async () => {
     vi.mocked(fetchPersonHistory).mockResolvedValue(history)
     const onAct = vi.fn().mockResolvedValue({})

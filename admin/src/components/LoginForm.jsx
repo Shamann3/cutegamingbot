@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, revealLoginCode, verifyLoginKey } from '../lib/adminClient'
+import { SCREENS, WORDS } from '../entry_design'
+import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
 const CAN_AUTH_DEV = import.meta.env.DEV && import.meta.env.VITE_DEV_USER_ID
@@ -95,10 +97,10 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
 
   return (
     <form className="auth-form auth-step" onSubmit={handleSubmit}>
-      <p className="auth-form-lead">Напишите ключ. Поле кода откроется само, когда ключ подойдёт.</p>
+      <EntryGuide screen={SCREENS.staffLogin} at={verified ? 'code' : 'key'} />
 
       <KeyField
-        label="Ключ входа"
+        label={WORDS.loginKey}
         name="loginKey"
         value={loginKey}
         onChange={handleKeyChange}
@@ -108,7 +110,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
       {!verified && verifying && (
         <p className="auth-checking">
           <span className="auth-spinner" aria-hidden="true" />
-          Проверяем ключ…
+          {WORDS.checking}
         </p>
       )}
 
@@ -119,7 +121,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
       <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
         <div className="auth-reveal-inner">
           <label className="auth-field">
-            <span className="auth-label">Код из приложения</span>
+            <span className="auth-label">{WORDS.code}</span>
             <input
               className="auth-input auth-input-code"
               name="totp"
@@ -148,7 +150,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
             tabIndex={verified ? 0 : -1}
             disabled={!verified || working || totp.length !== 6}
           >
-            {working ? 'Входим…' : 'Войти'}
+            {working ? WORDS.entering : WORDS.enter}
           </button>
         </div>
       </div>

@@ -16,6 +16,8 @@ import LoginForm from '../components/LoginForm'
 import RegisterForm from '../components/RegisterForm'
 import ApplicationForm from '../components/ApplicationForm'
 import EntryFrame from '../components/EntryFrame'
+import EntryGuide from '../components/EntryGuide'
+import { SCREENS, WORDS } from '../entry_design'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { portraitFrom, rememberPortrait, rememberedPortrait } from '../lib/gateRecovery'
 
@@ -253,22 +255,23 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     if (regStage === 'waiting') {
       return (
         <div className="auth-form">
-          <p className="auth-message auth-message-info">
-            Заявка отправлена. Ожидайте — владелец рассмотрит её.
-            Вход откроется после одобрения.
-          </p>
+          <EntryGuide screen={SCREENS.staffRegister} at="wait" />
+          <p className="auth-message auth-message-info">{WORDS.waiting}</p>
         </div>
       )
     }
 
     if (regStage === 'application') {
       return (
-        <ApplicationForm
-          onSubmit={handleApplicationSubmit}
-          loading={loading}
-          error={error}
-          info={info}
-        />
+        <div className="auth-form">
+          <EntryGuide screen={SCREENS.staffRegister} at="form" />
+          <ApplicationForm
+            onSubmit={handleApplicationSubmit}
+            loading={loading}
+            error={error}
+            info={info}
+          />
+        </div>
       )
     }
 
@@ -291,8 +294,8 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
 
   return (
     <EntryFrame
-      title="Панель сотрудника"
-      lead={creatorEntry ? 'Вход открывается сразу.' : 'Вход по ключу. Если ключа нет — вкладка «Регистрация».'}
+      title={WORDS.staffTitle}
+      lead={creatorEntry ? WORDS.creatorLead : WORDS.staffLead}
       personal={personal && fortress}
       onBack={onBack}
     >

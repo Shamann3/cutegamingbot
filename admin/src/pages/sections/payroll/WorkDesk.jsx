@@ -74,28 +74,31 @@ export default function WorkDesk({ onCount }) {
 
   const run = useCallback(async (id, choice) => {
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    setBack(null)
-    if (!motionQuiet()) {
-      setFly({ id, side: choice.side })
-      await wait(FLY_MS)
-    }
-    let failure = ''
-    let next = 'staff'
     try {
-      const result = await sortDeed(id, choice.id)
-      next = result?.next || 'staff'
-    } catch (err) {
-      failure = messageOf(err)
-      reset()
+      setBusy(true)
+      setError('')
+      setBack(null)
+      if (!motionQuiet()) {
+        setFly({ id, side: choice.side })
+        await wait(FLY_MS)
+      }
+      let failure = ''
+      let next = 'staff'
+      try {
+        const result = await sortDeed(id, choice.id)
+        next = result?.next || 'staff'
+      } catch (err) {
+        failure = messageOf(err)
+        reset()
+      }
+      await load()
+      if (failure) setError(failure)
+      else setFlash({ key: Date.now(), text: doneText(choice.id, next), undoId: id, side: choice.side })
+      setFly(null)
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) setError(failure)
-    else setFlash({ key: Date.now(), text: doneText(choice.id, next), undoId: id, side: choice.side })
-    setFly(null)
-    setBusy(false)
-    release()
   }, [load, reset])
 
   const choose = useCallback((choice) => {
@@ -110,24 +113,27 @@ export default function WorkDesk({ onCount }) {
     const last = flash
     if (!last?.undoId || busy || fly) return
     const release = pinShellScroll()
-    setBusy(true)
-    setError('')
-    let failure = ''
     try {
-      await unsortDeed(last.undoId)
-      setBack({ id: last.undoId, side: last.side })
-    } catch (err) {
-      failure = messageOf(err)
+      setBusy(true)
+      setError('')
+      let failure = ''
+      try {
+        await unsortDeed(last.undoId)
+        setBack({ id: last.undoId, side: last.side })
+      } catch (err) {
+        failure = messageOf(err)
+      }
+      await load()
+      if (failure) {
+        setError(failure)
+        setFlash({ ...last, undoId: 0 })
+      } else {
+        setFlash({ key: Date.now(), text: 'Ответ отменён. Карточка снова перед вами.', undoId: 0 })
+      }
+      setBusy(false)
+    } finally {
+      release()
     }
-    await load()
-    if (failure) {
-      setError(failure)
-      setFlash({ ...last, undoId: 0 })
-    } else {
-      setFlash({ key: Date.now(), text: 'Ответ отменён. Карточка снова перед вами.', undoId: 0 })
-    }
-    setBusy(false)
-    release()
   }, [flash, busy, fly, load])
 
   useEffect(() => {

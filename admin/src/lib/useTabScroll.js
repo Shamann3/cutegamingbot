@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 
 const SKIP_TAG = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'IMG', 'SVG', 'CANVAS', 'VIDEO', 'IFRAME'])
-const SKIP_CLOSEST = 'textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], .metric-sheet, .case-backdrop, .accent-picker-panel, .elite-search-results'
+const SKIP_CLOSEST = 'textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], .metric-sheet, .case-backdrop, .accent-picker-panel, .elite-search-results, .deck-col, .tinder-stage, .photo-look-frame'
 
 function wheelPixels(event) {
   if (event.deltaMode === 1) return event.deltaY * 16

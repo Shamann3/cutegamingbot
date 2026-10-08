@@ -2,7 +2,11 @@
 FREE_WEDDINGS, FIRST_PAID, DOUBLE_UNTIL, AFTER_PERCENT = 3, 15, 300, 15
 PROPOSAL_MINUTES, RP_PER_VERB_A_DAY, TOP_LIMIT, RESCUE_HOURS = 10, 1, 10, 12
 SHOW_EMPTY_PROFILE = True
-RED_ID, DOT_ID, NO_ID = "5388870246243274946", "5337017423906226569", "5226660202035554522"
-HEART = "<tg-emoji emoji-id='" + RED_ID + "'>❤</tg-emoji>"
-SPARK = "<tg-emoji emoji-id='" + DOT_ID + "'>🔴</tg-emoji>"
-HEARTS_SHELF = "💖"
+from marriage_engine.marriage_design import (  # значки брака правятся в дизайне
+    DOT_ID,
+    HEART,
+    HEARTS_SHELF,
+    NO_ID,
+    RED_ID,
+    SPARK,
+)

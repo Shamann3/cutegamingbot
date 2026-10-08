@@ -585,8 +585,7 @@ async def _handle_grant(message: Message, db, prefix: str, rest: str) -> bool:
     if not can_free and not can_off:
         await message.reply(
             f"<tg-emoji emoji-id='{ach.ACHIEVEMENTS_HEADER_EMOJI}'>🎩</tg-emoji> "
-            f"<b>Нет права выдавать достижения.</b>\n"
-            f"Создатель выдаёт доступ в разделе «Стафф».",
+            f"<b>Нет права выдавать достижения.</b>",
             parse_mode="HTML",
         )
         return True

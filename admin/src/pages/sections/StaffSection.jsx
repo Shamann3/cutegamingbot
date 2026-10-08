@@ -52,6 +52,7 @@ import {
 import AdminSelect from '../../components/AdminSelect'
 import DarkPick from '../../components/DarkPick'
 import CountUp from '../../components/CountUp'
+import { EntryGuideBoard } from '../../components/EntryGuide'
 import { showToast } from '../../components/ToastHost'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import UserLookupPreview from '../../components/UserLookupPreview'
@@ -1801,6 +1802,8 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
           ? 'Личный ключ кабинета группы. Создатель открывает его у человека на должности и может скопировать снова.'
           : 'Ключ входа в панель сотрудника. Человек вводит его на экране регистрации, затем подтверждает код из аутентификатора.'}
       </p>
+
+      {isProjectCreator && <EntryGuideBoard office={scope === 'group' ? 'group' : 'staff'} />}
 
       {scope !== 'group' && <div className="sec-ipban-form staff-invite-block">
         <h3 className="sec-ipban-form-title">Ключ для сотрудника проекта</h3>

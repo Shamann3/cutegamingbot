@@ -100,22 +100,22 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const staffDetail = checking && !staffKnown
     ? 'Сверяем, открыт ли вход.'
     : staffKnown
-      ? 'Команда проекта. Нажмите, чтобы войти.'
+      ? 'Вы уже в команде. Нажмите: ключ, затем шесть цифр из приложения.'
       : portrait.applicationStatus === 'pending'
-        ? 'Заявка уже отправлена. Ждём решение.'
-        : 'Вы ещё не в команде. Нажмите — откроется заявка.'
+        ? 'Заявка уже отправлена. Когда её примут, вход откроется здесь.'
+        : 'Для команды проекта. Ключ выдаёт создатель. Нажмите — откроется регистрация.'
 
   const groupDetail = checking && !portrait.isProjectCreator && !portrait.groupCanEnter
     ? 'Сверяем, открыт ли кабинет.'
     : portrait.isProjectCreator
-      ? 'Кабинет групп. Нажмите — откроется сразу.'
+      ? 'Кабинет групп. Нажмите — откроется сразу, без ключа.'
       : portrait.groupCanEnter
-        ? <>Дальше нужен ключ кабинета <CuteBrand />.</>
+        ? 'Вставьте ключ из сообщения бота, затем шесть цифр из приложения.'
         : portrait.groupApplicationStatus === 'pending'
-          ? 'Заявка уже у создателя. Ключ придёт после одобрения.'
+          ? 'Заявка уже у создателя. Ключ придёт в бота, когда её примут.'
           : portrait.groupHoldsSeat
-            ? 'Должность уже есть. Ключ выдаётся только после заявки. Нажмите и отправьте её.'
-            : <>Кабинета ещё нет. Нажмите — откроется заявка в <CuteBrand />.</>
+            ? 'Должность уже есть. Сначала отправьте заявку — ключ придёт в бота.'
+            : <>Для администратора группы. Нажмите — заявка. Ключ придёт в бота <CuteBrand />.</>
 
   const pressStaff = async () => {
     if (busy) return
@@ -205,7 +205,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             <EpsilonLogo size="sm" decorative />
           </span>
           <h1 className="gate-title gate-rise" style={{ '--rise': 1 }}>Куда вам нужно войти?</h1>
-          <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Одна дверь: сотрудник проекта или администратор группы.</p>
+          <p className="gate-lead gate-rise" style={{ '--rise': 2 }}>Сотрудник проекта — «Панель сотрудника». Администратор группы — «Панель администратора».</p>
         </header>
 
         {error && (
@@ -225,8 +225,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             <h2 className="gate-title">Заявка уже у создателя</h2>
             <p className="gate-lead">
               {hold === 'group'
-                ? 'Ключ придёт после одобрения. Повторно отправлять заявку не нужно.'
-                : 'Вход откроется после одобрения. Повторно отправлять её не нужно.'}
+                ? 'Повторно отправлять заявку не нужно. Когда создатель её примет, бот пришлёт «Заявка принята». Нажмите на ключ в том сообщении, скопируйте его и снова откройте «Панель администратора».'
+                : 'Повторно отправлять заявку не нужно. Когда создатель её примет, откройте «Панель сотрудника», вкладку «Вход», и введите тот же ключ и шесть цифр из приложения.'}
             </p>
             <button type="button" className="gate-text" onClick={() => setHold('')}>К выбору панели</button>
           </div>
@@ -235,7 +235,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             <Door
               title="Панель сотрудника"
               detail={error ? 'Ключ, затем код из приложения.' : staffDetail}
-              mark={checking && !staffKnown && !error ? '…' : portrait.applicationStatus === 'pending' && !error && !portrait.isProjectCreator ? 'Ждёт' : staffKnown || error ? 'Войти' : 'Заявка'}
+              mark={checking && !staffKnown && !error ? '…' : portrait.applicationStatus === 'pending' && !error && !portrait.isProjectCreator ? 'Ждёт' : staffKnown || error ? 'Войти' : 'Регистрация'}
               open={staffKnown || Boolean(error)}
               onClick={error ? onStaffEnter : pressStaff}
               busy={busy}
