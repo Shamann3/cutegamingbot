@@ -2,8 +2,10 @@
 """
 Проверка существования цели наказания в Telegram.
 
-Отсекает фейковые/устаревшие user_id из локальной БД (например «10»), из‑за
-которых Telegram API отвечает PARTICIPANT_ID_INVALID / USER_ID_INVALID.
+Короткое число вроде «10» человеком не считается.
+USER_ID_INVALID и PEER_ID_INVALID — такого аккаунта нет.
+PARTICIPANT_ID_INVALID у getChatMember — человек не в этой группе:
+Telegram так отвечает и на живой id, поэтому это не отказ в аккаунте.
 """
 from __future__ import annotations
 
@@ -13,12 +15,12 @@ from html import escape
 from typing import Any, Iterable, Optional, Tuple
 
 _INVALID_TG_USER_MARKERS = frozenset({
-  "PARTICIPANT_ID_INVALID",
   "USER_ID_INVALID",
   "PEER_ID_INVALID",
 })
 
 _USER_NOT_PARTICIPANT_MARKERS = frozenset({
+  "PARTICIPANT_ID_INVALID",
   "USER_NOT_PARTICIPANT",
   "MEMBER_NOT_FOUND",
   "USER_NOT_FOUND",
@@ -95,8 +97,8 @@ async def inspect_chat_member(
 
   Возвращает (member, error_kind):
     • (member, None) успех (любой status, в т.ч. left/kicked);
-    • (None, 'invalid_user') user_id не существует в Telegram;
-    • (None, 'not_participant') аккаунт есть, но не в этой группе;
+    • (None, 'invalid_user') Telegram сказал, что такого аккаунта нет;
+    • (None, 'not_participant') в этой группе его нет, аккаунт при этом может быть;
     • (None, 'check_failed') сетевая/прочая ошибка.
   """
   if chat_id > 0:
@@ -121,10 +123,10 @@ async def verify_telegram_user_exists(
   Проверяет, что user_id реальный аккаунт Telegram.
 
   Стратегия:
-    1. getChat(user_id) если бот уже «знаком» с пользователем;
-    2. getChatMember в официальных группах успешный ответ подтверждает ID;
-    3. USER_NOT_PARTICIPANT в хотя бы одной группе ID валиден;
-    4. PARTICIPANT_ID_INVALID / USER_ID_INVALID ID недействителен.
+    1. getChat(user_id) — Telegram отдаёт человека, если бот его уже видел;
+    2. USER_ID_INVALID / PEER_ID_INVALID — аккаунта нет;
+    3. иначе юзербот спрашивает users.getUsers, а длинный id всё равно проходит.
+  getChatMember сюда не входит: «нет в этой группе» он путает с несуществующим id.
   """
   if user_id <= 0:
     return False
@@ -136,33 +138,13 @@ async def verify_telegram_user_exists(
     chat_type = getattr(chat, "type", None)
     type_key = chat_type.value if hasattr(chat_type, "value") else str(chat_type or "")
     if chat_id == user_id and type_key == "private":
+      if bool(getattr(chat, "is_bot", False)):
+        return False
       return True
   except Exception as e:
     if is_invalid_telegram_user_error(e):
       return False
 
-  chats = tuple(probe_chat_ids) if probe_chat_ids is not None else _probe_chat_ids()
-  if not chats:
-    return await _unseen_account_is_real(user_id)
-
-  invalid_user = False
-  not_participant_seen = False
-  member_confirmed = False
-  for cid in chats:
-    member, err = await inspect_chat_member(cid, user_id)
-    if member is not None:
-      member_confirmed = True
-      break
-    if err == "invalid_user":
-      invalid_user = True
-      break
-    if err == "not_participant":
-      not_participant_seen = True
-
-  if invalid_user:
-    return False
-  if member_confirmed or not_participant_seen:
-    return True
   return await _unseen_account_is_real(user_id)
 
 
@@ -363,11 +345,13 @@ async def describe_telegram_user(
   *,
   source_chat_id: Optional[int] = None,
 ) -> Optional[dict]:
-  """Имя из Telegram: личный чат, участник группы, затем юзербот.
+  """Имя из Telegram.
 
-  Если имя так и не пришло, но id похож на аккаунт, возвращается человек
-  с именем-заглушкой — строку users всё равно можно создать.
-  Явный отказ Telegram (несуществующий id) — None.
+  Сначала getChat: бот получает человека, которого уже видел.
+  Потом users.getUsers у юзербота — Telegram отвечает User или UserEmpty.
+  getChatMember только в чате команды и только если имени ещё нет:
+  для участника группы это успешный ответ с именем, для чужого —
+  PARTICIPANT_ID_INVALID, и это не повод решать, что аккаунта нет.
   """
   if user_id <= 0:
     return None
@@ -385,8 +369,17 @@ async def describe_telegram_user(
   named = _named_person(private, user_id)
   if named:
     return named
+  kind, via_user = await _ask_userbot(user_id)
+  if kind in ("missing", "bot") and private is None:
+    return None
+  richer = _named_person(via_user, user_id)
+  if richer:
+    return richer
   seen_in_chat = private
-  for cid in probe_chat_ids(source_chat_id):
+  # Один чат команды, не все группы проекта: иначе Telegram на каждого
+  # отсутствующего отвечает PARTICIPANT_ID_INVALID.
+  chats = probe_chat_ids(source_chat_id)[:1]
+  for cid in chats:
     member, err = await inspect_chat_member(cid, user_id)
     if err == "invalid_user":
       return None
@@ -400,12 +393,6 @@ async def describe_telegram_user(
       return person
     if person and seen_in_chat is None:
       seen_in_chat = person
-  kind, via_user = await _ask_userbot(user_id)
-  if kind in ("missing", "bot") and seen_in_chat is None:
-    return None
-  richer = _named_person(via_user, user_id)
-  if richer:
-    return richer
   if seen_in_chat:
     return seen_in_chat
   if via_user:

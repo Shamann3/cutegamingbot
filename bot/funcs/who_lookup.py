@@ -427,32 +427,64 @@ def _resolved_entity(result: Any) -> Any:
     return None
 
 
-async def resolve_user_id(client: Any, user_id: int) -> Tuple[str, Any]:
-    """Человек по числовому id через юзербот.
-
-    ("person", TgPerson) если Telegram его знает.
-    ("missing", None) только когда id точно не аккаунт.
-    ("flood", секунды) и ("unknown", None) — спросить не удалось, это не отказ.
-    """
-    try:
-        from telethon import errors
-    except Exception:
-        return "unknown", None
-    invalid = tuple(
+def _telethon_invalid_errors(errors: Any) -> Tuple[type, ...]:
+    return tuple(
         err for name in ("PeerIdInvalidError", "UserIdInvalidError")
         if (err := getattr(errors, name, None)) is not None
     )
+
+
+def _person_from_mtproto(entity: Any) -> Optional[TgPerson]:
+    found = from_telethon(entity)
+    if isinstance(found, TgPerson) and not found.is_bot:
+        return found
+    return None
+
+
+async def resolve_user_id(client: Any, user_id: int) -> Tuple[str, Any]:
+    """Человек по числовому id через юзербот.
+
+    Сначала кэш сессии. Если человека там нет, у Telegram спрашивается
+    users.getUsers: в ответ приходит User с именем или UserEmpty.
+    ("person", TgPerson) если профиль пришёл.
+    ("missing", None) только когда id точно не аккаунт.
+    ("flood", секунды) и ("unknown", None) — имя не пришло, это не отказ.
+    """
     try:
-        entity = await client.get_entity(int(user_id))
+        from telethon import errors, functions, types
+    except Exception:
+        return "unknown", None
+    invalid = _telethon_invalid_errors(errors)
+    uid = int(user_id)
+    entity = None
+    try:
+        entity = await client.get_entity(uid)
     except errors.FloodWaitError as exc:
         return "flood", int(getattr(exc, "seconds", 0) or 60)
     except invalid:
         return "missing", None
     except Exception:
-        return "unknown", None
-    found = from_telethon(entity)
-    if isinstance(found, TgPerson) and not found.is_bot:
+        entity = None
+    found = _person_from_mtproto(entity)
+    if found is not None and (found.full_name or found.username or found.deleted):
         return "person", found
+    try:
+        result = await client(functions.users.GetUsersRequest(
+            [types.InputUser(user_id=uid, access_hash=0)]
+        ))
+    except errors.FloodWaitError as exc:
+        return "flood", int(getattr(exc, "seconds", 0) or 60)
+    except Exception:
+        # Нулевой access_hash Telegram часто отвергает и у живого id.
+        # Это не доказательство, что аккаунта нет.
+        return "unknown", None
+    users = result if isinstance(result, (list, tuple)) else (result,)
+    for item in users:
+        if type(item).__name__ == "UserEmpty":
+            continue
+        person = _person_from_mtproto(item)
+        if person is not None:
+            return "person", person
     return "unknown", None
 
 

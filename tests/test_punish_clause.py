@@ -151,8 +151,10 @@ def test_telegram_errors_split_a_fake_id_from_an_unseen_one():
     class TelegramError(Exception):
         pass
 
-    assert is_invalid_telegram_user_error(TelegramError("Bad Request: PARTICIPANT_ID_INVALID"))
+    assert not is_invalid_telegram_user_error(TelegramError("Bad Request: PARTICIPANT_ID_INVALID"))
+    assert is_user_not_participant_error(TelegramError("Bad Request: PARTICIPANT_ID_INVALID"))
     assert is_invalid_telegram_user_error(TelegramError("USER_ID_INVALID"))
+    assert is_invalid_telegram_user_error(TelegramError("PEER_ID_INVALID"))
     assert is_user_not_participant_error(TelegramError("Bad Request: user not found"))
     assert is_user_not_participant_error(TelegramError("USER_NOT_PARTICIPANT"))
     assert not is_user_not_participant_error(TelegramError("Bad Request: chat not found"))
@@ -197,8 +199,18 @@ async def _unseen_account_is_created_and_a_fake_id_is_not():
         assert await verify_telegram_user_exists(8827084733, probe_chat_ids=()) is True
         assert await verify_telegram_user_exists(10, probe_chat_ids=()) is False
 
-    with patch("bot.admins.punish_validate._bot", return_value=Bot("PARTICIPANT_ID_INVALID")):
+    not_here = patch(
+        "bot.admins.punish_validate._bot",
+        return_value=Bot("Bad Request: PARTICIPANT_ID_INVALID"),
+    )
+    with not_here, no_chats, unknown:
+        person = await describe_telegram_user(8827084733, source_chat_id=-100)
+        assert person["user_id"] == 8827084733
+        assert await verify_telegram_user_exists(8827084733, probe_chat_ids=(-100,)) is True
+
+    with patch("bot.admins.punish_validate._bot", return_value=Bot("USER_ID_INVALID")), no_chats:
         assert await describe_telegram_user(8827084733, source_chat_id=-100) is None
+        assert await verify_telegram_user_exists(8827084733, probe_chat_ids=()) is False
 
     with patch(
         "bot.admins.punish_validate._ask_userbot",

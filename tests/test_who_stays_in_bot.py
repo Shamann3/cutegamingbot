@@ -1,4 +1,8 @@
-"""«Кто ты» только читает: строку users он не создаёт и рефералов не касается."""
+"""«Кто ты» не пишет баланс и рефералов.
+
+Человека, которого ещё нет в Куте, он сохраняет через ensure_punishment_profile:
+имя из Telegram, пригласитель не назначается.
+"""
 import ast
 from pathlib import Path
 
@@ -40,15 +44,21 @@ def _who_code() -> str:
     ))
 
 
-def test_who_are_you_never_writes_to_the_database():
+def test_who_are_you_does_not_write_balance_or_referrals():
     code = _who_code() + LOOKUP
     for marker in WRITES:
         assert marker not in code, marker
+    assert "ensure_punishment_profile" in code
+    assert "add_ref" not in code
+    assert "refferer" not in code
 
 
-def test_person_outside_cute_gets_a_telegram_card_not_a_dead_end():
+def test_person_outside_cute_is_saved_and_still_has_a_telegram_card():
     info = _between("async def get_user_information_in_who_are_you", "# OWN PROFILE COMMAND")
-    assert "_who_telegram_card" in info
+    assert "_who_save_from_telegram" in info
+    assert "_who_show_outside_profile" in info
+    outside = _between("async def _who_show_outside_profile", "async def get_user_information_in_who_are_you")
+    assert "_who_telegram_card" in outside
     assert "Этого пользователя нет в нашем боте" not in PROFILE
 
 

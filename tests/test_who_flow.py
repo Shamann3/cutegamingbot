@@ -1,7 +1,7 @@
 """Поток «кто ты» из profile.py на поддельных боте, сообщении и базе.
 
 profile.py тянет боевую базу, поэтому функции «кто ты» берём из него по AST
-и выполняем с заглушками вокруг.
+и выполняем с заглушками вокруг. Запись строки users подменена и в базу не ходит.
 """
 import ast
 import asyncio
@@ -29,6 +29,7 @@ def _load(**stubs):
         "_who_pick_cb", "_who_send_picker", "_resolve_reply_target_user_id",
         "_cute_profile_exists", "get_user_who_are_you", "_who_bot", "_who_remember_card",
         "_who_reply", "_who_reply_person", "_who_tg_call", "_who_telegram_card",
+        "_who_save_from_telegram", "_who_show_outside_profile",
         "_who_username_in_telegram", "_who_show_telegram_username", "_who_show_name",
         "get_user_information_in_who_are_you",
     }
@@ -155,6 +156,15 @@ def fresh_budget(monkeypatch):
     monkeypatch.setattr(who, "USERNAME_BUDGET", who.UsernameBudget())
     monkeypatch.setattr(who, "find_userbot", lambda: None)
 
+    async def remember(user_id=0, **kwargs):
+        uid = int(user_id or 0)
+        if uid <= 0:
+            return None
+        name = kwargs.get("first_name") or str(uid)
+        return uid, name, kwargs.get("username")
+
+    monkeypatch.setattr("bot.admins.punish_validate.ensure_punishment_profile", remember)
+
 
 def _only_reads(pool):
     return all(sql.lstrip().upper().startswith("SELECT") for sql in pool.sql)
@@ -173,7 +183,7 @@ class User(SimpleNamespace):
     """Так Telethon называет человека."""
 
 
-def test_stranger_found_by_userbot_gets_a_telegram_card(monkeypatch):
+def test_stranger_found_by_userbot_opens_the_profile(monkeypatch):
     stranger = User(id=55, first_name="Аня", last_name=None, username="anya_tg", usernames=None,
                     premium=True, bot=False, deleted=False, scam=False, fake=False, verified=False)
 
@@ -192,13 +202,8 @@ def test_stranger_found_by_userbot_gets_a_telegram_card(monkeypatch):
               members={55: member})
     message = _msg("кто ты @anya_tg", bot=bot)
     _run(ns, message, pool)
-    text = message.replies[0][0]
-    assert "<a href='https://t.me/anya_tg'>Аня</a>" in text
-    assert "⭐️ <b>Telegram Premium</b>" in text
-    assert "👥 <b>Состоит в этой группе</b>" in text
-    assert "Пеку торты" in text
-    assert "Профиля в Куте пока нет" in text
-    assert ns["profiles"] == []
+    assert ns["profiles"] == [55]
+    assert message.replies[0][0] == "PROFILE 55"
     assert _only_reads(pool)
 
 
@@ -248,21 +253,16 @@ def test_name_nobody_has_explains_how_to_find_the_person():
     assert message.replies[0][0] == who.name_missing_html("Григорий")
 
 
-def test_reply_to_a_stranger_shows_his_telegram_card():
+def test_reply_to_a_stranger_opens_his_profile():
     ns = _load()
     pool = Pool()
     author = _user(77, "Оля", None, is_premium=False)
     bot = Bot(members={77: SimpleNamespace(status="administrator", custom_title="Модер", user=author)})
     message = _msg("кто ты", bot=bot, reply_to=SimpleNamespace(message_id=9, from_user=author, sender_chat=None))
     _run(ns, message, pool)
-    text = message.replies[0][0]
-    assert "<a href='tg://user?id=77'>Оля</a>" in text
-    assert "🛡 <b>Администратор этой группы</b> · «Модер»" in text
+    assert ns["profiles"] == [77]
+    assert message.replies[0][0] == "PROFILE 77"
     assert _only_reads(pool)
-
-    again = _msg("кто ты", bot=bot, reply_to=SimpleNamespace(message_id=5001, from_user=_user(999, "Кут", is_bot=True), sender_chat=None))
-    _run(ns, again, pool)
-    assert "<a href='tg://user?id=77'>Оля</a>" in again.replies[0][0]
 
 
 def test_reply_to_a_channel_post_is_not_a_person():
@@ -280,21 +280,23 @@ def test_mention_without_username_finds_the_person():
     entity = SimpleNamespace(type="text_mention", offset=7, length=4, user=user)
     message = _msg("кто ты Дима", bot=Bot(), entities=[entity])
     _run(ns, message, Pool(users={1: ("Дима", None)}, chat_people=[1]))
-    assert "<a href='tg://user?id=88'>Дима</a>" in message.replies[0][0]
+    assert ns["profiles"] == [88]
+    assert message.replies[0][0] == "PROFILE 88"
 
 
-def test_id_telegram_does_not_show_gets_a_clear_answer():
+def test_unknown_id_is_saved_and_the_profile_opens():
     ns = _load()
     message = _msg("кто ты 123456", bot=Bot())
     _run(ns, message, Pool())
-    assert message.replies[0][0] == who.id_missing_html(123456)
+    assert ns["profiles"] == [123456]
+    assert message.replies[0][0] == "PROFILE 123456"
 
 
-def test_new_viewer_asking_about_himself_is_told_the_profile_is_coming():
+def test_new_viewer_asking_about_himself_gets_a_profile():
     ns = _load()
     message = _msg("кто ты", bot=Bot())
     _run(ns, message, Pool())
-    assert "Это вы" in message.replies[0][0]
+    assert ns["profiles"] == [VIEWER]
 
 
 def test_who_are_you_such_is_the_same_question():

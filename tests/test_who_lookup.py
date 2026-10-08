@@ -312,6 +312,32 @@ def test_userbot_answers_for_missing_flood_channel_and_failure():
     assert _resolve(gone) == ("missing", None)
 
 
+class UserEmpty:
+    def __init__(self, id):
+        self.id = id
+
+
+def test_numeric_id_asks_telegram_when_the_session_has_no_hash():
+    class Bare(FakeClient):
+        async def get_entity(self, peer):
+            raise ValueError("Could not find the input entity")
+
+    client = Bare(resolved=[_tg_user(id=8827084733, first_name="Ира", username="ira_k")])
+    kind, person = asyncio.run(who.resolve_user_id(client, 8827084733))
+    assert kind == "person"
+    assert person.first_name == "Ира"
+    assert person.username == "ira_k"
+    assert client.requests
+
+    empty = Bare(resolved=[UserEmpty(8827084733)])
+    assert asyncio.run(who.resolve_user_id(empty, 8827084733)) == ("unknown", None)
+
+    cached = FakeClient(entity=_tg_user(id=8827084733, first_name="Ира", username="ira_k"))
+    kind, person = asyncio.run(who.resolve_user_id(cached, 8827084733))
+    assert kind == "person" and person.first_name == "Ира"
+    assert cached.requests == []
+
+
 def test_find_userbot_uses_only_a_connected_main_client(monkeypatch):
     class Client:
         def __init__(self, connected):
