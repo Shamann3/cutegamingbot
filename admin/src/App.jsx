@@ -130,6 +130,11 @@ export default function App() {
 
   const passGroup = useCallback(() => openChannel('group', 'group'), [openChannel])
 
+  const openGroupApply = useCallback(() => {
+    setApplyPreview(false)
+    setScreen('group-apply')
+  }, [])
+
   const askGroupKey = useCallback((message) => {
     if (groupPortrait?.isProjectCreator) {
       openChannel('group', 'group')
@@ -165,10 +170,7 @@ export default function App() {
         onStaffEnter={openStaff}
         onStaffApply={openStaffApply}
         onGroupEnter={openGroup}
-        onGroupApply={() => {
-          setApplyPreview(false)
-          setScreen('group-apply')
-        }}
+        onGroupApply={openGroupApply}
       />
     )
   }
@@ -200,7 +202,8 @@ export default function App() {
       <GroupKeyPage
         again={groupAgain}
         onBack={() => setScreen('gate')}
-        onPassed={() => openChannel('group', 'group')}
+        onPassed={passGroup}
+        onApply={openGroupApply}
         onPreview={() => {
           setApplyPreview(true)
           setScreen('group-apply')

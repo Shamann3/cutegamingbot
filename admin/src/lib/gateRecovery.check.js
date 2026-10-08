@@ -4,8 +4,18 @@ function assert(cond, message) {
   if (!cond) throw new Error(message)
 }
 
-const owner = portraitFrom({ isOwner: true, role: null, status: null })
+const owner = portraitFrom({
+  isOwner: true,
+  isProjectCreator: true,
+  staffCanEnter: true,
+  groupCanEnter: true,
+  role: null,
+  status: null,
+})
 assert(owner.staffCanEnter && owner.groupCanEnter, 'создатель открывает обе двери')
+
+const ownerWithoutKey = portraitFrom({ isOwner: true, groupCanEnter: false, groups: [{ chatId: 1 }] })
+assert(ownerWithoutKey.staffCanEnter && !ownerWithoutKey.groupCanEnter, 'без ключа кабинет не открывается')
 
 const staff = portraitFrom({ role: 'moderator', status: 'active', isOwner: false })
 assert(staff.staffCanEnter && !staff.groupCanEnter, 'сотрудник без групп не открывает кабинет групп')

@@ -2,6 +2,8 @@
 """Праздники пары и тихий день. В магазин попадает только то, что создатель оставил включённым."""
 import math
 
+from marriage_engine.look import PRIZE_COPY
+
 PERIODS = (
     {"day": 7, "name": "Первая неделя"},
     {"day": 14, "name": "Две недели"},
@@ -9,11 +11,11 @@ PERIODS = (
     {"day": 100, "name": "Сто дней"},
 )
 PRIZES = (
-    {"id": "envelope", "name": "Конверт", "emoji": "✉️", "on": True, "blurb": "Куты, если предмет не успели купить."},
-    {"id": "care", "name": "Забота", "emoji": "🕯", "on": True, "blurb": "Блик, свеча или очаг. Забота только получившему."},
-    {"id": "ribbon", "name": "Лента", "emoji": "🎀", "on": True, "blurb": "Свой знак брака в профиле. Снимается фразой."},
-    {"id": "premium3", "name": "Премиум 3 мес.", "emoji": "⭐", "on": True, "blurb": "Предмет проекта. Его передаёт создатель, не бот Telegram."},
-    {"id": "premium6", "name": "Премиум 6 мес.", "emoji": "🌟", "on": True, "blurb": "Длинный праздник. Предмет тоже передаёт создатель."},
+    {"id": "envelope", "name": "Конверт", "emoji": "✉️", "on": True, "blurb": PRIZE_COPY["envelope"]},
+    {"id": "care", "name": "Забота", "emoji": "🕯", "on": True, "blurb": PRIZE_COPY["care"]},
+    {"id": "ribbon", "name": "Лента", "emoji": "🎀", "on": True, "blurb": PRIZE_COPY["ribbon"]},
+    {"id": "premium3", "name": "Премиум 3 мес.", "emoji": "⭐", "on": True, "blurb": PRIZE_COPY["premium3"]},
+    {"id": "premium6", "name": "Премиум 6 мес.", "emoji": "🌟", "on": True, "blurb": PRIZE_COPY["premium6"]},
 )
 QUIET_NAME = "Тихий день"
 QUIET_CODE = "mrgquiet"
@@ -80,7 +82,7 @@ def quiet_row(cfg, force=False):
         "care": 0,
         "buy": "Купить тихий день",
         "use": "Затихнуть",
-        "blurb": "Раз в 7 дней закрывает вашу половину, если не успели.",
+        "blurb": "Раз в неделю. Если вы не успели набрать свою часть, тихий день закрывает её за вас.",
     }
 
 

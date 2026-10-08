@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Кого записать в users, когда человека ещё нет в базе Кута.
 
-Чистые правила. Сеть и база живут в наказаниях и в панели.
-«Кто ты» этими правилами не пользуется и в users не пишет: человека
-не из Кута он показывает карточкой из Telegram.
+Чистые правила. Сеть и база живут в наказаниях, в «кто ты» и в панели.
+Имя и username берутся из Telegram. Если Telegram имя не отдал,
+но id похож на настоящий аккаунт, строка всё равно создаётся.
 """
 from __future__ import annotations
 
@@ -58,6 +58,26 @@ def name_is_placeholder(name: Any, user_id: int) -> bool:
         return text == str(int(user_id))
     except (TypeError, ValueError):
         return False
+
+
+def account_id_can_be_saved(user_id: Any) -> bool:
+    """Короткое число вроде «10» человеком не считается. Длинный id — может."""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    return uid >= 10000
+
+
+def profile_when_telegram_is_silent(user_id: Any, *, telegram_denied: bool) -> Optional[dict]:
+    """Строка, когда Telegram имя не прислал.
+
+    Явный отказ (такого id нет) — ничего не пишем.
+    Молчание — длинный id всё равно сохраняем, чтобы наказание и «кто ты» шли дальше.
+    """
+    if telegram_denied or not account_id_can_be_saved(user_id):
+        return None
+    return person_from_user_fields(user_id, None, None, None)
 
 
 def needs_telegram_profile(in_database: bool, first_name: Any, user_id: int) -> bool:

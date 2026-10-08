@@ -43,6 +43,13 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union
 
+from bot.admins.punish_clause import (
+  find_duration_span,
+  is_forever_token,
+  is_strong_user_token,
+  mention_id,
+)
+
 from bot.db_create.pklcode import LazyGameStore
 
 Scope = Literal["chat", "all"]
@@ -3558,6 +3565,8 @@ def parse_duration(text: str) -> Optional[Tuple[timedelta, int]]:
   raw = (text or "").strip().lower().replace(",", ".")
   if not raw:
     return None
+  if is_forever_token(raw):
+    return _delta_from_kind(1, "forever")
   m = _COMPACT_DURATION_RE.match(raw)
   if m:
     return _amount_unit_to_delta(int(m.group(1)), m.group(2).lower())
@@ -3616,23 +3625,23 @@ def _delta_from_kind(amount: int, kind: str) -> Tuple[timedelta, int]:
 
 
 def _extract_duration_and_reason(parts: List[str], start: int) -> Tuple[Optional[str], str, int]:
-  """Сначала ищет кратчайший валидный срок - всё после него считается причиной."""
-  for span in (1, 2, 3):
-    if len(parts) < start + span:
-      continue
-    candidate = " ".join(parts[start:start + span])
-    if parse_duration(candidate):
-      reason = " ".join(parts[start + span:]).strip() or "Не указана"
-      return candidate, reason, start + span
-  return None, "Не указана", start
+  """Срок может стоять в любом месте. Всё остальное — причина."""
+  window = parts[start:]
+  span = find_duration_span(window, parse_duration)
+  if not span:
+    reason = " ".join(window).strip() or "Не указана"
+    return None, reason, start
+  begin, end, text = span
+  reason = " ".join(window[:begin] + window[end:]).strip() or "Не указана"
+  return text, reason, start + end
 
 
 def _body_starts_with_duration(parts: List[str]) -> bool:
   """True, если тело команды начинается со срока (например «1 день …» без @user)."""
   if not parts:
     return False
-  dur_text, _, _ = _extract_duration_and_reason(parts, 0)
-  return dur_text is not None
+  span = find_duration_span(parts, parse_duration)
+  return bool(span and span[0] == 0)
 
 
 def _get_reply_target_message(message: Message) -> Optional[Message]:
@@ -3736,13 +3745,21 @@ async def _lookup_target_by_token(
       return found
     return None, None, username
 
-  if token.startswith("https://t.me/"):
-    username = _normalize_username_token(token.replace("https://t.me/", "").split("/")[0])
-    return await _known_or_from_telegram(username)
+  if token.startswith("https://t.me/") or token.lower().startswith("t.me/"):
+    username = _normalize_username_token(token.split("t.me/", 1)[-1].split("/")[0])
+    numbered = mention_id(username)
+    if numbered:
+      token = numbered
+    else:
+      return await _known_or_from_telegram(username)
 
   if token.startswith("@"):
     username = _normalize_username_token(token)
-    return await _known_or_from_telegram(username)
+    numbered = mention_id(username)
+    if numbered:
+      token = numbered
+    else:
+      return await _known_or_from_telegram(username)
 
   if token.isdigit():
     uid = int(token)
@@ -3795,6 +3812,132 @@ def _is_explicit_user_token(token: str) -> bool:
   if token.startswith("@") or token.startswith("https://t.me/"):
     return True
   return _looks_like_telegram_username(token)
+
+
+@dataclass
+class PunishClause:
+  target_id: Optional[int] = None
+  target_name: Optional[str] = None
+  target_username: Optional[str] = None
+  duration_text: Optional[str] = None
+  reason: str = "Не указана"
+  spare: str = ""
+  error: Optional[str] = None
+  error_token: Optional[str] = None
+
+
+async def _person_from_reply(
+  reply_user: User,
+  source_chat_id: Optional[int],
+) -> Tuple[int, str, Optional[str]]:
+  if not getattr(reply_user, "is_bot", False):
+    from bot.admins.punish_validate import ensure_punishment_profile
+    found = await ensure_punishment_profile(
+      reply_user.id,
+      first_name=reply_user.first_name,
+      last_name=getattr(reply_user, "last_name", None),
+      username=reply_user.username,
+      source_chat_id=source_chat_id,
+      from_telegram=True,
+    )
+    if found:
+      return found[0], found[1], found[2]
+  return (
+    reply_user.id,
+    reply_user.full_name or reply_user.first_name or str(reply_user.id),
+    reply_user.username,
+  )
+
+
+async def read_punish_clause(
+  body: List[str],
+  *,
+  reply_user: Optional[User] = None,
+  source_chat_id: Optional[int] = None,
+) -> PunishClause:
+  """Нарушитель и срок в любом порядке. Остальные слова — причина.
+
+  «навсегда @8858841901 Рк» и «@8858841901 Рк навсегда» читаются одинаково.
+  Ответ на сообщение остаётся нарушителем, если в тексте нет своей ссылки.
+  """
+  parts = [part.strip() for part in (body or []) if part and str(part).strip()]
+  span = find_duration_span(parts, parse_duration)
+  dur_idx = set(range(span[0], span[1])) if span else set()
+  dur_text = span[2] if span else None
+
+  def pack(
+    target_id: Optional[int],
+    name: Optional[str],
+    username: Optional[str],
+    used: set,
+    error: Optional[str] = None,
+    error_token: Optional[str] = None,
+  ) -> PunishClause:
+    reason_bits = [parts[i] for i in range(len(parts)) if i not in dur_idx and i not in used]
+    spare_bits = [parts[i] for i in range(len(parts)) if i not in used]
+    return PunishClause(
+      target_id=target_id,
+      target_name=name,
+      target_username=username,
+      duration_text=dur_text,
+      reason=" ".join(reason_bits).strip() or "Не указана",
+      spare=" ".join(spare_bits).strip(),
+      error=error,
+      error_token=error_token,
+    )
+
+  if reply_user is not None:
+    from bot.admins.punish_validate import invalid_numeric_target_token
+    bad_num = invalid_numeric_target_token(parts)
+    if bad_num:
+      return pack(None, None, None, set(), error="not_found", error_token=bad_num)
+
+  user_at: Optional[int] = None
+  for index, token in enumerate(parts):
+    if index in dur_idx:
+      continue
+    if is_strong_user_token(token):
+      user_at = index
+      break
+  if user_at is None:
+    named = [
+      index for index, token in enumerate(parts)
+      if index not in dur_idx and _is_explicit_user_token(token)
+    ]
+    if len(named) == 1:
+      user_at = named[0]
+
+  if user_at is not None:
+    token = parts[user_at]
+    target_id, target_name, target_username = await _lookup_target_by_token(
+      token, source_chat_id=source_chat_id,
+    )
+    if not target_id:
+      return pack(None, None, target_username, {user_at}, error="not_found", error_token=token)
+    return pack(target_id, target_name or str(target_id), target_username, {user_at})
+
+  if reply_user is not None:
+    if parts and 0 not in dur_idx and parts[0].isdigit():
+      token = parts[0]
+      target_id, target_name, target_username = await _lookup_target_by_token(
+        token, source_chat_id=source_chat_id,
+      )
+      if not target_id:
+        return pack(None, None, None, {0}, error="not_found", error_token=token)
+      return pack(target_id, target_name or str(target_id), target_username, {0})
+    target_id, target_name, target_username = await _person_from_reply(reply_user, source_chat_id)
+    return pack(target_id, target_name, target_username, set())
+
+  open_idx = [index for index in range(len(parts)) if index not in dur_idx]
+  if not open_idx:
+    return pack(None, None, None, set(), error="no_target")
+  token = parts[open_idx[0]]
+  target_id, target_name, target_username = await _lookup_target_by_token(
+    token, source_chat_id=source_chat_id,
+  )
+  if not target_id:
+    return pack(None, None, target_username, {open_idx[0]}, error="not_found", error_token=token)
+  return pack(target_id, target_name or str(target_id), target_username, {open_idx[0]})
 
 
 async def _resolve_reply_or_explicit(
@@ -3919,13 +4062,24 @@ async def _resolve_target_from_body(
     return ent_id, ent_name, ent_username
 
   parts = body.split()
+  span = find_duration_span(parts, parse_duration)
+  skip = set(range(span[0], span[1])) if span else set()
+  rest = [parts[index] for index in range(len(parts)) if index not in skip]
+  if not rest:
+    return None, None, None
+  for token in rest:
+    if is_strong_user_token(token):
+      return await _lookup_target_by_token(token, source_chat_id=chat_id)
   target_id, target_name, target_username = await _lookup_target_by_token(
-    parts[0], source_chat_id=chat_id,
+    rest[0], source_chat_id=chat_id,
   )
-  if not target_id and len(parts) > 1:
-    target_id, target_name, target_username = await _lookup_target_by_token(
-      body, source_chat_id=chat_id,
-    )
+  if target_id or len(rest) == 1:
+    return target_id, target_name, target_username
+  whole_id, whole_name, whole_username = await _lookup_target_by_token(
+    " ".join(rest), source_chat_id=chat_id,
+  )
+  if whole_id:
+    return whole_id, whole_name, whole_username
   return target_id, target_name, target_username
 
 
@@ -4013,57 +4167,48 @@ async def parse_mute_command(message: Message) -> ParsedMute | ParseError:
   reply_msg = _get_reply_target_message(message)
   body = parts[1:]
   source_chat_id = message.chat.id
-
-  target_id: Optional[int] = None
-  target_name: Optional[str] = None
-  target_username: Optional[str] = None
-  rest: List[str] = body
-
-  if reply_msg and reply_msg.from_user:
-    # Явное указание пользователя в команде (например @werkov3) важнее ответа -
-    # это согласует мут с бан/варн/кик и позволяет «мут @werkov3 10сек 1111»
-    # работать даже когда команда отправлена ответом (в т.ч. с фото-пруфом).
-    target_id, target_name, target_username, rest, not_found = await _resolve_reply_or_explicit(
-      reply_msg.from_user, body, source_chat_id=source_chat_id,
-    )
-    if not_found:
-      if str(not_found).isdigit():
-        return ParseError(
-          "user_not_found",
-          MuteText.ERR_NOT_FOUND_ID.format(token=escape(not_found)),
-          not_found,
-        )
-      return ParseError(
-        "user_not_found",
-        MuteText.ERR_NOT_FOUND_USERNAME.format(token=escape(not_found)),
-        not_found,
-      )
-    MuteDebug.log("PARSE", "target reply/explicit", target_id=target_id, target_name=target_name)
-  else:
+  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  clause = await read_punish_clause(body, reply_user=reply_user, source_chat_id=source_chat_id)
+  if clause.error == "no_target":
     if not body:
       return ParseError("no_target", MuteText.ERR_NO_TARGET, "no reply and empty body")
-    if _body_starts_with_duration(body) or parse_duration(body[0]):
-      return ParseError(
-        "no_target",
-        MuteText.ERR_NEED_TARGET,
-        f"starts with duration: {' '.join(body[:3])}",
-      )
-    first = body[0]
-    target_id, target_name, target_username = await _lookup_target_by_token(
-      first, source_chat_id=source_chat_id,
+    return ParseError(
+      "no_target",
+      MuteText.ERR_NEED_TARGET,
+      f"no user in {' '.join(body[:4])}",
     )
-    if not target_id:
-      if first.startswith("@"):
-        return ParseError("user_not_found", MuteText.ERR_NOT_FOUND_USERNAME.format(token=escape(first)), first)
-      if first.isdigit():
-        return ParseError("user_not_found", MuteText.ERR_NOT_FOUND_ID.format(token=escape(first)), first)
-      return ParseError("user_not_found", MuteText.ERR_NOT_FOUND_NAME.format(token=escape(first)), first)
-    rest = body[1:]
-    MuteDebug.log("PARSE", "target from token", token=first, target_id=target_id)
+  if clause.error == "not_found":
+    token = clause.error_token or ""
+    shown = token[1:] if token.startswith("@") and token[1:].isdigit() else token
+    if shown.isdigit():
+      return ParseError(
+        "user_not_found",
+        MuteText.ERR_NOT_FOUND_ID.format(token=escape(shown)),
+        token,
+      )
+    if reply_user or token.startswith("@") or _looks_like_telegram_username(token):
+      return ParseError(
+        "user_not_found",
+        MuteText.ERR_NOT_FOUND_USERNAME.format(token=escape(token)),
+        token,
+      )
+    return ParseError(
+      "user_not_found",
+      MuteText.ERR_NOT_FOUND_NAME.format(token=escape(token)),
+      token,
+    )
+  MuteDebug.log(
+    "PARSE", "clause",
+    target_id=clause.target_id, duration=clause.duration_text, reason=clause.reason,
+  )
 
-  dur_text, reason, _ = _extract_duration_and_reason(rest, 0)
+  target_id = clause.target_id
+  target_name = clause.target_name
+  target_username = clause.target_username
+  dur_text = clause.duration_text
+  reason = clause.reason
   if not dur_text:
-    return ParseError("no_duration", MuteText.ERR_NO_DURATION, f"rest={rest}")
+    return ParseError("no_duration", MuteText.ERR_NO_DURATION, f"body={body}")
   parsed = parse_duration(dur_text)
   if not parsed:
     return ParseError("bad_duration", MuteText.ERR_BAD_DURATION.format(duration=escape(dur_text)), dur_text)

@@ -1961,9 +1961,8 @@ def _resolve_reply_target_user_id(message: Message) -> Optional[int]:
     return None
 
 
-# «Кто ты» только читает базу Кута и Telegram. Строку users не создаёт:
-# она появится, когда человек сам напишет при боте, и реферальная ссылка
-# останется за тем, кто его пригласит.
+# «Кто ты» читает базу Кута. Если строки ещё нет, её создаёт
+# _who_save_from_telegram: имя берётся из Telegram, реферер не назначается.
 async def _cute_profile_exists(db, user_id: int) -> bool:
     pool = getattr(db, "pool", None)
     if pool is None:
@@ -2206,6 +2205,42 @@ async def _who_show_name(message: Message, db, name: str, *, maybe_username: str
 # =========================================================
 # USER INFO ("кто ты")
 # =========================================================
+async def _who_save_from_telegram(
+    message: Message,
+    user_id: int,
+    person: Optional[who.TgPerson] = None,
+):
+    """Создаёт строку users из Telegram, если человека ещё нет в Куте."""
+    from bot.admins.punish_validate import ensure_punishment_profile
+
+    fields = {}
+    if person is not None and int(getattr(person, "user_id", 0) or 0) == int(user_id):
+        if bool(getattr(person, "is_bot", False)):
+            return None
+        fields = {
+            "first_name": person.first_name,
+            "last_name": person.last_name,
+            "username": person.username,
+            "from_telegram": True,
+        }
+    try:
+        return await ensure_punishment_profile(
+            int(user_id),
+            source_chat_id=int(message.chat.id),
+            **fields,
+        )
+    except Exception as e:
+        _who_dbg(f"Не удалось записать пользователя {user_id} из Telegram: {e}")
+        return None
+
+
+async def _who_show_outside_profile(message: Message, user_id: int, person: Optional[who.TgPerson] = None):
+    card = await _who_telegram_card(message, user_id, person)
+    sent = await _who_reply(message, card or who.id_missing_html(user_id))
+    if card:
+        _who_remember_card(sent, user_id)
+
+
 async def get_user_information_in_who_are_you(
     message: Message,
     db,
@@ -2215,11 +2250,10 @@ async def get_user_information_in_who_are_you(
 ):
     user_id = int(target_group_id)
     viewer_id = int(message.from_user.id)
-    if not await _cute_profile_exists(db, user_id):
-        card = await _who_telegram_card(message, user_id, person)
-        sent = await _who_reply(message, card or who.id_missing_html(user_id))
-        if card:
-            _who_remember_card(sent, user_id)
+    existed = await _cute_profile_exists(db, user_id)
+    saved = await _who_save_from_telegram(message, user_id, person)
+    if saved is None and not existed:
+        await _who_show_outside_profile(message, user_id, person)
         return
 
     try:
@@ -2231,7 +2265,7 @@ async def get_user_information_in_who_are_you(
         )
     except Exception as e:
         _who_info_dbg(f"Ошибка при сборке профиля пользователя {user_id}: {e}")
-        await message.reply("<b>😔 Не удалось получить информацию о пользователе</b>", parse_mode="HTML")
+        await _who_show_outside_profile(message, user_id, person)
         return
 
     has_warns = await _profile_target_has_warns(user_id)

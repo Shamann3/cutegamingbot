@@ -204,7 +204,10 @@ def settings_view(src):
         "rpPerDay": _clamp(src.get("rpPerDay", RP_PER_VERB_A_DAY), RP_PER_VERB_A_DAY, 1, 20), "topLimit": _clamp(src.get("topLimit", TOP_LIMIT), TOP_LIMIT, 1, 50),
         "showEmptyProfile": _flag(src, "showEmptyProfile", SHOW_EMPTY_PROFILE), "toneOn": _flag(src, "toneOn", True), "sparkOn": _flag(src, "sparkOn", True),
         "toneStart": _clamp(src.get("toneStart", 80), 80, 0, 100), "toneGain": _clamp(src.get("toneGain", 12), 12, 0, 100), "toneDecay": _clamp(src.get("toneDecay", 8), 8, 0, 100),
-        "rescueHours": _clamp(src.get("rescueHours", RESCUE_HOURS), RESCUE_HOURS, 1, 48), "levels": levels, "verbs": verbs,
+        "rescueHours": _clamp(src.get("rescueHours", RESCUE_HOURS), RESCUE_HOURS, 1, 48),
+        "moonFrom": _clamp(src.get("moonFrom", 21), 21, 0, 23), "moonTo": _clamp(src.get("moonTo", 6), 6, 0, 23),
+        "dawnFrom": _clamp(src.get("dawnFrom", 6), 6, 0, 23), "dawnTo": _clamp(src.get("dawnTo", 10), 10, 0, 23),
+        "levels": levels, "verbs": verbs,
         "glowPrice": by["glow"]["price"], "glowCare": by["glow"]["care"],
         "candlePrice": by["candle"]["price"], "candleCare": by["candle"]["care"],
         "hearthPrice": by["hearth"]["price"], "hearthCare": by["hearth"]["care"],
@@ -529,7 +532,7 @@ def verb_button(verb_id, price=0, care=0):
     label = VERB_LABEL.get(str(verb_id), str(verb_id))
     return label + " · " + str(int(price)) if int(price or 0) > 0 else label
 def _pair(you, need, partner, other):
-    return "Ты " + str(int(you)) + "/" + str(int(need)) + " · " + str(partner) + " " + str(int(other)) + "/" + str(int(need))
+    return "Ты " + str(int(you)) + " из " + str(int(need)) + " · " + str(partner) + " " + str(int(other)) + " из " + str(int(need))
 def _spare(you, other, need, partner):
     yours, theirs = max(0, int(you) - int(need)), max(0, int(other) - int(need))
     if yours <= 0 and theirs <= 0:
@@ -602,7 +605,7 @@ def spark_level(view):
     lines = [SPARK + " <b>Уровни</b>"]
     for row in rows:
         mark = " · сейчас" if int(row["id"]) == current else ""
-        lines.append("<b>" + row["name"] + "</b> <i>" + str(row["days"]) + " дн. · по " + str((int(row["goal"]) + 1) // 2) + mark + "</i>")
+        lines.append("<b>" + row["name"] + "</b> <i>" + str(row["days"]) + " дн. · каждому по " + str((int(row["goal"]) + 1) // 2) + mark + "</i>")
     return "\n".join(lines)
 def spark_fire(view, you, partner_care, partner_name, hours):
     from marriage_engine.m_ids import SPARK
@@ -610,11 +613,11 @@ def spark_fire(view, you, partner_care, partner_name, hours):
     name = str((view.get("level") or {}).get("name") or "Знакомство")
     days = int((view.get("state") or {}).get("spark_days") or 0)
     if view.get("fading"):
-        head = SPARK + " <b>Гаснет · " + str(days) + "</b>"
-        sub = "До " + str(view.get("clock") or "полудня") + " по " + str(need) + "."
+        head = SPARK + " <b>Искра гаснет · день " + str(days) + "</b>"
+        sub = "До " + str(view.get("clock") or "полудня") + " закройте вчера: каждому по " + str(need) + "."
     else:
-        head = SPARK + " <b>" + str(days) + " · " + name + "</b>"
-        sub = "По " + str(need) + " с каждого."
+        head = SPARK + " <b>" + name + " · день " + str(days) + "</b>"
+        sub = "Сегодня каждому нужно " + str(need) + "."
     lines = [head, "<b>" + _pair(you, need, partner_name, partner_care) + "</b>", "<i>" + sub + "</i>"]
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
@@ -654,19 +657,30 @@ def spark_stats(view, you, partner_care, partner_name):
     from marriage_engine.m_ids import HEART
     state, level = view.get("state") or {}, view.get("level") or {}
     return HEART + " <b>" + str(level.get("name") or "Знакомство") + "</b>\n<i>" + _pair(you, int(view.get("need") or 0), partner_name, partner_care) + "</i>\n<i>Всего " + str(int(state.get("care_total") or 0)) + "</i>"
-def gift_text(rows, ribbon=False):
+def gift_text(rows, ribbon=False, cfg=None):
     from marriage_engine.m_ids import HEART
-    held = []
+    from marriage_engine.look import DINNER_LINE, item_about, item_name
+    lines = [HEART + " <b>Что делает каждый предмет</b>"]
+    shown = 0
+    seeds = False
     for row in rows or []:
-        count = int(row.get("have") or 0)
-        if count <= 0:
+        have = int(row.get("have") or 0)
+        if row.get("on") is False and have <= 0:
             continue
-        held.append(str(row.get("emoji") or "") + str(count))
-    bag = " ".join(held) if held else "пусто"
-    line = HEART + " <b>Предметы · " + bag + "</b>"
+        shown += 1
+        if str(row.get("effect") or "") == "seed":
+            seeds = True
+        stock = " У вас " + str(have) + " шт." if have else ""
+        lines.append(
+            str(row.get("emoji") or "") + " <b>" + item_name(row) + "</b>\n<i>" + item_about(row, rows, cfg) + stock + "</i>"
+        )
+    if seeds:
+        lines.append("<i>" + DINNER_LINE + "</i>")
     if ribbon:
-        line += "\n<i>Лента на вас.</i>"
-    return line
+        lines.append("🎀 <i>Лента уже на вас.</i>")
+    if shown == 0:
+        lines.append("<i>Пока пусто.</i>")
+    return "\n".join(lines)
 def own_ribbon(live, user_id):
     if not isinstance(live, dict):
         return False

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 import json
 import logging
 import secrets
@@ -1033,6 +1034,26 @@ async def _issue_key(user_id: int) -> str:
     return plain
 
 
+def _about_word_count(text: str) -> int:
+    return len([part for part in (text or "").split() if part])
+
+
+def _approval_key_message(group_title: str, post_title: str, entry_key: str) -> str:
+    group = html.escape(group_title or "Группа", quote=False)
+    post = html.escape(post_title or "должность", quote=False)
+    key = html.escape(entry_key or "", quote=False)
+    return (
+        "<b>Заявка принята</b>\n"
+        "Панель администратора открыта.\n\n"
+        f"<b>Группа</b>\n{group}\n\n"
+        f"<b>Должность</b>\n{post}\n\n"
+        "<b>Ключ входа</b>\n"
+        "Нажмите на строку, чтобы открыть его, и скопируйте.\n"
+        f"<tg-spoiler><code>{key}</code></tg-spoiler>\n\n"
+        "Введите ключ сами на экране входа. Никому его не пересылайте."
+    )
+
+
 async def _realm_log(chat_id: int, user_id: int | None, action: str, detail: str, actor_id: int | None) -> None:
     await db.pool.execute(
         """
@@ -1562,7 +1583,7 @@ class PrefixBody(BaseModel):
 class ApplyBody(BaseModel):
     chat_id: int
     position_id: int = Field(ge=1)
-    body: str = Field(min_length=20, max_length=2000)
+    body: str = Field(min_length=20, max_length=8000)
     rules_read: bool
     rules_ids: list[int] = Field(default_factory=list, max_length=80)
     model_config = {"extra": "forbid"}
@@ -1693,6 +1714,8 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
     await ensure_tables()
     if not body.rules_read:
         raise HTTPException(status_code=400, detail="Сначала отметьте, что вы знаете правила")
+    if _about_word_count(body.body) > 70:
+        raise HTTPException(status_code=400, detail="Описание о себе — не больше 70 слов")
     pos = await db.pool.fetchrow(
         """
         SELECT p.id, p.rank, p.accepting, p.kind, g.is_official
@@ -3105,11 +3128,7 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
 
     try:
         await send_telegram_message(
-            "Заявка в панель администратора принята.\n\n"
-            f"Группа: {group_title}\n"
-            f"Должность: {post_title}\n\n"
-            f"Ваш ключ:\n{entry_key}\n\n"
-            "Откройте панель администратора и введите этот ключ сами.",
+            _approval_key_message(group_title, post_title, entry_key),
             chat_id=str(int(app["user_id"])),
         )
     except Exception:
@@ -3834,7 +3853,10 @@ async def _key_row(user_id: int, key: str):
     if not row:
         raise HTTPException(
             status_code=403,
-            detail="Личного ключа ещё нет. Вернитесь и отправьте заявку — после одобрения ключ придёт в бота.",
+            detail={
+                "code": "need_apply",
+                "message": "Личного ключа ещё нет. Сначала нужна заявка в панель администратора.",
+            },
         )
     if row["disabled"]:
         raise HTTPException(

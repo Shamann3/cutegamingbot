@@ -107,6 +107,17 @@ from bot.funcs.marriage_design import (
     TOP_TITLE,
     WED_OK_FREE,
     WED_OK_PAID,
+    FEAST_EARLY,
+    FEAST_ENVELOPE,
+    FEAST_FUND_SHORT,
+    FEAST_KEEPER_EMPTY,
+    FEAST_KEEPER_HOLD,
+    FEAST_KEEPER_MISS,
+    FEAST_KEEPER_OK,
+    FEAST_NONE,
+    FEAST_READY,
+    FEAST_SORRY,
+    GEST_TEXT,
     WHAT_TEXT,
     card_text,
     care_line,
@@ -240,17 +251,30 @@ def _kb_pay(verb_id: str, amount: str) -> InlineKeyboardMarkup:
     ])
 
 
+def _use_label(row) -> str:
+    have = int(row.get("have") or 0)
+    text = str(row.get("use") or "Взять")
+    if have > 0:
+        text += " · " + str(have)
+    return text[:64]
+
+
+def _buy_label(row) -> str:
+    price = int(row.get("price") or 0)
+    return ("Купить " + str(price)) if price else "Купить"
+
+
 def _kb_gifts(rows) -> InlineKeyboardMarkup:
     buttons = []
     for row in rows:
         if row.get("rite") and int(row.get("have") or 0) <= 0:
             continue
         if row.get("rite") or not row.get("buy"):
-            buttons.append([_btn(row["use"], f"mrg:guse:{row['id']}", "primary", RED_ID)])
+            buttons.append([_btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID)])
             continue
         buttons.append([
-            _btn(row["buy"], f"mrg:gbuy:{row['id']}", "success", RED_ID),
-            _btn(row["use"], f"mrg:guse:{row['id']}", "primary", RED_ID),
+            _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
+            _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
         ])
     buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -890,7 +914,7 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
 
 async def _gift_screen(query, user_id: int, pool, cfg, live, note: str = "") -> None:
     rows = await store.gift_stock(pool, user_id, cfg)
-    text = gift_text(rows, own_ribbon(live, user_id))
+    text = gift_text(rows, own_ribbon(live, user_id), cfg)
     clean = str(note or "").strip()
     if clean:
         text = clean + "\n" + text
@@ -989,7 +1013,8 @@ async def _on_gift_use(query, kind: str, user_id: int, pool) -> None:
     result = await store.use_gift(pool, live, user_id, kind, cfg)
     if not result.get("ok"):
         reason = result.get("reason") or "bad"
-        await _note(query, GIFT_ALERT.get(reason, GIFT_ALERT["bad"]))
+        from bot.funcs.marriage_design import alert_text
+        await _note(query, alert_text(reason, cfg))
         if reason in ("field", "cook"):
             await _place_hint_message(query, kind, cfg)
         return
@@ -1101,7 +1126,7 @@ async def _on_guide(query, action: str, pool) -> None:
         await query.answer()
         await _edit(
             query,
-            _fill("{heart} <b>Жест</b>\n{spark} <i>Число — забота. Её дают оба.</i>"),
+            GEST_TEXT,
             _kb_gest(str(live["id"]), cfg),
         )
         return
@@ -1166,7 +1191,7 @@ async def _on_gest(query, token: str, user_id: int, pool) -> None:
     await query.answer()
     await _edit(
         query,
-        _fill("{heart} <b>Жест</b>\n{spark} <i>Число — забота. Её дают оба.</i>"),
+        GEST_TEXT,
         _kb_gest(token, cfg),
     )
 
@@ -1442,20 +1467,22 @@ async def _on_feast(query, user_id: int, pool) -> None:
         return
     holiday = await _holiday(pool, user_id, cfg, live)
     if not holiday:
-        await _note(query, "Праздника сейчас нет.")
+        from bot.funcs.marriage_design import FEAST_NONE
+        await _note(query, FEAST_NONE)
         return
-    lines = [f"{HEART} <b>{holiday['name']}</b>"]
+    from bot.funcs.marriage_design import feast_screen
+    shown = []
     buttons = []
     for row in cfg.get("prizes") or []:
         if not row.get("on"):
             continue
         if row.get("id") == "premium6" and int(holiday["day"]) < 30:
             continue
-        lines.append(f"{row.get('emoji') or ''} <b>{row['name']}</b>")
+        shown.append(row)
         buttons.append([_btn(str(row["name"])[:32], f"mrg:wish:{row['id']}", "primary", RED_ID)])
     buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
     await query.answer()
-    await _edit(query, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
+    await _edit(query, feast_screen(holiday.get("name"), holiday.get("day"), shown), InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 async def _spend_fund(bot, chat_id: int, amount: int) -> bool:
@@ -1495,42 +1522,43 @@ async def _fulfill(query, info: dict, cfg: dict, holiday: dict, pool) -> None:
         keeper = await store.find_named_user(pool, cfg.get("premiumKeeper") or "")
         if plan["do"] == "keeper_empty" and keeper:
             try:
+                from bot.funcs.marriage_design import FEAST_KEEPER_MISS
                 await query.bot.send_message(
                     keeper,
-                    f"{HEART} <b>{holiday['name']}</b>\nПредмета премиума нет на складе или фонд его не покрыл. Передайте свой, если решите. Бот Telegram Premium не используется.",
+                    FEAST_KEEPER_MISS.format(heart=HEART, name=holiday.get("name") or "Праздник"),
                     parse_mode="HTML",
                 )
             except Exception:
                 pass
         await _note(
             query,
-            "Фонд не покрывает подарок." if plan["do"] == "short" else "Премиума нет. Создатель видит это.",
+            FEAST_FUND_SHORT if plan["do"] == "short" else FEAST_KEEPER_EMPTY,
         )
         return
     if not await _spend_fund(query.bot, fund_chat, int(plan.get("amount") or 0)):
-        await _note(query, "Фонд пока не покрывает подарок.")
+        await _note(query, FEAST_FUND_SHORT)
         return
     payer, partner = int(info["payer_id"]), int(info["partner_id"])
     amount = int(plan.get("amount") or 0)
     ok = False
-    note = "Подарок из фонда уже у вас."
+    note = FEAST_READY
     if plan["do"] in ("kut", "sorry"):
         half = amount // 2
         shares = [(payer, amount - half), (partner, half)]
         ok = await store.give_kut(pool, shares)
-        note = "Подарок не успели купить. Иэрихон прислал куты." if plan["do"] == "sorry" else f"Конверт из фонда: {amount} кут."
+        note = FEAST_SORRY if plan["do"] == "sorry" else FEAST_ENVELOPE.format(amount=amount)
     elif plan["do"] == "shop":
         people = [payer] if prize_id == "ribbon" else [payer, partner]
         ok = await store.give_named(pool, people, stock.get("name1"), 1)
     elif plan["do"] == "keeper":
         keeper = await store.find_named_user(pool, cfg.get("premiumKeeper") or "")
         ok = bool(keeper) and await store.give_named(pool, [keeper], stock.get("name1"), 1)
-        note = f"Премиум готовит @{cfg.get('premiumKeeper') or 'создатель'}. Это предмет проекта."
+        note = FEAST_KEEPER_OK.format(name=cfg.get("premiumKeeper") or "создатель")
         if ok:
             try:
                 await query.bot.send_message(
                     keeper,
-                    f"{HEART} <b>{holiday['name']}</b>\nПредмет премиума уже у вас. Передайте его паре сами. Бот Telegram Premium не используется.",
+                    FEAST_KEEPER_HOLD.format(heart=HEART, name=holiday.get("name") or "Праздник"),
                     parse_mode="HTML",
                 )
             except Exception:
@@ -1553,10 +1581,12 @@ async def _on_wish(query, prize_id: str, user_id: int, pool) -> None:
         return
     holiday = await _holiday(pool, user_id, cfg, live)
     if not holiday:
-        await _note(query, "Праздника сейчас нет.")
+        from bot.funcs.marriage_design import FEAST_NONE
+        await _note(query, FEAST_NONE)
         return
     if prize_id == "premium6" and int(holiday["day"]) < 30:
-        await _note(query, "Этот подарок открывается с месяца.")
+        from bot.funcs.marriage_design import FEAST_EARLY
+        await _note(query, FEAST_EARLY)
         return
     info = await store.choose_wish(pool, user_id, prize_id, int(holiday["day"]), cfg)
     if not info.get("ok") or not info.get("locked"):
@@ -1668,22 +1698,25 @@ async def _note(query, text: str) -> None:
 
 
 def _arm(query) -> None:
-    """Первый answer снимает часики. Повторный Telegram уже не ждёт."""
+    """Первый answer снимает часики. Повторный Telegram уже не ждёт.
+
+    CallbackQuery заморожен: поле answer нельзя заменить обычным присваиванием.
+    """
     if getattr(query, "_mrg_arm", False):
         return
-    query._mrg_arm = True
+    object.__setattr__(query, "_mrg_arm", True)
     original = query.answer
 
-    async def answer(*args, **kwargs):
+    async def answer(*_args, **_kwargs):
         if getattr(query, "_mrg_sent", False):
             return
-        query._mrg_sent = True
+        object.__setattr__(query, "_mrg_sent", True)
         try:
             await original()
         except Exception:
             pass
 
-    query.answer = answer
+    object.__setattr__(query, "answer", answer)
 
 
 async def _edit(query, text: str, markup=_CLEAR) -> None:

@@ -102,6 +102,7 @@ from bot.admins.mute import (
   _is_transient_db_error,
   _format_scope_with_groups,
   _resolve_reply_or_explicit,
+  read_punish_clause,
   check_punish_permission,
   guard_seat_target,
   reply_seat_refusal,
@@ -798,75 +799,52 @@ async def parse_ban_command(message: Message) -> ParsedBan | ParseError:
   reply_msg = _get_reply_target_message(message)
   body = parts[1:] if len(parts) > 1 else []
   source_chat_id = message.chat.id
-
-  target_id: Optional[int] = None
-  target_name: Optional[str] = None
-  target_username: Optional[str] = None
-  rest: List[str] = body
-
-  if reply_msg and reply_msg.from_user:
-    # Явное указание пользователя в команде (например @werkov3) важнее ответа.
-    target_id, target_name, target_username, rest, not_found = await _resolve_reply_or_explicit(
-      reply_msg.from_user, body, source_chat_id=source_chat_id,
-    )
-    if not_found:
-      if str(not_found).isdigit():
-        return ParseError(
-          "ban_user_not_found",
-          BanText.NOT_FOUND_ID.format(token=escape(not_found)),
-          not_found,
-        )
-      return ParseError(
-        "ban_user_not_found",
-        BanText.NOT_FOUND_EXPLICIT.format(token=escape(not_found)),
-        not_found,
-      )
-  else:
+  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  clause = await read_punish_clause(body, reply_user=reply_user, source_chat_id=source_chat_id)
+  if clause.error == "no_target":
     if not body:
-      return ParseError(
-        "ban_no_target",
-        BanText.NO_TARGET,
-        "no reply and empty body",
-      )
-
-    if _body_starts_with_duration(body) or parse_duration(body[0]):
-      return ParseError(
-        "ban_no_target",
-        BanText.NEED_TARGET,
-        f"starts with duration: {' '.join(body[:3])}",
-      )
-
-    first = body[0]
-    target_id, target_name, target_username = await _lookup_target_by_token(
-      first, source_chat_id=source_chat_id,
+      return ParseError("ban_no_target", BanText.NO_TARGET, "no reply and empty body")
+    return ParseError(
+      "ban_no_target",
+      BanText.NEED_TARGET,
+      f"no user in {' '.join(body[:4])}",
     )
-    if not target_id:
-      if first.startswith("@") or _looks_like_username_token(first):
-        username = first.lstrip("@")
-        return ParseError(
-          "ban_user_not_found",
-          BanText.NOT_FOUND_USERNAME.format(username=escape(username)),
-          first,
-        )
-      if first.isdigit():
-        return ParseError(
-          "ban_user_not_found",
-          BanText.NOT_FOUND_ID.format(token=escape(first)),
-          first,
-        )
+  if clause.error == "not_found":
+    token = clause.error_token or ""
+    shown = token[1:] if token.startswith("@") and token[1:].isdigit() else token
+    if shown.isdigit():
       return ParseError(
         "ban_user_not_found",
-        BanText.NOT_FOUND_NAME.format(token=escape(first)),
-        first,
+        BanText.NOT_FOUND_ID.format(token=escape(shown)),
+        token,
       )
-    rest = body[1:]
+    if token.startswith("@") or _looks_like_username_token(token):
+      return ParseError(
+        "ban_user_not_found",
+        BanText.NOT_FOUND_USERNAME.format(username=escape(token.lstrip("@"))),
+        token,
+      )
+    if reply_user:
+      return ParseError(
+        "ban_user_not_found",
+        BanText.NOT_FOUND_EXPLICIT.format(token=escape(token)),
+        token,
+      )
+    return ParseError(
+      "ban_user_not_found",
+      BanText.NOT_FOUND_NAME.format(token=escape(token)),
+      token,
+    )
 
-  dur_text, reason, _ = _extract_duration_and_reason(rest, 0)
+  target_id = clause.target_id
+  target_name = clause.target_name
+  target_username = clause.target_username
+  dur_text = clause.duration_text
+  reason = clause.reason
   if not dur_text:
     # Срок не указан («бан @user» / «баналл @user [причина]») → бан навсегда.
-    # Весь остаток после нарушителя считаем причиной.
     dur_text = "навсегда"
-    reason = " ".join(rest).strip() or "Не указана"
+    reason = clause.reason or "Не указана"
     time_delta, duration_minutes = _FOREVER_DELTA, _FOREVER_MINUTES
   else:
     parsed_dur = parse_duration(dur_text)

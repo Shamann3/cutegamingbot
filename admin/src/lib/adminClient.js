@@ -141,15 +141,26 @@ function mapAdminFetchError(error, path) {
 
 
 
+function explainFailure(data, status) {
+  const detail = data?.detail
+  if (typeof detail === 'string') return { message: detail, code: '' }
+  if (Array.isArray(detail)) return { message: detail[0]?.msg || 'Ошибка запроса', code: '' }
+  if (detail && typeof detail === 'object') {
+    return {
+      message: typeof detail.message === 'string' ? detail.message : `Ошибка ${status}`,
+      code: typeof detail.code === 'string' ? detail.code : '',
+    }
+  }
+  return { message: `Ошибка ${status}`, code: '' }
+}
+
 async function parseError(response) {
 
   try {
 
     const data = await response.json()
 
-    if (typeof data?.detail === 'string') return data.detail
-
-    if (Array.isArray(data?.detail)) return data.detail[0]?.msg || 'Ошибка запроса'
+    return explainFailure(data, response.status).message
 
   } catch {
 
@@ -236,17 +247,9 @@ async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TI
 
     if (!response.ok) {
 
-      const detail =
+      const failure = explainFailure(data, response.status)
 
-        typeof data?.detail === 'string'
-
-          ? data.detail
-
-          : Array.isArray(data?.detail)
-
-            ? data.detail[0]?.msg || 'Ошибка запроса'
-
-            : `Ошибка ${response.status}`
+      const detail = failure.message
 
       if (response.status === 401) {
 
@@ -263,6 +266,8 @@ async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TI
       const httpError = new Error(detail)
 
       httpError.status = response.status
+
+      httpError.code = failure.code
 
       throw httpError
 

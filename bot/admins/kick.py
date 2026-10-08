@@ -86,6 +86,7 @@ from bot.admins.mute import (
   _reply_db_unavailable,
   _format_scope_with_groups,
   _resolve_reply_or_explicit,
+  read_punish_clause,
   check_punish_permission,
   guard_seat_target,
   DbUnavailableError,
@@ -465,72 +466,45 @@ async def parse_kick_command(message: Message) -> ParsedKick | ParseError:
   reply_msg = _get_reply_target_message(message)
   body_after_cmd = parts[1:] if len(parts) > 1 else []
   source_chat_id = message.chat.id
-
-  if reply_msg and reply_msg.from_user:
-    # Явное указание пользователя в команде (например @werkov3) важнее ответа.
-    target_id, target_name, target_username, rest, not_found = await _resolve_reply_or_explicit(
-      reply_msg.from_user, body_after_cmd, source_chat_id=source_chat_id,
-    )
-    if not_found:
-      if str(not_found).isdigit():
-        return ParseError(
-          "kick_user_not_found",
-          KickText.NOT_FOUND_ID.format(token=escape(not_found)),
-          not_found,
-        )
+  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  clause = await read_punish_clause(
+    body_after_cmd, reply_user=reply_user, source_chat_id=source_chat_id,
+  )
+  if clause.error == "no_target":
+    return ParseError("kick_no_target", KickText.NO_TARGET, "no reply and empty body")
+  if clause.error == "not_found":
+    token = clause.error_token or ""
+    shown = token[1:] if token.startswith("@") and token[1:].isdigit() else token
+    if shown.isdigit():
+      return ParseError(
+        "kick_user_not_found",
+        KickText.NOT_FOUND_ID.format(token=escape(shown)),
+        token,
+      )
+    if token.startswith("@") or _looks_like_username_token(token):
+      return ParseError(
+        "kick_user_not_found",
+        KickText.NOT_FOUND_USERNAME.format(username=escape(token.lstrip("@"))),
+        token,
+      )
+    if reply_user:
       return ParseError(
         "user_not_found",
-        KickText.NOT_FOUND_EXPLICIT.format(token=escape(not_found)),
-        not_found,
-      )
-    reason = " ".join(rest).strip() or "Не указана"
-    return ParsedKick(
-      target_id=target_id,
-      target_name=target_name,
-      target_username=target_username,
-      reason=reason,
-      scope=_kick_command_scope(text),
-    )
-
-  if not body_after_cmd:
-    return ParseError(
-      "kick_no_target",
-      KickText.NO_TARGET,
-      "no reply and empty body",
-    )
-
-  first = body_after_cmd[0]
-  target_id, target_name, target_username = await _lookup_target_by_token(
-    first, source_chat_id=source_chat_id,
-  )
-  if not target_id:
-    if first.startswith("@") or _looks_like_username_token(first):
-      username = first.lstrip("@")
-      return ParseError(
-        "kick_user_not_found",
-        KickText.NOT_FOUND_USERNAME.format(username=escape(username)),
-        first,
-      )
-    if first.isdigit():
-      return ParseError(
-        "kick_user_not_found",
-        KickText.NOT_FOUND_ID.format(token=escape(first)),
-        first,
+        KickText.NOT_FOUND_EXPLICIT.format(token=escape(token)),
+        token,
       )
     return ParseError(
       "kick_user_not_found",
-      KickText.NOT_FOUND_NAME.format(token=escape(first)),
-      first,
+      KickText.NOT_FOUND_NAME.format(token=escape(token)),
+      token,
     )
-
-  reason = " ".join(body_after_cmd[1:]).strip() or "Не указана"
-  scope = _kick_command_scope(text)
+  reason = clause.spare.strip() or "Не указана"
   return ParsedKick(
-    target_id=target_id,
-    target_name=target_name or str(target_id),
-    target_username=target_username,
+    target_id=clause.target_id,
+    target_name=clause.target_name or str(clause.target_id),
+    target_username=clause.target_username,
     reason=reason,
-    scope=scope,
+    scope=_kick_command_scope(text),
   )
 
 

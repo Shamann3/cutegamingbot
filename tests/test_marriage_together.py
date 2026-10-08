@@ -239,7 +239,7 @@ def test_each_level_feels_further_along_and_items_are_things():
     assert "не чужие" in dead and "12 дней" in dead
     catalog = gift_catalog(settings_view({}))
     assert all(row.get("touch") and " " in row.get("line", "") for row in catalog)
-    assert "в руке" in next(row["line"] for row in catalog if row["id"] == "glow")
+    assert "лимита поддержки" in next(row["line"] for row in catalog if row["id"] == "glow")
     assert "в руках партнёра" in next(row["touch"] for row in catalog if row["id"] == "tulip")
 
 

@@ -1,12 +1,13 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupKeyPage from './GroupKeyPage'
-import { checkGroupKey, enterGroupKey, readGroupEntry, clearGroupEntry } from '../lib/adminClient'
+import { checkGroupKey, enterGroupKey, fetchAdminAuthStatus, readGroupEntry, clearGroupEntry } from '../lib/adminClient'
 
 vi.mock('../lib/adminClient', async (importOriginal) => ({
   ...(await importOriginal()),
   checkGroupKey: vi.fn(),
   enterGroupKey: vi.fn(),
+  fetchAdminAuthStatus: vi.fn(),
 }))
 
 vi.mock('../components/AccentAura', () => ({ default: () => null }))
@@ -21,7 +22,17 @@ describe('GroupKeyPage', () => {
     vi.useFakeTimers()
     vi.mocked(checkGroupKey).mockReset()
     vi.mocked(enterGroupKey).mockReset()
+    vi.mocked(fetchAdminAuthStatus).mockReset()
+    vi.mocked(fetchAdminAuthStatus).mockResolvedValue({ groupCanEnter: true, isProjectCreator: false })
   })
+
+  async function showKey(ui) {
+    const view = render(ui)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    return view
+  }
 
   afterEach(() => {
     vi.useRealTimers()
@@ -30,7 +41,7 @@ describe('GroupKeyPage', () => {
 
   it('прячет кнопку кабинета, пока ключ не сошёлся', async () => {
     vi.mocked(checkGroupKey).mockRejectedValue(Object.assign(new Error('Ключ не подошёл'), { status: 403 }))
-    render(<GroupKeyPage onBack={() => {}} onPassed={() => {}} onPreview={() => {}} />)
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={() => {}} onApply={() => {}} onPreview={() => {}} />)
 
     expect(screen.queryByRole('button', { name: 'Войти' })).toBeNull()
     fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'wrong-key-123' } })
@@ -44,7 +55,7 @@ describe('GroupKeyPage', () => {
   it('показывает вход без кода, если код не нужен', async () => {
     vi.mocked(checkGroupKey).mockResolvedValue({ ok: true, needCode: false })
     const onPassed = vi.fn()
-    render(<GroupKeyPage onBack={() => {}} onPassed={onPassed} onPreview={() => {}} />)
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={onPassed} onApply={() => {}} onPreview={() => {}} />)
 
     fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'right-key-123' } })
     expect(screen.queryByRole('button', { name: 'Войти' })).toBeNull()
@@ -59,7 +70,7 @@ describe('GroupKeyPage', () => {
     vi.mocked(checkGroupKey).mockResolvedValue({ ok: true, needCode: true })
     vi.mocked(enterGroupKey).mockResolvedValue({ ok: true, entryPass: 'g.kept.pass' })
     const onPassed = vi.fn()
-    render(<GroupKeyPage onBack={() => {}} onPassed={onPassed} onPreview={() => {}} />)
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={onPassed} onApply={() => {}} onPreview={() => {}} />)
 
     fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'right-key-123' } })
     await vi.advanceTimersByTimeAsync(800)
@@ -72,5 +83,23 @@ describe('GroupKeyPage', () => {
     expect(enterGroupKey).toHaveBeenCalledWith('right-key-123', '123456')
     expect(onPassed).toHaveBeenCalledTimes(1)
     expect(readGroupEntry()).toBe('g.kept.pass')
+  })
+
+  it('без ключа сразу открывает заявку и не показывает поле', async () => {
+    vi.mocked(fetchAdminAuthStatus).mockResolvedValue({ groupCanEnter: false, isProjectCreator: false })
+    const onApply = vi.fn()
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={() => {}} onApply={onApply} onPreview={() => {}} />)
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(screen.queryByLabelText('Ключ кабинета')).toBeNull()
+  })
+
+  it('ответ сервера без ключа тоже ведёт в заявку', async () => {
+    const onApply = vi.fn()
+    vi.mocked(checkGroupKey).mockRejectedValue(Object.assign(new Error('Личного ключа ещё нет'), { status: 403, code: 'need_apply' }))
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={() => {}} onApply={onApply} onPreview={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'typed-key-123' } })
+    await vi.advanceTimersByTimeAsync(800)
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

@@ -37,6 +37,45 @@ const RIGHT_LABEL = {
 }
 
 const MIN_BODY = 20
+const MAX_WORDS = 70
+
+function countWords(value) {
+  const clean = String(value || '').trim()
+  if (!clean) return 0
+  return clean.split(/\s+/).length
+}
+
+function wordsLabel(count) {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return 'слово'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'слова'
+  return 'слов'
+}
+
+function groupHandle(username) {
+  const clean = String(username || '').trim().replace(/^@/, '')
+  return clean ? `@${clean}` : ''
+}
+
+function HiddenKey({ value }) {
+  const [shown, setShown] = useState(false)
+  if (!value) return null
+  return (
+    <button
+      type="button"
+      className="apply-key"
+      aria-pressed={shown}
+      onClick={() => setShown((open) => !open)}
+    >
+      <span className="apply-key-name">Ключ входа</span>
+      <code className={shown ? 'apply-key-value is-open' : 'apply-key-value'}>
+        {shown ? value : '• • • •   • • • •   • • • •'}
+      </code>
+      <span className="apply-key-hint">{shown ? 'Нажмите ещё раз, чтобы скрыть' : 'Нажмите, чтобы открыть'}</span>
+    </button>
+  )
+}
 
 function symbolsLeft(count) {
   const mod10 = count % 10
@@ -131,7 +170,9 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   }, [preview, loadOpen])
 
   const text = body.trim()
-  const enough = text.length >= MIN_BODY
+  const words = countWords(text)
+  const tooMany = words > MAX_WORDS
+  const enough = text.length >= MIN_BODY && !tooMany
   const canSend = rulesKnown && Boolean(chatId) && Boolean(positionId) && enough
 
   useLayoutEffect(() => {
@@ -156,7 +197,14 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const chats = useMemo(() => {
     const map = new Map()
     positions.forEach((item) => {
-      if (!map.has(item.chatId)) map.set(item.chatId, { chatId: item.chatId, title: item.title, roles: [] })
+      if (!map.has(item.chatId)) {
+        map.set(item.chatId, {
+          chatId: item.chatId,
+          title: item.title,
+          username: item.username || '',
+          roles: [],
+        })
+      }
       map.get(item.chatId).roles.push(item)
     })
     return [...map.values()]
@@ -170,6 +218,11 @@ export default function GroupApplyPage({ onBack, preview = false }) {
     if (sendingRef.current) return
     if (!chosen) {
       setError('Выберите группу и должность')
+      return
+    }
+    if (tooMany) {
+      const over = words - MAX_WORDS
+      setError(`Слишком длинно: уберите ${over} ${wordsLabel(over)}. Можно не больше ${MAX_WORDS} слов.`)
       return
     }
     if (!enough) {
@@ -281,7 +334,11 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                   <ChoiceSheet
                     prompt="Выберите группу, в которой вы хотите работать"
                     value={chatId}
-                    options={chats.map((chat) => ({ id: chat.chatId, label: chat.title }))}
+                    options={chats.map((chat) => ({
+                      id: chat.chatId,
+                      label: chat.title,
+                      detail: groupHandle(chat.username),
+                    }))}
                     open={sheet === 'group'}
                     onOpen={() => setSheet('group')}
                     onClose={() => setSheet(null)}
@@ -346,9 +403,23 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                 )}
                 <label className="auth-field">
                   <span className="auth-form-lead">Напишите, чем вы полезны для группы, которую вы выбрали</span>
-                  <textarea className="auth-input" value={body} onChange={(e) => setBody(e.target.value)} rows={4} />
+                  <textarea
+                    className="auth-input"
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    rows={4}
+                    placeholder="До 70 слов о себе"
+                  />
                 </label>
-                {!enough && <p className="apply-hint">{symbolsLeft(MIN_BODY - text.length)}</p>}
+                <p className={`apply-hint${tooMany ? ' is-over' : ''}`}>
+                  {tooMany
+                    ? `Слишком длинно: ${words} из ${MAX_WORDS} слов. Уберите ${words - MAX_WORDS} ${wordsLabel(words - MAX_WORDS)}.`
+                    : words === 0
+                      ? `До ${MAX_WORDS} слов о себе`
+                      : text.length < MIN_BODY
+                        ? `${symbolsLeft(MIN_BODY - text.length)}. Не больше ${MAX_WORDS} слов.`
+                        : `${words} из ${MAX_WORDS} слов`}
+                </p>
               </div>
             </div>
 
@@ -376,9 +447,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                 <div className="realm-row">
                   <strong>{item.group ? `${item.group}${item.position ? ` · ${item.position}` : ''}` : `Заявка ${item.id}`}</strong>
                   <span>{STATUS_LABEL[item.status] || item.status}{item.note ? ` · ${item.note}` : ''}</span>
-                  {item.entryKey ? (
-                    <span className="apply-own-key" data-copyable="1">Ваш ключ для входа: {item.entryKey}</span>
-                  ) : null}
+                  {item.entryKey ? <HiddenKey value={item.entryKey} /> : null}
                 </div>
               </li>
             ))}

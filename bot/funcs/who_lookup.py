@@ -1,8 +1,7 @@
 """«Кто ты» о человеке, которого нет в Куте: кого искать и что показать.
 
-Здесь правила и текст. Запросы к Telegram и к базе живут в profile.py.
-«Кто ты» ничего не записывает в users: строка появляется, только когда человек
-сам напишет при боте, поэтому реферальная ссылка остаётся за тем, кто его пригласит.
+Здесь правила и текст. Запросы к Telegram и запись строки users живут в profile.py.
+Реферер при этой записи не ставится: приглашение остаётся тому, кто приведёт человека.
 """
 from __future__ import annotations
 
@@ -313,7 +312,7 @@ def username_unchecked_html(username: str) -> str:
 def id_missing_html(user_id: Any) -> str:
     return (
         f"<b>😔 Не нашёл пользователя с ID <code>{_esc(user_id)}</code></b>\n"
-        "<blockquote>Telegram показывает боту только тех, кого бот уже видел. "
+        "<blockquote>Telegram не подтвердил этот ID. "
         f"{_FIND_HINT}</blockquote>"
     )
 
@@ -426,6 +425,35 @@ def _resolved_entity(result: Any) -> Any:
         if getattr(item, "id", None) == wanted:
             return item
     return None
+
+
+async def resolve_user_id(client: Any, user_id: int) -> Tuple[str, Any]:
+    """Человек по числовому id через юзербот.
+
+    ("person", TgPerson) если Telegram его знает.
+    ("missing", None) только когда id точно не аккаунт.
+    ("flood", секунды) и ("unknown", None) — спросить не удалось, это не отказ.
+    """
+    try:
+        from telethon import errors
+    except Exception:
+        return "unknown", None
+    invalid = tuple(
+        err for name in ("PeerIdInvalidError", "UserIdInvalidError")
+        if (err := getattr(errors, name, None)) is not None
+    )
+    try:
+        entity = await client.get_entity(int(user_id))
+    except errors.FloodWaitError as exc:
+        return "flood", int(getattr(exc, "seconds", 0) or 60)
+    except invalid:
+        return "missing", None
+    except Exception:
+        return "unknown", None
+    found = from_telethon(entity)
+    if isinstance(found, TgPerson) and not found.is_bot:
+        return "person", found
+    return "unknown", None
 
 
 async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:

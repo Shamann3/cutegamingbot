@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { checkGroupKey, enterGroupKey, fetchAdminAuthStatus, rememberGroupEntry } from '../lib/adminClient'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
-import { portraitFrom, rememberPortrait, rememberedPortrait } from '../lib/gateRecovery'
+import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
 import KeyField from '../components/KeyField'
 
-export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }) {
+export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, again = '' }) {
   const personal = accentIsPersonal(loadStoredAccent())
   const [key, setKey] = useState('')
   const [error, setError] = useState('')
@@ -19,25 +19,32 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }
   const [totp, setTotp] = useState('')
   const [copied, setCopied] = useState(false)
   const lastVerified = useRef('')
-  const [creatorWalk, setCreatorWalk] = useState(() => Boolean(rememberedPortrait()?.isProjectCreator))
+  const [gate, setGate] = useState('check')
 
   useEffect(() => {
-    if (rememberedPortrait()?.isProjectCreator) {
-      onPassed()
-      return undefined
-    }
     let alive = true
     fetchAdminAuthStatus()
       .then((status) => {
-        if (!alive || !status?.isProjectCreator) return
+        if (!alive) return
         const face = portraitFrom(status)
         rememberPortrait(face)
-        setCreatorWalk(true)
-        onPassed()
+        if (face.isProjectCreator) {
+          setGate('creator')
+          onPassed()
+          return
+        }
+        if (!face.groupCanEnter) {
+          setGate('apply')
+          onApply?.()
+          return
+        }
+        setGate('key')
       })
-      .catch(() => {})
+      .catch(() => {
+        if (alive) setGate('key')
+      })
     return () => { alive = false }
-  }, [onPassed])
+  }, [onPassed, onApply])
 
   useEffect(() => {
     const next = key.trim()
@@ -77,6 +84,10 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }
         if (!active) return
         setVerified(false)
         lastVerified.current = ''
+        if (err?.code === 'need_apply') {
+          onApply?.()
+          return
+        }
         if (err?.status === 403) {
           setError(err.message || 'Ключ не подошёл')
           setShake((n) => n + 1)
@@ -118,6 +129,10 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }
     } catch (err) {
       setVerified(false)
       lastVerified.current = ''
+      if (err?.code === 'need_apply') {
+        onApply?.()
+        return
+      }
       setError(err.message || 'Ключ не подошёл')
       setShake((n) => n + 1)
     } finally {
@@ -125,17 +140,17 @@ export default function GroupKeyPage({ onBack, onPassed, onPreview, again = '' }
     }
   }
 
-  if (creatorWalk) {
+  if (gate !== 'key') {
     return (
       <EntryFrame
         title="Панель администратора"
-        lead="Кабинет открывается сразу."
+        lead={gate === 'creator' ? 'Кабинет открывается сразу.' : 'Сверяем, открыт ли вам кабинет.'}
         personal={personal}
         onBack={onBack}
       >
         <p className="auth-checking">
           <span className="auth-spinner" aria-hidden="true" />
-          Открываем кабинет…
+          {gate === 'creator' ? 'Открываем кабинет…' : 'Проверяем вход…'}
         </p>
       </EntryFrame>
     )

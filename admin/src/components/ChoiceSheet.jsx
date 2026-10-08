@@ -24,10 +24,14 @@ export default function ChoiceSheet({
   const [leaving, setLeaving] = useState(false)
   const selected = options.find((item) => item.id === value) || null
 
-  const settle = (action) => (event) => {
+  const acted = useRef(0)
+  const run = (action) => (event) => {
     event.preventDefault()
     event.stopPropagation()
-    window.setTimeout(action, 0)
+    const now = Date.now()
+    if (now - acted.current < 350) return
+    acted.current = now
+    action()
   }
 
   useEffect(() => {
@@ -78,40 +82,48 @@ export default function ChoiceSheet({
         className={`choice-trigger${selected ? ' is-set' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={onOpen}
+        onClick={run(onOpen)}
       >
-        <span>{selected ? selected.label : placeholder}</span>
+        <span className="choice-trigger-copy">
+          <span className="choice-trigger-label">{selected ? selected.label : placeholder}</span>
+          {selected?.detail ? <span className="choice-trigger-detail">{selected.detail}</span> : null}
+        </span>
       </button>
       {mounted && createPortal(
-        <div className={`choice-layer${leaving ? ' is-leaving' : ''}`} onClick={settle(onClose)}>
+        <div className={`choice-layer${leaving ? ' is-leaving' : ''}`} onClick={run(onClose)}>
           <div className="choice-dim" />
-          <div
-            className="choice-sheet"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <p id={titleId} className="choice-sheet-title">{prompt}</p>
-            <div className="choice-sheet-list" ref={listRef}>
-              {options.map((item) => {
-                const active = item.id === value
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`choice-option${active ? ' is-selected' : ''}`}
-                    aria-pressed={active}
-                    onClick={settle(() => onChange(item.id))}
-                  >
-                    <span>{item.label}</span>
-                  </button>
-                )
-              })}
+          <div className="choice-sheet-motion">
+            <div
+              className="choice-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={titleId}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p id={titleId} className="choice-sheet-title">{prompt}</p>
+              <div className="choice-sheet-list" ref={listRef}>
+                {options.map((item) => {
+                  const active = item.id === value
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`choice-option${active ? ' is-selected' : ''}`}
+                      aria-pressed={active}
+                      onClick={run(() => onChange(item.id))}
+                    >
+                      <span className="choice-option-copy">
+                        <span className="choice-option-label">{item.label}</span>
+                        {item.detail ? <span className="choice-option-detail">{item.detail}</span> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+              <button type="button" className="choice-close" onClick={run(onClose)}>
+                Закрыть
+              </button>
             </div>
-            <button type="button" className="choice-close" onClick={settle(onClose)}>
-              Закрыть
-            </button>
           </div>
         </div>,
         document.body,

@@ -28,6 +28,7 @@ import { applyAccentToDocument, loadStoredAccent } from './lib/accentTheme'
 import { applyViewportModeToDocument } from './lib/useIsDesktop'
 import { installPanelCopyGuard } from './lib/guardPanelCopy'
 import { installCueSounds } from './lib/cueSounds'
+import { installPressCommit } from './lib/pressCommit'
 
 // Подсветка до первого кадра — без вспышки дефолтного цвета
 applyAccentToDocument(loadStoredAccent())
@@ -35,6 +36,7 @@ applyAccentToDocument(loadStoredAccent())
 applyViewportModeToDocument()
 installPanelCopyGuard()
 installCueSounds()
+installPressCommit()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

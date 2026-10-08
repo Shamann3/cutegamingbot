@@ -93,6 +93,10 @@ class SettingsBody(BaseModel):
     toneGain: int = 12
     toneDecay: int = 8
     rescueHours: int = 12
+    moonFrom: int = 21
+    moonTo: int = 6
+    dawnFrom: int = 6
+    dawnTo: int = 10
     sparkOn: bool = True
     glowPrice: int = 12
     glowCare: int = 3

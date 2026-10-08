@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from html import escape
 from typing import Any, Iterable, Optional, Tuple
 
@@ -18,6 +20,8 @@ _INVALID_TG_USER_MARKERS = frozenset({
 
 _USER_NOT_PARTICIPANT_MARKERS = frozenset({
   "USER_NOT_PARTICIPANT",
+  "MEMBER_NOT_FOUND",
+  "USER_NOT_FOUND",
 })
 
 
@@ -36,16 +40,22 @@ def _telegram_error_text(exc: BaseException) -> str:
   return " ".join(parts).upper()
 
 
+def _marker_hit(msg: str, markers: Iterable[str]) -> bool:
+  folded = msg.replace(" ", "_")
+  return any(marker in msg or marker in folded for marker in markers)
+
+
 def is_invalid_telegram_user_error(exc: BaseException) -> bool:
   """True, если Telegram однозначно сообщает, что user_id не существует."""
-  msg = _telegram_error_text(exc)
-  return any(marker in msg for marker in _INVALID_TG_USER_MARKERS)
+  return _marker_hit(_telegram_error_text(exc), _INVALID_TG_USER_MARKERS)
 
 
 def is_user_not_participant_error(exc: BaseException) -> bool:
   """True, если user_id валиден, но пользователь не состоит в группе."""
   msg = _telegram_error_text(exc)
-  return any(marker in msg for marker in _USER_NOT_PARTICIPANT_MARKERS)
+  if "CHAT_NOT_FOUND" in msg.replace(" ", "_") or "CHAT NOT FOUND" in msg:
+    return False
+  return _marker_hit(msg, _USER_NOT_PARTICIPANT_MARKERS)
 
 
 def _bot():
@@ -133,7 +143,7 @@ async def verify_telegram_user_exists(
 
   chats = tuple(probe_chat_ids) if probe_chat_ids is not None else _probe_chat_ids()
   if not chats:
-    return False
+    return await _unseen_account_is_real(user_id)
 
   invalid_user = False
   not_participant_seen = False
@@ -151,12 +161,9 @@ async def verify_telegram_user_exists(
 
   if invalid_user:
     return False
-  if member_confirmed:
+  if member_confirmed or not_participant_seen:
     return True
-  if not_participant_seen:
-    return True
-
-  return False
+  return await _unseen_account_is_real(user_id)
 
 
 async def validate_punishment_target_user(
@@ -280,14 +287,91 @@ async def _adopt_person(person: dict) -> None:
   )
 
 
+_USERBOT_WAIT = 4.0
+_USERBOT_MEMORY = 45.0
+_userbot_seen: dict[int, tuple[float, str, Optional[dict]]] = {}
+
+
+def _remember_userbot(user_id: int, kind: str, person: Optional[dict]) -> tuple[str, Optional[dict]]:
+  _userbot_seen[int(user_id)] = (time.time(), kind, person)
+  if len(_userbot_seen) > 2000:
+    now = time.time()
+    for key, item in list(_userbot_seen.items()):
+      if now - item[0] > _USERBOT_MEMORY:
+        _userbot_seen.pop(key, None)
+  return kind, person
+
+
+async def _ask_userbot(user_id: int) -> tuple[str, Optional[dict]]:
+  """("person", словарь) | ("missing", None) | ("bot", None) | ("unknown", None)."""
+  cached = _userbot_seen.get(int(user_id))
+  if cached and time.time() - cached[0] < _USERBOT_MEMORY:
+    return cached[1], cached[2]
+  try:
+    from bot.funcs import who_lookup as who
+    client = who.find_userbot()
+    if client is None:
+      return _remember_userbot(user_id, "unknown", None)
+    kind, value = await asyncio.wait_for(
+      who.resolve_user_id(client, int(user_id)),
+      timeout=_USERBOT_WAIT,
+    )
+  except Exception:
+    return _remember_userbot(user_id, "unknown", None)
+  if kind == "missing":
+    return _remember_userbot(user_id, "missing", None)
+  if kind != "person" or value is None:
+    return _remember_userbot(user_id, "unknown", None)
+  if bool(getattr(value, "is_bot", False)):
+    return _remember_userbot(user_id, "bot", None)
+  first = getattr(value, "first_name", None)
+  last = getattr(value, "last_name", None)
+  if getattr(value, "deleted", False) and not str(first or "").strip() and not str(last or "").strip():
+    first = "Удалённый аккаунт"
+  person = _identity_rules().person_from_user_fields(
+    getattr(value, "user_id", user_id),
+    first,
+    last,
+    getattr(value, "username", None),
+    is_bot=False,
+  )
+  if not person:
+    return _remember_userbot(user_id, "unknown", None)
+  return _remember_userbot(user_id, "person", person)
+
+
+def _named_person(person: Optional[dict], user_id: int) -> Optional[dict]:
+  if not person:
+    return None
+  if _identity_rules().name_is_placeholder(person.get("first_name"), user_id):
+    return None
+  return person
+
+
+async def _unseen_account_is_real(user_id: int) -> bool:
+  """Telegram не показал человека, но и не сказал, что id фальшивый."""
+  kind, person = await _ask_userbot(user_id)
+  if kind == "person" and person:
+    return True
+  if kind in ("missing", "bot"):
+    return False
+  return bool(_identity_rules().account_id_can_be_saved(user_id))
+
+
 async def describe_telegram_user(
   user_id: int,
   *,
   source_chat_id: Optional[int] = None,
 ) -> Optional[dict]:
-  """Имя из Telegram: личный getChat, затем участник текущего и официальных чатов."""
+  """Имя из Telegram: личный чат, участник группы, затем юзербот.
+
+  Если имя так и не пришло, но id похож на аккаунт, возвращается человек
+  с именем-заглушкой — строку users всё равно можно создать.
+  Явный отказ Telegram (несуществующий id) — None.
+  """
   if user_id <= 0:
     return None
+  rules = _identity_rules()
   bot = _bot()
   chat = None
   try:
@@ -295,30 +379,38 @@ async def describe_telegram_user(
   except Exception as e:
     if is_invalid_telegram_user_error(e):
       return None
-  if chat is not None:
-    person = _person_from_telegram_object(chat, private_only=True)
-    if person and not _identity_rules().name_is_placeholder(person["first_name"], user_id):
-      return person
-  not_participant = False
+  if chat is not None and bool(getattr(chat, "is_bot", False)):
+    return None
+  private = _person_from_telegram_object(chat, private_only=True) if chat is not None else None
+  named = _named_person(private, user_id)
+  if named:
+    return named
+  seen_in_chat = private
   for cid in probe_chat_ids(source_chat_id):
     member, err = await inspect_chat_member(cid, user_id)
     if err == "invalid_user":
       return None
-    if err == "not_participant":
-      not_participant = True
-      continue
     if member is None:
       continue
-    person = _person_from_telegram_object(getattr(member, "user", None), private_only=False)
-    if person:
+    member_user = getattr(member, "user", None)
+    if member_user is not None and bool(getattr(member_user, "is_bot", False)):
+      return None
+    person = _person_from_telegram_object(member_user, private_only=False)
+    if _named_person(person, user_id):
       return person
-  if chat is not None:
-    named = _person_from_telegram_object(chat, private_only=True)
-    if named:
-      return named
-  if not_participant:
-    return _identity_rules().person_from_user_fields(user_id, None, None, None)
-  return None
+    if person and seen_in_chat is None:
+      seen_in_chat = person
+  kind, via_user = await _ask_userbot(user_id)
+  if kind in ("missing", "bot") and seen_in_chat is None:
+    return None
+  richer = _named_person(via_user, user_id)
+  if richer:
+    return richer
+  if seen_in_chat:
+    return seen_in_chat
+  if via_user:
+    return via_user
+  return rules.profile_when_telegram_is_silent(user_id, telegram_denied=False)
 
 
 async def describe_telegram_username(username: str) -> Optional[dict]:
@@ -326,11 +418,34 @@ async def describe_telegram_username(username: str) -> Optional[dict]:
   clean = rules.normalize_username(username)
   if not clean:
     return None
+  chat = None
   try:
     chat = await _bot().get_chat(f"@{clean}")
   except Exception:
+    chat = None
+  person = _person_from_telegram_object(chat, private_only=True) if chat is not None else None
+  if person:
+    return person
+  try:
+    from bot.funcs import who_lookup as who
+    client = who.find_userbot()
+    if client is None:
+      return None
+    kind, value = await asyncio.wait_for(
+      who.resolve_with_userbot(client, clean),
+      timeout=_USERBOT_WAIT,
+    )
+  except Exception:
     return None
-  return _person_from_telegram_object(chat, private_only=True)
+  if kind != "person" or value is None or bool(getattr(value, "is_bot", False)):
+    return None
+  return rules.person_from_user_fields(
+    getattr(value, "user_id", None),
+    getattr(value, "first_name", None),
+    getattr(value, "last_name", None),
+    getattr(value, "username", None),
+    is_bot=False,
+  )
 
 
 async def ensure_punishment_profile(
@@ -346,7 +461,7 @@ async def ensure_punishment_profile(
 
   Если человека нет в Куте, имя берётся из Telegram и записывается.
   Уже известное имя не перезаписывается и Telegram повторно не спрашивается.
-  None — Telegram такого пользователя не знает, писать в базу некого.
+  None — Telegram прямо отказал в этом id, либо это короткое число, не аккаунт.
   """
   rules = _identity_rules()
   uid = int(user_id or 0)

@@ -44,15 +44,18 @@ def act_plan(
     if effect == "self":
         if plus < 1:
             return plan
-        return ok(add_you=plus, alert="Тепло осталось у вас.")
+        from marriage_engine.look import care_got
+        return ok(add_you=plus, alert=care_got("Вам", plus))
     if effect == "other":
         if plus < 1:
             return plan
-        return ok(add_other=plus, alert="Тепло ушло партнёру.")
+        from marriage_engine.look import care_got
+        return ok(add_other=plus, alert=care_got("Партнёру", plus))
     if effect == "both":
         if plus < 1:
             return plan
-        return ok(add_you=plus, add_other=plus, alert="Тепло взяли оба.")
+        from marriage_engine.look import care_got
+        return ok(add_you=plus, add_other=plus, alert=care_got("Вам и партнёру", plus, each=True))
     if effect == "norm":
         if not night:
             plan["reason"] = "night"
@@ -61,7 +64,7 @@ def act_plan(
         if gap <= 0:
             plan["reason"] = "done"
             return plan
-        return ok(add_you=gap, alert="За окном ночь. Луна закрыла вашу норму.")
+        return ok(add_you=gap, alert="Ночь. Ваша часть на сегодня закрыта.")
     if effect == "dawn":
         if not morning:
             plan["reason"] = "sun"
@@ -71,7 +74,8 @@ def act_plan(
             return plan
         if plus < 1:
             return plan
-        return ok(add_you=plus, alert="Утро. Рассвет застал гаснущий огонь.")
+        from marriage_engine.look import care_got
+        return ok(add_you=plus, alert="Утро. " + care_got("Вам", plus))
     if effect == "gap":
         if not fading:
             plan["reason"] = "calm"
@@ -80,7 +84,7 @@ def act_plan(
         if gap <= 0:
             plan["reason"] = "full"
             return plan
-        return ok(add_you=gap, alert="Вчерашняя половина закрыта.")
+        return ok(add_you=gap, alert="Ваша вчерашняя часть закрыта.")
     if effect == "vow":
         if vow_used:
             plan["reason"] = "sworn"
@@ -88,17 +92,17 @@ def act_plan(
         if not you_spoke:
             plan["reason"] = "silent"
             return plan
-        return ok(add_you=max(0, need - you), vow=True, alert="Клятва прочитана. Один раз.")
+        return ok(add_you=max(0, need - you), vow=True, alert="Клятва прочитана. Это можно сделать только один раз.")
     if effect == "mark":
         if ribbon:
             plan["reason"] = "worn"
             return plan
-        return ok(ribbon=True, alert="Лента на вас.")
+        return ok(ribbon=True, alert="Лента теперь на вас. В профиле видно, что вы в браке.")
     if effect == "propose":
         if str(bond or "") in ("propose", "family"):
             plan["reason"] = "said"
             return plan
-        return ok(bond="propose", set_proposer=True, alert="Вы сделали предложение.")
+        return ok(bond="propose", set_proposer=True, alert="Вы сделали предложение. Теперь можно подарить кольцо.")
     if effect == "ring":
         stage = str(bond or "")
         if stage == "family":
@@ -110,7 +114,7 @@ def act_plan(
         if not is_proposer:
             plan["reason"] = "giver"
             return plan
-        return ok(bond="family", transfer=True, alert="Кольцо теперь у вашего человека.")
+        return ok(bond="family", transfer=True, alert="Кольцо теперь у партнёра. Вы стали семьёй.")
     if effect == "seed":
         plan["reason"] = "field"
         return plan
@@ -129,13 +133,15 @@ def _hour(moment):
     return moment.astimezone(msk).hour
 
 
-def moon_up(moment):
-    """Луна в окне с 21:00 до 6:00 по Москве."""
-    hour = _hour(moment)
-    return hour is not None and (hour >= 21 or hour < 6)
+def moon_up(moment, cfg=None):
+    """Луна в окне из панели. По умолчанию с 21:00 до 6:00 по Москве."""
+    from marriage_engine.look import clocks, hour_hits
+    times = clocks(cfg)
+    return hour_hits(_hour(moment), times["moon_from_h"], times["moon_to_h"])
 
 
-def dawn_up(moment):
-    """Рассвет с 6:00 до 10:00 по Москве."""
-    hour = _hour(moment)
-    return hour is not None and 6 <= hour < 10
+def dawn_up(moment, cfg=None):
+    """Рассвет в окне из панели. По умолчанию с 6:00 до 10:00 по Москве."""
+    from marriage_engine.look import clocks, hour_hits
+    times = clocks(cfg)
+    return hour_hits(_hour(moment), times["dawn_from_h"], times["dawn_to_h"])

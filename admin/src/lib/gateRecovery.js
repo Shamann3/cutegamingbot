@@ -7,7 +7,7 @@ export function portraitFrom(status) {
   const isOwner = Boolean(status?.isOwner)
   const staffCanEnter = status?.staffCanEnter ?? (isOwner || (accountStatus === 'active' && STAFF_ROLES.has(role)))
   const groups = Array.isArray(status?.groups) ? status.groups : []
-  const groupCanEnter = status?.groupCanEnter ?? (isOwner || groups.length > 0)
+  const groupCanEnter = status?.groupCanEnter ?? Boolean(status?.isProjectCreator)
   return {
     staffCanEnter: Boolean(staffCanEnter),
     groupCanEnter: Boolean(groupCanEnter),

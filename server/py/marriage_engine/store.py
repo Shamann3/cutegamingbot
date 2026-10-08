@@ -1327,13 +1327,15 @@ async def _seed_gifts(conn) -> None:
                     "UPDATE dex SET sorting = $2 WHERE id = $1",
                     int(row["id"]), HEARTS_SHELF,
                 )
+            from marriage_engine.look import item_about, old_bios
             bio_now = str(row["bio"] or "").strip()
-            line = str(gift.get("line") or "").strip()
+            line = item_about(gift, gift_catalog(cfg), cfg)[:180]
+            old = old_bios()
             generic = bio_now.startswith("Для брака. Кнопка")
-            if line and (not bio_now or generic):
+            if line and (not bio_now or generic or bio_now in old):
                 await conn.execute(
-                    "UPDATE dex SET bio = $2 WHERE id = $1 AND (COALESCE(bio, '') = '' OR bio LIKE 'Для брака. Кнопка%')",
-                    int(row["id"]), line[:140],
+                    "UPDATE dex SET bio = $2 WHERE id = $1 AND (COALESCE(bio, '') = '' OR bio LIKE 'Для брака. Кнопка%' OR bio = ANY($3::text[]))",
+                    int(row["id"]), line, list(old) or [""],
                 )
             continue
         await _insert_dex(
@@ -1662,8 +1664,8 @@ async def use_gift(pool, live: dict, user_id: int, kind: str, cfg: dict) -> dict
                 open_today=spark_day == today,
                 bond=str(row["bond"] or ""),
                 is_proposer=int(row["proposer_id"] or 0) == int(user_id),
-                night=moon_up(now),
-                morning=dawn_up(now),
+                night=moon_up(now, cfg),
+                morning=dawn_up(now, cfg),
             )
             if not plan["ok"]:
                 return {"ok": False, "reason": plan["reason"]}
@@ -1918,9 +1920,11 @@ async def choose_wish(pool, user_id: int, prize_id: str, day: int, cfg: dict) ->
     from marriage_engine.m_prize import prizes_view, remember_wish
     prize = next((row for row in prizes_view((cfg or {}).get("prizes")) if row["id"] == str(prize_id) and row["on"]), None)
     if prize is None:
-        return {"ok": False, "alert": "Этот подарок выключен."}
+        from marriage_engine.look import FEAST_OFF
+        return {"ok": False, "alert": FEAST_OFF}
     if not await ensure(pool):
-        return {"ok": False, "alert": "Книга браков сейчас недоступна."}
+        from marriage_engine.look import FEAST_BOOK
+        return {"ok": False, "alert": FEAST_BOOK}
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -1943,9 +1947,11 @@ async def choose_wish(pool, user_id: int, prize_id: str, day: int, cfg: dict) ->
     if remembered["locked"]:
         alert = ""
     elif remembered["payer"] and remembered["partner"]:
-        alert = "Вы выбрали разное. Подарок соберётся, когда выбор совпадёт."
+        from marriage_engine.look import FEAST_DIFFER
+        alert = FEAST_DIFFER
     else:
-        alert = "Запомнили. Подарок соберётся, когда партнёр выберет то же."
+        from marriage_engine.look import FEAST_WAIT
+        alert = FEAST_WAIT
     return {
         "ok": True,
         "alert": alert,

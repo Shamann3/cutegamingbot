@@ -677,13 +677,25 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
 
     catalog = "<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>Магазин</b>\n\n"
     try:
-        from bot.funcs.marriage_design import gift_catalog, quiet_row
-        marriage_faces = {row["emoji"] for row in gift_catalog({})}
-        quiet = quiet_row({})
+        from bot.funcs.marriage_design import gift_catalog, item_about, quiet_row
+        shop_cfg = {}
+        try:
+            from bot.funcs import marriage_store as _mstore
+            _pool = getattr(db, "pool", None)
+            if _pool is not None:
+                shop_cfg = await _mstore.load_settings(_pool)
+        except Exception:
+            shop_cfg = {}
+        marriage_rows = gift_catalog(shop_cfg or {})
+        marriage_faces = {row["emoji"]: row for row in marriage_rows}
+        quiet = quiet_row(shop_cfg or {})
         if quiet and quiet.get("emoji"):
-            marriage_faces.add(quiet["emoji"])
+            marriage_faces[quiet["emoji"]] = quiet
     except Exception:
-        marriage_faces = set()
+        marriage_faces = {}
+        marriage_rows = []
+        shop_cfg = {}
+        item_about = None
     for row in items[start:end]:
         name, price, remains, emoji = row[:4]
         bio = str(row[4] if len(row) > 4 else "").strip()
@@ -692,8 +704,11 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
         price_fmt = format_price(price)
         safe_name = html.escape(name, quote=False)  # экранируем HTML-символы в названии
         note = ""
-        if bio and emoji in marriage_faces:
-            note = f"\n<i>{html.escape(bio[:90], quote=False)}</i>"
+        if emoji in marriage_faces and item_about is not None:
+            base = marriage_faces.get(emoji) or {}
+            shown = item_about({**base, "line": bio or base.get("line") or ""}, marriage_rows, shop_cfg)
+            if shown:
+                note = f"\n<i>{html.escape(shown[:180], quote=False)}</i>"
         if disc_price and disc_price > 0:
             disc_fmt = format_price(disc_price)
             catalog += (
@@ -732,7 +747,8 @@ async def _serve_dish(message, user_id, code, emoji):
         return
     result = await store.use_gift(pool, live, user_id, row["id"], cfg)
     if not result.get("ok"):
-        note = GIFT_ALERT.get(result.get("reason") or "bad", GIFT_ALERT["bad"])
+        from bot.funcs.marriage_design import alert_text
+        note = alert_text(result.get("reason") or "bad")
         await message.reply(
             use_card(emoji, title, note),
             parse_mode="HTML",

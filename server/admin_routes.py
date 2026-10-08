@@ -1010,7 +1010,7 @@ async def admin_auth_status(
         "isOwner": is_owner,
         "isProjectCreator": creator,
         "staffCanEnter": staff_can_enter,
-        "groupCanEnter": creator or is_owner or bool(entry["hasKey"]),
+        "groupCanEnter": creator or bool(entry["hasKey"]),
         "groupHoldsSeat": bool(entry["holdsSeat"]),
         "groupApplicationStatus": entry["applicationStatus"],
         "groups": groups,
