@@ -88,6 +88,7 @@ export default function ContentSection({ role = null, panelTabs = null, initialT
   }, [tab, canUseMap, TABS])
   const [overview, setOverview] = useState(null)
   const [dexItems, setDexItems] = useState([])
+  const [dexTotal, setDexTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
@@ -115,9 +116,19 @@ export default function ContentSection({ role = null, panelTabs = null, initialT
   const [deleteQuestTarget, setDeleteQuestTarget] = useState(null)
 
   const loadDex = useCallback(async (q = '') => {
-    const data = await fetchContentDex({ q, limit: 100 })
-    setDexItems(data.items || [])
-    return data.items || []
+    const pageSize = 200
+    const items = []
+    let offset = 0
+    let total = 0
+    do {
+      const data = await fetchContentDex({ q, limit: pageSize, offset })
+      total = Number(data.total) || 0
+      items.push(...(data.items || []))
+      offset += pageSize
+    } while (items.length < total && offset < 2000)
+    setDexItems(items)
+    setDexTotal(total)
+    return items
   }, [])
 
   const loadAll = useCallback(async () => {
@@ -853,7 +864,7 @@ export default function ContentSection({ role = null, panelTabs = null, initialT
             </article>
 
             <article className="panel-shelf">
-              <p className="panel-shelf-label">Каталог dex ({dexItems.length})</p>
+              <p className="panel-shelf-label">Каталог dex ({dexItems.length}{dexTotal > dexItems.length ? ` из ${dexTotal}` : dexTotal ? ` · в таблице ${dexTotal}` : ''})</p>
               <div className="panel-content-search-row">
                 <input className="panel-users-input" value={dexQuery} onChange={(e) => setDexQuery(e.target.value)} placeholder="Поиск по названию или id" />
                 <button type="button" className="panel-users-btn" onClick={handleDexSearch}>Найти</button>
@@ -862,9 +873,13 @@ export default function ContentSection({ role = null, panelTabs = null, initialT
                 {dexItems.map((item) => (
                   <div key={item.id} className="panel-content-dex-row">
                     <span className="panel-content-dex-emoji">{item.emoji}</span>
-                    <span className="panel-content-dex-name">{item.name}</span>
+                    <span className="panel-content-dex-name">
+                      {item.name}
+                      {item.name1 ? <small className="panel-shelf-muted"> {item.name1}</small> : null}
+                      {item.bio ? <small className="panel-content-dex-bio">{item.bio}</small> : null}
+                    </span>
                     <span className="panel-shelf-muted">#{item.id}</span>
-                    <span className="panel-shelf-muted">{item.price} кут · {item.remains} шт.</span>
+                    <span className="panel-shelf-muted">{item.price} кут · {item.remains > 0 ? `${item.remains} шт.` : 'не в магазине'}</span>
                     {item.sorting && <span className="panel-content-dex-tag">{item.sorting}</span>}
                     <div className="panel-content-dex-actions">
                       <button

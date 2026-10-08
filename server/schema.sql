@@ -191,6 +191,8 @@ CREATE TABLE IF NOT EXISTS craft_recipes (
 ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS remains INT NOT NULL DEFAULT 0;
 ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS result_qty INT NOT NULL DEFAULT 1;
+ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS ingredient_c_id TEXT;
+ALTER TABLE farm_crops ADD COLUMN IF NOT EXISTS water_times INT;
 -- result_qty: сколько предметов выдаётся при успешном крафте
 
 -- Координаты карточек предметов в визуальном редакторе крафта (общие для всех админов).

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from craft_definitions import CraftRecipeDef, enabled_craft_recipes, find_recipe_by_ingredient_pair
+from craft_definitions import CraftRecipeDef, enabled_craft_recipes, find_recipe_by_slots
 from dex_catalog import dex_catalog
 from user_items import can_craft, count_item
 
@@ -61,6 +61,7 @@ def recipe_to_client(recipe: CraftRecipeDef, raw_items: dict) -> dict | None:
         "failPercent": max(0, 100 - success_percent),
         "remains": recipe.remains,
         "canCraft": can_craft(raw_items, ingredients),
+        "line": ((result_entry.bio if result_entry else "") or "")[:90],
     }
 
 
@@ -73,5 +74,5 @@ def recipes_for_client(raw_items: dict) -> list[dict]:
     return rows
 
 
-def recipe_for_execute(slot_a: str, slot_b: str) -> CraftRecipeDef | None:
-    return find_recipe_by_ingredient_pair(slot_a, slot_b)
+def recipe_for_execute(slot_a: str, slot_b: str, slot_c: str = "") -> CraftRecipeDef | None:
+    return find_recipe_by_slots(slot_a, slot_b, slot_c)

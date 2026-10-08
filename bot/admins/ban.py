@@ -80,6 +80,9 @@ from bot.admins.mute import (
   _has_proof_media,
   _is_staff_chat,
   live_staff_chat_ids,
+  official_chats_now,
+  refuse_stale_grant,
+  warm_official_chats,
   _proof_owner_token,
   _lookup_target_by_token,
   _require_staff_chat,
@@ -1340,7 +1343,7 @@ async def _validate_ban_before(
   source_chat_id: int,
 ) -> Optional[str]:
   """Предпроверка бана: только блокирующая ошибка (бот/создатель/админ) или текст об охвате."""
-  chat_ids = list(live_staff_chat_ids()) if scope == "all" else [source_chat_id]
+  chat_ids = list(await official_chats_now()) if scope == "all" else [source_chat_id]
   for cid in chat_ids:
     if scope == "chat" and not _is_staff_chat(cid):
       return "команда доступна только в официальных группах проекта"
@@ -1380,7 +1383,7 @@ async def _ban_in_all_staff_chats(
   """Банит во всех группах проекта (в т.ч. превентивно, даже если сейчас не состоит)."""
   banned: List[int] = []
   errors: List[str] = []
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
       errors.append(err)
@@ -1623,7 +1626,7 @@ async def _notify_ban(
 
   if parsed.scope == "all":
     violator_intro = BanText.INTRO_ALL.format(actor=actor, scope=scope_label("all"))
-    notify_chats = set(banned_chat_ids) if banned_chat_ids else set(live_staff_chat_ids())
+    notify_chats = set(banned_chat_ids) if banned_chat_ids else set(await official_chats_now())
   else:
     disp = await _get_chat_display(source_chat_id)
     violator_intro = BanText.INTRO_CHAT.format(actor=actor, title=escape(disp.title))
@@ -1734,6 +1737,11 @@ async def _finalize_ban(
     )
     BanDebug.log("PROOF", "finalize blocked - no proof", target=getattr(parsed, "target_id", None))
     return True
+  from bot.admins.mute import _punish_rules
+  if await refuse_stale_grant(
+    message, _punish_rules().punish_action("ban", parsed.mode), chat_id,
+  ):
+    return True
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
     validate_punishment_target_user,
@@ -1775,8 +1783,12 @@ async def _finalize_ban(
     scope=parsed.scope,
     source_chat_id=chat_id,
   )
-  if banned_count == 0:
-    err_text = errors[0] if errors else "не удалось заблокировать в группе"
+  hard = next(
+    (err for err in errors if err in _BLOCKING_BAN_ERRORS or any(block in err for block in _BLOCKING_BAN_ERRORS)),
+    None,
+  )
+  if banned_count == 0 and (hard or not parsed.is_full):
+    err_text = hard or (errors[0] if errors else "не удалось заблокировать в группе")
     await message.reply(
       BanText.BLOCKED.format(reason=escape(err_text.capitalize()))
       + _debug_hint("ban_tg_failed"),
@@ -2039,7 +2051,8 @@ async def _complete_ban_with_proof(message: Message) -> bool:
     return True
 
   pending_chat = pending.get("chat_id")
-  if not _is_staff_chat(message.chat.id) or message.chat.id != pending_chat:
+  from bot.admins.punish_proof import proof_in_origin
+  if not await proof_in_origin(message, pending_chat):
     staff = await StaffRef.from_message(message)
     parsed: ParsedBan = pending.get("parsed")
     player_line = PlayerRef(
@@ -2397,7 +2410,7 @@ async def _lift_ban_everywhere(target_id: int) -> Tuple[bool, List[int]]:
   """
   was_banned = False
   lifted: List[int] = []
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     if cid > 0:
       continue
     status = None
@@ -2855,6 +2868,9 @@ async def ban_process(message: Message) -> bool:
         return await deny_permission(message, ban_action)
       return await _handle_ban_command(message)
 
+    from bot.admins.punish_proof import caption_is_punish_command
+    if caption_is_punish_command(command_text):
+      return False
     BanDebug.log("PROOF", "ignored text while pending", uid=uid, text=command_text[:60])
     return True
 
@@ -3189,6 +3205,7 @@ class BanMiddleware(BaseMiddleware):
 
     msg: Message = event
     uid = msg.from_user.id
+    await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_bans, uid)
     staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
@@ -3224,6 +3241,13 @@ class BanMiddleware(BaseMiddleware):
 async def ban_on_photo(message: Message) -> None:
   if _is_ban_related_message(message):
     await ban_process(message)
+
+
+@ban_router.message(F.document)
+async def ban_on_document(message: Message) -> None:
+  if message.document and (message.document.mime_type or "").startswith("image/"):
+    if _is_ban_related_message(message):
+      await ban_process(message)
 
 
 async def ban(message: Message) -> None:

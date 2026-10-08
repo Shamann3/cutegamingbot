@@ -3502,9 +3502,6 @@ async def _staff_acts(user_id: int) -> list[dict]:
 
 @router.post("/act")
 async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_id)):
-    access = await _access(user_id, body.chat_id)
-    if not access:
-        raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
     action = (body.action or "").strip().lower()
     wide_ids = {item["id"] for item in wide_issue_catalog()}
     from staff_punish import PunishRefused, actor_grants
@@ -3513,6 +3510,15 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
         staff_grant = await actor_grants(int(user_id), action)
     except PunishRefused as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    access = await _access(user_id, body.chat_id)
+    if not access:
+        from admin_groups import official_chat_ids
+        official_ids = {int(chat) for chat in await official_chat_ids()}
+        official = int(body.chat_id) in official_ids
+        blocked = punish_rights.outside_seat_block(staff_grant=staff_grant, official=official)
+        if blocked:
+            raise HTTPException(status_code=403, detail=blocked)
+        access = {"rank": -1, "rights": [], "position": "Сотрудник проекта"}
     if action not in wide_ids and action not in LOCAL_ACTIONS:
         raise HTTPException(status_code=400, detail="Это действие живёт только внутри одной группы")
     if not staff_grant and action in wide_ids:

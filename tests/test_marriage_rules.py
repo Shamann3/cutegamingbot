@@ -29,7 +29,11 @@ from bot.funcs.marriage_live import _kb_ask, _kb_card, _kb_leave
 from bot.funcs.marriage_rules import (
     blocks_new_person,
     classify,
+    face_from_dex,
+    is_marriage_code,
+    own_ribbon,
     profile_line,
+    ribbon_ask,
     settings_view,
     shares_general_rp,
     together_label,
@@ -93,6 +97,47 @@ def test_phrases_a_newcomer_can_type_and_help_stays_help():
     assert classify("тонус")["kind"] == "tone"
     assert classify("мой тонус")["kind"] == "tone"
     assert classify("наш брак")["kind"] == "card"
+
+
+def test_ribbon_comes_off_only_by_a_real_command():
+    assert classify("снять ленту")["kind"] == "ribbon_off"
+    assert classify("Снять ленту брака!")["kind"] == "ribbon_off"
+    assert classify("сними ленту пожалуйста")["kind"] == "ribbon_off"
+    assert classify("убрать ленту с профиля")["kind"] == "ribbon_off"
+    assert classify("хочу снять ленту") is None
+    assert classify("снять ленту брака завтра") is None
+    assert classify("лента красивая") is None
+    assert classify("снять варн") is None
+    assert classify("я снял ленту вчера") is None
+    book = {"payer_id": 1, "partner_id": 2, "ribbon": True, "ribbon_payer": True, "ribbon_partner": False}
+    assert own_ribbon(book, 1) is True
+    assert own_ribbon(book, 2) is False
+    now = datetime(2026, 10, 7, 12, tzinfo=timezone(timedelta(hours=3)))
+    worn = profile_line({"name_html": "Анна", "since": now, "ribbon": True}, now)
+    assert worn.startswith("🎀")
+    assert "В браке с" in worn
+    assert "\n" not in worn
+    ask = ribbon_ask()
+    assert "Снять ленту?" in ask
+    assert "Брак останется" in ask
+    labels = [row[0].text for row in _kb_card("7", True).inline_keyboard]
+    assert "Лента" in labels
+    assert labels[-1] == BTN_CARD_LEAVE
+
+
+def test_dex_row_is_the_face_of_an_item():
+    gift = {"id": "glow", "name": "Блик брака", "emoji": "🎇", "price": 12, "line": "старое", "on": True}
+    faced = face_from_dex(gift, {"name": "Искорка", "emoji": "✨", "price": 9, "bio": "Свет.", "remains": 4})
+    assert faced["name"] == "Искорка"
+    assert faced["emoji"] == "✨"
+    assert faced["price"] == 9
+    assert faced["line"] == "Свет."
+    assert faced["on"] is True
+    hidden = face_from_dex(gift, {"remains": 0})
+    assert hidden["on"] is False
+    assert is_marriage_code("mrgglow") and is_marriage_code("mrribbon")
+    assert not is_marriage_code("mrgquiet")
+    assert not is_marriage_code("seed")
 
 
 def test_profile_line_sits_as_one_short_sentence():
@@ -364,7 +409,9 @@ def test_gifts_help_only_your_half_and_stack_in_the_bag():
     assert view["glowCare"] == 4
     assert view["hearthCare"] == 20
     catalog = gift_catalog(view)
-    assert [row["id"] for row in catalog] == ["glow", "candle", "hearth", "match", "ribbon"]
+    ids = [row["id"] for row in catalog]
+    assert ids[:5] == ["glow", "candle", "hearth", "match", "ribbon"]
+    assert len(ids) == 21 and len(set(ids)) == 21
     assert catalog[0]["care"] == 4
     assert catalog[1]["care"] == 7
     assert catalog[1]["price"] == 40

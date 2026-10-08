@@ -41,10 +41,7 @@ def get_plot_prices() -> list[dict]:
 def get_craft_recipes() -> list[dict]:
     recipes = []
     for recipe in enabled_craft_recipes():
-        ing_a, ing_b = recipe.ingredient_ids
         result = dex_catalog.get(recipe.result_id)
-        ing_a_entry = dex_catalog.get(ing_a)
-        ing_b_entry = dex_catalog.get(ing_b)
         recipes.append(
             {
                 "id": recipe.id,
@@ -52,8 +49,8 @@ def get_craft_recipes() -> list[dict]:
                 "successPercent": recipe.success_percent,
                 "result": _dex_brief(recipe.result_id, result),
                 "ingredients": [
-                    _dex_brief(ing_a, ing_a_entry),
-                    _dex_brief(ing_b, ing_b_entry),
+                    _dex_brief(item_id, dex_catalog.get(item_id))
+                    for item_id in recipe.ingredient_ids
                 ],
             }
         )

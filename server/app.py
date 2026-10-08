@@ -385,6 +385,7 @@ class MarketCancelAction(MarketCatalogQuery):
 class CraftExecuteAction(BaseModel):
     slotA: str = Field(min_length=1, max_length=64)
     slotB: str = Field(min_length=1, max_length=64)
+    slotC: str = Field(default="", max_length=64)
     model_config = {"extra": "forbid"}
 
 
@@ -1048,7 +1049,7 @@ async def craft_recipes(request: Request, user_id: int = Depends(rate_limit)):
 @app.post("/api/craft/execute")
 async def craft_execute(request: Request, body: CraftExecuteAction, user_id: int = Depends(rate_limit)):
     try:
-        return await db.execute_craft(user_id, body.slotA, body.slotB)
+        return await db.execute_craft(user_id, body.slotA, body.slotB, body.slotC)
     except ValueError as e:
         raise _client_error(e)
     except Exception as e:

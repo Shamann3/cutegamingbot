@@ -262,16 +262,68 @@ def purge_expired_pending_silent() -> int:
   return removed
 
 
-def is_proof_only_photo(message: Any) -> bool:
-  """Сообщение только фото/документ без текста команды в подписи."""
+def proof_place_ok(here: Any, origin: Any, official: bool) -> bool:
+  """Фото принимается только в той официальной группе, где написали команду."""
+  try:
+    left, right = int(here), int(origin)
+  except (TypeError, ValueError):
+    return False
+  return bool(official) and left < 0 and left == right
+
+
+async def proof_in_origin(message: Any, pending_chat_id: Any) -> bool:
+  """Сверяет чат фото со свежим списком официальных групп."""
+  from bot.admins.mute import _is_staff_chat, refresh_official_chats
+
+  await refresh_official_chats(force=True)
+  chat_id = getattr(getattr(message, "chat", None), "id", None)
+  return proof_place_ok(chat_id, pending_chat_id, _is_staff_chat(chat_id))
+
+
+def caption_is_punish_command(text: str) -> bool:
+  """Подпись является новой командой наказания, а не пояснением к снимку."""
+  raw = (text or "").strip()
+  if not raw:
+    return False
   from bot.admins.mute import (
-    _get_command_text,
-    _has_command_text,
-    _has_proof_media,
+    _is_cancel_mute_command,
+    _is_mute_command,
+    _is_unmute_command,
   )
+  if _is_mute_command(raw) or _is_unmute_command(raw) or _is_cancel_mute_command(raw):
+    return True
+  from bot.admins.kick import _is_cancel_kick_command, _is_kick_command
+  if _is_kick_command(raw) or _is_cancel_kick_command(raw):
+    return True
+  from bot.admins.ban import _is_ban_command, _is_cancel_ban_command, _is_unban_command
+  if _is_ban_command(raw) or _is_unban_command(raw) or _is_cancel_ban_command(raw):
+    return True
+  from bot.admins.warn import (
+    _is_cancel_warn_command,
+    _is_unwarn_command,
+    _is_warn_command,
+  )
+  return (
+    _is_warn_command(raw)
+    or _is_unwarn_command(raw)
+    or _is_cancel_warn_command(raw)
+  )
+
+
+def proof_caption_ok(text: str, *, command: bool) -> bool:
+  """Пояснение к снимку не мешает. Новая команда в подписи — это уже не доказательство."""
+  if not str(text or "").strip():
+    return True
+  return not command
+
+
+def is_proof_only_photo(message: Any) -> bool:
+  """Фото или картинка-файл. Подпись можно оставить, если это не новая команда."""
+  from bot.admins.mute import _get_command_text, _has_proof_media
   if not _has_proof_media(message):
     return False
-  return not _has_command_text(_get_command_text(message))
+  text = _get_command_text(message)
+  return proof_caption_ok(text, command=caption_is_punish_command(text))
 
 
 async def safe_edit_message_text(

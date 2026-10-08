@@ -18,12 +18,13 @@ function hasIngredients(ingredients) {
   return true
 }
 
-export function findMatchingRecipe(recipes, slotA, slotB) {
-  if (!slotA || !slotB) return null
+export function findMatchingRecipe(recipes, slotA, slotB, slotC) {
+  const ids = [slotA, slotB, slotC].filter(Boolean)
+  if (ids.length < 2) return null
 
-  const pairKey = ingredientPairKey([slotA, slotB])
+  const pairKey = ingredientPairKey(ids)
   return recipes.find((recipe) => {
-    if (recipe.ingredients.length !== 2) return false
+    if (recipe.ingredients.length !== ids.length) return false
     const recipeKey = ingredientPairKey(recipe.ingredients.map((item) => item.id))
     if (recipeKey !== pairKey) return false
     return hasIngredients(recipe.ingredients)
@@ -52,7 +53,8 @@ export function buildCraftInventory(recipes) {
 }
 
 export function formatRecipeLine(recipe) {
-  const [first, second] = recipe.ingredients
+  const names = recipe.ingredients.map((item) => item.name).join(' + ')
   const qty = recipe.result?.qty > 1 ? ` ×${recipe.result.qty}` : ''
-  return `${first.name} + ${second.name} → ${recipe.result.emoji} ${recipe.result.name}${qty}`
+  const why = recipe.line ? ` · ${recipe.line}` : ''
+  return `${names} → ${recipe.result.emoji} ${recipe.result.name}${qty}${why}`
 }

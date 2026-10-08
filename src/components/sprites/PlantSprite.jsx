@@ -126,7 +126,16 @@ const TOBACCO_STAGE_SPRITES = {
   [GrowthStage.TREE]:   TobaccoBushSprite,
 }
 
-export default function PlantSprite({ status, growthStage, cropKey = 'tree', className = '' }) {
+export default function PlantSprite({ status, growthStage, cropKey = 'tree', emoji = '', className = '' }) {
+  const knownCrop = cropKey === 'tree' || cropKey === 'tobacco' || !cropKey
+  if (!knownCrop && emoji) {
+    const ripe = status === PlotStatus.READY
+    return (
+      <div className={`flex items-center justify-center ${ripe ? 'text-4xl' : 'text-3xl'} ${status === PlotStatus.WITHERED ? 'opacity-50' : 'animate-float'} ${className}`}>
+        {emoji}
+      </div>
+    )
+  }
   const isTobacco = cropKey === 'tobacco'
   const stageSprites = isTobacco ? TOBACCO_STAGE_SPRITES : TREE_STAGE_SPRITES
 

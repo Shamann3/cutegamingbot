@@ -90,15 +90,15 @@ export function useCraft({ isActive = true } = {}) {
     }
   }, [applyPayload])
 
-  const craftRecipe = useCallback(async (slotA, slotB) => {
+  const craftRecipe = useCallback(async (slotA, slotB, slotC = '') => {
     if (busyRef.current) return null
     busyRef.current = true
-    setCraftingPairKey(`${slotA}|${slotB}`)
+    setCraftingPairKey([slotA, slotB, slotC].filter(Boolean).join('|'))
     setError(null)
     setErrorCode(null)
 
     try {
-      const data = await executeCraft(slotA, slotB)
+      const data = await executeCraft(slotA, slotB, slotC)
       applyPayload(data)
       showCraftMessage(data.message ?? (data.craftSuccess ? 'Крафт успешен!' : 'Крафт не удался'))
       return data

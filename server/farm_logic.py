@@ -15,6 +15,15 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def _waters_for_crop(crop_id: str | None, grow_sec: int) -> int:
+    from farm_crops import get_crop_for_plot
+
+    crop = get_crop_for_plot(crop_id) if crop_id else None
+    if crop is not None and crop.water_times is not None:
+        return max(0, int(crop.water_times))
+    return _water_events_for_grow(grow_sec)
+
+
 def _water_events_for_grow(grow_sec: int) -> int:
     from farm_settings import get_water_interval_seconds
 
@@ -40,7 +49,7 @@ def _fix_grow_timers(row: dict, current: datetime | None = None) -> bool:
     row["ripe_at"] = planted_at + timedelta(seconds=expected)
 
     if current is not None and not row.get("autowater_active"):
-        row["waters_remaining"] = _water_events_for_grow(expected)
+        row["waters_remaining"] = _waters_for_crop(row.get("crop_id"), expected)
         _schedule_next_dry(row, current)
 
     return True
@@ -162,7 +171,7 @@ def apply_plant(row: dict, current: datetime, crop_id: str | None = None) -> dic
     row["status"] = "GROWING"
     row["planted_at"] = current
     row["ripe_at"] = current + timedelta(seconds=grow_sec)
-    row["waters_remaining"] = _water_events_for_grow(grow_sec)
+    row["waters_remaining"] = _waters_for_crop(crop_id, grow_sec)
     row["needs_water"] = False
     row["wilt_at"] = None
     row["autowater_active"] = False

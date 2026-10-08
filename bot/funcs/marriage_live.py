@@ -28,9 +28,18 @@ from bot.funcs.marriage_design import (
     ALREADY_YOU,
     BOT,
     BTN_BACK,
+    BTN_RIBBON,
+    BTN_RIBBON_DO,
+    BTN_RIBBON_KEEP,
+    BTN_RIBBON_OFF,
     BTN_CARD_LEAVE,
     BTN_GEST,
+    BTN_FEAST,
     BTN_GIFT,
+    award_plan,
+    care_code,
+    due_period,
+    quiet_pay,
     GIFT_ALERT,
     gift_text,
     BTN_HOLD,
@@ -108,6 +117,9 @@ from bot.funcs.marriage_design import (
     spark_stats,
     tone_text,
     verb_button,
+    quiet_wish,
+    bond_line,
+    talk_line,
 )
 from bot.funcs.marriage_rules import (
     MSK,
@@ -128,6 +140,10 @@ from bot.funcs.marriage_rules import (
     wedding_date,
     wedding_price,
     which_wedding,
+    own_ribbon,
+    ribbon_ask,
+    ribbon_gone,
+    ribbon_home,
     rp_html,
 )
 
@@ -183,7 +199,7 @@ def _kb_ask(book_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-def _kb_card(token: str, tone_on: bool, leave: bool = True) -> InlineKeyboardMarkup:
+def _kb_card(token: str, tone_on: bool, leave: bool = True, feast: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [_btn(BTN_GEST, f"mrg:gest:{token}", "primary", RED_ID)],
         [
@@ -198,6 +214,9 @@ def _kb_card(token: str, tone_on: bool, leave: bool = True) -> InlineKeyboardMar
         [_btn(BTN_STAT, "mrg:stat:0", "default")],
         [_btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID)],
     ]
+    if feast:
+        rows.insert(0, [_btn(BTN_FEAST, "mrg:feast:0", "primary", RED_ID)])
+    rows.append([_btn(BTN_RIBBON, "mrg:rib:0", "default")])
     if leave:
         rows.append([_btn(BTN_CARD_LEAVE, f"mrg:warn:{token}", "danger", NO_ID)])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -220,6 +239,11 @@ def _kb_pay(verb_id: str, amount: str) -> InlineKeyboardMarkup:
 def _kb_gifts(rows) -> InlineKeyboardMarkup:
     buttons = []
     for row in rows:
+        if row.get("rite") and int(row.get("have") or 0) <= 0:
+            continue
+        if row.get("rite") or not row.get("buy"):
+            buttons.append([_btn(row["use"], f"mrg:guse:{row['id']}", "primary", RED_ID)])
+            continue
         buttons.append([
             _btn(row["buy"], f"mrg:gbuy:{row['id']}", "success", RED_ID),
             _btn(row["use"], f"mrg:guse:{row['id']}", "primary", RED_ID),
@@ -277,6 +301,26 @@ def _kb_guide(extra: str = "") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _kb_ribbon(mode: str) -> InlineKeyboardMarkup:
+    if mode == "ask":
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            _btn(BTN_RIBBON_DO, "mrg:rib:off", "danger", NO_ID),
+            _btn(BTN_RIBBON_KEEP, "mrg:rib:stay", "success", RED_ID),
+        ]])
+    if mode == "worn":
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [_btn(BTN_RIBBON_OFF, "mrg:rib:ask", "danger", NO_ID)],
+            [
+                _btn(BTN_BACK, "mrg:mine:0", "default"),
+                _btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID),
+            ],
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        _btn(BTN_GIFT, "mrg:bag:0", "default", RED_ID),
+        _btn(BTN_BACK, "mrg:mine:0", "default"),
+    ]])
+
+
 def _kb_roster(kind: str) -> InlineKeyboardMarkup:
     other = (
         _btn(BTN_LIST, "mrg:list:0", "primary")
@@ -312,6 +356,20 @@ async def dispatch(query) -> None:
 async def _on_text(message) -> bool:
     text = getattr(message, "text", None) or ""
     kind = classify(text)
+    try:
+        reply = getattr(message, "reply_to_message", None)
+        target = getattr(reply, "from_user", None) if reply is not None else None
+        if target is not None and message.from_user is not None and not getattr(target, "is_bot", False):
+            if int(target.id) != int(message.from_user.id):
+                gesture = bool(kind and kind.get("kind") == "rp")
+                if gesture:
+                    await store.mark_reply(_pool(), int(message.from_user.id), int(target.id))
+                else:
+                    note = await store.reply_touch(_pool(), int(message.from_user.id), int(target.id), text)
+                    if note:
+                        await _reply(message, f"{HEART} <b>{note}</b>")
+    except Exception:
+        pass
     if kind is None or message.from_user is None:
         return False
     name = kind["kind"]
@@ -339,6 +397,9 @@ async def _on_text(message) -> bool:
     if name == "wed":
         await _wed(message, kind.get("tail") or "")
         return True
+    if name == "ribbon_off":
+        await _ribbon_phrase(message)
+        return True
     if name == "rp":
         return await _rp(message, kind["rp"], kind.get("note") or "", kind.get("verb") or "")
     return False
@@ -351,6 +412,56 @@ async def _reply(message, text: str, markup=None) -> None:
         disable_web_page_preview=True,
         reply_markup=markup,
     )
+
+
+async def _ribbon_phrase(message) -> None:
+    pool = _pool()
+    live = await store.live_for(pool, message.from_user.id)
+    if not live:
+        await _reply(message, _fill(NOT_MARRIED))
+        return
+    if not live.get("id"):
+        await _reply(message, "🎀 <b>Лента открывается в новом браке.</b>")
+        return
+    if own_ribbon(live, message.from_user.id):
+        await _reply(message, ribbon_ask(), _kb_ribbon("ask"))
+        return
+    await _reply(message, ribbon_home(False), _kb_ribbon("none"))
+
+
+async def _on_ribbon(query, token: str, user_id: int, pool) -> None:
+    live = await store.live_for(pool, user_id)
+    if not live:
+        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    if not live.get("id"):
+        await query.answer("Лента открывается в новом браке.", show_alert=True)
+        return
+    worn = own_ribbon(live, user_id)
+    if token == "stay":
+        await _on_mine(query, pool)
+        return
+    if token == "off":
+        if not worn:
+            await query.answer()
+            await _edit(query, ribbon_home(False), _kb_ribbon("none"))
+            return
+        if not await store.set_own_ribbon(pool, int(live["id"]), user_id, False):
+            await query.answer(ALERT_RETRY, show_alert=True)
+            return
+        await query.answer("Лента снята.")
+        await _edit(query, ribbon_gone(), _kb_ribbon("gone"))
+        return
+    if token == "ask":
+        if not worn:
+            await query.answer()
+            await _edit(query, ribbon_home(False), _kb_ribbon("none"))
+            return
+        await query.answer()
+        await _edit(query, ribbon_ask(), _kb_ribbon("ask"))
+        return
+    await query.answer()
+    await _edit(query, ribbon_home(worn), _kb_ribbon("worn" if worn else "none"))
 
 
 async def _switch(message, enabled: bool) -> None:
@@ -547,7 +658,29 @@ async def _screen(pool, user, cfg):
             wedding_date(when),
             "",
         )
-    return text, _kb_card(token, bool(spark), True), live
+    extra = bond_line(live.get("bond"), live.get("proposer_id"), uid, b)
+    if extra:
+        text += "\n" + extra
+    if live.get("thread_on"):
+        text += "\n" + f"{HEART} <b>Нить на месте</b>"
+    if own_ribbon(live, uid):
+        text += "\n🎀 <b>Лента на вас</b>"
+    if "talk_payer" in live:
+        today = datetime.now(MSK).date()
+        you_key = "talk_payer" if int(live["payer_id"]) == uid else "talk_partner"
+        them_key = "talk_partner" if you_key == "talk_payer" else "talk_payer"
+        def _spoke(value):
+            if value is None:
+                return False
+            if isinstance(value, datetime):
+                return value.date() == today
+            return value == today
+        text += "\n" + talk_line(_spoke(live.get(you_key)), _spoke(live.get(them_key)))
+    streak = int(((spark or {}).get("state") or {}).get("spark_days") or live.get("spark_days") or 0)
+    holiday = due_period(streak, live.get("wish_done"), cfg.get("periods"))
+    if holiday:
+        text += "\n" + HEART + " <b>" + str(holiday["name"]) + "</b>"
+    return text, _kb_card(token, bool(spark), True, bool(holiday)), live
 
 
 async def _tone_screen(pool, user, cfg):
@@ -695,24 +828,24 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
         return False
     pool = _pool()
     if not cfg.get("enabled", True):
-        if shares_general_rp(item, verb):
+        if shares_general_rp(item, verb) or quiet_wish(verb):
             return False
         await _reply(message, _fill(PROJECT_OFF))
         return True
     if not await store.chat_enabled(pool, message.chat.id):
-        if shares_general_rp(item, verb):
+        if shares_general_rp(item, verb) or quiet_wish(verb):
             return False
         await _reply(message, _fill(OFF))
         return True
     live = await store.live_for(pool, message.from_user.id)
     if not live:
-        if shares_general_rp(item, verb):
+        if shares_general_rp(item, verb) or quiet_wish(verb):
             return False
         await _reply(message, _fill(RP_NEED_WED))
         return True
     other = _other(live, int(message.from_user.id))
     if int(target.id) != other:
-        if shares_general_rp(item, verb):
+        if shares_general_rp(item, verb) or quiet_wish(verb):
             return False
         await _reply(message, _fill(RP_ONLY_PAIR))
         return True
@@ -749,7 +882,7 @@ async def _gift_screen(query, user_id: int, pool, cfg, live) -> None:
     rows = await store.gift_stock(pool, user_id, cfg)
     await _edit(
         query,
-        gift_text(rows, bool(live.get("ribbon"))),
+        gift_text(rows, own_ribbon(live, user_id)),
         _kb_gifts(rows),
     )
 
@@ -769,6 +902,9 @@ async def _on_bag(query, user_id: int, pool) -> None:
 async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
     cfg = await _cfg()
     gift = next((row for row in gift_catalog(cfg) if row["id"] == kind), None)
+    if gift is None and kind == "quiet":
+        from bot.funcs.marriage_design import quiet_row
+        gift = quiet_row(cfg)
     if gift is None:
         await query.answer(GIFT_ALERT["bad"], show_alert=True)
         return
@@ -780,7 +916,11 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
         await query.answer(GIFT_ALERT["old"], show_alert=True)
         return
     price = int(gift["price"] or 0)
-    taken = await _take(query.bot, user_id, price, int(live.get("chat_id") or 0), gift["name"])
+    plan = quiet_pay(gift["name"], price, cfg) if kind == "quiet" else None
+    taken = await _take(
+        query.bot, user_id, price, int(live.get("chat_id") or 0), gift["name"],
+        int(plan["chat"]) if plan else 0, int(plan["fund"]) if plan else 0,
+    )
     if taken == "poor":
         await query.answer("Кутов не хватает. Предмет не куплен.", show_alert=True)
         return
@@ -792,13 +932,42 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
     except Exception:
         granted = False
     if not granted:
-        await _refund(query.bot, user_id, price)
+        await _refund(
+            query.bot, user_id, price,
+            int(plan["chat"]) if plan else 0, int(plan["fund"]) if plan else 0,
+        )
         await query.answer(ALERT_TILL, show_alert=True)
         return
     if price > 0:
         await store.note_money(pool, kind, user_id, price, int(live.get("chat_id") or 0))
     await query.answer()
     await _gift_screen(query, user_id, pool, cfg, live)
+
+
+async def _place_hint_message(query, kind: str, cfg) -> None:
+    from aiogram.types import WebAppInfo
+
+    from bot.funcs.marriage_design import gift_catalog, place_hint
+    from bot.funcs.webapp_links import section_button_fields
+
+    row = next((item for item in gift_catalog(cfg) if item.get("id") == kind), None)
+    hint = place_hint((row or {}).get("name1"))
+    message = getattr(query, "message", None)
+    if not hint or message is None:
+        return
+    label = "На ферму" if hint.get("where") == "farm" else "В крафт"
+    private = getattr(getattr(message, "chat", None), "type", "") == "private"
+    fields = section_button_fields(label, hint.get("where") or "farm", private=private, icon="5208464835079082371")
+    web_app_url = fields.pop("web_app_url", None)
+    if web_app_url:
+        fields["web_app"] = WebAppInfo(url=web_app_url)
+    button = InlineKeyboardButton(**fields)
+    await message.reply(
+        hint["text"],
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
+    )
 
 
 async def _on_gift_use(query, kind: str, user_id: int, pool) -> None:
@@ -809,11 +978,19 @@ async def _on_gift_use(query, kind: str, user_id: int, pool) -> None:
         return
     result = await store.use_gift(pool, live, user_id, kind, cfg)
     if not result.get("ok"):
-        await query.answer(GIFT_ALERT.get(result.get("reason") or "bad", GIFT_ALERT["bad"]), show_alert=True)
+        reason = result.get("reason") or "bad"
+        await query.answer(GIFT_ALERT.get(reason, GIFT_ALERT["bad"]), show_alert=True)
+        if reason in ("field", "cook"):
+            await _place_hint_message(query, kind, cfg)
+        return
+    if result.get("alert"):
+        await query.answer(str(result["alert"]), show_alert=True)
+        fresh = await store.live_for(pool, user_id)
+        await _gift_screen(query, user_id, pool, cfg, fresh or live)
         return
     care = int(result.get("care") or 0)
     if kind == "ribbon":
-        await query.answer("Лента на паре.")
+        await query.answer("Лента на вас.")
     elif care > 0:
         await query.answer(f"+{care} заботы только вам. Лишнее сгорит по вашей норме.", show_alert=True)
     else:
@@ -859,8 +1036,17 @@ async def _dispatch(query) -> None:
     if action == "gbuy":
         await _on_gift_buy(query, token, user_id, pool)
         return
+    if action == "feast":
+        await _on_feast(query, user_id, pool)
+        return
+    if action == "wish":
+        await _on_wish(query, token, user_id, pool)
+        return
     if action == "guse":
         await _on_gift_use(query, token, user_id, pool)
+        return
+    if action == "rib":
+        await _on_ribbon(query, token, user_id, pool)
         return
     if action in ("list", "top"):
         await _on_roster_btn(query, action, pool)
@@ -1232,18 +1418,169 @@ async def _on_pay(query, verb_id: str, user_id: int, pool) -> None:
     await _edit(query, text, _kb_back())
 
 
-async def _take(bot, user_id: int, price: int, chat_id: int, cause: str) -> str:
+async def _holiday(pool, user_id, cfg, live):
+    spark = None
+    if cfg.get("sparkOn", True):
+        spark = await store.spark_sync(pool, live, user_id, cfg, 0, True)
+    streak = int(((spark or {}).get("state") or {}).get("spark_days") or live.get("spark_days") or 0)
+    return due_period(streak, live.get("wish_done"), cfg.get("periods"))
+
+
+async def _on_feast(query, user_id: int, pool) -> None:
+    cfg = await _cfg()
+    live = await store.live_for(pool, user_id)
+    if not live or not live.get("id"):
+        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    holiday = await _holiday(pool, user_id, cfg, live)
+    if not holiday:
+        await query.answer("Праздника сейчас нет.", show_alert=True)
+        return
+    lines = [f"{HEART} <b>{holiday['name']}</b>"]
+    buttons = []
+    for row in cfg.get("prizes") or []:
+        if not row.get("on"):
+            continue
+        if row.get("id") == "premium6" and int(holiday["day"]) < 30:
+            continue
+        lines.append(f"{row.get('emoji') or ''} <b>{row['name']}</b>")
+        if row.get("blurb"):
+            lines.append(f"<i>{row['blurb']}</i>")
+        buttons.append([_btn(str(row["name"])[:32], f"mrg:wish:{row['id']}", "primary", RED_ID)])
+    buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
+    await query.answer()
+    await _edit(query, "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+async def _spend_fund(bot, chat_id: int, amount: int) -> bool:
+    if int(amount) <= 0:
+        return True
+    db = _db()
+    have = await db.get_chatbalance(bot, int(chat_id))
+    if int(have or 0) < int(amount):
+        return False
+    return bool(await db.add_to_chatbalance(bot, int(chat_id), -int(amount)))
+
+
+async def _fulfill(query, info: dict, cfg: dict, holiday: dict, pool) -> None:
+    prize_id = str(info.get("locked") or "")
+    fund_chat = int(cfg.get("giftFundChat") or 0)
+    fund = int(await _db().get_chatbalance(query.bot, fund_chat) or 0)
+    copies = 1
+    if prize_id == "care":
+        stock = await store.stock_named(pool, care_code(info["day"]))
+        copies = 2
+    elif prize_id == "ribbon":
+        stock = await store.stock_named(pool, "mrribbon")
+    elif prize_id in ("premium3", "premium6"):
+        stock = await store.stock_premium(pool, prize_id)
+    else:
+        stock = {"price": 0, "remains": 0, "name1": ""}
+    if copies > 1:
+        if int(stock.get("remains") or 0) < copies:
+            stock = {**stock, "remains": 0}
+        else:
+            stock = {**stock, "price": int(stock.get("price") or 0) * copies}
+    plan = award_plan(
+        prize_id, fund, stock.get("price"), stock.get("remains"),
+        cfg.get("envelopeKut"), cfg.get("extraKut"),
+    )
+    if plan["do"] in ("short", "keeper_empty"):
+        keeper = await store.find_named_user(pool, cfg.get("premiumKeeper") or "")
+        if plan["do"] == "keeper_empty" and keeper:
+            try:
+                await query.bot.send_message(
+                    keeper,
+                    f"{HEART} <b>{holiday['name']}</b>\nПредмета премиума нет на складе или фонд его не покрыл. Передайте свой, если решите. Бот Telegram Premium не используется.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        await query.answer(
+            "Фонд или склад пока не покрывает подарок." if plan["do"] == "short" else "Премиум пока не собран. Создатель уже видит это.",
+            show_alert=True,
+        )
+        return
+    if not await _spend_fund(query.bot, fund_chat, int(plan.get("amount") or 0)):
+        await query.answer("Фонд пока не покрывает подарок.", show_alert=True)
+        return
+    payer, partner = int(info["payer_id"]), int(info["partner_id"])
+    amount = int(plan.get("amount") or 0)
+    ok = False
+    note = "Подарок из фонда уже у вас."
+    if plan["do"] in ("kut", "sorry"):
+        half = amount // 2
+        shares = [(payer, amount - half), (partner, half)]
+        ok = await store.give_kut(pool, shares)
+        note = "Подарок не успели купить. Иэрихон прислал куты." if plan["do"] == "sorry" else f"Конверт из фонда: {amount} кут."
+    elif plan["do"] == "shop":
+        people = [payer] if prize_id == "ribbon" else [payer, partner]
+        ok = await store.give_named(pool, people, stock.get("name1"), 1)
+    elif plan["do"] == "keeper":
+        keeper = await store.find_named_user(pool, cfg.get("premiumKeeper") or "")
+        ok = bool(keeper) and await store.give_named(pool, [keeper], stock.get("name1"), 1)
+        note = f"Премиум готовит @{cfg.get('premiumKeeper') or 'создатель'}. Это предмет проекта."
+        if ok:
+            try:
+                await query.bot.send_message(
+                    keeper,
+                    f"{HEART} <b>{holiday['name']}</b>\nПредмет премиума уже у вас. Передайте его паре сами. Бот Telegram Premium не используется.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+    if not ok:
+        if amount > 0:
+            await _db().add_to_chatbalance(query.bot, fund_chat, amount)
+        await query.answer(ALERT_TILL, show_alert=True)
+        return
+    await store.finish_wish(pool, int(info["book_id"]), int(info["day"]))
+    await query.answer()
+    await _edit(query, f"{HEART} <b>{note}</b>", _kb_back())
+
+
+async def _on_wish(query, prize_id: str, user_id: int, pool) -> None:
+    cfg = await _cfg()
+    live = await store.live_for(pool, user_id)
+    if not live or not live.get("id"):
+        await query.answer(ALERT_NO_MARRIAGE, show_alert=True)
+        return
+    holiday = await _holiday(pool, user_id, cfg, live)
+    if not holiday:
+        await query.answer("Праздника сейчас нет.", show_alert=True)
+        return
+    if prize_id == "premium6" and int(holiday["day"]) < 30:
+        await query.answer("Этот подарок открывается с месяца.", show_alert=True)
+        return
+    info = await store.choose_wish(pool, user_id, prize_id, int(holiday["day"]), cfg)
+    if not info.get("ok") or not info.get("locked"):
+        await query.answer(info.get("alert") or GIFT_ALERT["bad"], show_alert=True)
+        return
+    await _fulfill(query, info, cfg, holiday, pool)
+
+
+async def _take(bot, user_id: int, price: int, chat_id: int, cause: str, fund_chat: int = 0, fund_part: int = 0) -> str:
     if price <= 0:
         return "free"
+    fund_part = max(0, min(int(fund_part or 0), int(price)))
+    project = int(price) - fund_part
     db = _db()
     new_balance = await db.update_user_balance(int(user_id), f"-{int(price)}")
     if new_balance is None:
         return "poor"
     from bot.config.config import GAME_COMMISSION_CHAT_ID
-    ok = await db.add_to_chatbalance(bot, int(GAME_COMMISSION_CHAT_ID), int(price))
-    if not ok:
-        await db.update_user_balance(int(user_id), f"+{int(price)}")
-        return "miss"
+    if project > 0:
+        ok = await db.add_to_chatbalance(bot, int(GAME_COMMISSION_CHAT_ID), project)
+        if not ok:
+            await db.update_user_balance(int(user_id), f"+{int(price)}")
+            return "miss"
+    if fund_part > 0:
+        ok = await db.add_to_chatbalance(bot, int(fund_chat), fund_part)
+        if not ok:
+            if project > 0:
+                await db.add_to_chatbalance(bot, int(GAME_COMMISSION_CHAT_ID), -project)
+            await db.update_user_balance(int(user_id), f"+{int(price)}")
+            return "miss"
     try:
         await db.cutehistory_minus(int(user_id), int(price), cause, chat_id)
     except Exception:
@@ -1251,9 +1588,11 @@ async def _take(bot, user_id: int, price: int, chat_id: int, cause: str) -> str:
     return "ok"
 
 
-async def _refund(bot, user_id: int, price: int) -> None:
+async def _refund(bot, user_id: int, price: int, fund_chat: int = 0, fund_part: int = 0) -> None:
     if price <= 0:
         return
+    fund_part = max(0, min(int(fund_part or 0), int(price)))
+    project = int(price) - fund_part
     db = _db()
     try:
         await db.update_user_balance(int(user_id), f"+{int(price)}")
@@ -1261,7 +1600,10 @@ async def _refund(bot, user_id: int, price: int) -> None:
         return
     try:
         from bot.config.config import GAME_COMMISSION_CHAT_ID
-        await db.add_to_chatbalance(bot, int(GAME_COMMISSION_CHAT_ID), -int(price))
+        if project > 0:
+            await db.add_to_chatbalance(bot, int(GAME_COMMISSION_CHAT_ID), -project)
+        if fund_part > 0:
+            await db.add_to_chatbalance(bot, int(fund_chat), -fund_part)
     except Exception:
         return
 

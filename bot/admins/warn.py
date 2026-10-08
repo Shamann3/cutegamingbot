@@ -83,6 +83,9 @@ from bot.admins.mute import (
   _has_proof_media,
   _is_staff_chat,
   live_staff_chat_ids,
+  official_chats_now,
+  refuse_stale_grant,
+  warm_official_chats,
   _proof_owner_token,
   _looks_like_telegram_username,
   _lookup_target_by_token,
@@ -2100,7 +2103,7 @@ async def _broadcast_warn_groups(
     total=WARN_THRESHOLD,
   )
 
-  notify_chats = set(live_staff_chat_ids())
+  notify_chats = set(await official_chats_now())
   notify_chats.discard(source_chat_id)
 
   for group_chat_id in notify_chats:
@@ -2193,7 +2196,7 @@ async def expire_timed_warn(warn_id: int, payload: Dict[str, Any]) -> None:
   # охвата «во всех группах», из-за чего там ничего не писалось).
   notify_chats: List[int] = []
   if scope == "all":
-    notify_chats = [cid for cid in live_staff_chat_ids() if _is_staff_chat(cid)]
+    notify_chats = [cid for cid in await official_chats_now() if _is_staff_chat(cid)]
   if source_chat_id and _is_staff_chat(source_chat_id) and source_chat_id not in notify_chats:
     notify_chats.append(source_chat_id)
 
@@ -2378,6 +2381,11 @@ async def _finalize_warn(
       parse_mode="HTML", link_preview_options=NO_PREVIEW,
     )
     WarnDebug.log("PROOF", "finalize blocked - no proof", target=getattr(parsed, "target_id", None))
+    return True
+  from bot.admins.mute import _punish_rules
+  if await refuse_stale_grant(
+    message, _punish_rules().punish_action("warn", parsed.mode), chat_id,
+  ):
     return True
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
@@ -2616,7 +2624,8 @@ async def _complete_warn_with_proof(message: Message) -> bool:
     return True
 
   pending_chat = pending.get("chat_id")
-  if not _is_staff_chat(message.chat.id) or message.chat.id != pending_chat:
+  from bot.admins.punish_proof import proof_in_origin
+  if not await proof_in_origin(message, pending_chat):
     staff = await StaffRef.from_message(message)
     parsed: ParsedWarn = pending.get("parsed")
     player_line = (
@@ -2898,8 +2907,8 @@ async def _broadcast_unwarn_groups(
     WarnText.UNWARN_GROUP_TAIL_FULL if mode == "full"
     else WarnText.UNWARN_GROUP_TAIL_ALL
   )
-  all_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
-  notify_chats = set(live_staff_chat_ids())
+  all_chats = [c for c in await official_chats_now() if _is_staff_chat(c)]
+  notify_chats = set(all_chats)
   notify_chats.discard(source_chat_id)
   for cid in notify_chats:
     chat_line = await _format_chats_line(all_chats, current_chat_id=cid)
@@ -3704,6 +3713,9 @@ async def warn_process(message: Message) -> bool:
         return await deny_permission(message, warn_action)
       return await _handle_warn_command(message)
 
+    from bot.admins.punish_proof import caption_is_punish_command
+    if caption_is_punish_command(command_text):
+      return False
     WarnDebug.log("PROOF", "ignored text while pending", uid=uid, text=command_text[:60])
     return True
 
@@ -3936,6 +3948,7 @@ class WarnMiddleware(BaseMiddleware):
 
     msg: Message = event
     uid = msg.from_user.id
+    await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_warns, uid)
     staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
@@ -3971,6 +3984,13 @@ class WarnMiddleware(BaseMiddleware):
 async def warn_on_photo(message: Message) -> None:
   if _is_warn_related_message(message):
     await warn_process(message)
+
+
+@warn_router.message(F.document)
+async def warn_on_document(message: Message) -> None:
+  if message.document and (message.document.mime_type or "").startswith("image/"):
+    if _is_warn_related_message(message):
+      await warn_process(message)
 
 
 async def warn(message: Message) -> None:

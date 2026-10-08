@@ -31,9 +31,10 @@ function errorClass(code) {
   return 'craft-toast-error'
 }
 
-function craftHint(slotA, slotB, matchedRecipe, ritualPhase) {
+function craftHint(slotA, slotB, slotC, matchedRecipe, ritualPhase) {
   if (ritualPhase) return ''
-  if (!slotA || !slotB) return 'Два слота'
+  if (!slotA || !slotB) return 'Два слота. Ужин — три.'
+  if (!matchedRecipe && !slotC) return 'Нет рецепта. Для салата нужен третий.'
   if (!matchedRecipe) return 'Нет рецепта'
   return `${matchedRecipe.result.emoji} ${matchedRecipe.result.name}`
 }
@@ -75,6 +76,7 @@ export default function CraftModule({ isActive = true, embedded = false }) {
   const ritualEffectRef = useRef(null)
   const [slotA, setSlotA] = useState(null)
   const [slotB, setSlotB] = useState(null)
+  const [slotC, setSlotC] = useState(null)
   const [ritualPhase, setRitualPhase] = useState(null)
   const [ritualRecipe, setRitualRecipe] = useState(null)
   const [ritualSlotA, setRitualSlotA] = useState(null)
@@ -93,14 +95,14 @@ export default function CraftModule({ isActive = true, embedded = false }) {
 
   const timing = useMemo(() => ritualTiming(turboMode, liteMode), [turboMode, liteMode])
 
-  const twoIngredientRecipes = useMemo(
-    () => recipes.filter((recipe) => recipe.ingredients.length === 2),
+  const benchRecipes = useMemo(
+    () => recipes.filter((recipe) => recipe.ingredients.length === 2 || recipe.ingredients.length === 3),
     [recipes],
   )
 
   const craftInventory = useMemo(
-    () => buildCraftInventory(twoIngredientRecipes),
-    [twoIngredientRecipes],
+    () => buildCraftInventory(benchRecipes),
+    [benchRecipes],
   )
 
   const inventoryById = useMemo(
@@ -110,17 +112,20 @@ export default function CraftModule({ isActive = true, embedded = false }) {
 
   const slotAItem = slotA ? inventoryById.get(slotA) ?? null : null
   const slotBItem = slotB ? inventoryById.get(slotB) ?? null : null
+  const slotCItem = slotC ? inventoryById.get(slotC) ?? null : null
+  const hasTrio = benchRecipes.some((recipe) => recipe.ingredients.length === 3)
   const matchedRecipe = useMemo(
-    () => findMatchingRecipe(twoIngredientRecipes, slotA, slotB),
-    [twoIngredientRecipes, slotA, slotB],
+    () => findMatchingRecipe(benchRecipes, slotA, slotB, slotC),
+    [benchRecipes, slotA, slotB, slotC],
   )
-  const selectedPairKey = slotA && slotB ? ingredientPairKey([slotA, slotB]) : null
+  const filledSlots = [slotA, slotB, slotC].filter(Boolean)
+  const selectedPairKey = filledSlots.length >= 2 ? ingredientPairKey(filledSlots) : null
   const isCrafting = Boolean(craftingPairKey)
   const isRitualActive = Boolean(ritualPhase)
   const isBusy = isCrafting || isRitualActive
   const canCraft = Boolean(matchedRecipe) && !isBusy
   const performanceTier = timing.tier
-  const hint = craftHint(slotA, slotB, matchedRecipe, ritualPhase)
+  const hint = craftHint(slotA, slotB, slotC, matchedRecipe, ritualPhase)
 
   useEffect(() => {
     if (!isRitualActive) return undefined
@@ -131,54 +136,63 @@ export default function CraftModule({ isActive = true, embedded = false }) {
   const clearSlots = () => {
     setSlotA(null)
     setSlotB(null)
+    setSlotC(null)
   }
 
   const handleInventoryPick = (itemId) => {
     if (isBusy) return
 
-    const item = inventoryById.get(itemId)
-    const owned = item?.owned ?? 0
+    const owned = inventoryById.get(itemId)?.owned ?? 0
     const inA = slotA === itemId
     const inB = slotB === itemId
+    const inC = slotC === itemId
 
-    // Оба слота один предмет: убираем оба
+    if (inC) {
+      setSlotC(null)
+      return
+    }
     if (inA && inB) {
-      setSlotA(null)
+      setSlotA(slotC)
       setSlotB(null)
+      setSlotC(null)
       return
     }
-
-    // Предмет только в слоте B: убираем из B
     if (inB) {
-      setSlotB(null)
+      setSlotB(slotC)
+      setSlotC(null)
       return
     }
-
-    // Предмет только в слоте A
     if (inA) {
-      // Слот B пустой и предметов >= 2: ставим и в B
       if (!slotB && owned >= 2) {
         setSlotB(itemId)
         return
       }
-      // Иначе: убираем из A (слот B занимает его место)
       setSlotA(slotB)
-      setSlotB(null)
+      setSlotB(slotC)
+      setSlotC(null)
       return
     }
-
-    // Предмета нет ни в одном слоте
     if (!slotA) {
       setSlotA(itemId)
       return
     }
     if (!slotB) {
-      // Тот же предмет что в A, но только 1 шт не ставим
       if (slotA === itemId && owned < 2) return
       setSlotB(itemId)
       return
     }
-    // Оба слота заняты заменяем B (но не если тот же предмет что в A и не хватает)
+    if (hasTrio && !slotC) {
+      const already = (slotA === itemId ? 1 : 0) + (slotB === itemId ? 1 : 0)
+      if (owned < already + 1) return
+      setSlotC(itemId)
+      return
+    }
+    if (hasTrio && slotC) {
+      const already = (slotA === itemId ? 1 : 0) + (slotB === itemId ? 1 : 0)
+      if (owned < already + 1) return
+      setSlotC(itemId)
+      return
+    }
     if (slotA === itemId && owned < 2) return
     setSlotB(itemId)
   }
@@ -213,7 +227,7 @@ export default function CraftModule({ isActive = true, embedded = false }) {
     startRitualSounds()
 
     let data = null
-    const apiPromise = craftRecipe(slotA, slotB)
+    const apiPromise = craftRecipe(slotA, slotB, slotC)
 
     try {
       if (performanceTier === 'turbo') {
@@ -325,7 +339,7 @@ export default function CraftModule({ isActive = true, embedded = false }) {
 
         {initialLoading ? (
           <div className="craft-recipes-loading">Загрузка крафта…</div>
-        ) : twoIngredientRecipes.length === 0 ? (
+        ) : benchRecipes.length === 0 ? (
           <div className="craft-recipes-empty">
             <span className="craft-recipes-empty-emoji" aria-hidden>⚗️</span>
             <p>Пока нет рецептов</p>
@@ -348,7 +362,7 @@ export default function CraftModule({ isActive = true, embedded = false }) {
                   <h2 className="text-sm font-extrabold tracking-tight text-amber-50">Книга рецептов</h2>
                 </header>
                 <ul className={`craft-book-list ${refreshing || isBusy ? 'craft-book-list--busy' : ''}`}>
-                  {twoIngredientRecipes.map((recipe) => {
+                  {benchRecipes.map((recipe) => {
                     const recipeKey = ingredientPairKey(recipe.ingredients.map((item) => item.id))
                     const isSelected = selectedPairKey === recipeKey
                     const isMatch = matchedRecipe?.id === recipe.id
@@ -356,11 +370,17 @@ export default function CraftModule({ isActive = true, embedded = false }) {
 
                     const handleRecipeClick = () => {
                       if (isBusy) return
-                      const [ingA, ingB] = recipe.ingredients
-                      // Одинаковый предмет в обоих слотах проверяем что есть >= 2
-                      if (ingA.id === ingB.id && (inventoryById.get(ingA.id)?.owned ?? 0) < 2) return
+                      const [ingA, ingB, ingC] = recipe.ingredients
+                      const need = new Map()
+                      for (const ing of recipe.ingredients) {
+                        need.set(ing.id, (need.get(ing.id) ?? 0) + 1)
+                      }
+                      for (const [id, qty] of need) {
+                        if ((inventoryById.get(id)?.owned ?? 0) < qty) return
+                      }
                       setSlotA(ingA.id)
                       setSlotB(ingB.id)
+                      setSlotC(ingC?.id ?? null)
                     }
 
                     return (
@@ -416,7 +436,7 @@ export default function CraftModule({ isActive = true, embedded = false }) {
 
               <section className={workbenchClass} aria-label="Верстак">
               <p className="craft-section-label">Верстак</p>
-              <div className="craft-slots-row" aria-live="polite">
+              <div className={`craft-slots-row${hasTrio ? ' craft-slots-row--trio' : ''}`} aria-live="polite">
                 <button
                   type="button"
                   className={[
@@ -458,6 +478,32 @@ export default function CraftModule({ isActive = true, embedded = false }) {
                     {slotBItem?.name ?? 'Пусто'}
                   </span>
                 </button>
+
+                {hasTrio ? (
+                  <>
+                    <span className={`craft-slots-plus ${isRitualCasting ? 'craft-slots-plus--ritual' : ''}`} aria-hidden>+</span>
+                    <button
+                      type="button"
+                      className={[
+                        'craft-slot-card',
+                        slotCItem ? 'craft-slot-card--filled' : '',
+                        matchedRecipe?.ingredients?.length === 3 ? 'craft-slot-card--meal' : '',
+                        ritualPhase === 'invoke' || ritualPhase === 'orbit' || ritualPhase === 'fuse' || ritualPhase === 'blend' ? 'craft-slot-card--ritual' : '',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => setSlotC(null)}
+                      disabled={!slotC || isBusy}
+                      aria-label={slotCItem ? `Слот С: ${slotCItem.name}. Нажми, чтобы очистить` : 'Слот С пуст'}
+                    >
+                      <span className="craft-slot-card-tag">С</span>
+                      <span className="craft-slot-card-emoji" aria-hidden>
+                        {slotCItem?.emoji ?? '○'}
+                      </span>
+                      <span className="craft-slot-card-name">
+                        {slotCItem?.name ?? 'Пусто'}
+                      </span>
+                    </button>
+                  </>
+                ) : null}
               </div>
 
               {matchedRecipe && !isRitualActive ? (
@@ -471,6 +517,9 @@ export default function CraftModule({ isActive = true, embedded = false }) {
                     {matchedRecipe.result.qty > 1 && (
                       <span className="craft-result-preview-qty"> ×{matchedRecipe.result.qty}</span>
                     )}
+                    {matchedRecipe.line ? (
+                      <span className="craft-result-preview-line">{matchedRecipe.line}</span>
+                    ) : null}
                   </span>
                   <span className="craft-result-preview-chance">{matchedRecipe.successPercent}%</span>
                 </div>
@@ -491,7 +540,8 @@ export default function CraftModule({ isActive = true, embedded = false }) {
                   {craftInventory.map((item) => {
                     const inSlotA = slotA === item.id
                     const inSlotB = slotB === item.id
-                    const isPicked = inSlotA || inSlotB
+                    const inSlotC = slotC === item.id
+                    const isPicked = inSlotA || inSlotB || inSlotC
 
                     return (
                       <button

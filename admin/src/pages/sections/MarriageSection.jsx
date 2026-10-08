@@ -12,10 +12,49 @@ const LENSES = [
   { id: 'picture', label: 'Картина' },
   { id: 'pairs', label: 'Пары' },
   { id: 'levels', label: 'Уровни' },
+  { id: 'items', label: 'Предметы' },
+  { id: 'feast', label: 'Праздники' },
   { id: 'settings', label: 'Настройки' },
 ]
 
+const SHELF = [
+  ['glow', '🎇', 'Блик брака', 'glowPrice', 'glowCare', 'Вам +3. Лишнее остаётся на следующие дни.'],
+  ['candle', '🕯', 'Свеча брака', 'candlePrice', 'candleCare', 'Вам +8. Лишнее остаётся на следующие дни.'],
+  ['hearth', '🎆', 'Очаг брака', 'hearthPrice', 'hearthCare', 'Вам +20. Лишнее остаётся на следующие дни.'],
+  ['match', '🪔', 'Спичка брака', 'matchPrice', '', 'Пока искра гаснет: дожигает вашу вчерашнюю половину.'],
+  ['ribbon', '🎀', 'Лента брака', 'ribbonPrice', '', 'Ваш знак в профиле. Партнёр покупает свою.'],
+]
+
 const LEVEL_CAP = 12
+const EFFECTS = [
+  { id: 'self', label: 'Тепло себе', care: 'Забота' },
+  { id: 'other', label: 'Тепло партнёру', care: 'Забота' },
+  { id: 'both', label: 'Тепло обоим', care: 'Забота' },
+  { id: 'norm', label: 'Ночью добить свою норму', care: '' },
+  { id: 'dawn', label: 'Утром, пока искра гаснет', care: 'Забота' },
+  { id: 'gap', label: 'Дожечь вчерашнюю половину', care: '' },
+  { id: 'vow', label: 'Один раз дописать день после ответа', care: '' },
+  { id: 'mark', label: 'Свой знак в профиле', care: '' },
+  { id: 'propose', label: 'Сделать предложение', care: '' },
+  { id: 'ring', label: 'Отдать кольцо после предложения', care: '' },
+  { id: 'seed', label: 'Саженец на ферму', care: '' },
+  { id: 'pantry', label: 'Овощ для крафта', care: '' },
+]
+
+const LIFE = [
+  'Вы ещё узнаёте друг друга. Ответа на сегодня уже достаточно.',
+  'Уже хочется написать первым.',
+  'Разговор стал привычкой, как чай вечером.',
+  'Молчание уже понятно. Ответ всё равно нужен обоим.',
+  'У вас уже есть свой тон. День без него заметен.',
+  'Забота находится сама. Кладут её всё равно оба.',
+  'Вы держитесь обычными словами. Комната от этого тише.',
+  'Обещание уже живёт в обычном ответе.',
+  'Вечер узнаётся без объяснений.',
+  'Тепло остаётся, даже если день был коротким.',
+  'Вы узнаёте друг друга по одной фразе.',
+  'Этот день такой же, как вчерашний. И от этого спокойно.',
+]
 
 const FIELDS = [
   ['freeWeddings', 'Бесплатных свадеб', 'Сколько первых свадеб человека ничего не стоят'],
@@ -29,14 +68,10 @@ const FIELDS = [
   ['toneGain', 'Жест прибавляет', 'Только первый жест новых суток'],
   ['toneDecay', 'День без жеста снимает', 'Старое поле тонуса. Игру искры оно больше не двигает'],
   ['rescueHours', 'Часы, чтобы спасти искру', 'После полуночи оба ещё успевают закрыть вчера. От 1 до 48'],
-  ['glowPrice', 'Блик, кут', 'Маленькая искра только купившему. Лишнее остаётся и сгорает по норме дня'],
-  ['glowCare', 'Забота от блика', 'Сколько заботы блик кладёт тому, кто его использовал'],
-  ['candlePrice', 'Свеча, кут', 'Средняя искра только купившему. Лишнее остаётся и сгорает по норме дня'],
-  ['candleCare', 'Забота от свечи', 'Сколько заботы свеча даёт тому, кто её зажёг'],
-  ['hearthPrice', 'Очаг, кут', 'Большая искра только купившему. Лишнее остаётся и сгорает по норме дня'],
-  ['hearthCare', 'Забота от очага', 'Сколько заботы очаг кладёт тому, кто его разжёг'],
-  ['matchPrice', 'Спичка, кут', 'Закрывает только его половину вчера, и только пока искра гаснет'],
-  ['ribbonPrice', 'Лента, кут', 'Один раз на пару. Знак в профиле, к искре ничего не прибавляет'],
+  ['replyCare', 'Ответ партнёру, забота', 'Короткий ответ. 0 — ответ день отмечает, искру не двигает'],
+  ['replyWarm', 'Длинный ответ, забота', 'Если слов не меньше порога ниже'],
+  ['replyWarmWords', 'Слов для длинного ответа', 'Столько слов и больше — берётся длинная забота'],
+  ['replyAlmost', 'Когда написать в чат', 'Сообщение один раз, когда до своей половины осталось столько'],
 ]
 
 function fmt(value) {
@@ -220,8 +255,8 @@ function LevelEditor({ levels, onChange }) {
         ))}
       </p>
       <p className="act-read">
-        Это путь пары в чате. Половина заботы считается сама: если вместе 10, с каждого по 5.
-        Карточка переезжает, как только меняется день.
+        Это путь пары в чате. С каждой ступенью им живётся привычнее: сначала достаточно ответа, потом появляется свой тон, потом вечер узнаётся сам.
+        Половина заботы считается сама. Если вместе 10, с каждого по 5.
       </p>
       <ol className="mrg-levels">
         {path.map((row, index) => {
@@ -238,6 +273,7 @@ function LevelEditor({ levels, onChange }) {
                 <b>{index + 1}</b>
                 <span>по {share} с каждого · вместе {goal || '—'}</span>
               </div>
+              {LIFE[index] ? <p className="mrg-level-life">{LIFE[index]}</p> : null}
               <div className="mrg-level-fields">
                 <label>
                   Имя в чате
@@ -326,7 +362,7 @@ function LevelEditor({ levels, onChange }) {
   )
 }
 
-export default function MarriageSection() {
+export default function MarriageSection({ creator = false }) {
   const [period, setPeriod] = useState('week')
   const [lens, setLens] = useState('picture')
   const [board, setBoard] = useState(null)
@@ -336,6 +372,7 @@ export default function MarriageSection() {
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [freshId, setFreshId] = useState('')
 
   useEffect(() => {
     let stop = false
@@ -365,6 +402,68 @@ export default function MarriageSection() {
 
   function patch(key, value) {
     setForm((current) => ({ ...(current || {}), [key]: value }))
+    setNotice('')
+  }
+
+  function patchPrize(id, key, value) {
+    setForm((current) => ({
+      ...(current || {}),
+      prizes: (current?.prizes || []).map((row) => (row.id === id ? { ...row, [key]: value } : row)),
+    }))
+    setNotice('')
+  }
+
+  function patchPeriod(day, name) {
+    setForm((current) => ({
+      ...(current || {}),
+      periods: (current?.periods || []).map((row) => (Number(row.day) === Number(day) ? { ...row, name } : row)),
+    }))
+    setNotice('')
+  }
+
+  function patchShelf(id, key, value) {
+    setForm((current) => ({
+      ...(current || {}),
+      shelf: (current?.shelf || []).map((row) => {
+        if (row.id !== id) return row
+        const next = { ...row, [key]: value }
+        if (key === 'effect') {
+          const known = Array.isArray(current?.effects) && current.effects.length ? current.effects : EFFECTS
+          const found = known.find((item) => item.id === value)
+          next.careLabel = found?.care || ''
+        }
+        return next
+      }),
+    }))
+    setNotice('')
+  }
+
+  function dropShelfItem(id) {
+    setForm((current) => ({
+      ...(current || {}),
+      shelf: (current?.shelf || []).filter((row) => row.id !== id || row.custom !== true),
+    }))
+    setNotice('')
+  }
+
+  function addShelfItem() {
+    const id = `own${Date.now().toString(36)}`
+    const row = {
+      id,
+      custom: true,
+      name: 'Новая вещь',
+      emoji: '🫧',
+      line: 'Коротко: зачем она в браке.',
+      price: 10,
+      care: 1,
+      careLabel: 'Забота',
+      effect: 'self',
+      on: true,
+      buy: 'Купить',
+      use: 'Использовать',
+    }
+    setForm((current) => ({ ...(current || {}), shelf: [...(current?.shelf || []), row] }))
+    setFreshId(id)
     setNotice('')
   }
 
@@ -412,7 +511,7 @@ export default function MarriageSection() {
               ))}
             </div>
             <div className="act-lenses" role="tablist" aria-label="Что открыть">
-              {LENSES.map((item) => (
+              {LENSES.filter((item) => creator || item.id === 'picture' || item.id === 'pairs').map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -483,7 +582,7 @@ export default function MarriageSection() {
                   Лучшая серия: {fmt(board.sparkBest || 0)} дн.
                 </p>
                 {(board.settings?.levels || []).length > 0 && (
-                  <button type="button" className="mrg-path" onClick={() => setLens('levels')}>
+                  <button type="button" className="mrg-path" onClick={() => creator && setLens('levels')}>
                     {board.settings.levels.map((row, index) => (
                       <span key={row.id ?? index}>
                         {index > 0 && <i aria-hidden="true">→</i>}
@@ -542,7 +641,7 @@ export default function MarriageSection() {
             </div>
           )}
 
-          {lens === 'levels' && form && (
+          {creator && lens === 'levels' && form && (
             <div className="act-stage">
               <h3 className="realm-h">Уровни искры</h3>
               <p className="act-read">
@@ -567,7 +666,7 @@ export default function MarriageSection() {
             </div>
           )}
 
-          {lens === 'settings' && form && (
+          {creator && lens === 'settings' && form && (
             <div className="act-stage">
               <h3 className="realm-h">Что можно менять</h3>
               <p className="act-read">
@@ -606,6 +705,50 @@ export default function MarriageSection() {
                     <em>{hint}</em>
                   </label>
                 ))}
+                <label>
+                  Строка, когда до половины осталось мало
+                  <input
+                    className="sec-input"
+                    type="text"
+                    maxLength={80}
+                    value={form.replyAlmostText ?? ''}
+                    onChange={(event) => patch('replyAlmostText', event.target.value)}
+                  />
+                  <em>{'{name} — партнёр, {left} — сколько ещё не хватает. Пустое вернёт фразу по умолчанию.'}</em>
+                </label>
+                <label>
+                  Строка, когда половина только что закрылась
+                  <input
+                    className="sec-input"
+                    type="text"
+                    maxLength={80}
+                    value={form.replyDone ?? ''}
+                    onChange={(event) => patch('replyDone', event.target.value)}
+                  />
+                  <em>Пусто — в чат ничего. День уже закрыт — бот молчит в любом случае.</em>
+                </label>
+                <label>
+                  Группа фонда подарков
+                  <input
+                    className="sec-input"
+                    type="text"
+                    inputMode="numeric"
+                    value={form.giftFundChat ?? ''}
+                    onChange={(event) => patch('giftFundChat', event.target.value.replace(/[^\d-]/g, ''))}
+                  />
+                  <em>Сюда ляжет доля с важной покупки пары. Отсюда же потом оплачиваются подарки.</em>
+                </label>
+                <label>
+                  Кому отдать премиум проекта
+                  <input
+                    className="sec-input"
+                    type="text"
+                    maxLength={32}
+                    value={form.premiumKeeper ?? ''}
+                    onChange={(event) => patch('premiumKeeper', event.target.value.replace(/^@/, ''))}
+                  />
+                  <em>Предмет приходит этому человеку. Он сам передаёт подписку паре. Бот Telegram Premium не используется.</em>
+                </label>
               </div>
               <h3 className="realm-h">Как пойдёт цена</h3>
               <p className="act-read">Номер свадьбы того, кто пишет «брак». Развод номер не обнуляет.</p>
@@ -640,6 +783,258 @@ export default function MarriageSection() {
               <div className="realm-actions">
                 <button type="button" className="is-on" disabled={saving} onClick={save}>
                   {saving ? 'Сохраняем…' : 'Сохранить настройки'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {creator && lens === 'items' && form && (
+            <div className="act-stage">
+              <h3 className="realm-h">Полка сердец</h3>
+              <p className="act-read">
+                Под названием игрок видит одну короткую фразу: что вещь даёт.
+                Саженцы продаются. Овощи и ужин растут и собираются, их можно выключить с полки.
+                У саженца здесь же минуты роста и число поливов.
+              </p>
+              <div className="realm-actions">
+                <button type="button" onClick={addShelfItem}>Новая вещь</button>
+              </div>
+              <div className="mrg-shelf">
+                {(Array.isArray(form.shelf) && form.shelf.length > 0 ? form.shelf : []).map((item) => {
+                  const options = Array.isArray(form.effects) && form.effects.length ? form.effects : EFFECTS
+                  const same = (form.shelf || []).filter((row) => row.on !== false && row.emoji && row.emoji === item.emoji).length
+                  const quietClash = form.quietOn !== false && (form.quietEmoji || '🤫') === item.emoji
+                  const clash = item.on !== false && (same > 1 || quietClash)
+                  return (
+                    <article key={item.id} className={`mrg-item${item.on === false ? ' is-off' : ''}${freshId === item.id ? ' is-fresh' : ''}`}>
+                      <div className="mrg-item-head">
+                        <label className="mrg-item-mark">
+                          <input
+                            className="mrg-mark-input"
+                            aria-label={`Знак: ${item.name || 'вещь'}`}
+                            maxLength={8}
+                            value={item.emoji || ''}
+                            onChange={(event) => patchShelf(item.id, 'emoji', event.target.value)}
+                          />
+                        </label>
+                        <div className="mrg-item-copy">
+                          <input
+                            className="sec-input"
+                            aria-label={`Название: ${item.name || 'вещь'}`}
+                            maxLength={40}
+                            value={item.name || ''}
+                            onChange={(event) => patchShelf(item.id, 'name', event.target.value)}
+                          />
+                          <input
+                            className="sec-input"
+                            aria-label="Зачем в браке"
+                            maxLength={140}
+                            placeholder="Зачем эта вещь в браке"
+                            value={item.line || ''}
+                            onChange={(event) => patchShelf(item.id, 'line', event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="mrg-item-fields">
+                        <label className="mrg-span">
+                          Что делает
+                          <select
+                            className="sec-input"
+                            value={item.effect || 'self'}
+                            onChange={(event) => patchShelf(item.id, 'effect', event.target.value)}
+                          >
+                            {options.map((option) => (
+                              <option key={option.id} value={option.id}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Кут
+                          <input
+                            className="sec-input"
+                            type="number"
+                            min="0"
+                            value={item.price ?? 0}
+                            onChange={(event) => patchShelf(item.id, 'price', event.target.value === '' ? 0 : Number(event.target.value))}
+                          />
+                        </label>
+                        {item.careLabel ? (
+                          <label>
+                            {item.careLabel}
+                            <input
+                              className="sec-input"
+                              type="number"
+                              min={item.careLabel === 'Часы' ? 1 : 0}
+                              value={item.care ?? 0}
+                              onChange={(event) => patchShelf(item.id, 'care', event.target.value === '' ? 0 : Number(event.target.value))}
+                            />
+                          </label>
+                        ) : null}
+                        {item.effect === 'seed' ? (
+                          <>
+                            <label>
+                              Минуты
+                              <input
+                                className="sec-input"
+                                type="number"
+                                min="1"
+                                max="1440"
+                                value={item.growMin ?? 30}
+                                onChange={(event) => patchShelf(item.id, 'growMin', event.target.value === '' ? 30 : Number(event.target.value))}
+                              />
+                            </label>
+                            <label>
+                              Поливы
+                              <input
+                                className="sec-input"
+                                type="number"
+                                min="0"
+                                max="12"
+                                value={item.waters ?? 3}
+                                onChange={(event) => patchShelf(item.id, 'waters', event.target.value === '' ? 0 : Number(event.target.value))}
+                              />
+                            </label>
+                          </>
+                        ) : null}
+                      </div>
+                      <label className="mrg-switch">
+                        <input
+                          type="checkbox"
+                          checked={item.on !== false}
+                          onChange={(event) => patchShelf(item.id, 'on', event.target.checked)}
+                        />
+                        На полке
+                      </label>
+                      {item.custom ? (
+                        <button type="button" onClick={() => dropShelfItem(item.id)}>Убрать вещь</button>
+                      ) : null}
+                      {clash ? <p className="mrg-clash">Этот знак уже занят. В магазине вещи перепутаются.</p> : null}
+                    </article>
+                  )
+                })}
+                {!(Array.isArray(form.shelf) && form.shelf.length > 0) && SHELF.map(([id, emoji, name, priceKey, careKey, line]) => (
+                  <article key={id} className="mrg-item">
+                    <div className="mrg-item-head">
+                      <span className="mrg-item-mark" aria-hidden="true">{emoji}</span>
+                      <div>
+                        <strong>{name}</strong>
+                        <p>{line}</p>
+                      </div>
+                    </div>
+                    <div className="mrg-item-fields">
+                      <label>
+                        Кут
+                        <input
+                          className="sec-input"
+                          type="number"
+                          min="0"
+                          value={form[priceKey] ?? 0}
+                          onChange={(event) => patch(priceKey, event.target.value === '' ? 0 : Number(event.target.value))}
+                        />
+                      </label>
+                      {careKey ? (
+                        <label>
+                          Забота
+                          <input
+                            className="sec-input"
+                            type="number"
+                            min="0"
+                            value={form[careKey] ?? 0}
+                            onChange={(event) => patch(careKey, event.target.value === '' ? 0 : Number(event.target.value))}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+                <article className="mrg-item">
+                  <div className="mrg-item-head">
+                    <span className="mrg-item-mark" aria-hidden="true">{form.quietEmoji || '🤫'}</span>
+                    <div>
+                      <strong>Тихий день</strong>
+                      <p>Раз в неделю закрывает свою половину, если человек не успел ответить. Доля цены копится в фонд подарков.</p>
+                    </div>
+                  </div>
+                  <label className="mrg-switch">
+                    <input type="checkbox" checked={form.quietOn !== false} onChange={(event) => patch('quietOn', event.target.checked)} />
+                    Продаётся на полке
+                  </label>
+                  <div className="mrg-item-fields">
+                    <label>
+                      Кут
+                      <input className="sec-input" type="number" min="0" value={form.quietPrice ?? 40} onChange={(event) => patch('quietPrice', event.target.value === '' ? 0 : Number(event.target.value))} />
+                    </label>
+                    <label>
+                      Знак
+                      <input className="sec-input" type="text" maxLength={4} value={form.quietEmoji ?? ''} onChange={(event) => patch('quietEmoji', event.target.value)} />
+                    </label>
+                  </div>
+                </article>
+              </div>
+              {notice && <p className="act-read">{notice}</p>}
+              <div className="realm-actions">
+                <button type="button" className="is-on" disabled={saving} onClick={save}>
+                  {saving ? 'Сохраняем…' : 'Сохранить полку'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {creator && lens === 'feast' && form && (
+            <div className="act-stage">
+              <h3 className="realm-h">Праздники пар</h3>
+              <p className="act-read">
+                Ответ партнёру ничего не стоит. Доля берётся только с «Тихого дня»: маленькая часть доли остаётся проекту, остальное копится в группе фонда и оттуда оплачивает подарок.
+                Премиум приходит предметом @{form.premiumKeeper || 'JerichoCute'}. Он передаёт его сам. Бот Telegram Premium не вызывается.
+              </p>
+              <div className="mrg-form">
+                <label>
+                  Доля в фонд, %
+                  <input className="sec-input" type="number" min="0" max="80" value={form.fundPercent ?? 20} onChange={(event) => patch('fundPercent', event.target.value === '' ? 0 : Number(event.target.value))} />
+                  <em>Столько процентов цены уходит из покупки в комиссию.</em>
+                </label>
+                <label>
+                  Проекту из этой доли, %
+                  <input className="sec-input" type="number" min="0" max="80" value={form.projectKeepPercent ?? 10} onChange={(event) => patch('projectKeepPercent', event.target.value === '' ? 0 : Number(event.target.value))} />
+                  <em>Остаток доли лежит в группе фонда.</em>
+                </label>
+                <label>
+                  Конверт, кут
+                  <input className="sec-input" type="number" min="0" value={form.envelopeKut ?? 15} onChange={(event) => patch('envelopeKut', event.target.value === '' ? 0 : Number(event.target.value))} />
+                  <em>Если пара выбрала куты.</em>
+                </label>
+                <label>
+                  Дополнительные куты
+                  <input className="sec-input" type="number" min="0" value={form.extraKut ?? 0} onChange={(event) => patch('extraKut', event.target.value === '' ? 0 : Number(event.target.value))} />
+                  <em>Прибавляются к конверту и к извинению, если предмет не купился.</em>
+                </label>
+              </div>
+              <h3 className="realm-h">Как называются сроки</h3>
+              <div className="mrg-form">
+                {(form.periods || []).map((row) => (
+                  <label key={row.day}>
+                    {row.day} дней
+                    <input className="sec-input" type="text" maxLength={24} value={row.name || ''} onChange={(event) => patchPeriod(row.day, event.target.value)} />
+                  </label>
+                ))}
+              </div>
+              <h3 className="realm-h">Что можно выбрать</h3>
+              <div className="mrg-form">
+                {(form.prizes || []).map((row) => (
+                  <label key={row.id}>
+                    <span className="mrg-switch">
+                      <input type="checkbox" checked={Boolean(row.on)} onChange={(event) => patchPrize(row.id, 'on', event.target.checked)} />
+                      {row.emoji} {row.name}
+                    </span>
+                    <input className="sec-input" type="text" maxLength={80} value={row.blurb || ''} onChange={(event) => patchPrize(row.id, 'blurb', event.target.value)} />
+                    <em>Эта строка видна паре в том же сообщении.</em>
+                  </label>
+                ))}
+              </div>
+              {notice && <p className="act-read">{notice}</p>}
+              <div className="realm-actions">
+                <button type="button" className="is-on" disabled={saving} onClick={save}>
+                  {saving ? 'Сохраняем…' : 'Сохранить праздники'}
                 </button>
               </div>
             </div>

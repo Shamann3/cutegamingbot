@@ -69,6 +69,9 @@ from bot.admins.mute import (
   _has_proof_media,
   _is_staff_chat,
   live_staff_chat_ids,
+  official_chats_now,
+  refuse_stale_grant,
+  warm_official_chats,
   _proof_owner_token,
   _lookup_target_by_token,
   _require_staff_chat,
@@ -612,7 +615,7 @@ async def _validate_kick_before(
   source_chat_id: int,
 ) -> Tuple[Optional[str], bool]:
   """Предпроверка кика: блокирующая ошибка и состоит ли пользователь в целевых группах."""
-  chat_ids = list(live_staff_chat_ids()) if scope == "all" else [source_chat_id]
+  chat_ids = list(await official_chats_now()) if scope == "all" else [source_chat_id]
   any_member = False
   for cid in chat_ids:
     if scope == "chat" and not _is_staff_chat(cid):
@@ -664,7 +667,7 @@ async def _kick_in_all_staff_chats(
   """Кикает из всех групп проекта, где пользователь состоит."""
   kicked: List[int] = []
   errors: List[str] = []
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     err = await _validate_kick_target_in_chat(cid, target_id)
     if err in _BLOCKING_KICK_ERRORS:
       errors.append(err)
@@ -758,7 +761,7 @@ async def _notify_kick(
 
   if parsed.scope == "all":
     violator_intro = KickText.INTRO_ALL.format(actor=actor, scope=scope_label("all"))
-    notify_chats = set(kicked_chat_ids) if kicked_chat_ids else set(live_staff_chat_ids())
+    notify_chats = set(kicked_chat_ids) if kicked_chat_ids else set(await official_chats_now())
   else:
     disp = await _get_chat_display(source_chat_id)
     violator_intro = KickText.INTRO_CHAT.format(actor=actor, title=escape(disp.title))
@@ -864,6 +867,13 @@ async def _finalize_kick(
       parse_mode="HTML", link_preview_options=NO_PREVIEW,
     )
     KickDebug.log("PROOF", "finalize blocked - no proof", target=getattr(parsed, "target_id", None))
+    return True
+  from bot.admins.mute import _punish_rules
+  if await refuse_stale_grant(
+    message,
+    _punish_rules().punish_action("kick", "all" if parsed.scope == "all" else "chat"),
+    chat_id,
+  ):
     return True
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
@@ -1021,7 +1031,8 @@ async def _complete_kick_with_proof(message: Message) -> bool:
     return True
 
   pending_chat = pending.get("chat_id")
-  if not _is_staff_chat(message.chat.id) or message.chat.id != pending_chat:
+  from bot.admins.punish_proof import proof_in_origin
+  if not await proof_in_origin(message, pending_chat):
     staff = await StaffRef.from_message(message)
     parsed: ParsedKick = pending.get("parsed")
     player_line = PlayerRef(
@@ -1417,6 +1428,9 @@ async def kick_process(message: Message) -> bool:
         return await deny_permission(message, kick_action)
       return await _handle_kick_command(message)
 
+    from bot.admins.punish_proof import caption_is_punish_command
+    if caption_is_punish_command(command_text):
+      return False
     KickDebug.log("PROOF", "ignored text while pending", uid=uid, text=command_text[:60])
     return True
 
@@ -1534,6 +1548,7 @@ class KickMiddleware(BaseMiddleware):
 
     msg: Message = event
     uid = msg.from_user.id
+    await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_kicks, uid)
     staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
@@ -1569,6 +1584,13 @@ class KickMiddleware(BaseMiddleware):
 async def kick_on_photo(message: Message) -> None:
   if _is_kick_related_message(message):
     await kick_process(message)
+
+
+@kick_router.message(F.document)
+async def kick_on_document(message: Message) -> None:
+  if message.document and (message.document.mime_type or "").startswith("image/"):
+    if _is_kick_related_message(message):
+      await kick_process(message)
 
 
 async def kick(message: Message) -> None:

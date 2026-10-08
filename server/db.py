@@ -3091,17 +3091,18 @@ class Database:
             "player": await self._player_snapshot(user_id),
         }
 
-    async def execute_craft(self, user_id, slot_a, slot_b):
+    async def execute_craft(self, user_id, slot_a, slot_b, slot_c=None):
         from craft_catalog import normalize_success_percent, recipe_for_execute
 
         await self.ensure_user(user_id)
         slot_a = str(slot_a).strip()
         slot_b = str(slot_b).strip()
+        slot_c = str(slot_c or "").strip()
         if not slot_a or not slot_b:
             raise ValueError("Укажи оба предмета для крафта")
-        recipe = recipe_for_execute(slot_a, slot_b)
+        recipe = recipe_for_execute(slot_a, slot_b, slot_c)
         if not recipe:
-            raise ValueError("Такой рецепт не существует. Эта пара ничего не создаёт")
+            raise ValueError("Такой рецепт не существует")
         ingredients = recipe.ingredients()
         if not ingredients:
             raise ValueError("У рецепта нет ингредиентов")
@@ -3118,7 +3119,7 @@ class Database:
                 stored = take_craft_ingredients(raw_items, ingredients)
                 result_id = str(recipe.result_id)
                 if rolled_success:
-                    stored = add_shop_item_to_storage(stored, result_id, 1)
+                    stored = add_shop_item_to_storage(stored, result_id, max(1, int(recipe.result_qty or 1)))
                 await conn.execute(
                     "UPDATE users SET items = $2 WHERE user_id = $1", user_id, items_to_db(stored)
                 )

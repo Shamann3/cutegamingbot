@@ -275,6 +275,34 @@ def staff_allows(permissions: Mapping[str, Any], action: str, columns: Sequence[
     return bool(column) and bool(permissions.get(column))
 
 
+def punish_action(kind: str, mode: str) -> str:
+    """mute/kick/ban/warn и охват chat/all/full → столбец права.
+
+    Банфулл не подменяется баном, варнфулл — варном. Если столбца в таблице нет,
+    цепочку запасных столбцов решает staff_column, не эта функция.
+    """
+    table = {
+        "mute": {"chat": "mute", "all": "muteall"},
+        "kick": {"chat": "kick", "all": "kickall"},
+        "ban": {"chat": "ban", "all": "banall", "full": "banfull"},
+        "warn": {"chat": "warn", "all": "warnall", "full": "warnfull"},
+    }.get(kind) or {}
+    return table.get(mode) or table.get("chat") or kind
+
+
+def outside_seat_block(*, staff_grant: bool, official: bool) -> Optional[str]:
+    """Сотрудник проекта без должности в этой группе.
+
+    Право из staff_rules действует в любой официальной группе, не только в своей.
+    Без этого права чужая группа закрыта. Неофициальный чат закрыт всегда.
+    """
+    if staff_grant and official:
+        return None
+    if staff_grant:
+        return "Эта группа не отмечена официальной"
+    return "В этой группе у вас нет должности"
+
+
 # Панель сотрудника: что выдаётся из карточки человека. Снятие варнов и банфулла — в боте.
 STAFF_PANEL_ACTIONS: tuple[dict[str, Any], ...] = (
     {"id": "mute", "label": "Мут", "scope": "chat", "needsUntil": True,

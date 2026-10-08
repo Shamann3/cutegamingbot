@@ -53,6 +53,9 @@ export default function ShopShelfTile({
           {item.emoji}
         </span>
         <p className="shop-shelf-name" title={item.name}>{item.name}</p>
+        {(item.sorting === '💖' || item.sorting === '💕') && (item.bio || item.description) ? (
+          <p className="shop-shelf-benefit">{item.bio || item.description}</p>
+        ) : null}
         <div className="shop-shelf-meta">
           <span className="shop-shelf-stock">{formatKut(item.remains)}</span>
           <div className="shop-shelf-price">

@@ -2481,12 +2481,53 @@ def live_staff_chat_ids() -> list[int]:
   return merged(cfg.STAFF_CHAT_IDS, _official_live, cfg.MODERATION_EXCLUDED_CHAT_IDS)
 
 
-async def refresh_official_chats() -> None:
+async def official_chats_now() -> list[int]:
+  """Список официальных групп прямо перед наказанием шире одного чата.
+
+  Кэш на 12 секунд здесь не годится: фото-доказательство ждут до пяти минут,
+  и за это время создатель мог отметить ещё одну группу.
+  """
+  await refresh_official_chats(force=True)
+  return live_staff_chat_ids()
+
+
+async def warm_official_chats(chat_id: Optional[int]) -> None:
+  """Обновляет список официальных групп перед проверкой чата. В личке не ходит в базу."""
+  try:
+    cid = int(chat_id or 0)
+  except (TypeError, ValueError):
+    return
+  if cid >= 0:
+    return
+  await refresh_official_chats()
+
+
+async def refuse_stale_grant(message: Message, action: str, chat_id: Optional[int]) -> bool:
+  """True — к моменту фото права уже нет, ответ отправлен, наказание не применять.
+
+  Проверяется то же действие, что и в команде: банфулл не проходит по праву бана,
+  муталл не проходит по праву мута одной группы. Кэш должности и staff_rules
+  на эти пять минут ожидания не годится.
+  """
+  await refresh_official_chats(force=True)
+  await load_staff_rules(force_refresh=True)
+  invalidate_seat_cache()
+  await get_admin_account(message.from_user.id, force_refresh=True)
+  perm = await check_punish_permission(message.from_user.id, action, chat_id)
+  if perm == "db_unavailable":
+    raise DbUnavailableError("punish recheck")
+  if perm == "allowed":
+    return False
+  await deny_permission(message, action)
+  return True
+
+
+async def refresh_official_chats(force: bool = False) -> None:
   """Подтягивает epsilon_official_groups. Ошибка базы не стирает уже известный список."""
   global _official_live, _official_at, _official_titles, _official_loaded
   import time
   now = time.monotonic()
-  if _official_at and now - _official_at < 12:
+  if not force and _official_at and now - _official_at < 12:
     return
   try:
     database = _db()
@@ -3036,7 +3077,7 @@ async def _expire_mute(
           chats.append(c)
   if not chats:
     if global_scope:
-      chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
+      chats = [c for c in await official_chats_now() if _is_staff_chat(c)]
     elif _is_staff_chat(trigger_chat_id):
       chats = [trigger_chat_id]
 
@@ -4998,7 +5039,7 @@ async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime
 async def _restrict_in_all_staff_chats(user_id: int, until: Optional[datetime]) -> bool:
   """Ограничивает пользователя во всех официальных группах проекта."""
   ok_any = False
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     if await _restrict_in_chat(cid, user_id, until):
       ok_any = True
       _register_chat_mute(cid, user_id, until)
@@ -5007,7 +5048,7 @@ async def _restrict_in_all_staff_chats(user_id: int, until: Optional[datetime]) 
 
 async def _unrestrict_in_all_staff_chats(user_id: int) -> None:
   """Снимает ограничение во всех официальных группах проекта."""
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     await _unrestrict_in_chat(cid, user_id)
     _clear_chat_mute(cid, user_id)
 
@@ -5073,7 +5114,7 @@ async def _notify_unmute(
   reason_line = _format_mute_reason_block(mute_reason)
   reason_suffix = f"\n{reason_line}" if reason_line else ""
 
-  chats = list(notify_chats) if notify_chats is not None else list(live_staff_chat_ids())
+  chats = list(notify_chats) if notify_chats is not None else list(await official_chats_now())
 
   staff: Optional[StaffRef] = None
   if acting_admin_id and acting_admin_name:
@@ -5180,7 +5221,7 @@ async def _notify_mute_groups(
   duration = _format_duration_short(parsed.time_delta)
   until = _format_until_display(parsed.mute_until, parsed.time_delta)
   reason_block = _format_mute_reason_block(parsed.reason, label="Причина наказания")
-  for cid in live_staff_chat_ids():
+  for cid in await official_chats_now():
     if cid == source_chat_id:
       continue
     try:
@@ -5477,6 +5518,12 @@ async def _finalize_mute(
     )
     MuteDebug.log("PROOF", "finalize blocked - no proof", target=getattr(parsed, "target_id", None))
     return True
+  if await refuse_stale_grant(
+    message,
+    _punish_rules().punish_action("mute", "all" if parsed.scope == "all" else "chat"),
+    chat_id,
+  ):
+    return True
   from bot.admins.punish_validate import (
     punishment_invalid_user_html,
     validate_punishment_target_user,
@@ -5596,7 +5643,8 @@ async def _complete_mute_with_proof(message: Message) -> bool:
     return True
 
   pending_chat = pending.get("chat_id")
-  if not _is_staff_chat(message.chat.id) or message.chat.id != pending_chat:
+  from bot.admins.punish_proof import proof_in_origin
+  if not await proof_in_origin(message, pending_chat):
     staff = await StaffRef.from_message(message)
     parsed = pending.get("parsed")
     player_line = ""
@@ -5866,7 +5914,7 @@ async def _execute_unmute_core(
     if affected_chats:
       unmute_notify_chats = affected_chats
     elif _global_scope:
-      unmute_notify_chats = [c for c in live_staff_chat_ids() if _is_staff_chat(c)]
+      unmute_notify_chats = [c for c in await official_chats_now() if _is_staff_chat(c)]
     else:
       unmute_notify_chats = None
 
@@ -6135,6 +6183,9 @@ async def mute_process(message: Message) -> bool:
     if _is_mute_command(command_text):
       return await _dispatch_mute_with_feedback(message)
 
+    from bot.admins.punish_proof import caption_is_punish_command
+    if caption_is_punish_command(command_text):
+      return False
     MuteDebug.log("PROOF", "ignored text while pending", uid=uid, text=command_text[:60])
     return True
 
@@ -7445,6 +7496,7 @@ class MuteMiddleware(BaseMiddleware):
     uid = msg.from_user.id
     # Фиксируем активность пользователя для эвристики «в сети» в составе админов.
     note_admin_activity(uid)
+    await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_mutes, uid)
     staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)

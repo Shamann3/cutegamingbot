@@ -149,6 +149,14 @@ function PlotCard({
   const plantableCrops = listPlantableCrops(farmCrops, seedCtx)
   const hasAnySeed = plantableCrops.length > 0
   const cropName = (crop) => crop.displayName || crop.seedName || (crop.key === 'tree' ? 'Дерево' : crop.key === 'tobacco' ? 'Табак' : 'Культура')
+  const waterPhrase = (count) => {
+    const n = Math.abs(Number(count) || 0)
+    const mod10 = n % 10
+    const mod100 = n % 100
+    if (mod10 === 1 && mod100 !== 11) return `${n} полив`
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} полива`
+    return `${n} поливов`
+  }
   const seedLabel = (crop) => crop.seedName || cropName(crop)
   const plantCols = Math.min(Math.max(plantableCrops.length, 1), 3)
 
@@ -176,7 +184,10 @@ function PlotCard({
               >
                 <span className="plot-empty-row-btn-emoji" aria-hidden>{crop.seedEmoji}</span>
                 {plantableCrops.length > 1 && (
-                  <span className="plot-empty-row-btn-name">{cropName(crop)}</span>
+                  <span className="plot-empty-row-btn-name">
+                    {cropName(crop)}
+                    {crop.waterTimes ? ` · ${waterPhrase(crop.waterTimes)}` : ''}
+                  </span>
                 )}
               </button>
             ))}
@@ -272,6 +283,7 @@ function PlotCard({
               status={status}
               growthStage={growthStage}
               cropKey={plotCrop?.spriteKey ?? plotCrop?.key}
+              emoji={plotCrop?.harvestEmoji || plotCrop?.seedEmoji || ''}
             />
           </div>
         </div>

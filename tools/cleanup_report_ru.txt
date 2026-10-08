@@ -1,0 +1,54 @@
+﻿Отчёт очистки CuteUpdate1
+Дата: 2026-10-08 01:25 (локальное время)
+
+## Диск C:
+- Свободно ДО: 0,03 GB (~30 MB) — критически мало
+- Свободно ПОСЛЕ: 0,63 GB (~650 MB)
+- Реально освобождено на C: ~0,61 GB (622 MB)
+
+## По категориям (удалено)
+| Категория | MB |
+|-----------|-----|
+| Установщики с рабочего стола (CursorUserSetup x2, OpenJDK msi) | 549,3 |
+| Steam (appcache, depotcache, logs; package *.tmp) | 40,6 |
+| C:\Temp | 16,2 |
+| pip cache | 8,5 |
+| EpicGamesLauncher (Saved\Logs) | 1,8 |
+| JetBrains Local\*\log | 1,2 |
+| Cursor (регенерируемые папки в AppData, без User/state.vscdb) | 1,3 |
+| .cursor\agent-tools / checkpoints | 0,0 |
+
+Не найдено / не очищено: GeForceNOW CefCache (путь отсутствует или пуст).
+
+Часть каталогов Steam/Cursor пропущена — файлы заняты запущенными приложениями (Steam/Cursor).
+
+## Docker
+Демон Docker Desktop **не работал** (pipe dockerDesktopLinuxEngine недоступен; служба com.docker.service была остановлена). Очистка Docker **не выполнялась** — по вашей процедуре при недоступном демоне пропуск.
+
+### Инвентарь из docker-compose.yml (защитный набор при будущей очистке)
+- **Сервисы:** postgres, api, bots
+- **Том:** postgres_data → обычно `cuteupdate1_postgres_data`
+- **Образы:** postgres:16-alpine; локальные сборки api/bots из `./server/Dockerfile`
+- **Типичные имена контейнеров:** `cuteupdate1-postgres-1`, `cuteupdate1-api-1`, `cuteupdate1-bots-1`
+- **Ключевые слова protect:** cute, support-bot, farming, postgres, redis, mongo, mysql, cuteupdate1
+
+Файл compose **валиден:** `docker compose config` → exit 0 (проверено без запущенного engine).
+
+### Docker на диске (справочно, не удалялось)
+- `docker_data.vhdx`: ~0,76 GB
+- `ext4.vhdx` (WSL main): ~0,19 GB
+
+**Защищено / удалено контейнеров:** н/д (демон выключен).
+
+## Проект CuteUpdate1
+Конфигурация compose на месте. Активные project-контейнеры не перечислены — Docker не запущен.
+
+## Если места всё ещё мало
+- **state.vscdb (НЕ трогали): ~16,61 GB** — `AppData\Roaming\Cursor\User\globalStorage\state.vscdb`
+  Это главный потребитель места на C: после очистки. Удаление/обрезка только вручную и с пониманием потери истории Cursor.
+- agent-transcripts: ~0,02 GB (не удалялись, по инструкции)
+
+## Повтор Docker-очистки (когда запустите Docker Desktop)
+Запустите Docker Desktop, затем:
+`powershell -ExecutionPolicy Bypass -File tools\safe_disk_cleanup_run.ps1`
+Скрипт выполнит: builder prune -af, image prune (dangling), удаление только остановленных контейнеров вне protect-набора.

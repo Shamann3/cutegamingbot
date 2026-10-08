@@ -2707,6 +2707,39 @@ body {
     gap: 0.5rem;
   }
 
+  .craft-slots-row--trio {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  @media (max-width: 560px) {
+    .craft-slots-row--trio {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .craft-slots-row--trio .craft-slots-plus {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .craft-slot-card--meal {
+      animation: craft-meal-glow 2.6s ease-in-out infinite;
+    }
+  }
+
+  @keyframes craft-meal-glow {
+    0%, 100% { box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.2); }
+    50% { box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.55), 0 0 14px rgba(212, 175, 55, 0.28); }
+  }
+
+  .craft-result-preview-line {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgba(254, 243, 199, 0.72);
+  }
+
   .craft-slot-card {
     display: flex;
     flex-direction: column;
@@ -6557,6 +6590,19 @@ body {
     -webkit-box-orient: vertical;
     overflow: hidden;
     min-height: 1.7rem;
+  }
+
+  .shop-shelf-benefit {
+    width: 100%;
+    margin: 0.2rem 0 0;
+    color: #f3e6c8;
+    font-size: 0.62rem;
+    font-weight: 500;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .shop-shelf-meta {

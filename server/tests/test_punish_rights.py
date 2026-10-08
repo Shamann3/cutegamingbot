@@ -121,6 +121,46 @@ def test_kick_and_warn_ask_the_seat_not_only_the_staff_account():
     assert 'return "kickall"' in kick
 
 
+def test_each_punishment_keeps_its_own_column():
+    assert punish_rights.punish_action("ban", "full") == "banfull"
+    assert punish_rights.punish_action("ban", "all") == "banall"
+    assert punish_rights.punish_action("ban", "chat") == "ban"
+    assert punish_rights.punish_action("warn", "full") == "warnfull"
+    assert punish_rights.punish_action("warn", "all") == "warnall"
+    assert punish_rights.punish_action("mute", "all") == "muteall"
+    assert punish_rights.punish_action("kick", "all") == "kickall"
+    assert punish_rights.punish_action("mute", "later") == "mute"
+    perms = {"mute": True, "ban": True, "banall": True, "banfull": False}
+    assert not punish_rights.staff_allows(
+        perms, punish_rights.punish_action("ban", "full"), COLUMNS,
+    )
+    assert punish_rights.staff_allows(
+        perms, punish_rights.punish_action("ban", "all"), COLUMNS,
+    )
+
+
+def test_project_staff_reaches_another_official_group_without_a_local_seat():
+    assert punish_rights.outside_seat_block(staff_grant=True, official=True) is None
+    assert (
+        punish_rights.outside_seat_block(staff_grant=True, official=False)
+        == "Эта группа не отмечена официальной"
+    )
+    assert (
+        punish_rights.outside_seat_block(staff_grant=False, official=True)
+        == "В этой группе у вас нет должности"
+    )
+
+
+def test_photo_step_rechecks_the_right_and_the_live_group_list():
+    root = Path(__file__).resolve().parents[2]
+    for name in ("mute.py", "kick.py", "ban.py", "warn.py"):
+        text = (root / "bot" / "admins" / name).read_text(encoding="utf-8")
+        assert "refuse_stale_grant(" in text
+        assert "official_chats_now(" in text
+        assert "proof_in_origin(" in text
+        assert "warm_official_chats(" in text
+
+
 def test_protected_creators_are_the_same_pair_the_bot_refuses():
     assert punish_rights.PROTECTED_CREATOR_IDS == frozenset({6488580935, 6801702632})
     assert not punish_rights.is_staff_account("applicant", "active")

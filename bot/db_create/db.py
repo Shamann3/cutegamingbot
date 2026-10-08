@@ -18182,8 +18182,8 @@ class Database:
         try:
             async with self.pool.acquire() as connection:
                 rows = await connection.fetch(
-                    "SELECT name, price, remains, sorting, emoji FROM dex ORDER BY id ASC")
-            return [ (r [ 'name' ] , r [ 'price' ] , r [ 'remains' ] , r [ 'sorting' ] , r [ 'emoji' ]) for r in rows ]
+                    "SELECT name, price, remains, sorting, emoji, bio FROM dex ORDER BY id ASC")
+            return [ (r [ 'name' ] , r [ 'price' ] , r [ 'remains' ] , r [ 'sorting' ] , r [ 'emoji' ] , r [ 'bio' ] or '') for r in rows ]
         except Exception as e:
             print(f"Ошибка при получении всех предметов: {e}")
             return [ ]

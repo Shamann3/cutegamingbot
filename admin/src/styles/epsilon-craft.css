@@ -2035,9 +2035,16 @@ html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sideb
 }
 
 .panel-shell .mrg-level-head span {
-  color: var(--e-text-2, #aeaeb2);
-  font-size: 0.86rem;
-  text-align: right;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.panel-shell .mrg-level-life {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
 }
 
 .panel-shell .mrg-level-fields {
@@ -2106,9 +2113,136 @@ html[data-viewport="phone"] .panel-shell-main .panel-sidebar-search .panel-sideb
   to { opacity: 0; transform: translateY(-8px) scale(0.98); }
 }
 
+.panel-shell .mrg-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 4px 0 16px;
+  animation: mrg-level-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.panel-shell .mrg-item {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: #1c1c1e;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.panel-shell .mrg-item-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.panel-shell .mrg-item-head strong {
+  display: block;
+  font-size: 1rem;
+  letter-spacing: -0.03em;
+}
+
+.panel-shell .mrg-item-head p {
+  margin: 4px 0 0;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.panel-shell .mrg-item-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 90, 95, 0.16);
+  font-size: 1.35rem;
+}
+
+.panel-shell .mrg-item-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.panel-shell .mrg-item-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: var(--e-text-2, #aeaeb2);
+  font-size: 13px;
+}
+
+.panel-shell .mrg-item .sec-input:focus-visible {
+  outline: 2px solid var(--e-accent, #c8afff);
+  outline-offset: 2px;
+}
+
+.panel-shell .mrg-item-copy {
+  display: grid;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-shell .mrg-mark-input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.35rem;
+  text-align: center;
+}
+
+.panel-shell .mrg-item-fields .mrg-span {
+  grid-column: 1 / -1;
+}
+
+.panel-shell .mrg-item select.sec-input {
+  width: 100%;
+}
+
+.panel-shell .mrg-item.is-off {
+  opacity: 0.55;
+}
+
+.panel-shell .mrg-item.is-fresh {
+  animation: mrg-level-rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.panel-shell .mrg-clash {
+  margin: 0;
+  color: #ffb4ae;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@media (hover: hover) {
+  .panel-shell .mrg-item {
+    transition: transform 0.18s ease;
+  }
+
+  .panel-shell .mrg-item:hover {
+    transform: translateY(-2px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .panel-shell .mrg-level,
-  .panel-shell .mrg-level.is-leaving {
+  .panel-shell .mrg-level.is-leaving,
+  .panel-shell .mrg-shelf,
+  .panel-shell .mrg-item,
+  .panel-shell .mrg-item.is-fresh {
     animation: none;
+    transition: none;
+  }
+
+  .panel-shell .mrg-item:hover {
+    transform: none;
   }
 }

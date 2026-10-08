@@ -656,7 +656,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           )}
 
           {isDashboard && <DashboardSection />}
-          {isMarriages && <MarriageSection />}
+          {isMarriages && <MarriageSection creator={showCreator} />}
           {isUsers && (
             <UsersSection
               initialUserId={usersInitialId}

@@ -689,7 +689,8 @@ async def create_craft_recipe(
     pair_exists = await db.pool.fetchval(
         """
         SELECT key FROM craft_recipes
-        WHERE (
+        WHERE COALESCE(ingredient_c_id, '') = ''
+        AND (
             (ingredient_a_id = $1 AND ingredient_b_id = $2)
             OR (ingredient_a_id = $2 AND ingredient_b_id = $1)
         )
@@ -763,6 +764,7 @@ async def update_craft_recipe(
         """
         SELECT key FROM craft_recipes
         WHERE id <> $1
+        AND COALESCE(ingredient_c_id, '') = ''
         AND (
             (ingredient_a_id = $2 AND ingredient_b_id = $3)
             OR (ingredient_a_id = $3 AND ingredient_b_id = $2)

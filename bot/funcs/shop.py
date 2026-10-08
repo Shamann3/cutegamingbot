@@ -535,15 +535,17 @@ async def get_available_items(filter_symbol: Optional[str] = None) -> List[Tuple
     full = await get_full_items()
     debug_print(f"Фильтрация: filter_symbol='{filter_symbol}', всего предметов в базе: {len(full)}")
     items = []
-    for name, price, remains, sorting, emoji in full:
+    for row in full:
+        name, price, remains, sorting, emoji = row[:5]
+        bio = row[5] if len(row) > 5 else ""
         if remains <= 0:
             continue
         if filter_symbol:
             # защита от None в sorting
             if not sorting or filter_symbol not in sorting:
                 continue
-        items.append((name, price, remains, emoji))
-    unique_emojis = list({emoji for _, _, _, emoji in items})
+        items.append((name, price, remains, emoji, bio or ""))
+    unique_emojis = list({row[3] for row in items})
     await preload_discounts(unique_emojis)
     debug_print(f"После фильтра доступно предметов: {len(items)}")
     return items
@@ -554,7 +556,8 @@ async def get_available_items(filter_symbol: Optional[str] = None) -> List[Tuple
 async def build_sorting_buttons() -> List[InlineKeyboardButton]:
     full = await get_full_items()
     unique = set()
-    for _, _, _, sorting, _ in full:
+    for row in full:
+        sorting = row[3] if len(row) > 3 else None
         if sorting:
             unique.add(sorting)
     buttons = []
@@ -665,34 +668,82 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
     start = page * ITEMS_PER_PAGE
     end = min(start + ITEMS_PER_PAGE, len(items))
 
-    page_emojis = [emoji for _, _, _, emoji in items[start:end]]
+    page_emojis = [row[3] for row in items[start:end]]
     await preload_discounts(page_emojis)
     disc_map = {}
     for emoji in page_emojis:
         disc_map[emoji] = await get_discounted_price(emoji)
 
     catalog = "<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>Магазин</b>\n\n"
-    for name, price, remains, emoji in items[start:end]:
+    try:
+        from bot.funcs.marriage_design import gift_catalog, quiet_row
+        marriage_faces = {row["emoji"] for row in gift_catalog({})}
+        quiet = quiet_row({})
+        if quiet and quiet.get("emoji"):
+            marriage_faces.add(quiet["emoji"])
+    except Exception:
+        marriage_faces = set()
+    for row in items[start:end]:
+        name, price, remains, emoji = row[:4]
+        bio = str(row[4] if len(row) > 4 else "").strip()
         disc_price = disc_map.get(emoji)
         remains_fmt = format_price(remains)
         price_fmt = format_price(price)
         safe_name = html.escape(name, quote=False)  # экранируем HTML-символы в названии
+        note = ""
+        if bio and emoji in marriage_faces:
+            note = f"\n<i>{html.escape(bio[:90], quote=False)}</i>"
         if disc_price and disc_price > 0:
             disc_fmt = format_price(disc_price)
             catalog += (
                 f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt} шт</i> ] - </b>"
                 f"<s>{price_fmt}</s> <b>{disc_fmt}</b> "
-                f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>\n\n"
+                f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>{note}\n\n"
             )
         else:
             catalog += (
                 f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt} шт</i> ] - "
                 f"{price_fmt}</b> "
-                f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>\n\n"
+                f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>{note}\n\n"
             )
     total_pages = math.ceil(len(items) / ITEMS_PER_PAGE)
     debug_print(f"Сгенерирована страница {page}/{total_pages}, длина текста: {len(catalog)}")
     return catalog.strip(), total_pages
+
+async def _serve_dish(message, user_id, code, emoji):
+    """Съесть крафтовое блюдо из чата: та же забота, что и в карточке брака."""
+    from bot.funcs import marriage_store as store
+    from bot.funcs.marriage_design import GIFT_ALERT, gift_catalog
+
+    pool = getattr(db, "pool", None)
+    if pool is None:
+        return
+    cfg = await store.load_settings(pool)
+    row = next((item for item in gift_catalog(cfg) if item.get("name1") == code), None)
+    live = await store.live_for(pool, user_id)
+    if not row or not live:
+        await message.reply(
+            f"{emoji} <b>Это едят вместе.</b>\n<i>Нужен живой брак. Блюдо лежит в предметах пары.</i>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+    result = await store.use_gift(pool, live, user_id, row["id"], cfg)
+    if not result.get("ok"):
+        note = GIFT_ALERT.get(result.get("reason") or "bad", GIFT_ALERT["bad"])
+        await message.reply(
+            f"{emoji} <b>{html.escape(str(note))}</b>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+    note = html.escape(str(result.get("alert") or "Тепло взяли оба."))
+    await message.reply(
+        f"{emoji} <b>{note}</b>",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
 
 def _open_section_button(text, startapp, message, icon):
     """Кнопка, которая открывает нужный раздел и в личке, и в группе."""
@@ -1678,13 +1729,16 @@ async def shop_op(message: Message):
             marriage_cut = 0
             shop_cut = int(total_price)
             try:
-                from bot.funcs.marriage_design import gift_names
+                from bot.funcs.marriage_design import gift_names, is_marriage_code
+                from bot.funcs.marriage_store import dex_code
                 known = gift_names()
-                marriage_cut = sum(
-                    int(row["item_total_price"])
-                    for row in purchase_rows
-                    if row.get("item_name") in known
-                )
+                pool = getattr(db, "pool", None)
+                marriage_cut = 0
+                for row in purchase_rows:
+                    name = row.get("item_name")
+                    code = await dex_code(pool, name)
+                    if name in known or is_marriage_code(code):
+                        marriage_cut += int(row["item_total_price"])
                 shop_cut = max(0, int(total_price) - marriage_cut)
             except Exception as cut_err:
                 print(f"[BUY_MESSAGE] marriage split: {cut_err}")
@@ -2786,14 +2840,14 @@ async def shop_op(message: Message):
 
     if message.text.lower().startswith(('юз','использовать' , 'открыть' , 'повесить')):
         user_id = message.from_user.id
-        parts = message.text.split()
-        if len(parts) != 2:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) != 2 or not parts[1].strip():
             await message.reply(
                 "<tg-emoji emoji-id='5282835135861892082'>❗️</tg-emoji> Неправильный формат команды. Используйте 'использовать [эмодзи предмета]'." ,
                 parse_mode="HTML" , disable_web_page_preview=True)
             return
 
-        item_emoji = parts [ 1 ]
+        item_emoji = "".join(parts[1].split())
         print(f"Команда 'использовать' для предмета с эмодзи: {item_emoji}")
 
         # Получаем инвентарь пользователя (нужно использовать await)
@@ -2831,6 +2885,27 @@ async def shop_op(message: Message):
             return
 
         print(f"Информация о предмете: {item_info}")
+
+        try:
+            from bot.funcs.marriage_design import place_hint
+            hint = place_hint(item_info.get("name1"))
+        except Exception:
+            hint = None
+        if hint:
+            label = "На ферму" if hint.get("where") == "farm" else "В крафт"
+            button = _open_section_button(label, hint.get("where") or "farm", message, "5208464835079082371")
+            await message.reply(
+                hint["text"],
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
+            )
+            return
+
+        dish_code = str(item_info.get("name1") or "")
+        if dish_code in ("mrgjuice", "mrgsoup", "mrgsalad"):
+            await _serve_dish(message, user_id, dish_code, item_emoji)
+            return
 
         item_use = item_info [ 'use' ]
         if item_use != 1:
@@ -4048,12 +4123,35 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
 
             # Списание у пользователя / зачисление в чёрный рынок / выдача предмета
             market_deposit_ok = False
+            pay_plan = None
             deposit_chat = SHOP_DEPOSIT_CHAT_ID
             try:
                 source_chat_id = int(getattr(callback_query.message.chat , "id" , 0) or 0)
-                from bot.funcs.marriage_design import gift_names
+                from bot.funcs.marriage_design import gift_names, is_marriage_code, quiet_pay
                 from bot.config.config import GAME_COMMISSION_CHAT_ID
-                if item_name in gift_names():
+                try:
+                    from bot.funcs.marriage_store import dex_code, load_settings
+                    code = await dex_code(getattr(db, "pool", None), item_name)
+                    pay_cfg = await load_settings(getattr(db, "pool", None))
+                    pay_plan = quiet_pay(code or item_name, item_total_price, pay_cfg)
+                except Exception:
+                    code = ""
+                    pay_plan = quiet_pay(item_name, item_total_price, {})
+                if pay_plan:
+                    project_part = int(pay_plan["project"])
+                    fund_part = int(pay_plan["fund"])
+                    if project_part > 0:
+                        market_deposit_ok = await db.add_to_chatbalance(bot1, int(GAME_COMMISSION_CHAT_ID), project_part)
+                    else:
+                        market_deposit_ok = True
+                    if market_deposit_ok and fund_part > 0:
+                        fund_ok = await db.add_to_chatbalance(bot1, int(pay_plan["chat"]), fund_part)
+                        if not fund_ok:
+                            if project_part > 0:
+                                await db.add_to_chatbalance(bot1, int(GAME_COMMISSION_CHAT_ID), -project_part)
+                            market_deposit_ok = False
+                    deposit_chat = int(pay_plan["chat"] if fund_part else GAME_COMMISSION_CHAT_ID)
+                elif is_marriage_code(code) or item_name in gift_names():
                     deposit_chat = int(GAME_COMMISSION_CHAT_ID)
                     market_deposit_ok = await db.add_to_chatbalance(bot1, deposit_chat, int(item_total_price))
                 else:
@@ -4081,7 +4179,13 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
             except Exception as e:
                 if market_deposit_ok:
                     try:
-                        await db.update_chat_balance(bot1 , deposit_chat , -item_total_price)
+                        if pay_plan:
+                            if int(pay_plan["project"]) > 0:
+                                await db.add_to_chatbalance(bot1, int(GAME_COMMISSION_CHAT_ID), -int(pay_plan["project"]))
+                            if int(pay_plan["fund"]) > 0:
+                                await db.add_to_chatbalance(bot1, int(pay_plan["chat"]), -int(pay_plan["fund"]))
+                        else:
+                            await db.update_chat_balance(bot1 , deposit_chat , -item_total_price)
                     except Exception as rollback_err:
                         print(f"[BUY][ROLLBACK] Не удалось откатить рынок: {rollback_err}")
                 try:

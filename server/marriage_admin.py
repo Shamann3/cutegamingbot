@@ -102,8 +102,26 @@ class SettingsBody(BaseModel):
     hearthCare: int = 20
     matchPrice: int = 80
     ribbonPrice: int = 150
+    replyCare: int = 1
+    replyWarm: int = 3
+    replyWarmWords: int = 4
+    replyAlmost: int = 2
+    replyDone: str = ""
+    replyAlmostText: str = "Поддержал отношения с {name}"
+    giftFundChat: int = -1004440027555
+    premiumKeeper: str = "JerichoCute"
+    fundPercent: int = 20
+    projectKeepPercent: int = 10
+    quietOn: bool = True
+    quietPrice: int = 40
+    quietEmoji: str = "🤫"
+    envelopeKut: int = 15
+    extraKut: int = 0
+    periods: list = Field(default_factory=list)
+    prizes: list = Field(default_factory=list)
     levels: list = Field(default_factory=list)
     verbs: dict = {}
+    shelf: list = Field(default_factory=list)
 
 
 @router.get("/board")
@@ -332,6 +350,9 @@ async def marriage_settings(
     request: Request,
     admin_id: int = Depends(require_admin_permission("manage_marriages")),
 ):
+    from admin_soft_restart import is_project_creator
+    if not is_project_creator(int(admin_id)):
+        raise HTTPException(status_code=403, detail="Настройки браков меняет создатель проекта")
     rules = _rules()
     if db.pool is None:
         raise HTTPException(status_code=503, detail="База сейчас недоступна")

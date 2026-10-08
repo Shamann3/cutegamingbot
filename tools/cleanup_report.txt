@@ -1,0 +1,128 @@
+﻿=== CuteUpdate1 Safe Cleanup 2026-10-08 01:25:42 ===
+C free BEFORE GB: 0,03
+Removed desktop: C:\Users\Asus\Desktop\CursorUserSetup-x64-3.13.25.exe (190,4 MB)
+Removed desktop: C:\Users\Asus\Desktop\CursorUserSetup-x64-3.8.11.exe (187,9 MB)
+Removed desktop: C:\Users\Asus\Desktop\OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.msi (171,0 MB)
+Epic Saved\Logs MB: 1,8
+Steam\package MB: 0,0
+Steam\appcache MB: 19,1
+Steam\depotcache MB: 10,1
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+Steam\logs MB: 11,4
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+C:\Temp MB: 16,2
+  SKIP locked: 
+  SKIP locked: 
+Cursor\CachedConfigurations MB: 0,0
+Cursor\CachedData MB: 0,4
+Cursor\CachedProfilesData MB: 0,9
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+Cursor\Network MB: 0,0
+  SKIP locked: 
+  SKIP locked: 
+Cursor\sentry MB: 0,0
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+Cursor\Session Storage MB: 0,0
+  SKIP locked: 
+Cursor\Shared Dictionary MB: 0,0
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+  SKIP locked: 
+.cursor\agent-tools MB: 0,0
+pip cache MB: 8,5
+npm warn using --force Recommended protections disabled.
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+  SKIP locked: 
+Docker daemon unavailable - skipped
+
+=== SUMMARY ===
+C free BEFORE GB: 0,03
+C free AFTER GB: 0,63
+Disk delta GB: 0,61 (MB: 622)
+Categories MB:
+  C Temp: 16,2
+  Cursor caches: 1,3
+  Cursor project cache: 0,0
+  Desktop installers: 549,3
+  Epic web/cache: 1,8
+  JetBrains logs: 1,2
+  pip cache: 8,5
+  Steam cache: 40,6
+Docker removed containers: 
+docker compose config valid: False
+Remaining project-related containers:
+state.vscdb MB (untouched): 17 010

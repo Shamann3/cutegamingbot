@@ -44,6 +44,7 @@ class CropDef:
     sprite_key: str
     enabled: bool
     harvest_drops: tuple[HarvestDropDef, ...]
+    water_times: int | None = None
 
     @property
     def id(self) -> str:
@@ -82,7 +83,7 @@ class CraftRecipeDef:
     key: str
     display_name: str
     result_id: str
-    ingredient_ids: tuple[str, str]
+    ingredient_ids: tuple[str, ...]
     success_percent: int = 100
     enabled: bool = True
     remains: int = 0
@@ -169,6 +170,7 @@ def _row_to_crop(row, drops: list[HarvestDropDef]) -> CropDef:
         sprite_key=(row["sprite_key"] or "generic").strip() or "generic",
         enabled=bool(row["enabled"]),
         harvest_drops=tuple(drops),
+        water_times=(int(row["water_times"]) if row["water_times"] is not None else None),
     )
 
 
@@ -178,7 +180,7 @@ async def _fetch_crops(pool: asyncpg.Pool) -> tuple[CropDef, ...]:
         SELECT id, key, display_name, seed_item_id, grow_seconds,
                harvest_tool_item_id, harvest_tool_cost,
                water_item_id, water_cost_per_use,
-               sprite_key, enabled, sort_order
+               sprite_key, enabled, sort_order, water_times
         FROM farm_crops
         ORDER BY sort_order ASC, id ASC
         """
@@ -259,6 +261,7 @@ async def _fetch_craft(pool: asyncpg.Pool) -> tuple[CraftRecipeDef, ...]:
     rows = await pool.fetch(
         """
         SELECT id, key, display_name, result_item_id, ingredient_a_id, ingredient_b_id,
+               ingredient_c_id,
                success_percent, enabled, sort_order,
                COALESCE(remains, 0) AS remains,
                COALESCE(result_qty, 1) AS result_qty
@@ -274,7 +277,13 @@ async def _fetch_craft(pool: asyncpg.Pool) -> tuple[CraftRecipeDef, ...]:
             key=str(row["key"]),
             display_name=(row["display_name"] or "").strip() or str(row["key"]),
             result_id=str(row["result_item_id"]),
-            ingredient_ids=(str(row["ingredient_a_id"]), str(row["ingredient_b_id"])),
+            ingredient_ids=tuple(
+                part for part in (
+                    str(row["ingredient_a_id"]),
+                    str(row["ingredient_b_id"]),
+                    str(row["ingredient_c_id"] or ""),
+                ) if part
+            ),
             success_percent=int(row["success_percent"]),
             enabled=bool(row["enabled"]),
             remains=int(row["remains"]),
@@ -419,6 +428,8 @@ async def ensure_content_registry_loaded(pool: asyncpg.Pool | None) -> None:
 
 async def seed_default_content(pool: asyncpg.Pool) -> None:
     """Первый запуск: перенос tree/tobacco и базового крафта в БД."""
+    await pool.execute("ALTER TABLE farm_crops ADD COLUMN IF NOT EXISTS water_times INT")
+    await pool.execute("ALTER TABLE craft_recipes ADD COLUMN IF NOT EXISTS ingredient_c_id TEXT")
     count = int(await pool.fetchval("SELECT COUNT(*)::int FROM farm_crops") or 0)
     if count == 0:
         from farm_settings import get_tobacco_grow_seconds, get_tree_grow_seconds
@@ -480,6 +491,20 @@ async def seed_default_content(pool: asyncpg.Pool) -> None:
         )
 
     await _ensure_autowater_dex(pool)
+    try:
+        import sys
+        from pathlib import Path
+
+        py = str(Path(__file__).resolve().parent / "py")
+        if py not in sys.path:
+            sys.path.insert(0, py)
+        from marriage_engine.store import _seed_gifts, _seed_kitchen
+
+        async with pool.acquire() as conn:
+            await _seed_gifts(conn)
+            await _seed_kitchen(conn)
+    except Exception as kitchen_err:
+        print(f"[kitchen] {kitchen_err}")
 
 
 async def _ensure_autowater_dex(pool: asyncpg.Pool) -> None:
@@ -674,12 +699,21 @@ def ingredient_pair_key(item_ids: tuple[str, ...] | list[str]) -> str:
     return "|".join(canonical)
 
 
-def find_recipe_by_ingredient_pair(slot_a: str, slot_b: str) -> CraftRecipeDef | None:
-    pair_key = ingredient_pair_key((slot_a, slot_b))
+def find_recipe_by_slots(slot_a: str, slot_b: str, slot_c: str = "") -> CraftRecipeDef | None:
+    slots = [part for part in (str(slot_a or "").strip(), str(slot_b or "").strip(), str(slot_c or "").strip()) if part]
+    if len(slots) < 2:
+        return None
+    wanted = ingredient_pair_key(slots)
     for recipe in enabled_craft_recipes():
-        if ingredient_pair_key(recipe.ingredient_ids) == pair_key:
+        if len(recipe.ingredient_ids) != len(slots):
+            continue
+        if ingredient_pair_key(recipe.ingredient_ids) == wanted:
             return recipe
     return None
+
+
+def find_recipe_by_ingredient_pair(slot_a: str, slot_b: str) -> CraftRecipeDef | None:
+    return find_recipe_by_slots(slot_a, slot_b)
 
 
 def validate_craft_recipes() -> list[str]:
@@ -796,6 +830,7 @@ def crops_for_client(raw_items: dict | None = None) -> list[dict]:
                 "waterName": water_entry.name if water_entry else water_item_id,
                 "waterEmoji": water_entry.emoji if water_entry else "💧",
                 "growSeconds": crop.grow_seconds,
+                "waterTimes": crop.water_times,
                 "spriteKey": crop.sprite_key,
                 "enabled": crop.enabled,
             }
