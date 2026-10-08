@@ -476,6 +476,19 @@ def creator_ready_sql(action: str = "s") -> str:
     )"""
 
 
+def creator_board_order_sql(action: str = "s") -> str:
+    """Сначала карточки, которые создатель уже может решить, в прежнем порядке.
+
+    Наказание, которое ещё смотрят администратор или сотрудник, остаётся в колоде
+    следом: с фото, затем с причиной, затем пустые, более ранние раньше.
+    """
+    return f"""
+    CASE WHEN ({creator_ready_sql(action)}) THEN 0 ELSE 1 END,
+    {CREATOR_ORDER_SQL},
+    {ADMIN_ORDER_SQL}
+    """
+
+
 def creator_open_sql(action: str = "s", user_sql: str = "$2") -> str:
     """Ещё никто не ответил, и администратор или сотрудник ещё могут взять карточку.
 

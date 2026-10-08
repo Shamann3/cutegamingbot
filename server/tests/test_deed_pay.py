@@ -36,8 +36,7 @@ def test_creator_review_hides_bot_actions():
     assert "7683193125" in where
     assert "s.admin_user_id" in human_actor_sql("s")
     assert "admin_name" in human_actor_sql()
-    assert "ds.action_id IS NOT NULL" in where
-    assert "view_archive" in where
+    assert "v.action_id IS NULL" in where
 
 
 def test_reviewer_roster_counts_every_verdict_and_later_decision():
@@ -285,6 +284,52 @@ def test_a_person_can_claim_only_their_own_ready_tech_payout():
     assert self_claim_gate({**owed, "status": "paid"}, 4) == "Эта выплата уже закрыта"
     assert "создатель" in self_claim_gate({**owed, "purse": "manual"}, 4)
     assert self_claim_gate(None, 4) == "Выплаты нет"
+
+
+def test_a_fresh_punishment_is_visible_and_salary_waits_for_the_chain():
+    import inspect
+
+    from deed_pay import _decide, _staff_live_order, _staff_live_where, _staff_where, deed_staff, process_of, turn_of
+    from deed_sort import creator_board_order_sql
+
+    live = _staff_live_where()
+    answer = _staff_where()
+    assert "st.action_id IS NULL" in live
+    assert "COALESCE(s.admin_user_id, 0) <> $2" in live
+    assert "ds.action_id IS NOT NULL" not in live
+    assert "ds.action_id IS NOT NULL" in answer
+    order = " ".join(_staff_live_order().split())
+    assert order.index("THEN 0") < order.index("proof_media_id")
+    board = " ".join(creator_board_order_sql().split())
+    ready_end = board.index("ELSE 1 END")
+    assert board.index("ds.verdict = 'clear' AND st.verdict = 'clear'", ready_end) > ready_end
+    assert "view_archive" in board
+    assert "proof_media_id" in board[ready_end:]
+    assert "creator_ready_sql" in inspect.getsource(_decide)
+    assert "_open_staff" in inspect.getsource(deed_staff)
+    assert turn_of(False, False) == "admin"
+    assert turn_of(False, True) == "staff"
+    assert turn_of(True, False) == "creator"
+    fresh = process_of({
+        "issuer_kind": "creator",
+        "admin_name": "Иеро",
+        "sort_verdict": "",
+        "staff_verdict": "",
+        "review_status": "",
+    }, "admin")
+    assert [step["role"] for step in fresh] == ["issue", "admin", "staff", "creator"]
+    assert fresh[0]["title"] == "Создатель"
+    assert [step["state"] for step in fresh] == ["done", "now", "later", "later"]
+    staff_issued = process_of({
+        "issuer_kind": "staff",
+        "admin_name": "Анна",
+        "sort_verdict": "clear",
+        "sorter_name": "Пётр",
+        "staff_verdict": "",
+        "review_status": "",
+    }, "staff")
+    assert staff_issued[0]["title"] == "Сотрудник проекта"
+    assert [step["state"] for step in staff_issued] == ["done", "done", "now", "later"]
 
 
 def test_project_sort_order_is_fixed():

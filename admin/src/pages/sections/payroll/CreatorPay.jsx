@@ -65,7 +65,8 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
 
   const card = queue?.card
   const toastRef = useToastInView()
-  const salaryOpen = Boolean(card) && !card.reviewStatus
+  const watching = Boolean(card?.turn) && card.turn !== 'creator'
+  const salaryOpen = Boolean(card) && !card.reviewStatus && !watching
   useRefill(queue, load)
   const pileNote = useDeckLive(sorterId ? '' : 'queue', queue, setQueue, load)
   useWarmProof(queue?.nextProofMediaId)
@@ -109,7 +110,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
 
   const decide = useCallback((kind) => {
     const id = card?.id
-    if (!id || busy || fly || card.reviewStatus) return false
+    if (!id || busy || fly || card.reviewStatus || (card.turn && card.turn !== 'creator')) return false
     run(id, kind, chosenCredits(card, kind, off), card.lift?.status === 'pending')
     return true
   }, [card, busy, fly, off, run])
@@ -234,9 +235,11 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
         )}
         {pileNote && card && <DeckPileNote text={pileNote} />}
         <p className="deed-lead">
-          {focusName
-            ? `Показаны только проверки: ${focusName}.`
-            : 'Сначала заявки на разблокировку. Дальше карточки, которые уже проверил администратор или сотрудник: второго ответа можно не ждать.'}
+          {watching
+            ? 'Наказание уже здесь. Сначала его смотрит администратор группы, затем сотрудник проекта, затем вы. Ответы появляются сами.'
+            : focusName
+              ? `Показаны только проверки: ${focusName}.`
+              : 'Сначала заявки на разблокировку. Дальше карточки, которые уже проверил администратор или сотрудник: второго ответа можно не ждать. Новое наказание видно сразу, ещё пока его смотрят.'}
         </p>
         {!card && notes}
         {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
@@ -260,9 +263,11 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
             swipe={swipe}
           />
           <p className="tinder-hint deck-copy">
-            Галочка стоит у каждого. Снимите её, если этому человеку платить не нужно. Вправо засчитывает «подходит» и того, кто выдал. Влево засчитывает «неправильно».
+            {watching
+              ? 'Зарплату решать рано. Цепочка на карточке показывает, кто смотрит наказание сейчас. Когда ответ появится, кнопки станут здесь.'
+              : 'Галочка стоит у каждого. Снимите её, если этому человеку платить не нужно. Вправо засчитывает «подходит» и того, кто выдал. Влево засчитывает «неправильно».'}
             {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
-            <span className="deck-keys-only"> На клавиатуре: → в зарплату, ← мимо, Ctrl+Z — вернуть решение.</span>
+            {!watching && <span className="deck-keys-only"> На клавиатуре: → в зарплату, ← мимо, Ctrl+Z — вернуть решение.</span>}
           </p>
           {(card.credits || []).length > 0 && (
             <ul className="credit-list">
@@ -337,9 +342,13 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
                 <small>тому, кто выдал, и кто сказал «подходит»</small>
               </button>
             </div>
-          ) : (
+          ) : card.reviewStatus ? (
             <p className="deck-note deck-copy">
               Зарплата уже решена: {card.reviewStatus === 'kept' ? 'в зарплату' : 'мимо'}.
+            </p>
+          ) : (
+            <p className="deck-note deck-copy">
+              Кнопки зарплаты появятся, когда ответит администратор группы или сотрудник проекта. Цепочка выше обновляется сама.
             </p>
           )}
           {notes}

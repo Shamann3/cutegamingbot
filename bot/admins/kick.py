@@ -705,7 +705,9 @@ async def _apply_kick_db(
           target=target_user_id, chat_id=chat_id,
           proof=proof_media_id[:24], action_id=action_id,
         )
-        return True, action_id
+    from bot.admins.deed_ping import note_punishment
+    note_punishment(action_id)
+    return True, action_id
   except DbUnavailableError as e:
     KickDebug.log("DB", "apply_kick skipped", err=str(e), target=target_user_id)
     return False, None

@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from admin_auth import get_any_telegram_user_id
 from deed_tune import IDEAL, bucket, fill_days, plan_tune, purse_moved, unit_text
-from admin_soft_restart import is_project_creator
+from admin_soft_restart import is_project_creator, public_creator_id
 from db import db
 from deed_sort import (
     ADMIN_ORDER_SQL,
@@ -45,8 +45,10 @@ from deed_sort import (
     admin_stage_done_sql,
     can_apply_lift,
     claim_free_sql,
+    creator_board_order_sql,
     creator_open_sql,
     creator_ready_sql,
+    creator_waiting_sql,
     ensure_deed_sorts,
     evidence_band,
     lift_actions,
@@ -503,6 +505,74 @@ def _person(row, prefix: str) -> str:
     return f"ID {raw}" if raw else ""
 
 
+_ISSUER_TITLES = {
+    "creator": "Создатель",
+    "staff": "Сотрудник проекта",
+    "admin": "Администратор группы",
+}
+_TURN_ORDER = {"admin": 0, "staff": 1, "creator": 2}
+
+
+def turn_of(creator_ready: bool, admin_stage_done: bool) -> str:
+    """Чья сейчас очередь. Создатель решает, как только карточка для него готова."""
+    if creator_ready:
+        return "creator"
+    if not admin_stage_done:
+        return "admin"
+    return "staff"
+
+
+def process_of(row, turn: str) -> list[dict]:
+    """Четыре шага с первого мгновения: кто выдал, администратор, сотрудник, создатель."""
+    kind = (row.get("issuer_kind") or "admin").strip() or "admin"
+    if kind not in _ISSUER_TITLES:
+        kind = "admin"
+    admin_verdict = (row.get("sort_verdict") or "").strip()
+    staff_verdict = (row.get("staff_verdict") or "").strip()
+    review = (row.get("review_status") or "").strip()
+    here = _TURN_ORDER.get(turn, 2)
+
+    def state(role: str, done: bool) -> str:
+        if done:
+            return "done"
+        if turn == role:
+            return "now"
+        if _TURN_ORDER[role] < here:
+            return "skip"
+        return "later"
+
+    return [
+        {
+            "role": "issue",
+            "title": _ISSUER_TITLES[kind],
+            "name": (row.get("admin_name") or "").strip(),
+            "state": "done",
+            "label": "Выдал наказание",
+        },
+        {
+            "role": "admin",
+            "title": "Администратор группы",
+            "name": (row.get("sorter_name") or "").strip() if admin_verdict else "",
+            "state": state("admin", bool(admin_verdict)),
+            "label": VERDICT_LABELS.get(admin_verdict, "") if admin_verdict else "",
+        },
+        {
+            "role": "staff",
+            "title": "Сотрудник проекта",
+            "name": (row.get("staff_name") or "").strip() if staff_verdict else "",
+            "state": state("staff", bool(staff_verdict)),
+            "label": VERDICT_LABELS.get(staff_verdict, "") if staff_verdict else "",
+        },
+        {
+            "role": "creator",
+            "title": "Создатель",
+            "name": "",
+            "state": "done" if review else state("creator", False),
+            "label": "Зарплата решена" if review else "",
+        },
+    ]
+
+
 def _chain(row) -> list[dict]:
     items = []
     verdict = (row.get("sort_verdict") or "").strip()
@@ -597,7 +667,7 @@ def _card(row, history: list[dict]) -> dict[str, Any]:
     minutes = row["duration_minutes"]
     verdict = (row.get("sort_verdict") or "").strip()
     chain = _chain(row)
-    return {
+    card = {
         "id": int(row["id"]),
         "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
         "actionType": action,
@@ -632,6 +702,11 @@ def _card(row, history: list[dict]) -> dict[str, Any]:
         "direct": not chain,
         "band": evidence_band(bool(row.get("proof_media_id")), row.get("reason") or ""),
     }
+    if row.get("creator_ready") is not None or row.get("admin_stage_done") is not None:
+        turn = turn_of(bool(row.get("creator_ready")), bool(row.get("admin_stage_done")))
+        card["turn"] = turn
+        card["process"] = process_of(row, turn)
+    return card
 
 
 def _name_fields(row) -> dict:
@@ -678,9 +753,30 @@ async def _history(target_id: int | None) -> list[dict]:
     return out
 
 
+def _card_select() -> str:
+    """Карточка плюс чья сейчас очередь и кем был тот, кто выдал наказание."""
+    creator = int(public_creator_id() or 0)
+    roles = ", ".join(f"'{role}'" for role in (*STAFF_ROLES, "owner"))
+    extra = f"""
+    , ({creator_ready_sql("s")}) AS creator_ready
+    , ({admin_stage_done_sql("s")}) AS admin_stage_done
+    , CASE
+        WHEN COALESCE(s.admin_user_id, 0) = {creator} THEN 'creator'
+        WHEN EXISTS (
+          SELECT 1 FROM admin_accounts issuer
+          WHERE issuer.user_id = s.admin_user_id
+            AND issuer.status = 'active'
+            AND issuer.role IN ({roles})
+        ) THEN 'staff'
+        ELSE 'admin'
+      END AS issuer_kind
+    """
+    return _CARD_SQL + extra
+
+
 async def _load_card(action_id: int) -> dict | None:
     row = await db.pool.fetchrow(
-        f"SELECT {_CARD_SQL} {_CARD_FROM} WHERE s.id = $1",
+        f"SELECT {_card_select()} {_CARD_FROM} WHERE s.id = $1",
         int(action_id),
     )
     if not row:
@@ -773,6 +869,18 @@ async def _grab_pair(where: str, params: list, user_id: int, order_sql: str):
                 proof = row["proof"]
                 break
     return chosen, proof
+
+
+async def _announce(action_id: int) -> None:
+    """Открытые вкладки «Работа» обновляют цепочку сразу, не дожидаясь опроса."""
+    try:
+        from admin_ws import broadcast_to_admins
+        await broadcast_to_admins({
+            "event": "deed_chain",
+            "data": {"id": int(action_id)},
+        })
+    except Exception:
+        return
 
 
 async def _drop_claim(conn, action_id: int, stage: str) -> None:
@@ -927,11 +1035,12 @@ def _asked_set(credits: list[CreditIn] | None) -> set[tuple[str, int]] | None:
 
 
 def _filters(action: str, admin_id: int, sorter_id: int = 0) -> tuple[str, list[Any]]:
+    """Все ещё живые наказания. Готовые к зарплате поднимает порядок, не этот фильтр."""
     params: list[Any] = [list(PUNISH)]
     parts = [
         _punish_match("s", "$1"),
         human_actor_sql("s"),
-        creator_ready_sql("s"),
+        creator_waiting_sql(),
     ]
     picked = action.strip().lower()
     if picked in PUNISH:
@@ -1025,7 +1134,7 @@ async def deed_queue(
         SELECT s.id, NULLIF(btrim(s.proof_media_id), '') AS proof
         {_CHAIN_FROM}
         WHERE {where}
-        ORDER BY {CREATOR_ORDER_SQL}
+        ORDER BY {creator_board_order_sql("s")}
         LIMIT 2
         """,
         *params,
@@ -1081,6 +1190,15 @@ async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tupl
             )
             if existing:
                 raise HTTPException(status_code=409, detail="Это наказание уже решено")
+            ready = await conn.fetchval(
+                f"SELECT ({creator_ready_sql('s')}) {_CHAIN_FROM} WHERE s.id = $1",
+                action_id,
+            )
+            if not ready:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Сначала эту карточку смотрят администратор группы и сотрудник проекта",
+                )
             chosen = _payable(pick_credits(status, _credit_people(src), asked))
             inserted = await conn.fetchrow(
                 """
@@ -1112,6 +1230,7 @@ async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tupl
         target_id=str(action_id),
         details={"status": status, "credits": len(chosen)},
     )
+    await _announce(int(action_id))
     return {"ok": True, "id": action_id, "status": status, "liftOpen": lift_open}
 
 
@@ -1161,6 +1280,7 @@ async def deed_undo(action_id: int, user_id: int = Depends(get_any_telegram_user
         target_id=str(action_id),
         details={"status": gone["status"]},
     )
+    await _announce(int(action_id))
     return {"ok": True, "id": int(action_id), "status": gone["status"]}
 
 
@@ -1189,6 +1309,31 @@ def _staff_where() -> str:
         admin_stage_done_sql("s"),
         claim_free_sql(STAGE_STAFF, "$2"),
     ])
+
+
+def _staff_live_where() -> str:
+    """То же, но наказание видно сразу, ещё пока его смотрит администратор группы.
+
+    Ответить сотрудник сможет только после _staff_where. Свою карточку он не берёт.
+    """
+    return " AND ".join([
+        "v.action_id IS NULL",
+        "st.action_id IS NULL",
+        _punish_match("s", "$1"),
+        human_actor_sql("s"),
+        self_is_staff("$2"),
+        "COALESCE(s.admin_user_id, 0) <> $2",
+        "COALESCE(ds.sorter_id, 0) <> $2",
+        claim_free_sql(STAGE_STAFF, "$2"),
+    ])
+
+
+def _staff_live_order() -> str:
+    """Сначала те, на которые уже можно ответить. Внутри — фото, причина, пустые, старые раньше."""
+    return f"""
+    CASE WHEN ({admin_stage_done_sql("s")}) THEN 0 ELSE 1 END,
+    {ADMIN_ORDER_SQL}
+    """
 
 
 async def _open_deck(where: str, params: list, stage: str, user_id: int, order_sql: str) -> dict:
@@ -1235,7 +1380,7 @@ async def deed_pulse(user_id: int = Depends(get_any_telegram_user_id)):
             list(STAFF_ROLES),
         )
         if staff:
-            out["staff"] = await _count(_staff_where(), [list(PUNISH), uid])
+            out["staff"] = await _count(_staff_live_where(), [list(PUNISH), uid])
     return out
 
 
@@ -1244,17 +1389,52 @@ async def deed_staff_count(user_id: int = Depends(get_any_telegram_user_id)):
     """Сколько карточек ждёт, не забирая ни одну себе."""
     await _require_staff(user_id)
     await ensure_deed_tables()
-    waiting = await _count(_staff_where(), [list(PUNISH), int(user_id)])
+    waiting = await _count(_staff_live_where(), [list(PUNISH), int(user_id)])
     return {"waiting": waiting}
+
+
+async def _open_staff(user_id: int) -> dict:
+    """Сначала карточка, на которую сотрудник уже может ответить. Остальные видны без захвата."""
+    params = [list(PUNISH), int(user_id)]
+    where = _staff_live_where()
+    waiting = await _count(where, params)
+    rows = await db.pool.fetch(
+        f"""
+        SELECT s.id,
+               NULLIF(btrim(s.proof_media_id), '') AS proof,
+               ({admin_stage_done_sql("s")}) AS actionable
+        {_CHAIN_FROM}
+        WHERE {where}
+        ORDER BY {_staff_live_order()}
+        LIMIT 8
+        """,
+        *params,
+    )
+    chosen = None
+    async with db.pool.acquire() as conn:
+        for row in rows:
+            if not row["actionable"]:
+                if chosen is None:
+                    chosen = int(row["id"])
+                break
+            if await _claim(conn, int(row["id"]), STAGE_STAFF, user_id):
+                chosen = int(row["id"])
+                break
+    proof = None
+    if chosen is not None:
+        for row in rows:
+            if int(row["id"]) != chosen and row["proof"]:
+                proof = row["proof"]
+                break
+    card = await _load_card(chosen) if chosen else None
+    return {"waiting": waiting, "card": card, "nextProofMediaId": proof}
 
 
 @router.get("/staff")
 async def deed_staff(user_id: int = Depends(get_any_telegram_user_id)):
     await _require_staff(user_id)
     await ensure_deed_tables()
-    return await _open_deck(
-        _staff_where(), [list(PUNISH), int(user_id)], STAGE_STAFF, user_id, ADMIN_ORDER_SQL,
-    )
+    return await _open_staff(user_id)
 
 
 def _own_where() -> str:
@@ -1351,6 +1531,7 @@ async def deed_own_sort(
         target_id=str(action_id),
         details={"status": status, "self": verdict, "credits": len(credits)},
     )
+    await _announce(int(action_id))
     return {
         "ok": True,
         "id": int(action_id),
@@ -1428,6 +1609,7 @@ async def deed_work_sort(
                 raise HTTPException(status_code=409, detail="На это наказание уже ответили")
             await _drop_claim(conn, int(action_id), STAGE_ADMIN)
     nxt = await _stage_after_admin(int(action_id))
+    await _announce(int(action_id))
     return {
         "ok": True,
         "id": int(action_id),
@@ -1486,6 +1668,7 @@ async def deed_work_undo(action_id: int, user_id: int = Depends(get_any_telegram
             status_code=409,
             detail=f"Вернуть можно только свой ответ за последние {UNDO_MINUTES} минут",
         )
+    await _announce(int(action_id))
     return {"ok": True, "id": int(action_id), "verdict": gone["verdict"]}
 
 
@@ -1541,6 +1724,7 @@ async def deed_staff_sort(
             if not inserted:
                 raise HTTPException(status_code=409, detail="На это наказание уже ответил сотрудник проекта")
             await _drop_claim(conn, int(action_id), STAGE_STAFF)
+    await _announce(int(action_id))
     return {
         "ok": True,
         "id": int(action_id),
@@ -1602,6 +1786,7 @@ async def deed_staff_undo(action_id: int, user_id: int = Depends(get_any_telegra
             status_code=409,
             detail=f"Вернуть можно только свой ответ за последние {UNDO_MINUTES} минут",
         )
+    await _announce(int(action_id))
     return {"ok": True, "id": int(action_id), "verdict": gone["verdict"]}
 
 

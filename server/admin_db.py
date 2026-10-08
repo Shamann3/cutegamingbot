@@ -1087,24 +1087,27 @@ async def log_staff_action(
     # proof_bot_token — токен бота, которым загружен пруф (см. schema.sql). Храним
     # рядом с file_id, чтобы архив всегда скачал фото именно этим ботом. Только
     # сервер: в broadcast/ответы API токен НЕ попадает.
-    await db.pool.execute(
+    row = await db.pool.fetchrow(
         """
         INSERT INTO staff_actions
             (admin_user_id, admin_name, action_type, target_player_id, target_name,
              reason, evidence, proof_media_id, duration_minutes, chat_id, scope,
              proof_bot_token)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id
         """,
         admin_user_id, admin_name or "", action_type, target_player_id, target_name or "",
         reason or "", evidence or "", proof_media_id, duration_minutes, chat_id, scope,
         proof_bot_token,
     )
+    action_id = int(row["id"]) if row else 0
 
     import asyncio
     from admin_ws import broadcast_to_admins
-    asyncio.create_task(broadcast_to_admins({
-        "event": "new_moderation_log",
-        "data": {
+
+    async def _ping() -> None:
+        data = {
+            "id": action_id,
             "actionType": action_type,
             "adminId": admin_user_id,
             "adminName": admin_name or "",
@@ -1115,8 +1118,12 @@ async def log_staff_action(
             "durationMinutes": duration_minutes,
             "scope": scope,
             "chatId": chat_id,
-        },
-    }))
+        }
+        await broadcast_to_admins({"event": "new_moderation_log", "data": data})
+        if action_id:
+            await broadcast_to_admins({"event": "deed_chain", "data": {"id": action_id}})
+
+    asyncio.create_task(_ping())
 
 
 async def list_staff_actions(admin_user_id: int, limit: int = 50) -> list[dict]:

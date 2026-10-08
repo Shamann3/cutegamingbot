@@ -4738,7 +4738,9 @@ async def _apply_mute_db(
           target=target_user_id, until=str(mute_until), chat_id=chat_id,
           scope=scope, proof=proof_media_id[:24], action_id=action_id,
         )
-        return True, action_id
+    from bot.admins.deed_ping import note_punishment
+    note_punishment(action_id)
+    return True, action_id
   except Exception as e:
     MuteDebug.error("DB", "apply_mute", e, target=target_user_id)
     return False, None

@@ -1651,7 +1651,7 @@ async def _log_warn_action(
           target_user_id, target_name, target_username,
         )
         if proof_media_id:
-          await conn.execute(
+          row = await conn.fetchrow(
             """
             INSERT INTO staff_actions (
               admin_user_id, admin_name, action_type,
@@ -1659,6 +1659,7 @@ async def _log_warn_action(
               proof_bot_token
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id
             """,
             admin_user_id, admin_name, action_type,
             target_user_id, target_name, reason, proof_media_id, chat_id, mode,
@@ -1667,17 +1668,20 @@ async def _log_warn_action(
           from bot.admins.proof_blob import schedule_proof_save
           schedule_proof_save(proof_media_id)
         else:
-          await conn.execute(
+          row = await conn.fetchrow(
             """
             INSERT INTO staff_actions (
               admin_user_id, admin_name, action_type,
               target_player_id, target_name, reason, chat_id, scope
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id
             """,
             admin_user_id, admin_name, action_type,
             target_user_id, target_name, reason, chat_id, mode,
           )
+    from bot.admins.deed_ping import note_punishment
+    note_punishment(row["id"] if row else None)
     WarnDebug.log("DB", "action logged", type=action_type, target=target_user_id)
   except DbUnavailableError as e:
     WarnDebug.log("DB", "log skipped", err=str(e), target=target_user_id)

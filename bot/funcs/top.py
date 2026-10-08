@@ -11,18 +11,23 @@ from bot.funcs.technical_chats import is_public_chat
 
 emojis = [ "<tg-emoji emoji-id='5472030678633684592'>💸</tg-emoji>" , "<tg-emoji emoji-id='5409048419211682843'>💵</tg-emoji>" , "<tg-emoji emoji-id='5397915559037785261'>🧸</tg-emoji>" , "<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji>" , "<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji>" , "<tg-emoji emoji-id='5458799228719472718'>🌟</tg-emoji>" , "<tg-emoji emoji-id='5445284980978621387'>🚀</tg-emoji>" , "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>" , "<tg-emoji emoji-id='5471952986970267163'>💎</tg-emoji>" , "<tg-emoji emoji-id='5435933711893797296'>🎊</tg-emoji>"  , "<tg-emoji emoji-id='5361837567463399422'>🔮</tg-emoji>" ]
 
+def stat_person_html(first_name, username=None, user_id=None) -> str:
+    """Имя в статистике без упоминания: человек не получает уведомление."""
+    name = str(first_name or "").strip()
+    handle = str(username or "").strip().lstrip("@")
+    if not name:
+        if handle:
+            name = handle
+        elif user_id:
+            name = f"ID {int(user_id)}"
+        else:
+            name = "Без имени"
+    return html.escape(name)
+
+
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
-        return "У пользователя нет имени."
-    return user_hyperlink
+    """Имя в топе и статистике. Без ссылки: упоминание отвлекало бы человека."""
+    return stat_person_html(first_name, username, user_id)
 
 async def generate_buttons_marry(page_number, num_pages):
     navigation_buttons123 = []
@@ -2494,13 +2499,7 @@ async def _safe_create_user_link(user_id: int) -> str:
         first_name = await _safe_get_first_name(user_id)
         username = await _safe_get_username(user_id)
 
-        display_name = first_name if first_name else (username if username else f"id {user_id}")
-        display_name = escape(display_name)
-
-        if username:
-            return f"<a href='https://t.me/{escape(username)}'>{display_name}</a>"
-
-        return f"<a href='tg://user?id={int(user_id)}'>{display_name}</a>"
+        return stat_person_html(first_name, username, user_id)
 
     except Exception as e:
         print(f"❌ Ошибка при создании ссылки на пользователя {user_id}: {e}")
@@ -2855,13 +2854,7 @@ async def _safe_create_user_link(user_id: int) -> str:
         first_name = await _safe_get_first_name(user_id)
         username = await _safe_get_username(user_id)
 
-        display_name = first_name if first_name else (username if username else f"id {user_id}")
-        display_name = escape(display_name)
-
-        if username:
-            return f"<a href='https://t.me/{escape(username)}'>{display_name}</a>"
-
-        return f"<a href='tg://user?id={int(user_id)}'>{display_name}</a>"
+        return stat_person_html(first_name, username, user_id)
 
     except Exception as e:
         print(f"Ошибка при создании ссылки на пользователя {user_id}: {e}")
@@ -2884,15 +2877,9 @@ async def _safe_member_count(chat_id: int) -> int:
 
 
 def _link_from_names_bulk(user_id: int, names_bulk: dict) -> str:
-    """Как _safe_create_user_link, но по уже загруженным именам (без похода в БД на каждого юзера)."""
+    """Имя в статистике по уже загруженным данным. Без упоминания и без запроса в базу на каждого."""
     first_name, username = names_bulk.get(user_id, (None, None))
-    display_name = first_name if first_name else (username if username else f"id {user_id}")
-    display_name = escape(display_name)
-
-    if username:
-        return f"<a href='https://t.me/{escape(username)}'>{display_name}</a>"
-
-    return f"<a href='tg://user?id={int(user_id)}'>{display_name}</a>"
+    return stat_person_html(first_name, username, user_id)
 
 
 async def _safe_edit_stats_message(
@@ -4378,7 +4365,7 @@ async def callqjiqwjdiqjqback_top(call: types.CallbackQuery):
                 name_to_display = f"Пользователь {user_id_db}"
 
             # Формируем ссылку на username, если он есть
-            name_link = f'<a href="tg://user?id={user_id_db}">{name_to_display}</a>'
+            name_link = name_to_display
 
             # Добавляем информацию о пользователе в текст статистики
             text += f"{rank}. {name_link} ─ <b>{balance_with_dots}</b> XP\n\n"

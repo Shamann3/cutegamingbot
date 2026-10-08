@@ -6673,21 +6673,20 @@ async def moderation_notify(request: Request):
         raise HTTPException(status_code=404, detail="Запись не найдена")
 
     from admin_ws import broadcast_to_admins
-    await broadcast_to_admins({
-        "event": "new_moderation_log",
-        "data": {
-            "id": int(row["id"]),
-            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
-            "actionType": row["action_type"],
-            "adminId": int(row["admin_user_id"]),
-            "adminName": row["admin_name"] or "",
-            "targetId": int(row["target_player_id"]) if row["target_player_id"] else None,
-            "targetName": row["target_name"] or "",
-            "reason": row["reason"] or "",
-            "hasProof": bool(row["proof_media_id"]),
-            "durationMinutes": row["duration_minutes"],
-        },
-    })
+    data = {
+        "id": int(row["id"]),
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "actionType": row["action_type"],
+        "adminId": int(row["admin_user_id"]),
+        "adminName": row["admin_name"] or "",
+        "targetId": int(row["target_player_id"]) if row["target_player_id"] else None,
+        "targetName": row["target_name"] or "",
+        "reason": row["reason"] or "",
+        "hasProof": bool(row["proof_media_id"]),
+        "durationMinutes": row["duration_minutes"],
+    }
+    await broadcast_to_admins({"event": "new_moderation_log", "data": data})
+    await broadcast_to_admins({"event": "deed_chain", "data": {"id": int(row["id"])}})
     return {"ok": True}
 
 

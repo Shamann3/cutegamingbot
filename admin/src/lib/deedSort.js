@@ -109,6 +109,14 @@ export function openingOf(card) {
       note: chainText(card) || `${card.lift.by || 'Сотрудник'} просит снять это наказание.`,
     }
   }
+  if (card?.turn === 'admin' || card?.turn === 'staff') {
+    const who = card.turn === 'admin' ? 'администратор группы' : 'сотрудник проекта'
+    return {
+      band: 'Идёт проверка',
+      tone: '',
+      note: `Наказание уже в работе. Сейчас его смотрит ${who}. Ответ появится здесь сам, затем решение за вами.`,
+    }
+  }
   const chain = card?.chain || []
   if (!chain.length) {
     return {

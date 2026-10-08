@@ -229,13 +229,14 @@ def _reward_short(reward: dict[str, Any]) -> str:
 
 
 def _display_name(user_id: int, names_bulk: dict[int, tuple[Any, Any]]) -> str:
+    """Имя в сводке царя статистики. Без @ и без ссылки: упоминание отвлекало бы человека."""
     first_name, username = names_bulk.get(int(user_id), (None, None))
+    if first_name and str(first_name).strip():
+        return html.escape(str(first_name).strip())
     if username:
         uname = str(username).strip().lstrip("@")
         if uname:
-            return f"@{html.escape(uname)}"
-    if first_name:
-        return html.escape(str(first_name))
+            return html.escape(uname)
     return f"id{int(user_id)}"
 
 
@@ -570,11 +571,10 @@ async def _notify_creator_about_funding(
     # fallback: если ЛС закрыт, уведомляем в исходной группе.
     source_chat_id = _safe_int(source_chat_meta.get("chat_id"), 0)
     if source_chat_id:
-        mention = f"<a href='tg://user?id={int(creator_id)}'>создателю</a>"
         await _send_with_barnum_effect(
             bot,
             source_chat_id,
-            f"<tg-emoji emoji-id='6028435952299413210'>ℹ</tg-emoji> <b>Не получилось отправить ЛС {mention} по списаниям выплат.</b>",
+            "<tg-emoji emoji-id='6028435952299413210'>ℹ</tg-emoji> <b>Не получилось отправить ЛС создателю по списаниям выплат.</b>",
             effect_id=_BARNUM_EFFECT_ALT,
         )
 

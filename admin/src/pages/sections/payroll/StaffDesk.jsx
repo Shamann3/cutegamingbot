@@ -57,11 +57,12 @@ export default function StaffDesk({ onCount }) {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
+  const watching = card?.turn === 'admin'
   const prior = adminStep(card)
   const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(BY_SIDE[side], false),
-    disabled: busy || Boolean(fly) || !card,
+    disabled: busy || Boolean(fly) || !card || watching,
     cardKey: card?.id ?? null,
   })
   const { reset } = swipe
@@ -92,7 +93,7 @@ export default function StaffDesk({ onCount }) {
 
   const choose = useCallback((choice, lift = false) => {
     const id = card?.id
-    if (!id || busy || fly) return false
+    if (!id || busy || fly || card?.turn === 'admin') return false
     if (!lift && !choice) return false
     if (!lift) playVerdictMeme(choice.id)
     run(id, choice, lift)
@@ -148,10 +149,14 @@ export default function StaffDesk({ onCount }) {
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
   const priorWrong = prior?.verdict === 'wrong'
-  const band = prior
+  const band = watching
+    ? 'Ждёт администратора группы'
+    : prior
     ? `${prior.name}: ${(prior.label || '').toLowerCase()}`
     : 'Администратор не проверял'
-  const note = priorWrong
+  const note = watching
+    ? 'Кнопки появятся после ответа администратора группы. Цепочка на карточке обновляется сама.'
+    : priorWrong
     ? `${prior.name} проверил это наказание и указал, что оно выдано неправильно.`
     : prior?.verdict === 'weak'
       ? `${prior.name} не смог решить. Теперь решение за вами, затем за создателем.`
@@ -187,10 +192,14 @@ export default function StaffDesk({ onCount }) {
           )}
           {pileNote && card && <DeckPileNote text={pileNote} />}
           <p className="deed-lead">
-            Администратор группы уже посмотрел это наказание — его ответ на карточке. Проверьте, всё ли верно. Дальше карточку увидит создатель.
+            {watching
+              ? 'Наказание уже здесь. Сейчас его смотрит администратор группы. Когда он ответит, проверка станет вашей, затем карточку увидит создатель.'
+              : 'Администратор группы уже посмотрел это наказание — его ответ на карточке. Проверьте, всё ли верно. Дальше карточку увидит создатель.'}
           </p>
           <p className="deck-why">
-            Каждую карточку берёт один сотрудник, остальные её не видят. Оплата появится, если создатель согласится с вашим ответом.
+            {watching
+              ? 'Пока администратор группы не ответил, карточку видно, но взять её ещё нельзя.'
+              : 'Каждую карточку берёт один сотрудник, остальные её не видят. Оплата появится, если создатель согласится с вашим ответом.'}
           </p>
           {!card && notes}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
@@ -198,9 +207,9 @@ export default function StaffDesk({ onCount }) {
             <p className="work-empty">Остальные карточки сейчас смотрят другие сотрудники. Если они не ответят, карточки вернутся сюда.</p>
           )}
           {queue && !card && !error && waiting === 0 && (
-            <p className="work-empty">Сейчас проверять нечего. Сюда приходят наказания, которые уже посмотрел администратор группы.</p>
+            <p className="work-empty">Сейчас проверять нечего. Новое наказание появляется здесь сразу. Пока его смотрит администратор группы, ответить ещё нельзя.</p>
           )}
-          {card && (
+          {card && !watching && (
             <p className="work-keys">
               Потяните карточку: вправо — подходит, влево — выдано неправильно, вниз — непонятно.
               {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
@@ -221,6 +230,7 @@ export default function StaffDesk({ onCount }) {
               back={backSide}
               swipe={swipe}
             />
+            {!watching && (
             <div className="work-choice">
               {CHOICES.map((choice) => (
                 <button
@@ -255,6 +265,7 @@ export default function StaffDesk({ onCount }) {
                 </small>
               </button>
             </div>
+            )}
             {notes}
           </div>
         )}

@@ -1772,31 +1772,43 @@ async def moderate_action(
                 minutes,
             )
             wrote = False
+            action_id = 0
             if await ensure_staff_action_span():
                 try:
-                    await db.pool.execute(
+                    saved = await db.pool.fetchrow(
                         """
                         INSERT INTO staff_actions
                           (admin_user_id, admin_name, target_player_id, action_type, reason,
                            chat_id, scope, duration_minutes, duration_seconds, created_at)
                         VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, $7, $8, NOW())
+                        RETURNING id
                         """,
                         *common,
                         seconds,
                     )
                     wrote = True
+                    action_id = int(saved["id"]) if saved else 0
                 except Exception:
                     wrote = False
             if not wrote:
-                await db.pool.execute(
+                saved = await db.pool.fetchrow(
                     """
                     INSERT INTO staff_actions
                       (admin_user_id, admin_name, target_player_id, action_type, reason,
                        chat_id, scope, duration_minutes, created_at)
                     VALUES ($1, 'Админ-панель', $2, $3, $4, $5, $6, $7, NOW())
+                    RETURNING id
                     """,
                     *common,
                 )
+                action_id = int(saved["id"]) if saved else 0
+            if action_id:
+                try:
+                    from admin_ws import broadcast_to_admins
+                    await broadcast_to_admins({"event": "deed_chain", "data": {"id": action_id}})
+                    await broadcast_to_admins({"event": "new_moderation_log", "data": {"id": action_id}})
+                except Exception:
+                    pass
         except Exception:
             pass
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import PhotoLook from '../../../components/PhotoLook'
 import { loadTgPhotoUrl } from '../../../components/TgPhoto'
-import { fetchDeedPulse, isPanelPreviewMode } from '../../../lib/adminClient'
+import { fetchDeedPulse, getAdminToken, isPanelPreviewMode } from '../../../lib/adminClient'
 import { pileLine } from '../../../lib/liveMerge'
 
 export const FLY_MS = 420
@@ -51,9 +51,74 @@ export function useRefill(queue, load) {
 
 const LIVE_MS = 2500
 
+/** Карточка ещё не у этого человека: цепочку надо обновлять, саму карточку можно сменить. */
+export function followsChain(stage, card) {
+  if (!card?.turn) return false
+  if (stage === 'queue') return card.turn !== 'creator'
+  if (stage === 'staff') return card.turn === 'admin'
+  return false
+}
+
+const deedListeners = new Set()
+let deedSocket = null
+let deedWait = null
+
+function deedSocketUrl() {
+  const token = getAdminToken()
+  if (!token || typeof window === 'undefined') return ''
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const prefix = import.meta.env.VITE_ADMIN_API_PREFIX || '/admin/api'
+  return `${proto}://${window.location.host}${prefix}/ws/moderation?token=${encodeURIComponent(token)}`
+}
+
+function ensureDeedSocket() {
+  if (deedSocket || deedWait || typeof window === 'undefined') return
+  const url = deedSocketUrl()
+  if (!url) return
+  const socket = new WebSocket(url)
+  deedSocket = socket
+  socket.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      if (msg?.event === 'new_moderation_log' || msg?.event === 'deed_chain') {
+        deedListeners.forEach((fn) => fn())
+      }
+    } catch {
+      /* чужой кадр */
+    }
+  }
+  socket.onclose = () => {
+    deedSocket = null
+    if (deedListeners.size) {
+      deedWait = window.setTimeout(() => {
+        deedWait = null
+        ensureDeedSocket()
+      }, 2500)
+    }
+  }
+}
+
+function listenDeed(fn) {
+  deedListeners.add(fn)
+  ensureDeedSocket()
+  return () => {
+    deedListeners.delete(fn)
+    if (deedListeners.size) return
+    if (deedWait) {
+      window.clearTimeout(deedWait)
+      deedWait = null
+    }
+    if (deedSocket) {
+      deedSocket.close()
+      deedSocket = null
+    }
+  }
+}
+
 /**
  * Новое наказание само ложится в колоду.
- * Пустая колода открывает карточку. Открытую карточку не подменяет — только число за ней.
+ * Пустая колода открывает карточку. Карточку, которую уже можно решать, не подменяет.
+ * Если очередь ещё у администратора или сотрудника, цепочка обновляется сама.
  * stage '' — чужой фильтр: пустую колоду обновляем, карточку в руках не трогаем.
  */
 export function useDeckLive(stage, queue, setQueue, load) {
@@ -88,6 +153,10 @@ export function useDeckLive(stage, queue, setQueue, load) {
         const held = queueRef.current
         if (!held) return
         if (held.card) {
+          if (followsChain(stage, held.card)) {
+            await loadRef.current()
+            return
+          }
           const prev = Number(held.waiting) || 0
           if (waiting !== prev) {
             setQueue((current) => (current?.card ? { ...current, waiting } : current))
@@ -104,10 +173,20 @@ export function useDeckLive(stage, queue, setQueue, load) {
     }
     const first = window.setTimeout(tick, 800)
     const timer = window.setInterval(tick, LIVE_MS)
+    const unlisten = listenDeed(() => {
+      const held = queueRef.current
+      if (!held || lock.current) return
+      if (!held.card || followsChain(stage, held.card)) {
+        loadRef.current()
+        return
+      }
+      tick()
+    })
     return () => {
       stop = true
       window.clearTimeout(first)
       window.clearInterval(timer)
+      unlisten()
     }
   }, [stage, setQueue])
 
@@ -138,8 +217,20 @@ export function useToastInView() {
   return useRef(null)
 }
 
+function stepWord(step) {
+  if (step.role === 'issue') return step.name || 'готово'
+  if (step.state === 'done') return (step.label || 'ответил').toLowerCase()
+  if (step.state === 'now') return 'сейчас'
+  if (step.state === 'skip') return 'можно не ждать'
+  return 'следом'
+}
+
 export default function DeckCard({ card, band, tone = '', note = '', stamps, depth = 0, fly = '', back = '', swipe }) {
   const place = [card.chatTitle, card.scopeLabel].filter(Boolean).join(' · ')
+  const issued = (card.process || []).find((step) => step.role === 'issue')
+  const issuer = issued?.title
+    ? `${issued.title} ${card.adminName || ''}`.trim()
+    : (card.adminName || 'администратор')
   const motion = fly ? ` is-fly-${fly}` : back ? ` is-back-${back}` : ''
   return (
     <div ref={swipe.stageRef} className={`tinder-stage depth-${depth}${fly ? ' is-flying' : ''}`} {...swipe.handlers}>
@@ -169,9 +260,19 @@ export default function DeckCard({ card, band, tone = '', note = '', stamps, dep
             {note && <p className="deck-note">{note}</p>}
             <h3 className="staff-card-name">{card.actionLabel} · {card.targetName || 'игрок'}</h3>
             <p className="staff-card-date">
-              Выдал {card.adminName || 'администратор'} · {when(card.createdAt)} · {duration(card.durationMinutes)}
+              Выдал {issuer} · {when(card.createdAt)} · {duration(card.durationMinutes)}
               {place ? ` · ${place}` : ''}
             </p>
+            {(card.process || []).length > 0 && (
+              <ol className="deed-process">
+                {card.process.map((step) => (
+                  <li key={step.role} className={`is-${step.state || 'later'}`}>
+                    <span>{step.title}</span>
+                    <small>{stepWord(step)}</small>
+                  </li>
+                ))}
+              </ol>
+            )}
             <p className="deed-reason">{card.reason || 'Причина в архиве не записана'}</p>
           </div>
         </article>
