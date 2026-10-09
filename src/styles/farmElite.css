@@ -241,11 +241,130 @@
 
 .tab-theme-farm .plot-empty-row-shop,
 .tab-theme-farm .plot-empty-row-btn {
-  border-color: rgba(61, 214, 140, 0.32);
-  color: #e8f5ee;
+  border-color: rgba(110, 231, 183, 0.28);
+  color: #f4efe2;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 50%),
-    linear-gradient(180deg, rgba(22, 48, 34, 0.72) 0%, rgba(10, 20, 14, 0.82) 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 46%),
+    linear-gradient(180deg, rgba(18, 46, 32, 0.9) 0%, rgba(8, 18, 12, 0.94) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.tab-theme-farm .plot-empty-row-btn {
+  gap: 0.28rem;
+  min-height: 4.6rem;
+  padding: 0.42rem 0.28rem 0.38rem;
+  border-radius: 16px;
+}
+
+.tab-theme-farm .plot-empty-row-btn:hover:not(:disabled) {
+  border-color: rgba(167, 243, 208, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 46%),
+    linear-gradient(180deg, rgba(24, 62, 42, 0.95) 0%, rgba(8, 18, 12, 0.94) 100%);
+}
+
+.tab-theme-farm .plot-empty-row-btn-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.05rem;
+  height: 2.05rem;
+  border-radius: 999px;
+  background: rgba(61, 214, 140, 0.14);
+  border: 1px solid rgba(167, 243, 208, 0.22);
+}
+
+.tab-theme-farm .plot-empty-row-btn-emoji {
+  font-size: 1.12rem;
+  line-height: 1;
+}
+
+.tab-theme-farm .plot-empty-row-btn-fruit {
+  position: absolute;
+  right: -0.28rem;
+  bottom: -0.18rem;
+  font-size: 0.78rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5));
+}
+
+.tab-theme-farm .plot-empty-row-btn-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.06rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.tab-theme-farm .plot-empty-row-btn-name {
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.15;
+  text-align: center;
+  color: #f7f3ea;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tab-theme-farm .plot-empty-row-btn-meta {
+  font-size: 0.56rem;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: rgba(167, 243, 208, 0.78);
+  text-align: center;
+}
+
+.tab-theme-farm .farm-plot-act {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  border-radius: 16px;
+  text-align: left;
+  padding: 0.42rem 0.7rem;
+}
+
+.tab-theme-farm .farm-plot-act-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.tab-theme-farm .farm-plot-act-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.tab-theme-farm .farm-plot-act-meta {
+  font-size: 0.62rem;
+  font-weight: 650;
+  opacity: 0.82;
+}
+
+.tab-theme-farm .plot-empty-row-shop.farm-plot-act {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 2.75rem;
+  border-radius: 16px;
 }
 
 .tab-theme-farm .farm-batch-btn--harvest {

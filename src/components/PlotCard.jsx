@@ -13,11 +13,7 @@ import { getEffectivePlotStatus, isPlotDry } from '../utils/plotActions'
 import { createDexResolver } from '../utils/dexResolve'
 import { listPlantableCrops } from '../utils/seedInventory'
 import { cropDisplayLabel, findFarmCropByPlot } from '../utils/cropMatch'
-import {
-  harvestActionLabel,
-  harvestBlockedLabel,
-  resolveHarvestTool,
-} from '../utils/harvestTool'
+import { resolveHarvestTool } from '../utils/harvestTool'
 import { guideToItemPurchase } from '../utils/itemPurchaseGuide'
 import { formatDurationRu, formatDurationRuLong } from '../utils/formatDuration'
 import GrowthProgressBar from './GrowthProgressBar'
@@ -178,24 +174,29 @@ function PlotCard({
                 type="button"
                 className="plot-empty-row-btn"
                 disabled={actionBusy}
-                title={cropName(crop)}
+                title={crop.waterTimes ? `${cropName(crop)}, ${waterPhrase(crop.waterTimes)}` : cropName(crop)}
                 aria-label={`Посадить: ${cropName(crop)}`}
                 onClick={() => onAction(plot.id, 'plant', crop.seedId)}
               >
-                <span className="plot-empty-row-btn-emoji" aria-hidden>{crop.seedEmoji}</span>
-                {plantableCrops.length > 1 && (
-                  <span className="plot-empty-row-btn-name">
-                    {cropName(crop)}
-                    {crop.waterTimes ? ` · ${waterPhrase(crop.waterTimes)}` : ''}
-                  </span>
-                )}
+                <span className="plot-empty-row-btn-mark" aria-hidden>
+                  <span className="plot-empty-row-btn-emoji">{crop.seedEmoji || '🌱'}</span>
+                  {crop.harvestEmoji && crop.harvestEmoji !== crop.seedEmoji ? (
+                    <span className="plot-empty-row-btn-fruit">{crop.harvestEmoji}</span>
+                  ) : null}
+                </span>
+                <span className="plot-empty-row-btn-copy">
+                  <span className="plot-empty-row-btn-name">{cropName(crop)}</span>
+                  {crop.waterTimes ? (
+                    <span className="plot-empty-row-btn-meta">{waterPhrase(crop.waterTimes)}</span>
+                  ) : null}
+                </span>
               </button>
             ))}
           </div>
         ) : (
           <button
             type="button"
-            className="plot-empty-row-shop"
+            className="plot-empty-row-shop farm-plot-act"
             disabled={actionBusy}
             onClick={() => {
               const defaultCrop = farmCrops?.[0]
@@ -208,7 +209,10 @@ function PlotCard({
               })
             }}
           >
-            Купить саженец
+            <span className="farm-plot-act-mark" aria-hidden>🌱</span>
+            <span className="farm-plot-act-copy">
+              <span>Купить саженец</span>
+            </span>
           </button>
         )}
       </div>
@@ -219,9 +223,6 @@ function PlotCard({
   const harvestBlockedByTool = status === PlotStatus.READY
     && harvestTool?.required
     && !harvestTool.owned
-  const harvestLabel = harvestActionLabel(plotCrop, harvestTool)
-  const harvestShopLabel = harvestBlockedLabel(harvestTool)
-
   const regularWaterId = plotCrop?.waterItemId ?? farmItemIds?.water ?? ITEM_IDS.WATER
   const regularWaterCost = plotCrop?.waterCostPerUse ?? 1
   const regularWaterEmoji = plotCrop?.waterEmoji ?? '💧'
@@ -322,13 +323,15 @@ function PlotCard({
           {status === PlotStatus.GROWING && canInstallAutowater && (
             <button
               type="button"
-              className="farm-btn-autowater w-full"
+              className="farm-btn-autowater farm-plot-act w-full"
               disabled={actionBusy}
               onClick={() => onAction(plot.id, 'autowater')}
             >
-              Автополив
-              <span className="ml-1" aria-hidden>🚰</span>
-              <span className="farm-btn-autowater-note">до урожая без ручного полива</span>
+              <span className="farm-plot-act-mark" aria-hidden>🚰</span>
+              <span className="farm-plot-act-copy">
+                <span>Автополив</span>
+                <span className="farm-plot-act-meta">до урожая без ручного полива</span>
+              </span>
             </button>
           )}
 
@@ -343,14 +346,14 @@ function PlotCard({
               {regularWaterAvailable && (
                 <button
                   type="button"
-                  className="farm-btn-water w-full"
+                  className="farm-btn-water farm-plot-act w-full"
                   disabled={actionBusy}
                   onClick={() => onAction(plot.id, 'water', { waterItemId: regularWaterId })}
                 >
-                  Полить
-                  <span className="ml-1" aria-hidden>{regularWaterEmoji}</span>
-                  <span className="block text-[10px] font-normal opacity-90">
-                    {regularWaterCost} {regularWaterName.toLowerCase()}
+                  <span className="farm-plot-act-mark" aria-hidden>{regularWaterEmoji}</span>
+                  <span className="farm-plot-act-copy">
+                    <span>Полить</span>
+                    <span className="farm-plot-act-meta">{regularWaterCost} {regularWaterName.toLowerCase()}</span>
                   </span>
                 </button>
               )}
@@ -377,7 +380,7 @@ function PlotCard({
             <>
               <button
                 type="button"
-                className="farm-btn-harvest w-full"
+                className="farm-btn-harvest farm-plot-act w-full"
                 disabled={actionBusy}
                 onClick={() => {
                   if (harvestBlockedByTool) {
@@ -391,7 +394,16 @@ function PlotCard({
                   }
                 }}
               >
-                {harvestBlockedByTool ? harvestShopLabel : harvestLabel}
+                <span className="farm-plot-act-mark" aria-hidden>
+                  {harvestBlockedByTool ? (harvestTool?.emoji || '🪓') : (plotCrop?.key === 'tree' ? (harvestTool?.emoji || '🪓') : (plotCrop?.harvestEmoji || '📦'))}
+                </span>
+                <span className="farm-plot-act-copy">
+                  <span>
+                    {harvestBlockedByTool
+                      ? `Купить ${harvestTool?.name || 'инструмент'}`
+                      : (plotCrop?.key === 'tree' ? 'Срубить' : 'Собрать')}
+                  </span>
+                </span>
               </button>
               {harvestTool?.owned && (
                 <p className="text-center text-[10px] text-emerald-100/65">
@@ -409,12 +421,15 @@ function PlotCard({
           {status === PlotStatus.WITHERED && (
             <button
               type="button"
-              className="farm-btn-danger w-full"
+              className="farm-btn-danger farm-plot-act w-full"
               disabled={actionBusy}
               onClick={() => onAction(plot.id, 'clear')}
             >
-              Очистить грядку
-              <span className="block text-[10px] font-normal opacity-90">10 КУТ</span>
+              <span className="farm-plot-act-mark" aria-hidden>🍂</span>
+              <span className="farm-plot-act-copy">
+                <span>Очистить грядку</span>
+                <span className="farm-plot-act-meta">10 КУТ</span>
+              </span>
             </button>
           )}
         </div>
