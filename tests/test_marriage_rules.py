@@ -32,6 +32,7 @@ from bot.funcs.marriage_rules import (
     face_from_dex,
     is_marriage_code,
     own_ribbon,
+    person_html,
     profile_line,
     ribbon_ask,
     settings_view,
@@ -146,6 +147,14 @@ def test_profile_line_sits_as_one_short_sentence():
     line = profile_line({"name_html": "<a href='tg://user?id=1'>Анна</a>", "since": since}, now)
     assert "В браке с" in line
     assert "Анна" in line
+    assert "tg://user" not in line
+    shown = person_html(5, "@Лана", "lana")
+    assert "Лана" in shown
+    assert "tg://user" not in shown
+    assert "@" not in shown
+    handle = person_html(5, "", "lana")
+    assert "lana" in handle
+    assert "@" not in handle
     assert "2 дня" in line
     assert "\n" not in line.strip()
     empty = profile_line({"name_html": "", "since": None}, now)
@@ -362,7 +371,7 @@ def test_custom_levels_drive_the_spark_and_drop_bad_rows():
     junk = settings_view({"levels": [{"name": "x" * 40, "days": -9, "goal": 9999}, "nope", {"days": "a"}]})
     assert junk["levels"][0]["days"] == 0
     assert len(junk["levels"][0]["name"]) == 24
-    assert junk["levels"][0]["goal"] == 500
+    assert junk["levels"][0]["goal"] == 9999
     assert len(junk["levels"]) == 2
     assert junk["levels"][1]["days"] == 1
     wide = settings_view({"levels": [{"name": str(i), "days": i, "goal": 4} for i in range(15)]})
@@ -492,3 +501,29 @@ def test_kind_words_feed_the_flame_and_the_week_is_visible():
     assert "Огонька нет" not in home
     assert "Гаснет" not in home
     assert "●" in home
+    from bot.funcs.marriage_design import care_meter
+    wide = care_meter(120, 500)
+    assert wide.count("●") + wide.count("○") == 8
+    assert "120/500" in wide
+    assert "ещё 380" in wide
+    full = care_meter(1200, 500)
+    assert "1 200/500" in full
+    assert "+700" in full
+
+
+def test_every_button_is_written_under_its_message():
+    from bot.funcs.marriage_design import button_rows, screen_of_item
+    from bot.funcs.marriage_live import _kb_gifts
+
+    assert screen_of_item("glow") == "item_glow"
+    shop = _kb_gifts([{"id": "glow", "price": 15, "have": 2, "buy": True}])
+    words = [btn.text for row in shop.inline_keyboard for btn in row]
+    assert words[0].startswith("Купить блик")
+    assert "15" in words[0]
+    assert words[1].startswith("Зажечь")
+    assert words[1].endswith("2")
+    early = [btn["data"] for row in button_rows("feast") for btn in row]
+    assert "mrg:wish:premium6" not in early
+    late = [btn["data"] for row in button_rows("feast", ("late",)) for btn in row]
+    assert "mrg:wish:premium6" in late
+    assert "mrg:mine:0" in late

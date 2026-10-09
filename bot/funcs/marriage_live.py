@@ -37,6 +37,7 @@ from bot.funcs.marriage_design import (
     BTN_FEAST,
     BTN_GIFT,
     button_rows,
+    screen_of_item,
     award_plan,
     care_code,
     due_period,
@@ -147,6 +148,7 @@ from bot.funcs.marriage_rules import (
     classify,
     mention_in,
     person_html,
+    quiet_visible,
     rp_by_id,
     shares_general_rp,
     as_aware,
@@ -258,19 +260,50 @@ def _buy_label(row) -> str:
 
 
 def _kb_gifts(rows) -> InlineKeyboardMarkup:
+    """Подписи, цвет и значок — с экрана предмета в marriage_design."""
     buttons = []
     for row in rows:
-        if row.get("rite") and int(row.get("have") or 0) <= 0:
+        have = int(row.get("have") or 0)
+        if row.get("rite") and have <= 0:
             continue
-        if row.get("rite") or not row.get("buy"):
-            buttons.append([_btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID)])
+        price = int(row.get("price") or 0)
+        screen = screen_of_item(row.get("id"))
+        buy_ok = not row.get("rite") and bool(row.get("buy"))
+        if not screen:
+            if buy_ok:
+                buttons.append([
+                    _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
+                    _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
+                ])
+            else:
+                buttons.append([_btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID)])
             continue
-        buttons.append([
-            _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
-            _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
-        ])
+        for line in button_rows(screen, price=price, have=have):
+            built = []
+            for btn in line:
+                data = str(btn.get("data") or "")
+                buying = ":gbuy:" in data
+                if buying and not buy_ok:
+                    continue
+                text = str(btn.get("text") or "")
+                if buying and price and str(price) not in text:
+                    text = text + " · " + str(price)
+                if not buying and have > 0 and str(have) not in text:
+                    text = text + " · " + str(have)
+                built.append(_btn(text[:64], data, btn.get("style") or "default", btn.get("icon") or ""))
+            if built:
+                buttons.append(built)
     buttons.extend(_kb("shop_back").inline_keyboard)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _shelf_face(name: str, go: str) -> dict:
+    for row in button_rows(name):
+        for btn in row:
+            parts = str(btn.get("data") or "").split(":")
+            if len(parts) >= 2 and parts[1] == go:
+                return btn
+    return {}
 
 
 def _kb_back() -> InlineKeyboardMarkup:
@@ -385,9 +418,32 @@ async def _on_text(message) -> bool:
     return False
 
 
+_QUIET_REPLIES = {}
+
+
+def keep_names_quiet(message) -> None:
+    """Следующая общая рп-фраза не отвечает на сообщение партнёра и не будит его."""
+    chat = getattr(getattr(message, "chat", None), "id", None)
+    mid = getattr(message, "message_id", None)
+    if not chat or not mid:
+        return
+    _QUIET_REPLIES[(int(chat), int(mid))] = True
+    if len(_QUIET_REPLIES) > 300:
+        _QUIET_REPLIES.clear()
+        _QUIET_REPLIES[(int(chat), int(mid))] = True
+
+
+def consume_quiet(message) -> bool:
+    chat = getattr(getattr(message, "chat", None), "id", None)
+    mid = getattr(message, "message_id", None)
+    if not chat or not mid:
+        return False
+    return bool(_QUIET_REPLIES.pop((int(chat), int(mid)), False))
+
+
 async def _reply(message, text: str, markup=None) -> None:
     await message.reply(
-        text,
+        quiet_visible(text),
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=markup,
@@ -548,7 +604,7 @@ async def _wed(message, tail: str) -> None:
             minutes=minutes,
         )
     sent = await message.answer(
-        text,
+        quiet_visible(text),
         parse_mode="HTML",
         disable_web_page_preview=True,
         reply_markup=_kb_ask(book_id),
@@ -863,6 +919,7 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
     if shared:
         if gain:
             await _reply(message, gain.lstrip("\n"))
+        keep_names_quiet(message)
         return False
     a = await _html(pool, message.from_user)
     b = await _html(pool, target)
@@ -953,9 +1010,11 @@ async def _place_hint_message(query, kind: str, cfg) -> None:
     message = getattr(query, "message", None)
     if not hint or message is None:
         return
-    label = FARM_BTN if hint.get("where") == "farm" else CRAFT_BTN
+    where = hint.get("where") or "farm"
+    face = _shelf_face("item_seedcuke", "guse") if where == "farm" else _shelf_face("item_cuke", "guse")
+    label = (face or {}).get("text") or (FARM_BTN if where == "farm" else CRAFT_BTN)
     private = getattr(getattr(message, "chat", None), "type", "") == "private"
-    fields = section_button_fields(label, hint.get("where") or "farm", private=private, icon="5208464835079082371")
+    fields = section_button_fields(label, where, private=private, icon=(face or {}).get("icon") or "")
     web_app_url = fields.pop("web_app_url", None)
     if web_app_url:
         fields["web_app"] = WebAppInfo(url=web_app_url)
@@ -1354,7 +1413,7 @@ async def _on_leave(query, action: str, token: str, user_id: int, pool) -> None:
     try:
         await query.bot.send_message(
             other,
-            _fill(LEAVE_THEM, a=a),
+            quiet_visible(_fill(LEAVE_THEM, a=a)),
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
@@ -1431,15 +1490,26 @@ async def _on_feast(query, user_id: int, pool) -> None:
         return
     from bot.funcs.marriage_design import feast_screen
     shown = []
-    buttons = []
+    enabled = set()
     for row in cfg.get("prizes") or []:
         if not row.get("on"):
             continue
         if row.get("id") == "premium6" and int(holiday["day"]) < 30:
             continue
         shown.append(row)
-        buttons.append([_btn(str(row["name"])[:32], f"mrg:wish:{row['id']}", "primary", RED_ID)])
-    buttons.append([_btn(BTN_BACK, "mrg:mine:0", "default")])
+        enabled.add(str(row.get("id") or ""))
+    show = ("late",) if int(holiday.get("day") or 0) >= 30 else ()
+    buttons = []
+    for line in button_rows("feast", show):
+        built = []
+        for btn in line:
+            data = str(btn.get("data") or "")
+            parts = data.split(":")
+            if len(parts) >= 3 and parts[1] == "wish" and parts[2] not in enabled:
+                continue
+            built.append(_btn(str(btn.get("text") or "")[:64], data, btn.get("style") or "default", btn.get("icon") or ""))
+        if built:
+            buttons.append(built)
     await query.answer()
     await _edit(query, feast_screen(holiday.get("name"), holiday.get("day"), shown), InlineKeyboardMarkup(inline_keyboard=buttons))
 
@@ -1681,7 +1751,7 @@ def _arm(query) -> None:
 async def _edit(query, text: str, markup=_CLEAR) -> None:
     try:
         await query.message.edit_text(
-            text,
+            quiet_visible(text),
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=markup,

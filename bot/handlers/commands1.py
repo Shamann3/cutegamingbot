@@ -57,6 +57,18 @@ async def perform_action_with_caption(
         user = await create_user_link(user_id, first_name, username)
         user_mention = await create_user_link(replied_user_id, replied_user_first_name, replied_user_username)
 
+        quiet = False
+        try:
+            from bot.funcs.marriage_live import consume_quiet
+            quiet = consume_quiet(message)
+        except Exception:
+            quiet = False
+        if quiet:
+            from bot.funcs.marriage_design import person_html
+            user = person_html(user_id, first_name, username or "")
+            user_mention = person_html(replied_user_id, replied_user_first_name, replied_user_username or "")
+        reply_to = message.message_id if quiet else replied_msg.message_id
+
         # Формирование текста ответа
         response_text = f'{default_emoji} | {user} {action} {user_mention}'
         if caption:
@@ -70,7 +82,7 @@ async def perform_action_with_caption(
             await message.bot.send_message(
                 chat_id=message.chat.id,
                 text=response_text,
-                reply_to_message_id=replied_msg.message_id,  # Сообщение, на которое ответили
+                reply_to_message_id=reply_to,
                 parse_mode="HTML",
                 disable_web_page_preview=True
             )

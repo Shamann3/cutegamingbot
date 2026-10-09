@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 from datetime import date, datetime, timedelta, timezone
 from marriage_engine.m_act import act_plan, dawn_up, moon_up
 MSK = timezone(timedelta(hours=3))
@@ -55,7 +56,7 @@ def normalize_levels(raw):
             if not isinstance(item, dict) or len(found) == 12:
                 continue
             name = " ".join(str(item.get("name") or "").replace("<", " ").replace(">", " ").replace("&", " ").split())[:24]
-            found.append({"days": _clamp(item.get("days"), 0, 0, 3650), "goal": _clamp(item.get("goal"), 10, 2, 500), "name": name})
+            found.append({"days": _clamp(item.get("days"), 0, 0, 3650), "goal": _clamp(item.get("goal"), 10, 2, 10000), "name": name})
     if not found:
         return [dict(r) for r in LEVELS]
     found.sort(key=lambda row: row["days"])
@@ -528,7 +529,7 @@ def seal_today(state, today, need):
 def profile_line(view, now=None):
     from marriage_engine.look import HEART, PROFILE_EMPTY, PROFILE_WITH, PROFILE_TONE
     now = now or datetime.now(MSK)
-    name = (view or {}).get("name_html") or ""
+    name = quiet_visible((view or {}).get("name_html") or "")
     if not name:
         return PROFILE_EMPTY.format(heart=HEART)
     mark = "🎀" if (view or {}).get("ribbon") else HEART
@@ -636,32 +637,47 @@ def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
     head = FLAME_COUNT.format(days=closed, word=_ru(closed, *SPAN_DAY))
     row = " ".join(marks) + "  " + FLAME_NOW
     return head + "\n" + row + ("\n" + note if note else "")
+def _count(number):
+    """Большое число читается пачками по три: 1000 → 1 000."""
+    number = int(number or 0)
+    text = str(abs(number))
+    if len(text) <= 3:
+        body = text
+    else:
+        chunks = []
+        while text:
+            chunks.append(text[-3:])
+            text = text[:-3]
+        body = " ".join(reversed(chunks))
+    return ("-" if number < 0 else "") + body
 def care_meter(have, need):
     from marriage_engine.look import BAR_OFF, BAR_ON, METER_EXTRA, METER_LEFT, METER_READY
     have, need = max(0, int(have or 0)), max(1, int(need or 1))
     cells = min(need, 8)
-    filled = cells if have >= need else min(cells, int(round(have * cells / need)))
+    filled = cells if have >= need else min(cells, int(round(min(have, need) * cells / need)))
     bar = (BAR_ON * filled) + (BAR_OFF * (cells - filled))
     extra = have - need
+    if need > 8:
+        bar += " " + _count(have) + "/" + _count(need)
     if extra > 0:
-        tail = METER_EXTRA.format(extra=extra)
+        tail = METER_EXTRA.format(extra=_count(extra))
     elif have >= need:
         tail = METER_READY
     else:
-        tail = METER_LEFT.format(left=need - have)
+        tail = METER_LEFT.format(left=_count(need - have))
     return bar + " " + tail
 def _meters(you, need, partner, other):
-    from marriage_engine.look import METER_LINE
+    from marriage_engine.look import METER_LINE, METER_THEM, METER_YOU
     return [
-        METER_LINE.format(who="Вы", bar=care_meter(you, need)),
-        METER_LINE.format(who=partner, bar=care_meter(other, need)),
+        METER_LINE.format(mark=METER_YOU, who="Вы", bar=care_meter(you, need)),
+        METER_LINE.format(mark=METER_THEM, who=partner, bar=care_meter(other, need)),
     ]
 def _step(view, you, other, need):
     from marriage_engine.look import (
         STEP_FIRST_BOTH, STEP_FIRST_THEM, STEP_FIRST_WAIT, STEP_FIRST_YOU,
         STEP_OPEN_BOTH, STEP_OPEN_THEM, STEP_OPEN_WAIT, STEP_OPEN_YOU, STEP_THEM, STEP_YOU,
     )
-    you_left, them_left = max(0, int(need) - int(you or 0)), max(0, int(need) - int(other or 0))
+    you_left, them_left = _count(max(0, int(need) - int(you or 0))), _count(max(0, int(need) - int(other or 0)))
     when = _when(view.get("clock"))
     days = int((view.get("state") or {}).get("spark_days") or 0)
     if view.get("both_done"):
@@ -704,21 +720,22 @@ def _next_gift(view):
     return ""
 def spark_home(a, b, span, date, view, you, partner_care, partner_name):
     from marriage_engine.look import (
-        HEART, LEVEL_EMPTY, SPARK_COAT, WAS_SHORT, SPAN_DAY, CARD_HEAD, LIMIT_HEAD,
+        HEART, HOME_LEVEL, HOME_TOGETHER, LEVEL_EMPTY, SPARK_COAT, WAS_SHORT, SPAN_DAY, CARD_HEAD, LIMIT_HEAD,
     )
     view = view or {}
     need = int(view.get("need") or 0)
     goal = int(view.get("goal") or 0)
     lines = [
         CARD_HEAD.format(heart=HEART, a=a, b=b),
-        "<b>Вместе " + span + " · " + str((view.get("level") or {}).get("name") or LEVEL_EMPTY) + "</b>",
+        HOME_TOGETHER.format(span=span),
+        HOME_LEVEL.format(name=str((view.get("level") or {}).get("name") or LEVEL_EMPTY)),
         flame_strip(
             view.get("state"),
             both_done=bool(view.get("both_done")),
             fading=bool(view.get("fading")),
             clock=view.get("clock") or "",
         ),
-        LIMIT_HEAD.format(goal=goal, need=need),
+        LIMIT_HEAD.format(goal=_count(goal), need=_count(need)),
     ]
     lines.extend(_meters(you, need, partner_name, partner_care))
     step = _step(view, you, partner_care, need)
@@ -726,7 +743,7 @@ def spark_home(a, b, span, date, view, you, partner_care, partner_name):
         lines.append(step)
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
-        lines.append("<i>" + spare + "</i>")
+        lines.append("✨ • " + spare)
     gift = _next_gift(view)
     if gift:
         lines.append(gift)
@@ -748,8 +765,8 @@ def spark_level(view):
         lines.append(LEVEL_ROW.format(
             name=row["name"],
             days=row["days"],
-            goal=goal,
-            share=each_share(goal),
+            goal=_count(goal),
+            share=_count(each_share(goal)),
             mark=mark,
         ))
     nxt = view.get("next")
@@ -758,8 +775,8 @@ def spark_level(view):
         lines.append(LEVEL_NEXT.format(
             name=nxt["name"],
             days=int(view.get("days_left") or 0),
-            goal=goal,
-            share=each_share(goal),
+            goal=_count(goal),
+            share=_count(each_share(goal)),
         ))
     from marriage_engine.look import HOLIDAY_GIFT, HOLIDAY_HEAD, HOLIDAY_LINE, HOLIDAY_NOTE, HOLIDAY_SOON
     days = int((view.get("state") or {}).get("spark_days") or 0)
@@ -798,7 +815,7 @@ def spark_fire(view, you, partner_care, partner_name, hours):
     left = max(0, need - int(you or 0))
     if view.get("fading"):
         head = FIRE_FADE.format(spark=SPARK, days=days)
-        sub = FIRE_YESTERDAY.format(clock=view.get("clock") or CLOCK_WORD, need=need)
+        sub = FIRE_YESTERDAY.format(clock=view.get("clock") or CLOCK_WORD, need=_count(need))
     else:
         head = FIRE_HEAD.format(spark=SPARK, name=name, days=days)
         if view.get("both_done"):
@@ -806,16 +823,16 @@ def spark_fire(view, you, partner_care, partner_name, hours):
         elif left <= 0:
             sub = FIRE_WAIT
         else:
-            sub = FIRE_DO.format(left=left)
+            sub = FIRE_DO.format(left=_count(left))
     lines = [
         head,
-        FIRE_SPLIT.format(goal=goal, need=need),
+        FIRE_SPLIT.format(goal=_count(goal), need=_count(need)),
     ]
     lines.extend(_meters(you, need, partner_name, partner_care))
     lines.append(sub)
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
-        lines.append("<i>" + spare + "</i>")
+        lines.append("✨ • " + spare)
     return "\n".join(lines)
 def care_line(amount, you, need, partner_care, saved, both, fading):
     from marriage_engine.look import CARE_SAVED, CARE_FADING, CARE_PLUS
@@ -923,9 +940,26 @@ def ribbon_ask():
 def ribbon_gone():
     from marriage_engine.look import RIBBON_GONE
     return RIBBON_GONE
+_MENTION_LINK = re.compile(
+    r"<a\s+[^>]*href\s*=\s*['\"]tg://user\?id=\d+['\"][^>]*>(.*?)</a>",
+    re.I | re.S,
+)
+
+
+def quiet_visible(value) -> str:
+    """Имя в тексте брака. Ссылка tg://user и @ будят человека, поэтому их нет."""
+    text = _MENTION_LINK.sub(lambda match: match.group(1), str(value or ""))
+    return text.replace("@", "")
+
+
 def person_html(user_id, first="", username=""):
-    label = str(first or (("@" + username) if username else "") or "игрок").replace("<", "").replace(">", "")
-    return "<a href='tg://user?id=" + str(int(user_id)) + "'>" + label + "</a>"
+    label = str(first or "").strip()
+    handle = str(username or "").strip().lstrip("@")
+    if not label:
+        label = handle or "игрок"
+    label = quiet_visible(label).replace("<", "").replace(">", "").replace("&", "")
+    label = " ".join(label.split()) or "игрок"
+    return label
 def as_aware(value):
     if isinstance(value, datetime) and value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)

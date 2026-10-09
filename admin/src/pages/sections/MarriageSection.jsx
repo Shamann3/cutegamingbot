@@ -208,7 +208,7 @@ function LevelEditor({ levels, onChange }) {
           key: `n${Date.now()}`,
           name: 'Новый',
           days: Math.min(3650, (Number(last.days) || 0) + 7),
-          goal: Math.min(500, (Number(last.goal) || 10) + 6),
+          goal: Math.min(10000, (Number(last.goal) || 10) + 6),
         },
       ])
     })
@@ -315,14 +315,14 @@ function LevelEditor({ levels, onChange }) {
                     className="sec-input"
                     type="number"
                     min="2"
-                    max="500"
+                    max="10000"
                     value={row.goal ?? 0}
                     onChange={(event) => update(row.key, 'goal', event.target.value === '' ? 0 : Number(event.target.value))}
                     onBlur={() => {
                       onChange((prev) => prev.map((item) => {
                         if (item.key !== row.key) return item
                         const number = Number(item.goal)
-                        const next = Number.isFinite(number) ? Math.max(2, Math.min(500, Math.round(number))) : 10
+                        const next = Number.isFinite(number) ? Math.max(2, Math.min(10000, Math.round(number))) : 10
                         return { ...item, goal: next }
                       }))
                     }}
