@@ -434,7 +434,11 @@ def _spark_pack(state, settings, fading, lost, clock, saved):
         if int(row["days"]) > int(state["spark_days"]):
             nxt = row
             break
-    return {"state": state, "level": level, "need": need, "goal": int(level["goal"]), "fading": fading, "saved": saved, "both_done": state["care_payer"] >= need and state["care_partner"] >= need and not fading, "lost": lost, "clock": clock, "table": rows, "next": nxt, "days_left": max(0, int(nxt["days"]) - int(state["spark_days"])) if nxt else 0}
+    holidays = (settings or {}).get("periods") if isinstance(settings, dict) else None
+    if not holidays:
+        from marriage_engine.marriage_design import PERIODS
+        holidays = list(PERIODS)
+    return {"state": state, "level": level, "need": need, "goal": int(level["goal"]), "fading": fading, "saved": saved, "both_done": state["care_payer"] >= need and state["care_partner"] >= need and not fading, "lost": lost, "clock": clock, "table": rows, "next": nxt, "days_left": max(0, int(nxt["days"]) - int(state["spark_days"])) if nxt else 0, "holidays": list(holidays)}
 def _spend(state, need):
     state["care_payer"] = max(0, state["care_payer"] - need)
     state["care_partner"] = max(0, state["care_partner"] - need)
@@ -552,7 +556,12 @@ def _spare(you, other, need, partner):
     if yours <= 0 and theirs <= 0:
         return ""
     from marriage_engine.look import SPARE_LINE, SPARE_DAYS
-    line = SPARE_LINE.format(yours=yours, partner=partner, theirs=theirs)
+    if yours > 0 and theirs > 0:
+        line = SPARE_LINE.format(yours=yours, partner=partner, theirs=theirs)
+    elif yours > 0:
+        line = "Запас: ты " + str(yours)
+    else:
+        line = "Запас: " + str(partner) + " " + str(theirs)
     share = int(need or 0)
     if share > 0 and yours > 0 and theirs > 0:
         ahead = min(yours, theirs) // share
@@ -588,7 +597,7 @@ def card_text(a, b, span, date="", tone=""):
 def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
     """Семь дней, как огонёк: 🔥 — день закрыт, ◌ — сегодня ещё можно, · — пусто."""
     from marriage_engine.look import (
-        CLOCK_WORD, FLAME_COUNT, FLAME_LIT, FLAME_MARK, FLAME_NAMES, FLAME_OFF,
+        CLOCK_WORD, FLAME_COUNT, FLAME_FIRST, FLAME_LIT, FLAME_MARK, FLAME_NAMES, FLAME_OFF,
         FLAME_OPEN, FLAME_RISK, FLAME_TODAY, FLAME_ZERO,
     )
     today = _day(today) or datetime.now(MSK).date()
@@ -611,58 +620,113 @@ def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
             marks.append(FLAME_TODAY)
         else:
             marks.append(FLAME_OFF)
-    if closed <= 0 and not both_done:
+    if fading and not both_done:
+        note = (FLAME_FIRST if closed <= 0 else FLAME_RISK).format(clock=clock or CLOCK_WORD)
+    elif closed <= 0 and not both_done:
         note = FLAME_ZERO
-    elif fading and not both_done:
-        note = FLAME_RISK.format(clock=clock or CLOCK_WORD)
     elif today in lit:
         note = FLAME_LIT
     else:
         note = FLAME_OPEN
     return FLAME_COUNT.format(days=closed) + "\n" + " ".join(names) + "\n" + " ".join(marks) + "\n" + note
+def care_meter(have, need):
+    from marriage_engine.look import BAR_OFF, BAR_ON, METER_EXTRA, METER_LEFT, METER_READY
+    have, need = max(0, int(have or 0)), max(1, int(need or 1))
+    cells = min(need, 8)
+    filled = cells if have >= need else min(cells, int(round(have * cells / need)))
+    bar = (BAR_ON * filled) + (BAR_OFF * (cells - filled))
+    extra = have - need
+    if extra > 0:
+        tail = METER_EXTRA.format(extra=extra)
+    elif have >= need:
+        tail = METER_READY
+    else:
+        tail = METER_LEFT.format(left=need - have)
+    return bar + " " + tail
+def _meters(you, need, partner, other):
+    from marriage_engine.look import METER_LINE
+    return [
+        METER_LINE.format(who="Вы", bar=care_meter(you, need)),
+        METER_LINE.format(who=partner, bar=care_meter(other, need)),
+    ]
+def _step(view, you, other, need):
+    from marriage_engine.look import (
+        CLOCK_WORD, STEP_FIRST_BOTH, STEP_FIRST_THEM, STEP_FIRST_WAIT, STEP_FIRST_YOU,
+        STEP_OPEN_BOTH, STEP_OPEN_THEM, STEP_OPEN_WAIT, STEP_OPEN_YOU, STEP_THEM, STEP_YOU,
+    )
+    you_left, them_left = max(0, int(need) - int(you or 0)), max(0, int(need) - int(other or 0))
+    clock = view.get("clock") or CLOCK_WORD
+    days = int((view.get("state") or {}).get("spark_days") or 0)
+    if view.get("both_done"):
+        return ""
+    if view.get("fading") and days <= 0:
+        if you_left and them_left:
+            return STEP_FIRST_BOTH.format(clock=clock, you=you_left, them=them_left)
+        if you_left:
+            return STEP_FIRST_YOU.format(clock=clock, left=you_left)
+        if them_left:
+            return STEP_FIRST_THEM.format(clock=clock, left=them_left)
+        return STEP_FIRST_WAIT.format(clock=clock)
+    if view.get("fading"):
+        if you_left and them_left:
+            return STEP_OPEN_BOTH.format(clock=clock, you=you_left, them=them_left)
+        if you_left:
+            return STEP_OPEN_YOU.format(clock=clock, left=you_left)
+        if them_left:
+            return STEP_OPEN_THEM.format(clock=clock, left=them_left)
+        return STEP_OPEN_WAIT.format(clock=clock)
+    if you_left:
+        return STEP_YOU.format(left=you_left)
+    if them_left:
+        return STEP_THEM.format(left=them_left)
+    return ""
+def _next_gift(view):
+    from marriage_engine.look import HOLIDAY_GIFT, NEXT_GIFT
+    days = int((view.get("state") or {}).get("spark_days") or 0)
+    for row in view.get("holidays") or []:
+        try:
+            day = int(row.get("day") or 0)
+        except (TypeError, ValueError):
+            continue
+        if day > days:
+            return NEXT_GIFT.format(
+                day=day,
+                name=str(row.get("name") or ""),
+                gift=HOLIDAY_GIFT.get(day, "Один дар на выбор."),
+            )
+    return ""
 def spark_home(a, b, span, date, view, you, partner_care, partner_name):
     from marriage_engine.look import (
-        CLOCK_WORD, HEART, LEVEL_EMPTY, SPARK, SPARK_COAT, SPARK_FADE, SPARK_LIVE,
-        HOME_THEM, HOME_YOU, LIMIT_LINE, SPARK_YESTERDAY, SPARK_ZERO,
-        WAS_SHORT, SPAN_DAY, CARD_HEAD,
+        HEART, LEVEL_EMPTY, SPARK_COAT, WAS_SHORT, SPAN_DAY, CARD_HEAD, CARD_TOGETHER, LIMIT_HEAD,
     )
-    level = str((view.get("level") or {}).get("name") or LEVEL_EMPTY)
-    days, need = int((view.get("state") or {}).get("spark_days") or 0), int(view.get("need") or 0)
+    view = view or {}
+    need = int(view.get("need") or 0)
     goal = int(view.get("goal") or 0)
-    pair = "<b>" + _pair(you, need, partner_name, partner_care) + "</b>"
-    left = max(0, need - int(you or 0))
     lines = [
         CARD_HEAD.format(heart=HEART, a=a, b=b),
-        "<b>" + span + "</b>",
+        CARD_TOGETHER.format(span=span),
+        "<b>" + str((view.get("level") or {}).get("name") or LEVEL_EMPTY) + "</b>",
         flame_strip(
             view.get("state"),
             both_done=bool(view.get("both_done")),
             fading=bool(view.get("fading")),
             clock=view.get("clock") or "",
         ),
-        LIMIT_LINE.format(goal=goal, need=need),
+        LIMIT_HEAD.format(goal=goal, need=need),
     ]
+    lines.extend(_meters(you, need, partner_name, partner_care))
+    step = _step(view, you, partner_care, need)
+    if step:
+        lines.append(step)
+    spare = _spare(you, partner_care, need, partner_name)
+    if spare:
+        lines.append("<i>" + spare + "</i>")
+    gift = _next_gift(view)
+    if gift:
+        lines.append(gift)
     lost = int(view.get("lost") or 0)
     if lost > 0:
-        lines += [
-            SPARK_ZERO.format(spark=SPARK, level=level),
-            pair,
-            WAS_SHORT.format(n=lost, word=_ru(lost, *SPAN_DAY)),
-            HOME_YOU.format(left=need) if need else "",
-        ]
-    elif view.get("fading"):
-        lines += [
-            SPARK_FADE.format(spark=SPARK, days=days),
-            SPARK_YESTERDAY.format(clock=view.get("clock") or CLOCK_WORD),
-            pair,
-        ]
-    else:
-        lines += [SPARK_LIVE.format(spark=SPARK, days=days, level=level), pair]
-        spare = _spare(you, partner_care, need, partner_name)
-        if spare:
-            lines.append("<i>" + spare + "</i>")
-        if not view.get("both_done"):
-            lines.append(HOME_YOU.format(left=left) if left > 0 else HOME_THEM)
+        lines.append(WAS_SHORT.format(n=lost, word=_ru(lost, *SPAN_DAY)))
     if int((view.get("state") or {}).get("shield") or 0) > 0:
         lines.append(SPARK_COAT)
     return "\n".join(line for line in lines if line)
@@ -691,6 +755,30 @@ def spark_level(view):
             goal=goal,
             share=each_share(goal),
         ))
+    from marriage_engine.look import HOLIDAY_GIFT, HOLIDAY_HEAD, HOLIDAY_LINE, HOLIDAY_NOTE, HOLIDAY_SOON
+    days = int((view.get("state") or {}).get("spark_days") or 0)
+    soon = None
+    for row in view.get("holidays") or []:
+        try:
+            day = int(row.get("day") or 0)
+        except (TypeError, ValueError):
+            continue
+        if day > days and soon is None:
+            soon = day
+    if view.get("holidays"):
+        lines.append(HOLIDAY_HEAD)
+        lines.append(HOLIDAY_NOTE)
+        for row in view.get("holidays"):
+            try:
+                day = int(row.get("day") or 0)
+            except (TypeError, ValueError):
+                continue
+            lines.append(HOLIDAY_LINE.format(
+                day=day,
+                name=str(row.get("name") or ""),
+                gift=HOLIDAY_GIFT.get(day, "Один дар на выбор."),
+                mark=HOLIDAY_SOON if day == soon else "",
+            ))
     return "\n".join(lines)
 def spark_fire(view, you, partner_care, partner_name, hours):
     from marriage_engine.look import (
@@ -716,9 +804,9 @@ def spark_fire(view, you, partner_care, partner_name, hours):
     lines = [
         head,
         FIRE_SPLIT.format(goal=goal, need=need),
-        "<b>" + _pair(you, need, partner_name, partner_care) + "</b>",
-        sub,
     ]
+    lines.extend(_meters(you, need, partner_name, partner_care))
+    lines.append(sub)
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
         lines.append("<i>" + spare + "</i>")
@@ -764,12 +852,23 @@ def spark_stats(view, you, partner_care, partner_name):
         pair=_pair(you, int(view.get("need") or 0), partner_name, partner_care),
         total=int(state.get("care_total") or 0),
     )
-def gift_text(rows, ribbon=False, cfg=None):
+def shop_group(row):
+    effect = str((row or {}).get("effect") or "")
+    ident = str((row or {}).get("id") or "")
+    if ident == "quiet" or effect == "quiet":
+        return "quiet"
+    if effect in ("seed", "pantry") or ident in ("juice", "soup", "salad"):
+        return "meal"
+    if effect in ("mark", "propose", "ring") or (row or {}).get("rite"):
+        return "mark"
+    return "fire"
+def gift_text(rows, ribbon=False, cfg=None, shelf=""):
     from marriage_engine.look import (
-        DINNER_LINE, GIFT_EMPTY, GIFT_RIBBON, GIFT_ROW, GIFT_STOCK, GIFT_TITLE, HEART,
-        item_about, item_name,
+        DINNER_LINE, GIFT_EMPTY, GIFT_FREE, GIFT_RIBBON, GIFT_ROW, GIFT_STOCK, GIFT_TITLE, HEART,
+        SHOP_FIRE, SHOP_MARK, SHOP_MEAL, SHOP_QUIET, item_about, item_name,
     )
-    lines = [GIFT_TITLE.format(heart=HEART)]
+    titles = {"fire": SHOP_FIRE, "mark": SHOP_MARK, "meal": SHOP_MEAL, "quiet": SHOP_QUIET}
+    lines = [titles.get(shelf, GIFT_TITLE).format(heart=HEART)]
     shown = 0
     seeds = False
     for row in rows or []:
@@ -780,7 +879,18 @@ def gift_text(rows, ribbon=False, cfg=None):
         if str(row.get("effect") or "") == "seed":
             seeds = True
         stock = GIFT_STOCK.format(have=have) if have else ""
-        lines.append(GIFT_ROW.format(emoji=str(row.get("emoji") or ""), name=item_name(row), about=item_about(row, rows, cfg), stock=stock))
+        about = item_about(row, rows, cfg)
+        if len(about) > 90:
+            about = about[:87].rstrip() + "…"
+        price = int(row.get("price") or 0)
+        piece = GIFT_ROW if price else GIFT_FREE
+        lines.append(piece.format(
+            emoji=str(row.get("emoji") or ""),
+            name=item_name(row),
+            about=about,
+            stock=stock,
+            price=price,
+        ))
     if seeds:
         lines.append("<i>" + DINNER_LINE + "</i>")
     if ribbon:
@@ -923,6 +1033,7 @@ def face_from_dex(gift, row):
         out["emoji"] = emoji[:8]
     if bio:
         out["line"] = bio[:140]
+        out["from_dex"] = True
     if row.get("price") is not None:
         try:
             out["price"] = max(0, min(100000, int(row["price"])))

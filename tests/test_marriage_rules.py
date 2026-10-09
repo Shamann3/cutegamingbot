@@ -475,5 +475,17 @@ def test_kind_words_feed_the_flame_and_the_week_is_visible():
         2, 0, "Б", 12,
     )
     assert "Лимит 10" in fire
-    assert "Вы 2 из 5" in fire
     assert "ещё 3" in fire
+    from bot.funcs.marriage_design import spark_home
+    home = spark_home("А", "Б", "1 день", "", {
+        "need": 5, "goal": 10, "both_done": False, "fading": True, "clock": "12:00",
+        "level": {"name": "Знакомство"},
+        "state": {"spark_days": 0},
+        "holidays": [{"day": 7, "name": "Первая неделя"}],
+    }, 7, 2, "Б")
+    assert "Лимит 10" in home
+    assert "ещё 3" in home
+    assert "первый огонёк" in home
+    assert "Огонька нет" not in home
+    assert "Гаснет" not in home
+    assert "●" in home

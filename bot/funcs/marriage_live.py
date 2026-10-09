@@ -43,6 +43,8 @@ from bot.funcs.marriage_design import (
     quiet_pay,
     GIFT_ALERT,
     gift_text,
+    shop_group,
+    SHOP_HOME,
     BTN_HOLD,
     BTN_HOW,
     BTN_LEAVE,
@@ -267,7 +269,7 @@ def _kb_gifts(rows) -> InlineKeyboardMarkup:
             _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
             _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
         ])
-    buttons.extend(_kb("back").inline_keyboard)
+    buttons.extend(_kb("shop_back").inline_keyboard)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -869,16 +871,21 @@ async def _rp(message, item: dict, note: str, verb: str = "") -> bool:
     return True
 
 
-async def _gift_screen(query, user_id: int, pool, cfg, live, note: str = "") -> None:
+async def _gift_screen(query, user_id: int, pool, cfg, live, note: str = "", shelf: str = "") -> None:
     rows = await store.gift_stock(pool, user_id, cfg)
-    text = gift_text(rows, own_ribbon(live, user_id), cfg)
+    kind = shelf if shelf in ("fire", "mark", "meal", "quiet") else ""
+    if not kind:
+        await _edit(query, SHOP_HOME, _kb("shop"))
+        return
+    picked = [row for row in rows if shop_group(row) == kind]
+    text = gift_text(picked, own_ribbon(live, user_id) and kind == "mark", cfg, kind)
     clean = str(note or "").strip()
     if clean:
         text = clean + "\n" + text
-    await _edit(query, text, _kb_gifts(rows))
+    await _edit(query, text, _kb_gifts(picked))
 
 
-async def _on_bag(query, user_id: int, pool) -> None:
+async def _on_bag(query, user_id: int, pool, shelf: str = "0") -> None:
     live = await store.live_for(pool, user_id)
     if not live:
         await _note(query, ALERT_NO_MARRIAGE)
@@ -887,7 +894,7 @@ async def _on_bag(query, user_id: int, pool) -> None:
         await _note(query, GIFT_ALERT["old"])
         return
     await query.answer()
-    await _gift_screen(query, user_id, pool, await _cfg(), live)
+    await _gift_screen(query, user_id, pool, await _cfg(), live, shelf=shelf)
 
 
 async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
@@ -932,7 +939,7 @@ async def _on_gift_buy(query, kind: str, user_id: int, pool) -> None:
     if price > 0:
         await store.note_money(pool, kind, user_id, price, int(live.get("chat_id") or 0))
     await query.answer()
-    await _gift_screen(query, user_id, pool, cfg, live)
+    await _gift_screen(query, user_id, pool, cfg, live, shelf=shop_group(gift or {}))
 
 
 async def _place_hint_message(query, kind: str, cfg) -> None:
@@ -984,7 +991,7 @@ async def _on_gift_use(query, kind: str, user_id: int, pool) -> None:
         note = "+" + str(int(result.get("care") or 0))
     card = use_card(face.get("emoji") or "", face.get("name") or "Предмет", note) if note else ""
     fresh = await store.live_for(pool, user_id)
-    await _gift_screen(query, user_id, pool, cfg, fresh or live, card)
+    await _gift_screen(query, user_id, pool, cfg, fresh or live, card, shop_group(face))
 
 
 async def _dispatch(query) -> None:
@@ -1021,7 +1028,7 @@ async def _dispatch(query) -> None:
         await _on_gest(query, token, user_id, pool)
         return
     if action == "bag":
-        await _on_bag(query, user_id, pool)
+        await _on_bag(query, user_id, pool, token)
         return
     if action == "gbuy":
         await _on_gift_buy(query, token, user_id, pool)

@@ -114,6 +114,10 @@ def old_bios():
 def item_about(row, rows=None, cfg=None):
     """Описание предмета. Число искр и часы подставляются из панели."""
     row = row or {}
+    if row.get("from_dex"):
+        written = _plain(row.get("line") or "")
+        if written:
+            return written
     ident = str(row.get("id") or "")
     template = ABOUT.get(ident) or ""
     if not template:
