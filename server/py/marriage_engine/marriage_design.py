@@ -6,10 +6,10 @@
 Сообщение целиком - в text= тройными кавычками.
 Эмодзи сообщения - в emoji=.
 Каждая кнопка, которую видит человек, написана под своим сообщением:
-    b(text="Слово", icon=HEART, color="primary", go="...", data="mrg:...")
+    b(text="Слово", icon="<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>", color="primary", go="...", data="mrg:...")
 Ряд из двух кнопок - один список [кнопка, кнопка]. Кнопка с новой строки - свой ряд.
 text= - подпись. color= - default, primary, success или danger.
-icon= - премиум-эмодзи. HEART, SPARK и NO_MARK заданы ниже. Пустой icon= - кнопка без значка.
+icon= - премиум-эмодзи этой кнопки. Пишется здесь и больше никуда не смотрит. Пустой icon= - кнопка без значка.
 data= - куда ведёт. Его не переписывают. {book_id} {token} {verb_id} {amount} {price} {have} подставляются сами.
 Магазин берёт «Купить» и «Использовать» с экрана этого предмета.
 Праздник берёт кнопки с экрана feast. «На ферму» и «В крафт» - кнопка использования саженца и блюда.
@@ -150,14 +150,11 @@ def button_rows(name, show=(), **slots):
     return out
 
 
-# Значки кнопок. Чтобы сменить премиум-эмодзи, замените id на тот, что пришёл с эмодзи.
-# HEART - согласие, магазин, слово паре. SPARK - лимит. NO_MARK - отказ и развод.
+# Знак в начале текста сообщения. Кнопки его не берут: у каждой свой icon= под сообщением.
 RED_ID = "5388870246243274946"
 DOT_ID = "5337017423906226569"
-NO_ID = "5226660202035554522"
 HEART = "<tg-emoji emoji-id='" + RED_ID + "'>❤</tg-emoji>"
 SPARK = "<tg-emoji emoji-id='" + DOT_ID + "'>🔴</tg-emoji>"
-NO_MARK = "<tg-emoji emoji-id='" + NO_ID + "'>❌</tg-emoji>"
 HEARTS_SHELF = "💖"
 
 # Часы по умолчанию, если в панели пусто. Луна с 21 включительно до 6. Рассвет с 6 до 10.
@@ -195,8 +192,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Отказать", icon=NO_MARK, color="danger", go="no", data="mrg:no:{book_id}"),
-                b(text="Согласиться", icon=HEART, color="success", go="yes", data="mrg:yes:{book_id}"),
+                b(text="Отказать", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="no", data="mrg:no:{book_id}"),
+                b(text="Согласиться", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="yes", data="mrg:yes:{book_id}"),
             ],
             [
                 b(text="Отменить заявку", color="primary", go="stop", data="mrg:stop:{book_id}"),
@@ -212,8 +209,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Отказать", icon=NO_MARK, color="danger", go="no", data="mrg:no:{book_id}"),
-                b(text="Согласиться", icon=HEART, color="success", go="yes", data="mrg:yes:{book_id}"),
+                b(text="Отказать", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="no", data="mrg:no:{book_id}"),
+                b(text="Согласиться", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="yes", data="mrg:yes:{book_id}"),
             ],
             [
                 b(text="Отменить заявку", color="primary", go="stop", data="mrg:stop:{book_id}"),
@@ -245,8 +242,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Остаться", icon=HEART, color="success", go="stay", data="mrg:stay:{token}"),
-                b(text="Развестись", icon=NO_MARK, color="danger", go="leave", data="mrg:leave:{token}"),
+                b(text="Остаться", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="stay", data="mrg:stay:{token}"),
+                b(text="Развестись", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="leave", data="mrg:leave:{token}"),
             ],
         ],
     ),
@@ -288,7 +285,7 @@ SCREENS = {
         text=_line("""<b>{title} · {price} кут</b>"""),
         buttons=[
             [
-                b(text="Списать {amount} кут", icon=HEART, color="success", go="pay", data="mrg:pay:{verb_id}"),
+                b(text="Списать {amount} кут", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="pay", data="mrg:pay:{verb_id}"),
             ],
             [
                 b(text="Не сейчас", color="default", go="skip", data="mrg:skip:{verb_id}"),
@@ -335,8 +332,8 @@ SCREENS = {
         <i>Оба набрали свою половину — день горит. Длиннее серия — выше лимит и награды. В профиле видно, что вы пара.</i>
         """),
         buttons=[
-            [b(text="Как кормить огонёк", icon=HEART, color="primary", go="how", data="mrg:use:0")],
-            [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Как кормить огонёк", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="how", data="mrg:use:0")],
+            [b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="default", go="fire", data="mrg:fire:0", when="play")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -349,8 +346,8 @@ SCREENS = {
         <i>Искры сверх половины копятся в запас и могут засчитать следующий день.</i>
         """),
         buttons=[
-            [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
-            [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Слово паре", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="care", data="mrg:care:0", when="play")],
+            [b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="default", go="fire", data="mrg:fire:0", when="play")],
             [
                 b(text="Что даёт брак", color="default", go="what", data="mrg:what:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
@@ -366,7 +363,7 @@ SCREENS = {
         <i>До 12:00 вчерашнюю половину ещё можно добрать добрым словом.</i>
         """),
         buttons=[
-            [b(text="Лимит дня", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="primary", go="fire", data="mrg:fire:0", when="play")],
             [
                 b(text="Как кормить огонёк", color="default", go="how", data="mrg:use:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
@@ -392,13 +389,13 @@ SCREENS = {
         {heart} <b>{a} и {b}</b>
         """,
         buttons=[
-            [b(text="Дар праздника", icon=HEART, color="primary", go="feast", data="mrg:feast:0", when="feast")],
+            [b(text="Дар праздника", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="feast", data="mrg:feast:0", when="feast")],
             [
-                b(text="Слово паре", icon=HEART, color="primary", go="gest", data="mrg:gest:{token}"),
-                b(text="Магазин пары", icon=HEART, color="primary", go="bag", data="mrg:bag:0"),
+                b(text="Слово паре", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="gest", data="mrg:gest:{token}"),
+                b(text="Магазин пары", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="bag", data="mrg:bag:0"),
             ],
             [
-                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="default", go="fire", data="mrg:fire:0"),
                 b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [
@@ -410,7 +407,7 @@ SCREENS = {
                 b(text="Все искры", color="default", go="stat", data="mrg:stat:0"),
             ],
             [b(text="Лента в профиле", color="default", go="rib", data="mrg:rib:0")],
-            [b(text="Расторгнуть брак", icon=NO_MARK, color="danger", go="warn", data="mrg:warn:{token}", when="leave")],
+            [b(text="Расторгнуть брак", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="warn", data="mrg:warn:{token}", when="leave")],
         ],
     ),
 
@@ -421,7 +418,7 @@ SCREENS = {
         <i>Доброе слово добавляет искры в вашу половину лимита. Оба набрали — день горит, лимит и награды выше.</i>
         """,
         buttons=[
-            [b(text="Обнять", icon=HEART, color="primary", go="hug", data="mrg:act:hug:{token}")],
+            [b(text="Обнять", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="hug", data="mrg:act:hug:{token}")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -433,24 +430,24 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Обнять", icon=HEART, color="primary", go="hug", data="mrg:act:hug:{token}"),
-                b(text="Поцеловать", icon=HEART, color="primary", go="kiss", data="mrg:act:kiss:{token}"),
+                b(text="Обнять", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="hug", data="mrg:act:hug:{token}"),
+                b(text="Поцеловать", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="kiss", data="mrg:act:kiss:{token}"),
             ],
             [
-                b(text="Чмок", icon=HEART, color="primary", go="peck", data="mrg:act:peck:{token}"),
-                b(text="Воздушный", icon=HEART, color="primary", go="air", data="mrg:act:air:{token}"),
+                b(text="Чмок", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="peck", data="mrg:act:peck:{token}"),
+                b(text="Воздушный", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="air", data="mrg:act:air:{token}"),
             ],
             [
-                b(text="Похвалить", icon=HEART, color="primary", go="praise", data="mrg:act:praise:{token}"),
-                b(text="Погладить", icon=HEART, color="primary", go="stroke", data="mrg:act:stroke:{token}"),
+                b(text="Похвалить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="praise", data="mrg:act:praise:{token}"),
+                b(text="Погладить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="stroke", data="mrg:act:stroke:{token}"),
             ],
             [
-                b(text="Роза", icon=HEART, color="primary", go="rose", data="mrg:act:rose:{token}"),
-                b(text="Комплимент", icon=HEART, color="primary", go="compliment", data="mrg:act:compliment:{token}"),
+                b(text="Роза", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="rose", data="mrg:act:rose:{token}"),
+                b(text="Комплимент", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="compliment", data="mrg:act:compliment:{token}"),
             ],
             [
-                b(text="За руку", icon=HEART, color="primary", go="hand", data="mrg:act:hand:{token}"),
-                b(text="На ночь", icon=HEART, color="primary", go="night", data="mrg:act:night:{token}"),
+                b(text="За руку", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="hand", data="mrg:act:hand:{token}"),
+                b(text="На ночь", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="night", data="mrg:act:night:{token}"),
             ],
             [
                 b(text="Если день сорвался", color="default", go="hold", data="mrg:hold:0"),
@@ -464,7 +461,7 @@ SCREENS = {
         emoji=SPARK,
         text=_line("""<b>Лимит</b> <i>Искры на сегодня делятся пополам. Оба набрали свою половину — день горит.</i>"""),
         buttons=[
-            [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
+            [b(text="Слово паре", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="care", data="mrg:care:0", when="play")],
             [
                 b(text="Как кормить огонёк", color="default", go="how", data="mrg:use:0"),
                 b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
@@ -477,7 +474,7 @@ SCREENS = {
         text=_line("""<b>Награды</b> <i>Чем дольше огонёк, тем выше лимит дня. Лимит всегда делится пополам.</i>"""),
         buttons=[
             [
-                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="default", go="fire", data="mrg:fire:0"),
                 b(text="Что даёт брак", color="default", go="what", data="mrg:what:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -488,7 +485,7 @@ SCREENS = {
         text=_line("""<b>Всего</b> <i>Сколько искр уже вложено. Больше дней подряд — выше лимит.</i>"""),
         buttons=[
             [
-                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Лимит дня", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="default", go="fire", data="mrg:fire:0"),
                 b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -503,8 +500,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Снять с профиля", icon=NO_MARK, color="danger", go="riboff", data="mrg:rib:off"),
-                b(text="Оставить ленту", icon=HEART, color="success", go="ribstay", data="mrg:rib:stay"),
+                b(text="Снять с профиля", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="riboff", data="mrg:rib:off"),
+                b(text="Оставить ленту", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="ribstay", data="mrg:rib:stay"),
             ],
         ],
     ),
@@ -514,10 +511,10 @@ SCREENS = {
         🎀 <b>Лента на вас</b>
         """,
         buttons=[
-            [b(text="Снять ленту", icon=NO_MARK, color="danger", go="ribask", data="mrg:rib:ask")],
+            [b(text="Снять ленту", icon="""<tg-emoji emoji-id='5226660202035554522'>❌</tg-emoji>""", color="danger", go="ribask", data="mrg:rib:ask")],
             [
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
-                b(text="Магазин пары", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин пары", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="default", go="bag", data="mrg:bag:0"),
             ],
         ],
     ),
@@ -529,7 +526,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Магазин пары", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин пары", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="default", go="bag", data="mrg:bag:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -551,10 +548,10 @@ SCREENS = {
         <i>цена как в общем магазине</i></blockquote>
         """,
         buttons=[
-            [b(text="Искры к лимиту", icon=SPARK, color="primary", go="shelf_fire", data="mrg:bag:fire")],
+            [b(text="Искры к лимиту", icon="""<tg-emoji emoji-id='5337017423906226569'>🔴</tg-emoji>""", color="primary", go="shelf_fire", data="mrg:bag:fire")],
             [
-                b(text="Знаки пары", icon=HEART, color="default", go="shelf_mark", data="mrg:bag:mark"),
-                b(text="Ужин вместе", icon=HEART, color="default", go="shelf_meal", data="mrg:bag:meal"),
+                b(text="Знаки пары", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="default", go="shelf_mark", data="mrg:bag:mark"),
+                b(text="Ужин вместе", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="default", go="shelf_meal", data="mrg:bag:meal"),
             ],
             [b(text="Тихий день", color="default", go="shelf_quiet", data="mrg:bag:quiet")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -578,11 +575,11 @@ SCREENS = {
         <i>{aura} Один дар, когда оба выберут одно.</i>
         """,
         buttons=[
-            [b(text="Конверт", icon=HEART, color="primary", go="envelope", data="mrg:wish:envelope")],
-            [b(text="Забота", icon=HEART, color="primary", go="care_prize", data="mrg:wish:care")],
-            [b(text="Лента в дар", icon=HEART, color="primary", go="ribbon_prize", data="mrg:wish:ribbon")],
-            [b(text="Премиум 3 мес.", icon=HEART, color="primary", go="premium3", data="mrg:wish:premium3")],
-            [b(text="Премиум 6 мес.", icon=HEART, color="primary", go="premium6", data="mrg:wish:premium6", when="late")],
+            [b(text="Конверт", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="envelope", data="mrg:wish:envelope")],
+            [b(text="Забота", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="care_prize", data="mrg:wish:care")],
+            [b(text="Лента в дар", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="ribbon_prize", data="mrg:wish:ribbon")],
+            [b(text="Премиум 3 мес.", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="premium3", data="mrg:wish:premium3")],
+            [b(text="Премиум 6 мес.", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="premium6", data="mrg:wish:premium6", when="late")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -600,8 +597,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить блик", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:glow"),
-                b(text="Зажечь", icon=HEART, color="primary", go="guse", data="mrg:guse:glow"),
+                b(text="Купить блик", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:glow"),
+                b(text="Зажечь", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:glow"),
             ],
         ],
         used="Вам добавилось 3 заботы.",
@@ -620,8 +617,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить свечу", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:candle"),
-                b(text="Зажечь", icon=HEART, color="primary", go="guse", data="mrg:guse:candle"),
+                b(text="Купить свечу", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:candle"),
+                b(text="Зажечь", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:candle"),
             ],
         ],
         used="Вам добавилось 8 забот.",
@@ -640,8 +637,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить очаг", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:hearth"),
-                b(text="Разжечь", icon=HEART, color="primary", go="guse", data="mrg:guse:hearth"),
+                b(text="Купить очаг", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:hearth"),
+                b(text="Разжечь", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:hearth"),
             ],
         ],
         used="Вам добавилось 20 забот.",
@@ -660,8 +657,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить спичку", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:match"),
-                b(text="Чиркнуть", icon=HEART, color="primary", go="guse", data="mrg:guse:match"),
+                b(text="Купить спичку", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:match"),
+                b(text="Чиркнуть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:match"),
             ],
         ],
         used="Вчерашняя половина лимита набрана.",
@@ -680,8 +677,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить ленту", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:ribbon"),
-                b(text="Надеть", icon=HEART, color="primary", go="guse", data="mrg:guse:ribbon"),
+                b(text="Купить ленту", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:ribbon"),
+                b(text="Надеть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:ribbon"),
             ],
         ],
         used="Лента теперь на вас. В профиле видно, что вы в браке.",
@@ -700,8 +697,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить тюльпан", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:tulip"),
-                b(text="Отдать", icon=HEART, color="primary", go="guse", data="mrg:guse:tulip"),
+                b(text="Купить тюльпан", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:tulip"),
+                b(text="Отдать", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:tulip"),
             ],
         ],
         used="Партнёру добавилось 5 забот. Цветок теперь в руках партнёра.",
@@ -720,8 +717,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить мёд", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:honey"),
-                b(text="Открыть", icon=HEART, color="primary", go="guse", data="mrg:guse:honey"),
+                b(text="Купить мёд", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:honey"),
+                b(text="Открыть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:honey"),
             ],
         ],
         used="Вам и партнёру добавилось по 4 заботы.",
@@ -740,8 +737,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить луну", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:moon"),
-                b(text="Поставить", icon=HEART, color="primary", go="guse", data="mrg:guse:moon"),
+                b(text="Купить луну", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:moon"),
+                b(text="Поставить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:moon"),
             ],
         ],
         used="Ночь. Ваша половина лимита на сегодня набрана.",
@@ -760,8 +757,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить рассвет", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:dawn"),
-                b(text="Встретить", icon=HEART, color="primary", go="guse", data="mrg:guse:dawn"),
+                b(text="Купить рассвет", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:dawn"),
+                b(text="Встретить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:dawn"),
             ],
         ],
         used="Утро. Вам добавилось 6 забот.",
@@ -780,8 +777,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить клятву", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:vow"),
-                b(text="Прочитать", icon=HEART, color="primary", go="guse", data="mrg:guse:vow"),
+                b(text="Купить клятву", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:vow"),
+                b(text="Прочитать", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:vow"),
             ],
         ],
         used="Клятва прочитана. Это можно сделать только один раз.",
@@ -800,8 +797,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить предложение", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:propose"),
-                b(text="Сказать", icon=HEART, color="primary", go="guse", data="mrg:guse:propose"),
+                b(text="Купить предложение", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:propose"),
+                b(text="Сказать", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:propose"),
             ],
         ],
         used="Вы сделали предложение. Теперь можно подарить кольцо.",
@@ -820,8 +817,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить кольцо", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:band"),
-                b(text="Надеть", icon=HEART, color="primary", go="guse", data="mrg:guse:band"),
+                b(text="Купить кольцо", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:band"),
+                b(text="Надеть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:band"),
             ],
         ],
         used="Кольцо теперь у партнёра. Вы стали семьёй.",
@@ -840,8 +837,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить саженец", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:seedcuke"),
-                b(text="На ферму", icon=HEART, color="primary", go="guse", data="mrg:guse:seedcuke"),
+                b(text="Купить саженец", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:seedcuke"),
+                b(text="На ферму", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:seedcuke"),
             ],
         ],
         used="Саженец сажают на ферме.",
@@ -864,8 +861,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить саженец", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:seedtom"),
-                b(text="На ферму", icon=HEART, color="primary", go="guse", data="mrg:guse:seedtom"),
+                b(text="Купить саженец", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:seedtom"),
+                b(text="На ферму", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:seedtom"),
             ],
         ],
         used="Саженец сажают на ферме.",
@@ -888,8 +885,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить саженец", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:seedcab"),
-                b(text="На ферму", icon=HEART, color="primary", go="guse", data="mrg:guse:seedcab"),
+                b(text="Купить саженец", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:seedcab"),
+                b(text="На ферму", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:seedcab"),
             ],
         ],
         used="Саженец сажают на ферме.",
@@ -912,8 +909,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить огурец", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cuke"),
-                b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:cuke"),
+                b(text="Купить огурец", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:cuke"),
+                b(text="В крафт", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:cuke"),
             ],
         ],
         used="Огурец ждёт тарелку.",
@@ -934,8 +931,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить помидор", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:tom"),
-                b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:tom"),
+                b(text="Купить помидор", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:tom"),
+                b(text="В крафт", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:tom"),
             ],
         ],
         used="Помидор ждёт тарелку.",
@@ -956,8 +953,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить капусту", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cab"),
-                b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:cab"),
+                b(text="Купить капусту", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:cab"),
+                b(text="В крафт", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:cab"),
             ],
         ],
         used="Капуста ждёт тарелку.",
@@ -978,8 +975,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить сок", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:juice"),
-                b(text="Выпить", icon=HEART, color="primary", go="guse", data="mrg:guse:juice"),
+                b(text="Купить сок", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:juice"),
+                b(text="Выпить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:juice"),
             ],
         ],
         used="Обоим по +8.",
@@ -1000,8 +997,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить суп", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:soup"),
-                b(text="Съесть", icon=HEART, color="primary", go="guse", data="mrg:guse:soup"),
+                b(text="Купить суп", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:soup"),
+                b(text="Съесть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:soup"),
             ],
         ],
         used="Обоим по +12.",
@@ -1022,8 +1019,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить салат", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:salad"),
-                b(text="Съесть", icon=HEART, color="primary", go="guse", data="mrg:guse:salad"),
+                b(text="Купить салат", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:salad"),
+                b(text="Съесть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:salad"),
             ],
         ],
         used="Обоим по +15. Ужин вместе.",
@@ -1046,7 +1043,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Отдать букет", icon=HEART, color="primary", go="guse", data="mrg:guse:bouquet"),
+                b(text="Отдать букет", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:bouquet"),
             ],
         ],
         used="",
@@ -1064,7 +1061,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Сделать предложение", icon=HEART, color="primary", go="guse", data="mrg:guse:propose"),
+                b(text="Сделать предложение", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:propose"),
             ],
         ],
         used="",
@@ -1082,7 +1079,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Надеть кольцо", icon=HEART, color="primary", go="guse", data="mrg:guse:wedring"),
+                b(text="Надеть кольцо", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:wedring"),
             ],
         ],
         used="",
@@ -1100,7 +1097,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Связать нить", icon=HEART, color="primary", go="guse", data="mrg:guse:thread"),
+                b(text="Связать нить", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:thread"),
             ],
         ],
         used="",
@@ -1118,8 +1115,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить тихий день", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:quiet"),
-                b(text="Затихнуть", icon=HEART, color="primary", go="guse", data="mrg:guse:quiet"),
+                b(text="Купить тихий день", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="success", go="gbuy", data="mrg:gbuy:quiet"),
+                b(text="Затихнуть", icon="""<tg-emoji emoji-id='5388870246243274946'>❤</tg-emoji>""", color="primary", go="guse", data="mrg:guse:quiet"),
             ],
         ],
         used="Тихий день закрыл вашу половину.",

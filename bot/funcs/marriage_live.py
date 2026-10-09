@@ -79,7 +79,6 @@ from bot.funcs.marriage_design import (
     LIST_ROW,
     LIST_TITLE,
     NEED_REPLY,
-    NO_ID,
     NOT_FOUND,
     NOT_MARRIED,
     OFF,
@@ -94,8 +93,6 @@ from bot.funcs.marriage_design import (
     PROPOSAL_MINUTES,
     PROPOSE_FREE,
     PROPOSE_PAID,
-    DOT_ID,
-    RED_ID,
     REFUSED,
     SPARK,
     RP,
@@ -272,11 +269,11 @@ def _kb_gifts(rows) -> InlineKeyboardMarkup:
         if not screen:
             if buy_ok:
                 buttons.append([
-                    _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success", RED_ID),
-                    _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID),
+                    _btn(_buy_label(row), f"mrg:gbuy:{row['id']}", "success"),
+                    _btn(_use_label(row), f"mrg:guse:{row['id']}", "primary"),
                 ])
             else:
-                buttons.append([_btn(_use_label(row), f"mrg:guse:{row['id']}", "primary", RED_ID)])
+                buttons.append([_btn(_use_label(row), f"mrg:guse:{row['id']}", "primary")])
             continue
         for line in button_rows(screen, price=price, have=have):
             built = []
