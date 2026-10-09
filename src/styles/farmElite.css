@@ -284,6 +284,29 @@
   filter: none !important;
 }
 
+.cute-lite-mode .tab-theme-farm .farm-pantry::before,
+.cute-turbo-mode .tab-theme-farm .farm-pantry::before {
+  display: none !important;
+}
+
+.cute-lite-mode .tab-theme-farm .farm-pantry-tile,
+.cute-turbo-mode .tab-theme-farm .farm-pantry-tile,
+.cute-lite-mode .tab-theme-farm .farm-pantry-tile .farm-stat-chip-icon,
+.cute-turbo-mode .tab-theme-farm .farm-pantry-tile .farm-stat-chip-icon,
+.cute-lite-mode .tab-theme-farm .farm-batch-icon,
+.cute-turbo-mode .tab-theme-farm .farm-batch-icon,
+.cute-lite-mode .tab-theme-farm .farm-header-crest-img,
+.cute-turbo-mode .tab-theme-farm .farm-header-crest-img {
+  animation: none !important;
+}
+
+.cute-lite-mode .soil-field-dew,
+.cute-turbo-mode .soil-field-dew,
+.cute-lite-mode .soil-field--moist:not(.soil-field--dry):not(.soil-field--ready) .soil-field-earth,
+.cute-turbo-mode .soil-field--moist:not(.soil-field--dry):not(.soil-field--ready) .soil-field-earth {
+  animation: none !important;
+}
+
 .tab-theme-farm .farm-batch-btn--water {
   background: linear-gradient(135deg, #0f2e22 0%, #1a5c40 55%, #245c3f 100%);
   color: #e8fff3;
@@ -376,6 +399,190 @@
   }
 }
 
+/* Склад: много предметов в сетке над грядками, а не в одной строке. */
+.tab-theme-farm .farm-balance-bar--fixed.farm-pantry {
+  width: min(28rem, calc(100vw - 0.85rem));
+  max-width: calc(100vw - 0.85rem);
+  border-radius: 22px;
+  padding: 0.42rem 0.45rem 0.48rem;
+  background:
+    linear-gradient(180deg, rgba(18, 36, 24, 0.94) 0%, rgba(6, 16, 10, 0.96) 100%);
+  border-color: rgba(212, 175, 55, 0.38);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 236, 180, 0.12);
+  overflow: hidden;
+}
+
+.tab-theme-farm .farm-pantry::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 244, 210, 0.07) 48%,
+    transparent 58%
+  );
+  transform: translateX(-70%);
+  animation: farmPantrySheen 7.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.tab-theme-farm .farm-pantry-head,
+.tab-theme-farm .farm-pantry-scroll {
+  position: relative;
+  z-index: 1;
+}
+
+.tab-theme-farm .farm-pantry-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.35rem 0.28rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(253, 230, 138, 0.72);
+}
+
+.tab-theme-farm .farm-pantry-head em {
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: rgba(244, 239, 226, 0.55);
+}
+
+.tab-theme-farm .farm-pantry-scroll {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.35rem, 1fr));
+  gap: 0.32rem;
+  max-height: 7.35rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.05rem 0.08rem 0.12rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.45) transparent;
+}
+
+.tab-theme-farm .farm-pantry-tile {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.08rem;
+  min-width: 0;
+  min-height: 3.35rem;
+  padding: 0.32rem 0.2rem 0.28rem;
+  border-radius: 14px;
+  background: rgba(8, 20, 13, 0.72);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  animation: farmPantryIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tab-theme-farm .farm-pantry .farm-pantry-tile + .farm-pantry-tile::before {
+  display: none;
+}
+
+.tab-theme-farm .farm-pantry-tile .farm-stat-chip-text {
+  align-items: center;
+  width: 100%;
+}
+
+.tab-theme-farm .farm-pantry-tile .farm-stat-chip-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: rgba(244, 239, 226, 0.62);
+  line-height: 1.15;
+}
+
+.tab-theme-farm .farm-pantry-tile .farm-stat-chip-value {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+}
+
+.tab-theme-farm .farm-pantry-tile .farm-stat-chip-icon {
+  font-size: 1.15rem;
+  animation: farmPantryBob 3.4s ease-in-out infinite;
+}
+
+.tab-theme-farm .farm-pantry-tile:nth-child(3n) .farm-stat-chip-icon { animation-delay: 0.45s; }
+.tab-theme-farm .farm-pantry-tile:nth-child(3n + 1) .farm-stat-chip-icon { animation-delay: 0.9s; }
+
+.tab-theme-farm .farm-pantry-tile.farm-stat-chip-compact-kut {
+  border-color: rgba(253, 230, 138, 0.45);
+  background: linear-gradient(180deg, rgba(62, 44, 12, 0.55), rgba(8, 20, 13, 0.8));
+}
+
+@keyframes farmPantryIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes farmPantryBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes farmPantrySheen {
+  0%, 62% { transform: translateX(-70%); opacity: 0; }
+  72% { opacity: 1; }
+  100% { transform: translateX(70%); opacity: 0; }
+}
+
+.tab-theme-farm .farm-shell-with-bar {
+  padding-bottom: calc(15.2rem + env(safe-area-inset-bottom, 0px));
+}
+
+.tab-theme-farm .farm-header-crest-img {
+  animation:
+    farmHeaderIn 0.7s cubic-bezier(0.22, 1, 0.36, 1) both,
+    farmCrestFloat 5.6s 0.8s ease-in-out infinite;
+}
+
+@keyframes farmCrestFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.tab-theme-farm .farm-batch-icon {
+  display: inline-block;
+  animation: farmBatchPop 2.6s ease-in-out infinite;
+}
+
+@keyframes farmBatchPop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.08); }
+}
+
+.soil-field-dew {
+  animation: soilDew 4.8s ease-in-out infinite;
+}
+
+@keyframes soilDew {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.85; }
+}
+
+.soil-field--moist:not(.soil-field--dry):not(.soil-field--ready) .soil-field-earth {
+  animation: soilBreathe 5.5s ease-in-out infinite;
+}
+
+@keyframes soilBreathe {
+  0%, 100% { filter: saturate(1) brightness(1); }
+  50% { filter: saturate(1.12) brightness(1.06); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tab-theme-farm .farm-shell--enter,
   .tab-theme-farm.farm-module--revealed .farm-plots-grid > *,
@@ -383,7 +590,13 @@
   .farm-header-crest-img,
   .farm-header-cute,
   .farm-header-title,
-  .farm-header-season {
+  .farm-header-season,
+  .tab-theme-farm .farm-pantry::before,
+  .tab-theme-farm .farm-pantry-tile,
+  .tab-theme-farm .farm-pantry-tile .farm-stat-chip-icon,
+  .tab-theme-farm .farm-batch-icon,
+  .soil-field-dew,
+  .soil-field--moist:not(.soil-field--dry):not(.soil-field--ready) .soil-field-earth {
     animation: none !important;
   }
 

@@ -120,6 +120,7 @@ def test_one_answer_closes_the_stage_and_moves_the_card_on():
     assert "lift_status = 'pending'" in ready
     assert "admin_accounts" in ready
     assert "ds.action_id IS NOT NULL OR st.action_id IS NOT NULL" in ready
+    assert "NOT (" in ready
     assert CREATOR_ORDER_SQL.index("lift_status = 'pending'") < CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'")
     assert CREATOR_ORDER_SQL.index("ds.verdict = 'clear' AND st.verdict = 'clear'") < CREATOR_ORDER_SQL.index("ds.verdict = 'wrong' AND st.verdict = 'wrong'")
     assert "epsilon_deed_staff" in UNDO_SORT_SQL
@@ -301,11 +302,12 @@ def test_a_fresh_punishment_is_visible_and_salary_waits_for_the_chain():
     order = " ".join(_staff_live_order().split())
     assert order.index("THEN 0") < order.index("proof_media_id")
     board = " ".join(creator_board_order_sql().split())
-    ready_end = board.index("ELSE 1 END")
-    assert board.index("ds.verdict = 'clear' AND st.verdict = 'clear'", ready_end) > ready_end
-    assert "view_archive" in board
-    assert "proof_media_id" in board[ready_end:]
+    assert "ELSE 1 END" not in board
+    assert "proof_media_id" not in board
+    assert board.index("lift_status = 'pending'") < board.index("ds.verdict = 'clear' AND st.verdict = 'clear'")
     assert "creator_ready_sql" in inspect.getsource(_decide)
+    from deed_pay import _filters
+    assert "creator_ready_sql" in inspect.getsource(_filters)
     assert "_open_staff" in inspect.getsource(deed_staff)
     assert turn_of(False, False) == "admin"
     assert turn_of(False, True) == "staff"

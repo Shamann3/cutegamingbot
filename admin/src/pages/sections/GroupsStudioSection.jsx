@@ -10,7 +10,7 @@ import {
 import { notifyAdmin } from '../../lib/notify'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import DurationUntil from '../../components/DurationUntil'
-import { CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
+import { CaptchaBotBlocks, CaptchaChatBlock, CaptchaOverviewBlock } from '../../components/CaptchaInsights'
 import CaptchaPenalty from '../../components/CaptchaPenalty'
 import { CopyableId, CopyableUsername, IdentityBits } from '../../components/Copyable'
 import OpenUserLink from '../../components/OpenUserLink'
@@ -381,6 +381,7 @@ export default function GroupsStudioSection({
           <Stat label="В дом проекта" value={fmt(g.to_project)} hint="из комиссий" delay={120} />
           <Stat label="Событий" value={fmt(g.events)} delay={180} />
           <Stat label="Капча пройдена" value={fmt(overview?.captcha?.passed)} hint={overview?.captcha?.passRate != null ? `${overview.captcha.passRate}% доходят` : 'раз'} delay={240} />
+          <Stat label="Бот закрыл" value={fmt(overview?.captcha?.botBlocks?.blockedPeople)} hint="за капчу" delay={300} />
         </div>
       </header>
 
@@ -595,6 +596,11 @@ export default function GroupsStudioSection({
                   {sub === 'captcha' && (
                     <>
                       <CaptchaPenalty />
+                      <CaptchaBotBlocks
+                        data={detail.captcha}
+                        onOpenChat={canOpenGroups ? openGroup : undefined}
+                        onOpenUser={onOpenUser}
+                      />
                       <CaptchaChatBlock
                         data={detail.captcha}
                         members={detail.members}
@@ -1087,6 +1093,11 @@ export default function GroupsStudioSection({
               Один раз в группе навсегда. Старые участники проходят, когда пишут. Владелец может выключить одной кнопкой. Наказание за серию ошибок одно на все группы.
             </p>
             <CaptchaPenalty />
+            <CaptchaBotBlocks
+              data={overview?.captcha}
+              onOpenChat={canOpenGroups ? openGroup : undefined}
+              onOpenUser={onOpenUser}
+            />
             <CaptchaOverviewBlock
               data={overview?.captcha}
               onOpenChat={canOpenGroups ? openGroup : undefined}

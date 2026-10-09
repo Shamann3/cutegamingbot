@@ -31,10 +31,15 @@ export default function BalanceBar({
     : chips
 
   if (fixed) {
+    const kinds = visibleChips.length
     return (
-      <div className="farm-balance-bar--fixed" aria-label="Ресурсы фермы">
-        <div className="farm-balance-bar--fixed-track" role="list">
-          {visibleChips.map((chip) => {
+      <div className="farm-balance-bar--fixed farm-pantry" aria-label="Предметы фермы">
+        <div className="farm-pantry-head">
+          <span>Склад</span>
+          <em>{kinds}</em>
+        </div>
+        <div className="farm-pantry-scroll" role="list">
+          {visibleChips.map((chip, index) => {
             const isWaterWarn = anyPlotDry && (chip.kind === 'water')
             return (
               <StatChip
@@ -44,6 +49,8 @@ export default function BalanceBar({
                 value={chip.value}
                 kind={isWaterWarn ? 'water-warn' : chip.kind}
                 compact
+                shelf
+                enterIndex={index}
               />
             )
           })}

@@ -1040,7 +1040,7 @@ def _filters(action: str, admin_id: int, sorter_id: int = 0) -> tuple[str, list[
     parts = [
         _punish_match("s", "$1"),
         human_actor_sql("s"),
-        creator_waiting_sql(),
+        creator_ready_sql("s"),
     ]
     picked = action.strip().lower()
     if picked in PUNISH:
@@ -1197,7 +1197,7 @@ async def _decide(action_id: int, reviewer_id: int, status: str, asked: set[tupl
             if not ready:
                 raise HTTPException(
                     status_code=409,
-                    detail="Сначала эту карточку смотрят администратор группы и сотрудник проекта",
+                    detail="Сначала эту карточку должен проверить администратор группы или сотрудник проекта",
                 )
             chosen = _payable(pick_credits(status, _credit_people(src), asked))
             inserted = await conn.fetchrow(

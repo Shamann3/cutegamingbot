@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from captcha_penalty import PENALTIES, _span_text, penalty_needs_until
 from db import db
 
 log = logging.getLogger("admin_captcha")
@@ -34,6 +35,57 @@ EVENT_LABELS = {
     "disable": "выключил капчу",
     "blocked": "написал — сообщение удалено",
 }
+
+# Бан, который бот ставит сам после серии ошибок. «blocked» в событиях капчи —
+# это удалённое сообщение, не блокировка человека.
+BOT_BLOCK_ACTIONS = ("ban", "banall", "banfull")
+_BOT_ACTOR = "admin_user_id = 0 AND admin_name = 'Капча'"
+_PENALTY_FACE = {key: (label, place) for key, label, place, _hint, _needs in PENALTIES}
+
+
+def empty_bot_blocks() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "blockedPeople": 0,
+        "blockedStrikes": 0,
+        "activeBans": 0,
+        "punishedPeople": 0,
+        "byAction": [],
+        "days": day_strip({}, date.today()),
+        "recent": [],
+        "lastAt": None,
+    }
+
+
+def day_strip(counts: Dict[Any, int], today: date, span: int = 14) -> List[Dict[str, Any]]:
+    """Четырнадцать дней до сегодня, включая нули, чтобы пустой день был виден."""
+    out = []
+    for ago in range(span - 1, -1, -1):
+        day = today - timedelta(days=ago)
+        out.append({"day": day.isoformat(), "n": int(counts.get(day, 0) or 0)})
+    return out
+
+
+def penalty_face(action: str) -> Dict[str, Any]:
+    key = str(action or "").strip().lower()
+    label, place = _PENALTY_FACE.get(key, (key or "Наказание", ""))
+    return {
+        "action": key,
+        "label": label,
+        "place": place,
+        "block": key in BOT_BLOCK_ACTIONS,
+    }
+
+
+def hold_label(action: str, minutes: Any) -> str:
+    if not penalty_needs_until(action):
+        return ""
+    if minutes is None:
+        return "без срока"
+    try:
+        return _span_text(int(minutes) * 60)
+    except (TypeError, ValueError):
+        return ""
 
 
 def _iint(v: Any, default: int = 0) -> int:
@@ -337,8 +389,11 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         "pendingPeople": [],
         "nightPasses": 0,
         "joinPasses": 0,
+        "botBlocks": empty_bot_blocks(),
         "messagePasses": 0,
     }
+    blocks = await bot_blocks(int(chat_id))
+    empty["botBlocks"] = blocks
     if not await _ready():
         return empty
     cid = int(chat_id)
@@ -679,7 +734,192 @@ async def chat_captcha(chat_id: int, *, members: Optional[int] = None) -> Dict[s
         "nightPasses": night_passes,
         "joinPasses": join_passes,
         "messagePasses": message_passes,
+        "botBlocks": blocks,
     }
+
+
+def _bot_where(chat_id: Optional[int], params: List[Any]) -> str:
+    parts = [_BOT_ACTOR, "target_player_id IS NOT NULL"]
+    if chat_id:
+        params.append(int(chat_id))
+        parts.append(f"chat_id = ${len(params)}")
+    return " AND ".join(parts)
+
+
+async def bot_blocks(chat_id: Optional[int] = None) -> Dict[str, Any]:
+    """Кого бот сам наказал за непройденную капчу.
+
+    Один бан на все группы пишется строкой в каждый чат. Для счёта это
+    одно наказание: человек, тип и минута. Удалённые до капчи сообщения
+    сюда не входят.
+    """
+    pack = empty_bot_blocks()
+    pool = getattr(db, "pool", None)
+    if pool is None:
+        return pack
+    params: List[Any] = []
+    where = _bot_where(chat_id, params)
+    strikes = await _q(
+        "bot_blocks_strikes",
+        pool.fetch(
+            f"""
+            SELECT action_type,
+                   count(DISTINCT target_player_id)::int AS people,
+                   count(*)::int AS strikes,
+                   max(minute) AS last_at
+              FROM (
+                SELECT target_player_id, action_type,
+                       date_trunc('minute', created_at) AS minute
+                  FROM staff_actions
+                 WHERE {where}
+                 GROUP BY target_player_id, action_type, date_trunc('minute', created_at)
+              ) one
+             GROUP BY action_type
+            """,
+            *params,
+        ),
+        [],
+    ) or []
+    blocked_strikes = 0
+    last_at = None
+    by_action = []
+    for row in strikes:
+        face = penalty_face(row["action_type"])
+        people = _iint(row["people"])
+        count = _iint(row["strikes"])
+        stamp = row["last_at"]
+        if face["block"]:
+            blocked_strikes += count
+            if stamp is not None and (last_at is None or stamp > last_at):
+                last_at = stamp
+        by_action.append({
+            **face,
+            "people": people,
+            "strikes": count,
+            "lastAt": _iso(stamp),
+        })
+    by_action.sort(key=lambda item: (not item["block"], -item["people"], item["label"]))
+    # Один человек в двух типах бана считается один раз.
+    punished_row = await _q(
+        "bot_blocks_people",
+        pool.fetchrow(
+            f"""
+            SELECT count(DISTINCT target_player_id)::int AS people,
+                   count(DISTINCT target_player_id) FILTER (
+                     WHERE action_type IN ('ban', 'banall', 'banfull')
+                   )::int AS blocked
+              FROM staff_actions
+             WHERE {where}
+            """,
+            *params,
+        ),
+        None,
+    )
+    punished = _iint(punished_row["people"]) if punished_row else 0
+    blocked_people = _iint(punished_row["blocked"]) if punished_row else 0
+
+    ban_params = list(params)
+    ban_params.append(list(BOT_BLOCK_ACTIONS))
+    ban_slot = len(ban_params)
+    active = await _q(
+        "bot_blocks_active",
+        pool.fetchval(
+            f"""
+            SELECT count(DISTINCT user_id)::int
+              FROM active_bans
+             WHERE admin_name = 'Капча'
+               AND ban_until > NOW()
+               {"AND chat_id = $1" if chat_id else ""}
+            """,
+            *([int(chat_id)] if chat_id else []),
+        ),
+        0,
+    )
+    day_rows = await _q(
+        "bot_blocks_days",
+        pool.fetch(
+            f"""
+            SELECT day, count(*)::int AS n
+              FROM (
+                SELECT (created_at AT TIME ZONE 'Europe/Moscow')::date AS day
+                  FROM staff_actions
+                 WHERE {where}
+                   AND action_type = ANY(${ban_slot}::text[])
+                 GROUP BY target_player_id, action_type,
+                          date_trunc('minute', created_at),
+                          (created_at AT TIME ZONE 'Europe/Moscow')::date
+              ) one
+             GROUP BY day
+            """,
+            *ban_params,
+        ),
+        [],
+    ) or []
+    today = date.today()
+    try:
+        moscow = await pool.fetchval("SELECT (NOW() AT TIME ZONE 'Europe/Moscow')::date")
+        if isinstance(moscow, date):
+            today = moscow
+    except Exception:
+        pass
+    counts = {}
+    for row in day_rows:
+        raw = row["day"]
+        if isinstance(raw, datetime):
+            raw = raw.date()
+        counts[raw] = _iint(row["n"])
+
+    recent_rows = await _q(
+        "bot_blocks_recent",
+        pool.fetch(
+            f"""
+            SELECT s.target_player_id, s.action_type, s.reason, s.chat_id,
+                   s.created_at, s.duration_minutes,
+                   COALESCE(NULLIF(btrim(u.first_name), ''), NULLIF(btrim(u.username), ''), '') AS name,
+                   COALESCE(u.username, '') AS username,
+                   COALESCE(NULLIF(btrim(c.namechat), ''), '') AS chat_name
+              FROM (
+                SELECT DISTINCT ON (target_player_id, action_type, date_trunc('minute', created_at))
+                       target_player_id, action_type, reason, chat_id, created_at, duration_minutes
+                  FROM staff_actions
+                 WHERE {where}
+                 ORDER BY target_player_id, action_type, date_trunc('minute', created_at), created_at DESC
+              ) s
+              LEFT JOIN users u ON u.user_id = s.target_player_id
+              LEFT JOIN chat c ON c.chat_id = s.chat_id
+             ORDER BY s.created_at DESC
+             LIMIT 18
+            """,
+            *params,
+        ),
+        [],
+    ) or []
+    recent = []
+    for row in recent_rows:
+        face = penalty_face(row["action_type"])
+        name = (row["name"] or "").strip() or str(row["target_player_id"])
+        recent.append({
+            **face,
+            "userId": int(row["target_player_id"]),
+            "name": name,
+            "username": (row["username"] or "").strip().lstrip("@"),
+            "reason": row["reason"] or "",
+            "chatId": int(row["chat_id"] or 0),
+            "chatName": (row["chat_name"] or "").strip(),
+            "at": _iso(row["created_at"]),
+            "hold": hold_label(face["action"], row["duration_minutes"]),
+        })
+    pack.update({
+        "blockedPeople": blocked_people,
+        "blockedStrikes": blocked_strikes,
+        "activeBans": _iint(active),
+        "punishedPeople": punished,
+        "byAction": by_action,
+        "days": day_strip(counts, today),
+        "recent": recent,
+        "lastAt": _iso(last_at),
+    })
+    return pack
 
 
 async def overview_captcha() -> Dict[str, Any]:
@@ -704,7 +944,10 @@ async def overview_captcha() -> Dict[str, Any]:
         "nightShare": None,
         "lastEventAt": None,
         "facts": [],
+        "botBlocks": empty_bot_blocks(),
     }
+    blocks = await bot_blocks()
+    empty["botBlocks"] = blocks
     if not await _ready():
         return empty
 
@@ -871,6 +1114,8 @@ async def overview_captcha() -> Dict[str, Any]:
         facts.append(f"Сейчас висят {totals['pending']} незакрытых карточек")
     if totals["blocked"]:
         facts.append(f"Удалено {totals['blocked']} сообщений до прохождения")
+    if blocks["blockedPeople"]:
+        facts.append(f"Бот сам заблокировал за капчу: {blocks['blockedPeople']}")
     if disabled_chats:
         facts.append(f"Владельцы выключили капчу в {disabled_chats} группах")
     if last_event_at:
@@ -899,4 +1144,5 @@ async def overview_captcha() -> Dict[str, Any]:
         "nightShare": night_share,
         "lastEventAt": _iso(last_event_at),
         "facts": facts,
+        "botBlocks": blocks,
     }

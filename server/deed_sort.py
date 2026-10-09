@@ -455,19 +455,26 @@ def creator_waiting_sql() -> str:
     )"""
 
 
-def creator_ready_sql(action: str = "s") -> str:
-    """Создателю хватает ответа администратора или сотрудника.
+def creator_checked_sql() -> str:
+    """Кто-то уже отправил ответ. Открытая карточка, которую могли забыть, сюда не входит.
 
-    Ждать второй проверки не нужно. Если не ответил никто и проверять
-    было некому — карточка тоже его. Заявка на разблокировку остаётся,
-    даже если зарплата уже записана. В запросе нужны v, ds и st.
+    В запросе нужны ds и st.
+    """
+    return "(ds.action_id IS NOT NULL OR st.action_id IS NOT NULL)"
+
+
+def creator_ready_sql(action: str = "s") -> str:
+    """Создатель решает карточку после ответа, либо если проверять её было некому.
+
+    Пока администратор или сотрудник ещё могут ответить, карточка им и остаётся.
+    Открытый и забытый просмотр создателю не показывается. Второго ответа
+    можно не ждать. Заявка на разблокировку остаётся, даже если зарплата
+    уже записана. В запросе нужны v, ds и st.
     """
     return f"""(
       {creator_waiting_sql()}
       AND (
-        v.action_id IS NOT NULL
-        OR ds.action_id IS NOT NULL
-        OR st.action_id IS NOT NULL
+        {creator_checked_sql()}
         OR (
           NOT ({other_sorter_exists(action)})
           AND NOT ({staff_available_sql(action)})
@@ -476,17 +483,9 @@ def creator_ready_sql(action: str = "s") -> str:
     )"""
 
 
-def creator_board_order_sql(action: str = "s") -> str:
-    """Сначала карточки, которые создатель уже может решить, в прежнем порядке.
-
-    Наказание, которое ещё смотрят администратор или сотрудник, остаётся в колоде
-    следом: с фото, затем с причиной, затем пустые, более ранние раньше.
-    """
-    return f"""
-    CASE WHEN ({creator_ready_sql(action)}) THEN 0 ELSE 1 END,
-    {CREATOR_ORDER_SQL},
-    {ADMIN_ORDER_SQL}
-    """
+def creator_board_order_sql(_action: str = "s") -> str:
+    """Порядок уже проверенных карточек: заявка, согласие, спор, «непонятно»."""
+    return CREATOR_ORDER_SQL
 
 
 def creator_open_sql(action: str = "s", user_sql: str = "$2") -> str:

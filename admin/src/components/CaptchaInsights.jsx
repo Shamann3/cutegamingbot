@@ -47,6 +47,110 @@ function when(iso) {
   }
 }
 
+function dayNum(iso) {
+  const text = String(iso || '')
+  const day = Number(text.slice(8, 10))
+  return Number.isFinite(day) && day > 0 ? String(day) : ''
+}
+
+export function CaptchaBotBlocks({ data, onOpenChat, onOpenUser }) {
+  const pack = data?.botBlocks || {}
+  const days = Array.isArray(pack.days) ? pack.days : []
+  const actions = Array.isArray(pack.byAction) ? pack.byAction : []
+  const recent = (Array.isArray(pack.recent) ? pack.recent : []).filter((row) => row.block)
+  const other = actions.filter((row) => !row.block && row.people)
+  const peak = Math.max(1, ...days.map((row) => Number(row.n) || 0))
+  return (
+    <section className="grp-card cap-bot">
+      <h3 className="grp-card-title">Бот закрыл сам</h3>
+      <p className="grp-help">
+        Бан, который бот поставил сам: человек не прошёл капчу, и сработала серия ошибок.
+        Удалённое до прохождения сообщение и наказание администратора сюда не входят.
+        Бан сразу на все группы считается одним разом.
+      </p>
+      <div className="grp-stat-grid">
+        <div className="grp-stat">
+          <span className="grp-stat-label">Заблокировал</span>
+          <strong className="grp-stat-value">{fmt(pack.blockedPeople)}</strong>
+          <span className="grp-stat-hint">человек</span>
+        </div>
+        <div className="grp-stat">
+          <span className="grp-stat-label">Сейчас в бане</span>
+          <strong className="grp-stat-value">{fmt(pack.activeBans)}</strong>
+          <span className="grp-stat-hint">срок ещё не вышел</span>
+        </div>
+        <div className="grp-stat">
+          <span className="grp-stat-label">Раз</span>
+          <strong className="grp-stat-value">{fmt(pack.blockedStrikes)}</strong>
+          <span className="grp-stat-hint">отдельных банов</span>
+        </div>
+        <div className="grp-stat">
+          <span className="grp-stat-label">Последний</span>
+          <strong className="grp-stat-value">{when(pack.lastAt)}</strong>
+        </div>
+      </div>
+
+      <h4 className="cap-bot-h">За 14 дней</h4>
+      <div className="cap-days" role="img" aria-label="Блокировки бота за последние 14 дней">
+        {days.map((row) => {
+          const n = Number(row.n) || 0
+          const height = n ? `${Math.max(14, Math.round((100 * n) / peak))}%` : undefined
+          return (
+            <div key={row.day} className={`cap-day${n ? '' : ' is-zero'}`} title={`${dayNum(row.day)} · ${fmt(n)}`}>
+              <i style={height ? { height } : undefined} />
+              <span>{dayNum(row.day)}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      {actions.some((row) => row.block) && (
+        <ul className="cap-kinds">
+          {actions.filter((row) => row.block).map((row) => (
+            <li key={row.action}>
+              <strong>{row.label}</strong>
+              <span>{row.place}</span>
+              <em>{fmt(row.people)} · {fmt(row.strikes)} раз</em>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {other.length > 0 && (
+        <p className="grp-help">
+          Ещё бот наказывал иначе: {other.map((row) => `${row.label.toLowerCase()} ${fmt(row.people)}`).join(', ')}.
+        </p>
+      )}
+
+      <h4 className="cap-bot-h">Кого закрыл</h4>
+      {recent.length > 0 ? (
+        <ul className="cap-closed">
+          {recent.map((row) => (
+            <li key={`${row.userId}-${row.action}-${row.at}`}>
+              <div>
+                <WhoMark name={row.name} userId={row.userId} username={row.username} onOpen={onOpenUser} />
+                <small>
+                  {row.label}
+                  {row.hold ? ` · ${row.hold}` : ''}
+                  {row.reason ? ` · ${row.reason}` : ''}
+                </small>
+              </div>
+              <div className="cap-closed-side">
+                {row.chatId ? (
+                  <ChatMark name={row.chatName || 'группа'} chatId={row.chatId} onOpen={onOpenChat} />
+                ) : null}
+                <time>{when(row.at)}</time>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="work-empty">Блокировок ещё нет. Они появятся, когда бот сам забанит человека за серию ошибок.</p>
+      )}
+    </section>
+  )
+}
+
 function FailNote({ ok }) {
   if (ok !== false) return null
   return <p className="grp-help">Капчу из базы прочитать не удалось — проверьте логи админки. Карточка не должна быть пустой после того, как кто-то написал в группу.</p>

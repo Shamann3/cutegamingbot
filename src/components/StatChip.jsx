@@ -1,11 +1,22 @@
 import { VineLeaf } from './decor/LeafDecor'
 
-export default function StatChip({ icon, label, value, kind = 'default', muted = false, compact = false }) {
+export default function StatChip({
+  icon,
+  label,
+  value,
+  kind = 'default',
+  muted = false,
+  compact = false,
+  shelf = false,
+  enterIndex = 0,
+}) {
   if (compact) {
     return (
       <div
-        className={`farm-stat-chip-compact farm-stat-chip-compact-${kind}`}
+        className={`farm-stat-chip-compact farm-stat-chip-compact-${kind}${shelf ? ' farm-pantry-tile' : ''}`}
         role="listitem"
+        title={shelf ? `${label}: ${value}` : undefined}
+        style={shelf ? { animationDelay: `${Math.min(enterIndex, 24) * 35}ms` } : undefined}
       >
         <span className="farm-stat-chip-icon" aria-hidden>{icon}</span>
         <div className="farm-stat-chip-text">
