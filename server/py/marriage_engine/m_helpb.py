@@ -940,26 +940,23 @@ def ribbon_ask():
 def ribbon_gone():
     from marriage_engine.look import RIBBON_GONE
     return RIBBON_GONE
-_MENTION_LINK = re.compile(
-    r"<a\s+[^>]*href\s*=\s*['\"]tg://user\?id=\d+['\"][^>]*>(.*?)</a>",
-    re.I | re.S,
-)
+_HANDLE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 
 
 def quiet_visible(value) -> str:
-    """Имя в тексте брака. Ссылка tg://user и @ будят человека, поэтому их нет."""
-    text = _MENTION_LINK.sub(lambda match: match.group(1), str(value or ""))
-    return text.replace("@", "")
+    """Текст брака. Ссылка на профиль остаётся. Голый @ убирается, он будит человека."""
+    return str(value or "").replace("@", "")
 
 
 def person_html(user_id, first="", username=""):
-    label = str(first or "").strip()
+    """Имя, по которому открывается профиль. Юзернейм — тихая ссылка, без него — по id."""
     handle = str(username or "").strip().lstrip("@")
-    if not label:
-        label = handle or "игрок"
-    label = quiet_visible(label).replace("<", "").replace(">", "").replace("&", "")
+    label = str(first or "").strip() or handle or "игрок"
+    label = label.replace("@", "").replace("<", "").replace(">", "").replace("&", "")
     label = " ".join(label.split()) or "игрок"
-    return label
+    if _HANDLE.match(handle):
+        return '<a href="https://t.me/' + handle + '">' + label + "</a>"
+    return "<a href='tg://user?id=" + str(int(user_id)) + "'>" + label + "</a>"
 def as_aware(value):
     if isinstance(value, datetime) and value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)

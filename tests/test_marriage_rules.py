@@ -122,7 +122,7 @@ def test_ribbon_comes_off_only_by_a_real_command():
     assert "Снять ленту?" in ask
     assert "Брак останется" in ask
     labels = [row[0].text for row in _kb_card("7", True).inline_keyboard]
-    assert "Лента" in labels
+    assert "Лента в профиле" in labels
     assert labels[-1] == BTN_CARD_LEAVE
 
 
@@ -147,14 +147,18 @@ def test_profile_line_sits_as_one_short_sentence():
     line = profile_line({"name_html": "<a href='tg://user?id=1'>Анна</a>", "since": since}, now)
     assert "В браке с" in line
     assert "Анна" in line
-    assert "tg://user" not in line
+    assert "tg://user?id=1" in line
     shown = person_html(5, "@Лана", "lana")
     assert "Лана" in shown
+    assert "https://t.me/lana" in shown
     assert "tg://user" not in shown
     assert "@" not in shown
     handle = person_html(5, "", "lana")
-    assert "lana" in handle
+    assert "https://t.me/lana" in handle
     assert "@" not in handle
+    bare = person_html(5, "Анна", "")
+    assert "tg://user?id=5" in bare
+    assert "Анна" in bare
     assert "2 дня" in line
     assert "\n" not in line.strip()
     empty = profile_line({"name_html": "", "since": None}, now)

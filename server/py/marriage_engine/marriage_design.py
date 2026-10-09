@@ -303,7 +303,7 @@ SCREENS = {
         buttons=[
             [
                 b(text="Мой брак", color="default", go="mine", data="mrg:mine:0"),
-                b(text="Пары", color="primary", go="list", data="mrg:list:0"),
+                b(text="Пары группы", color="primary", go="list", data="mrg:list:0"),
             ],
         ],
     ),
@@ -313,7 +313,7 @@ SCREENS = {
         buttons=[
             [
                 b(text="Мой брак", color="default", go="mine", data="mrg:mine:0"),
-                b(text="Топ", color="primary", go="top", data="mrg:top:0"),
+                b(text="Кто дольше", color="primary", go="top", data="mrg:top:0"),
             ],
         ],
     ),
@@ -333,8 +333,8 @@ SCREENS = {
         <i>Доброе слово закрывает вашу часть лимита.</i>
         """),
         buttons=[
-            [b(text="Как", icon=HEART, color="primary", go="how", data="mrg:use:0")],
-            [b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Как зажечь", icon=HEART, color="primary", go="how", data="mrg:use:0")],
+            [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -346,9 +346,9 @@ SCREENS = {
         """),
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
-            [b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [
-                b(text="Что это", color="default", go="what", data="mrg:what:0"),
+                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -357,12 +357,12 @@ SCREENS = {
         emoji=HEART,
         text=_line("""
         <b>забыл</b>
-        <i>Часть не закрыта — огонёк тухнет. Срок на «Лимит».</i>
+        <i>Часть не закрыта — огонёк тухнет. Срок на «Лимит дня».</i>
         """),
         buttons=[
-            [b(text="Лимит", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит дня", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
             [
-                b(text="Как", color="default", go="how", data="mrg:use:0"),
+                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -372,7 +372,7 @@ SCREENS = {
         text="<b>слово паре</b>\n<i>Искры вам. Оба закрыли — день горит.</i>",
         buttons=[
             [
-                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -386,25 +386,25 @@ SCREENS = {
         {heart} <b>{a} и {b}</b>
         """,
         buttons=[
-            [b(text="Праздник", icon=HEART, color="primary", go="feast", data="mrg:feast:0", when="feast")],
+            [b(text="Дар праздника", icon=HEART, color="primary", go="feast", data="mrg:feast:0", when="feast")],
             [
                 b(text="Слово паре", icon=HEART, color="primary", go="gest", data="mrg:gest:{token}"),
-                b(text="Магазин", icon=HEART, color="primary", go="bag", data="mrg:bag:0"),
+                b(text="Магазин пары", icon=HEART, color="primary", go="bag", data="mrg:bag:0"),
             ],
             [
-                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [
-                b(text="Что это", color="default", go="what", data="mrg:what:0"),
-                b(text="Как", color="default", go="how", data="mrg:use:0"),
+                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
+                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
             ],
             [
-                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
-                b(text="Всего", color="default", go="stat", data="mrg:stat:0"),
+                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Все искры", color="default", go="stat", data="mrg:stat:0"),
             ],
-            [b(text="Лента", color="default", go="rib", data="mrg:rib:0")],
-            [b(text="Расторгнуть", icon=NO_MARK, color="danger", go="warn", data="mrg:warn:{token}", when="leave")],
+            [b(text="Лента в профиле", color="default", go="rib", data="mrg:rib:0")],
+            [b(text="Расторгнуть брак", icon=NO_MARK, color="danger", go="warn", data="mrg:warn:{token}", when="leave")],
         ],
     ),
 
@@ -447,7 +447,7 @@ SCREENS = {
                 b(text="На ночь", icon=HEART, color="primary", go="night", data="mrg:act:night:{token}"),
             ],
             [
-                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -460,8 +460,8 @@ SCREENS = {
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
             [
-                b(text="Как", color="default", go="how", data="mrg:use:0"),
-                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
+                b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
@@ -471,8 +471,8 @@ SCREENS = {
         text=_line("""<b>Награды</b> <i>Больше дней — больше лимит.</i>"""),
         buttons=[
             [
-                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Что это", color="default", go="what", data="mrg:what:0"),
+                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
@@ -482,8 +482,8 @@ SCREENS = {
         text=_line("""<b>Всего</b> <i>Сколько искр в огоньке.</i>"""),
         buttons=[
             [
-                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
@@ -497,8 +497,8 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Снять", icon=NO_MARK, color="danger", go="riboff", data="mrg:rib:off"),
-                b(text="Оставить", icon=HEART, color="success", go="ribstay", data="mrg:rib:stay"),
+                b(text="Снять с профиля", icon=NO_MARK, color="danger", go="riboff", data="mrg:rib:off"),
+                b(text="Оставить ленту", icon=HEART, color="success", go="ribstay", data="mrg:rib:stay"),
             ],
         ],
     ),
@@ -511,7 +511,7 @@ SCREENS = {
             [b(text="Снять ленту", icon=NO_MARK, color="danger", go="ribask", data="mrg:rib:ask")],
             [
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
-                b(text="Магазин", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин пары", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
             ],
         ],
     ),
@@ -523,7 +523,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Магазин", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин пары", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -545,10 +545,10 @@ SCREENS = {
         <i>цена как в общем магазине</i></blockquote>
         """,
         buttons=[
-            [b(text="Искры", icon=SPARK, color="primary", go="shelf_fire", data="mrg:bag:fire")],
+            [b(text="Искры к лимиту", icon=SPARK, color="primary", go="shelf_fire", data="mrg:bag:fire")],
             [
-                b(text="Знак", icon=HEART, color="default", go="shelf_mark", data="mrg:bag:mark"),
-                b(text="Ужин", icon=HEART, color="default", go="shelf_meal", data="mrg:bag:meal"),
+                b(text="Знаки пары", icon=HEART, color="default", go="shelf_mark", data="mrg:bag:mark"),
+                b(text="Ужин вместе", icon=HEART, color="default", go="shelf_meal", data="mrg:bag:meal"),
             ],
             [b(text="Тихий день", color="default", go="shelf_quiet", data="mrg:bag:quiet")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -560,7 +560,7 @@ SCREENS = {
         Все предметы
         """,
         buttons=[
-            [b(text="Все предметы", color="primary", go="shop", data="mrg:bag:0")],
+            [b(text="Все полки", color="primary", go="shop", data="mrg:bag:0")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -575,7 +575,7 @@ SCREENS = {
         buttons=[
             [b(text="Конверт", icon=HEART, color="primary", go="envelope", data="mrg:wish:envelope")],
             [b(text="Забота", icon=HEART, color="primary", go="care_prize", data="mrg:wish:care")],
-            [b(text="Лента", icon=HEART, color="primary", go="ribbon_prize", data="mrg:wish:ribbon")],
+            [b(text="Лента в дар", icon=HEART, color="primary", go="ribbon_prize", data="mrg:wish:ribbon")],
             [b(text="Премиум 3 мес.", icon=HEART, color="primary", go="premium3", data="mrg:wish:premium3")],
             [b(text="Премиум 6 мес.", icon=HEART, color="primary", go="premium6", data="mrg:wish:premium6", when="late")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -795,7 +795,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:propose"),
+                b(text="Купить предложение", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:propose"),
                 b(text="Сказать", icon=HEART, color="primary", go="guse", data="mrg:guse:propose"),
             ],
         ],
@@ -815,7 +815,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:band"),
+                b(text="Купить кольцо", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:band"),
                 b(text="Надеть", icon=HEART, color="primary", go="guse", data="mrg:guse:band"),
             ],
         ],
@@ -907,7 +907,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cuke"),
+                b(text="Купить огурец", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cuke"),
                 b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:cuke"),
             ],
         ],
@@ -929,7 +929,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:tom"),
+                b(text="Купить помидор", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:tom"),
                 b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:tom"),
             ],
         ],
@@ -951,7 +951,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cab"),
+                b(text="Купить капусту", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:cab"),
                 b(text="В крафт", icon=HEART, color="primary", go="guse", data="mrg:guse:cab"),
             ],
         ],
@@ -973,7 +973,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:juice"),
+                b(text="Купить сок", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:juice"),
                 b(text="Выпить", icon=HEART, color="primary", go="guse", data="mrg:guse:juice"),
             ],
         ],
@@ -995,7 +995,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:soup"),
+                b(text="Купить суп", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:soup"),
                 b(text="Съесть", icon=HEART, color="primary", go="guse", data="mrg:guse:soup"),
             ],
         ],
@@ -1017,7 +1017,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Купить", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:salad"),
+                b(text="Купить салат", icon=HEART, color="success", go="gbuy", data="mrg:gbuy:salad"),
                 b(text="Съесть", icon=HEART, color="primary", go="guse", data="mrg:guse:salad"),
             ],
         ],
@@ -1041,7 +1041,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Букет", icon=HEART, color="primary", go="guse", data="mrg:guse:bouquet"),
+                b(text="Отдать букет", icon=HEART, color="primary", go="guse", data="mrg:guse:bouquet"),
             ],
         ],
         used="",
@@ -1059,7 +1059,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Колечко", icon=HEART, color="primary", go="guse", data="mrg:guse:propose"),
+                b(text="Сделать предложение", icon=HEART, color="primary", go="guse", data="mrg:guse:propose"),
             ],
         ],
         used="",
@@ -1077,7 +1077,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Кольцо", icon=HEART, color="primary", go="guse", data="mrg:guse:wedring"),
+                b(text="Надеть кольцо", icon=HEART, color="primary", go="guse", data="mrg:guse:wedring"),
             ],
         ],
         used="",
@@ -1095,7 +1095,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Нить", icon=HEART, color="primary", go="guse", data="mrg:guse:thread"),
+                b(text="Связать нить", icon=HEART, color="primary", go="guse", data="mrg:guse:thread"),
             ],
         ],
         used="",
