@@ -743,7 +743,7 @@ def spark_home(a, b, span, date, view, you, partner_care, partner_name):
         lines.append(step)
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
-        lines.append("✨ • " + spare)
+        lines.append("<i>" + spare + "</i>")
     gift = _next_gift(view)
     if gift:
         lines.append(gift)
@@ -832,7 +832,7 @@ def spark_fire(view, you, partner_care, partner_name, hours):
     lines.append(sub)
     spare = _spare(you, partner_care, need, partner_name)
     if spare:
-        lines.append("✨ • " + spare)
+        lines.append("<i>" + spare + "</i>")
     return "\n".join(lines)
 def care_line(amount, you, need, partner_care, saved, both, fading):
     from marriage_engine.look import CARE_SAVED, CARE_FADING, CARE_PLUS
