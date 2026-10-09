@@ -31,13 +31,8 @@ export default function BalanceBar({
     : chips
 
   if (fixed) {
-    const kinds = visibleChips.length
     return (
       <div className="farm-balance-bar--fixed farm-pantry" aria-label="Предметы фермы">
-        <div className="farm-pantry-head">
-          <span>Склад</span>
-          <em>{kinds}</em>
-        </div>
         <div className="farm-pantry-scroll" role="list">
           {visibleChips.map((chip, index) => {
             const isWaterWarn = anyPlotDry && (chip.kind === 'water')
