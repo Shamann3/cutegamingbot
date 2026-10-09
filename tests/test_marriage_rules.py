@@ -463,13 +463,14 @@ def test_kind_words_feed_the_flame_and_the_week_is_visible():
         both_done=False,
     )
     assert "🔥" in strip
-    assert "пн" in strip
+    assert "сегодня" in strip
+    assert "пн" not in strip
     assert "◌" in strip
     assert "ещё можно" in strip
     from bot.funcs.marriage_design import HOW_TEXT, WHAT_TEXT, spark_fire
-    assert "половин" in WHAT_TEXT.lower()
     assert "лимит" in WHAT_TEXT.lower()
-    assert "Награда" in HOW_TEXT
+    assert "доброе слово" in WHAT_TEXT.lower()
+    assert "оба" in HOW_TEXT.lower()
     fire = spark_fire(
         {"need": 5, "goal": 10, "both_done": False, "fading": False, "level": {"name": "Знакомство"}, "state": {"spark_days": 0}},
         2, 0, "Б", 12,
@@ -486,6 +487,8 @@ def test_kind_words_feed_the_flame_and_the_week_is_visible():
     assert "Лимит 10" in home
     assert "ещё 3" in home
     assert "первый огонёк" in home
+    assert "сегодня до 12:00" in home
+    assert "сб" not in home
     assert "Огонька нет" not in home
     assert "Гаснет" not in home
     assert "●" in home

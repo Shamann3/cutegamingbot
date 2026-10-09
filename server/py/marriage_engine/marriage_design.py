@@ -317,19 +317,19 @@ SCREENS = {
     "rp_done": msg(emoji=HEART, text=_line("""<b>Это слово уже в вашей половине.</b>""")),
     "rp_wait": msg(
         emoji=HEART,
-        text=_line("""<b>{title} снова можно через {left}.</b> <i>Половина не сгорает.</i>"""),
+        text=_line("""<b>⏳ {title}</b> <i>снова через {left}. Искры на месте.</i>"""),
     ),
 
     "what": msg(
         emoji=HEART,
         text=_line("""
-        <b>Зачем</b>
-        <i>Огонёк — серия дней на двоих. Оба закрывают свою половину общего лимита.</i>
-        <i>Напишите паре доброе слово. Награда: день в серии и уровень выше.</i>
+        <b>Что это</b>
+        <i>Огонёк на двоих. Каждый день оба закрывают свою часть лимита.</i>
+        <i>Напишите паре доброе слово. День станет длиннее.</i>
         """),
         buttons=[
             [b(text="Как", icon=HEART, color="primary", go="how", data="mrg:use:0")],
-            [b(text="Половины", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
@@ -338,13 +338,13 @@ SCREENS = {
         text=_line("""
         <b>Как</b>
         <i>Ответьте паре: обнять, поцеловать, пожалеть, принести чай.</i>
-        <i>Искры падают в вашу половину. Награда: закрытый день.</i>
+        <i>Искры падают вам. День закроется, когда готовы оба.</i>
         """),
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
-            [b(text="Половины", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [
-                b(text="Зачем", color="default", go="what", data="mrg:what:0"),
+                b(text="Что это", color="default", go="what", data="mrg:what:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -352,12 +352,12 @@ SCREENS = {
     "hold": msg(
         emoji=HEART,
         text=_line("""
-        <b>Пропуск</b>
-        <i>Нет своей половины — серия гаснет. Вчера ещё можно закрыть: срок на «Половины».</i>
-        <i>Награда: серия длиннее на день.</i>
+        <b>Забыл</b>
+        <i>Не закрыли свою часть — огонёк тухнет.</i>
+        <i>Вчера ещё живо. Срок написан на «Лимит», это сегодня до этого часа.</i>
         """),
         buttons=[
-            [b(text="Половины", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
+            [b(text="Лимит", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
             [
                 b(text="Как", color="default", go="how", data="mrg:use:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
@@ -371,7 +371,7 @@ SCREENS = {
         """),
         buttons=[
             [
-                b(text="Пропуск", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -388,19 +388,19 @@ SCREENS = {
             [b(text="Праздник", icon=HEART, color="primary", go="feast", data="mrg:feast:0", when="feast")],
             [
                 b(text="Слово паре", icon=HEART, color="primary", go="gest", data="mrg:gest:{token}"),
-                b(text="Предметы", icon=HEART, color="primary", go="bag", data="mrg:bag:0"),
+                b(text="Магазин", icon=HEART, color="primary", go="bag", data="mrg:bag:0"),
             ],
             [
-                b(text="Половины", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Уровни", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [
-                b(text="Зачем", color="default", go="what", data="mrg:what:0"),
+                b(text="Что это", color="default", go="what", data="mrg:what:0"),
                 b(text="Как", color="default", go="how", data="mrg:use:0"),
             ],
             [
-                b(text="Пропуск", color="default", go="hold", data="mrg:hold:0"),
-                b(text="Счёт", color="default", go="stat", data="mrg:stat:0"),
+                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Всего", color="default", go="stat", data="mrg:stat:0"),
             ],
             [b(text="Лента", color="default", go="rib", data="mrg:rib:0")],
             [b(text="Расторгнуть", icon=NO_MARK, color="danger", go="warn", data="mrg:warn:{token}", when="leave")],
@@ -410,7 +410,7 @@ SCREENS = {
     "tone": msg(
         emoji=SPARK,
         text="""
-        {spark} <b>Половины</b>
+        {spark} <b>Лимит</b>
         <i>Общий лимит делится надвое. Закройте свою — искры приходят словом паре.</i>
         """,
         buttons=[
@@ -446,7 +446,7 @@ SCREENS = {
                 b(text="На ночь", icon=HEART, color="primary", go="night", data="mrg:act:night:{token}"),
             ],
             [
-                b(text="Пропуск", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Забыл", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -455,34 +455,34 @@ SCREENS = {
     # Кнопки экранов с числами. Сам текст собирается из строк ниже: числа пары живые.
     "spark_nav": msg(
         emoji=SPARK,
-        text=_line("""<b>Половины</b> <i>Лимит, ваша половина, половина пары.</i>"""),
+        text=_line("""<b>Лимит</b> <i>Одно число на двоих. Каждому своя часть.</i>"""),
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
             [
                 b(text="Как", color="default", go="how", data="mrg:use:0"),
-                b(text="Уровни", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
     "level_nav": msg(
         emoji=SPARK,
-        text=_line("""<b>Уровни</b> <i>Длиннее серия — больше лимит.</i>"""),
+        text=_line("""<b>Награды</b> <i>Больше дней вместе — больше лимит и дар.</i>"""),
         buttons=[
             [
-                b(text="Половины", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Зачем", color="default", go="what", data="mrg:what:0"),
+                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Что это", color="default", go="what", data="mrg:what:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
     "stat_nav": msg(
         emoji=HEART,
-        text=_line("""<b>Счёт</b> <i>Сколько искр уже легло в серию.</i>"""),
+        text=_line("""<b>Всего</b> <i>Сколько искр уже легло в огонёк.</i>"""),
         buttons=[
             [
-                b(text="Половины", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Уровни", color="default", go="lvl", data="mrg:lvl:0"),
+                b(text="Лимит", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
+                b(text="Награды", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
@@ -510,7 +510,7 @@ SCREENS = {
             [b(text="Снять ленту", icon=NO_MARK, color="danger", go="ribask", data="mrg:rib:ask")],
             [
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
-                b(text="Предметы", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
             ],
         ],
     ),
@@ -522,7 +522,7 @@ SCREENS = {
         """,
         buttons=[
             [
-                b(text="Предметы", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
+                b(text="Магазин", icon=HEART, color="default", go="bag", data="mrg:bag:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -540,9 +540,8 @@ SCREENS = {
     "shop": msg(
         emoji=HEART,
         text=_line("""
-        <b>Предметы</b>
-        <i>Те же вещи, что в общем магазине. Название и цена берутся оттуда.</i>
-        <i>Искры добирают вашу часть. Знак виден в профиле. Ужин едят вместе. Тихий день закрывает вашу часть, если не успели.</i>
+        <b>Магазин</b>
+        <i>Те же вещи, что в общем магазине. Цена оттуда.</i>
         """),
         buttons=[
             [b(text="Искры", icon=SPARK, color="primary", go="shelf_fire", data="mrg:bag:fire")],
@@ -1538,26 +1537,27 @@ METER_LINE = "<b>{who}</b> {bar}"
 METER_READY = "готово"
 METER_LEFT = "ещё {left}"
 METER_EXTRA = "+{extra}"
-STEP_YOU = "<i>Вам ещё {left}. Напишите паре доброе слово.</i>"
-STEP_THEM = "<i>Вы свою часть уже сделали. Паре ещё {left}.</i>"
-STEP_FIRST_YOU = "<i>До {clock} вам ещё {left}. Напишите паре. Тогда зажжётся первый огонёк.</i>"
-STEP_FIRST_THEM = "<i>До {clock} паре ещё {left}. Вы свою часть уже сделали. Тогда зажжётся первый огонёк.</i>"
-STEP_FIRST_BOTH = "<i>До {clock} вам ещё {you}, паре ещё {them}. Тогда зажжётся первый огонёк.</i>"
-STEP_FIRST_WAIT = "<i>До {clock} день ещё открыт. Обе части уже есть.</i>"
-STEP_OPEN_YOU = "<i>До {clock} вам ещё {left}. Напишите паре, иначе серия погаснет.</i>"
-STEP_OPEN_THEM = "<i>До {clock} паре ещё {left}. Вы свою часть уже сделали. Иначе серия погаснет.</i>"
-STEP_OPEN_BOTH = "<i>До {clock} вам ещё {you}, паре ещё {them}. Иначе серия погаснет.</i>"
-STEP_OPEN_WAIT = "<i>До {clock} обе части уже есть. День ещё можно спасти.</i>"
+STEP_YOU = "<i>✦ вам ещё {left} · напишите паре</i>"
+STEP_THEM = "<i>✦ вы готовы · паре ещё {left}</i>"
+STEP_FIRST_YOU = "<i>⏳ {when} · вам ещё {left} · первый огонёк</i>"
+STEP_FIRST_THEM = "<i>⏳ {when} · паре ещё {left} · вы готовы · первый огонёк</i>"
+STEP_FIRST_BOTH = "<i>⏳ {when} · вам {you} · паре {them} · первый огонёк</i>"
+STEP_FIRST_WAIT = "<i>⏳ {when} · обе части уже есть</i>"
+STEP_OPEN_YOU = "<i>⏳ {when} · вам ещё {left} · иначе огонёк тухнет</i>"
+STEP_OPEN_THEM = "<i>⏳ {when} · паре ещё {left} · вы готовы</i>"
+STEP_OPEN_BOTH = "<i>⏳ {when} · вам {you} · паре {them}</i>"
+STEP_OPEN_WAIT = "<i>⏳ {when} · обе части уже есть</i>"
 HOME_YOU = "<i>Вам ещё {left}. «Слово паре» — искры в вашу половину.</i>"
 HOME_THEM = "<i>Ваша половина есть. Ждём половину пары.</i>"
-NEXT_GIFT = "<i>Награда на {day} дне: {name}. {gift}</i>"
+NEXT_GIFT = "<i>🎁 день {day} · {name}</i>"
 WAS_LINE = "<i>Серия была {n} {word}. Вы уже не чужие.</i>"
 WAS_SHORT = "<i>Было {n} {word}. Вы уже не чужие.</i>"
 CARD_HEAD = "{heart} <b>{a} и {b}</b>"
 CARD_TOGETHER = "<b>Вместе {span}</b>"
 CARD_DATE = "<i>{date}</i>"
 CARD_TONE = "<i>{tone}</i>"
-CLOCK_WORD = "полудня"
+CLOCK_WORD = "12:00"
+WHEN_TODAY = "сегодня до {clock}"
 SPARK_ZERO = "{spark} <b>С нуля · {level}</b>"
 SPARK_FADE = "{spark} <b>Гаснет · {days}</b>"
 SPARK_YESTERDAY = "<i>До {clock} закройте вчерашнюю половину.</i>"
@@ -1566,36 +1566,37 @@ SPARK_MIDNIGHT = "<i>Обе половины есть. В полночь сер�
 FLAME_MARK = "🔥"
 FLAME_TODAY = "◌"
 FLAME_OFF = "·"
+FLAME_NOW = "сегодня"
 FLAME_NAMES = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
-FLAME_COUNT = "🔥 <b>{days}</b>"
-FLAME_OPEN = "<i>Сегодня ещё можно зажечь: закройте свою часть словом паре.</i>"
-FLAME_LIT = "<i>Сегодня обе части есть. Завтра серия длиннее.</i>"
-FLAME_FIRST = "<i>Первый день ещё открыт до {clock}.</i>"
-FLAME_RISK = "<i>Серия ещё жива до {clock}.</i>"
-FLAME_ZERO = "<i>Огонька нет. Первое доброе слово его зажигает.</i>"
+FLAME_COUNT = "🔥 <b>{days}</b> {word}"
+FLAME_OPEN = "<i>◌ справа — сегодня, ещё можно зажечь</i>"
+FLAME_LIT = "<i>сегодня уже горит</i>"
+FLAME_FIRST = ""
+FLAME_RISK = ""
+FLAME_ZERO = "<i>◌ справа — сегодня. Пока пусто.</i>"
 SPARK_COAT = "<i>Пальто: один пропуск не гасит серию.</i>"
-LEVELS_TITLE = "{spark} <b>Уровни</b>"
-LEVEL_LEAD = "<i>Длиннее серия — выше уровень. Выше уровень — больше лимит.</i>"
+LEVELS_TITLE = "{spark} <b>Награды</b>"
+LEVEL_LEAD = "<i>Больше дней — больше лимит.</i>"
 LEVEL_NOW = " · сейчас"
 LEVEL_ROW = "<b>{name}</b> <i>{days} дн. · лимит {goal} · половина {share}{mark}</i>"
 LEVEL_NEXT = "<i>До «{name}» ещё {days} дн. Лимит станет {goal}, каждому по {share}.</i>"
-HOLIDAY_HEAD = "<b>Награды за дни вместе</b>"
-HOLIDAY_NOTE = "<i>В праздник оба выбирают один дар. Он откроется, когда выбор совпадёт.</i>"
-HOLIDAY_LINE = "<b>{day} дн. · {name}</b> <i>{gift}{mark}</i>"
-HOLIDAY_SOON = " ← ближайшая"
+HOLIDAY_HEAD = "🎁 <b>Дары</b>"
+HOLIDAY_NOTE = "<i>Оба жмут один дар. Совпало — он ваш.</i>"
+HOLIDAY_LINE = "🎁 <b>{day}</b> {name} · <i>{gift}{mark}</i>"
+HOLIDAY_SOON = " ← скоро"
 HOLIDAY_GIFT = {
-    7: "Каждому блик, +3 искры. Или куты, или лента.",
-    14: "Каждому свеча, +8 искр. Или куты, или лента.",
-    30: "Каждому очаг, +20 искр. Или премиум, куты, лента.",
-    100: "Большой дар: очаг, премиум, куты или лента.",
+    7: "блик +3, куты или лента",
+    14: "свеча +8, куты или лента",
+    30: "очаг +20 или премиум",
+    100: "большой дар",
 }
-FIRE_FADE = "{spark} <b>Серия гаснет · день {days}</b>"
-FIRE_YESTERDAY = "<i>До {clock} каждому ещё по {need} за вчера. Иначе серия гаснет.</i>"
+FIRE_FADE = "{spark} <b>вчера ещё живо · {days}</b>"
+FIRE_YESTERDAY = "<i>⏳ сегодня до {clock} · каждому ещё {need} за вчера</i>"
 FIRE_HEAD = "{spark} <b>{name} · день {days}</b>"
-FIRE_SPLIT = "<i>Лимит {goal}. Половина каждому: {need}.</i>"
-FIRE_DO = "<i>Вам ещё {left}. «Слово паре» кладёт искры в вашу половину. Награда: закрытый день.</i>"
-FIRE_WAIT = "<i>Ваша половина есть. Награда придёт, когда пара закроет свою.</i>"
-FIRE_DONE = "<i>Обе половины закрыты. Награда: день в серии.</i>"
+FIRE_SPLIT = "<i>Лимит {goal} · каждому {need}</i>"
+FIRE_DO = "<i>✦ вам ещё {left} · кнопка «Слово паре»</i>"
+FIRE_WAIT = "<i>✦ вы готовы · ждём пару</i>"
+FIRE_DONE = "<i>✦ обе части есть</i>"
 FIRE_TODAY = "Лимит {goal}. Половина каждому: {need}."
 CARE_SAVED = "<i>+{n}. Вчерашняя половина закрыта.</i>"
 CARE_FADING = "<i>+{n}. Нужна и вторая половина, иначе серия гаснет.</i>"
@@ -1604,20 +1605,20 @@ BOND_FAMILY = "{heart} <b>Семья</b>"
 BOND_YOU = "{heart} <b>Вы сделали предложение</b>"
 BOND_THEM = "{heart} <b>Вам сделали предложение</b>"
 BOND_BOUQUET = "{heart} <b>Букет</b>"
-TALK_BOTH = "{spark} <i>Вы уже написали друг другу.</i>"
-TALK_YOU = "{spark} <i>Вы написали. Пусть пара ответит вам.</i>"
-TALK_THEM = "{spark} <i>Пара написала. Ответьте ей любым сообщением.</i>"
-TALK_NONE = "{spark} <i>Напишите паре хоть что-нибудь. И паре тоже.</i>"
+TALK_BOTH = "{spark} <i>вы уже написали друг другу</i>"
+TALK_YOU = "{spark} <i>вы написали · ждём пару</i>"
+TALK_THEM = "{spark} <i>пара написала · ответьте хоть слово</i>"
+TALK_NONE = "{spark} <i>напишите паре хоть слово · и паре тоже</i>"
 STATS_LINE = "{heart} <b>{name}</b>\n<i>{pair}</i>\n<i>Всего искр {total}. Они уже в серии.</i>"
 SHOP_HOME = SCREENS["shop"]["text"]
-GIFT_TITLE = "{heart} <b>Предметы</b>\n<i>Те же, что в общем магазине. Название и цена оттуда.</i>"
+GIFT_TITLE = "{heart} <b>Магазин</b>\n<i>Цена как в общем магазине.</i>"
 GIFT_STOCK = " У вас {have} шт."
 GIFT_ROW = "{emoji} <b>{name}</b> · {price} кут\n<i>{about}{stock}</i>"
 GIFT_FREE = "{emoji} <b>{name}</b>\n<i>{about}{stock}</i>"
-SHOP_FIRE = "{heart} <b>Искры</b>\n<i>Доберите свою часть лимита. Это те же предметы, что в общем магазине.</i>"
-SHOP_MARK = "{heart} <b>Знак</b>\n<i>Лента и кольца. Название и цена — из общего магазина.</i>"
-SHOP_MEAL = "{heart} <b>Ужин</b>\n<i>Вырастите на ферме и съешьте вместе. Предметы те же, что в общем магазине.</i>"
-SHOP_QUIET = "{heart} <b>Тихий день</b>\n<i>Раз в неделю закрывает вашу часть, если вы не успели.</i>"
+SHOP_FIRE = "{heart} <b>Искры</b>\n<i>Добить свою часть лимита.</i>"
+SHOP_MARK = "{heart} <b>Знак</b>\n<i>Лента и кольца. Цена из общего магазина.</i>"
+SHOP_MEAL = "{heart} <b>Ужин</b>\n<i>Вырастить и съесть вместе.</i>"
+SHOP_QUIET = "{heart} <b>Тихий день</b>\n<i>Раз в неделю закрывает вашу часть.</i>"
 GIFT_RIBBON = "🎀 <i>Лента уже на вас.</i>"
 GIFT_EMPTY = "<i>Пока пусто.</i>"
 RIBBON_ON = SCREENS["ribbon_worn"]["text"]
@@ -1734,7 +1735,7 @@ R2 = (
 )
 
 
-# --- жесты. Кнопки жеста собираются отсюда, по две в ряд, снизу «Пропуск» и «К паре» ---
+# --- жесты. Кнопки жеста собираются отсюда, по две в ряд, снизу «Забыл» и «К паре» ---
 
 # Подпись кнопки жеста — text= на экране gest. Здесь она называется для старого кода.
 VERB_LABEL = {

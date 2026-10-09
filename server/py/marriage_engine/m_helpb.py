@@ -594,11 +594,17 @@ def card_text(a, b, span, date="", tone=""):
     if tone:
         lines.append(CARD_TONE.format(tone=tone))
     return "\n".join(lines)
+def _when(clock):
+    from marriage_engine.look import CLOCK_WORD, WHEN_TODAY
+    raw = str(clock or "").strip() or CLOCK_WORD
+    if raw.startswith("сегодня"):
+        return raw
+    return WHEN_TODAY.format(clock=raw)
 def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
-    """Семь дней, как огонёк: 🔥 — день закрыт, ◌ — сегодня ещё можно, · — пусто."""
+    """Семь клеток. Слева раньше, справа сегодня. 🔥 закрыт, ◌ ещё можно, · пусто."""
     from marriage_engine.look import (
-        CLOCK_WORD, FLAME_COUNT, FLAME_FIRST, FLAME_LIT, FLAME_MARK, FLAME_NAMES, FLAME_OFF,
-        FLAME_OPEN, FLAME_RISK, FLAME_TODAY, FLAME_ZERO,
+        FLAME_COUNT, FLAME_FIRST, FLAME_LIT, FLAME_MARK, FLAME_NOW, FLAME_OFF,
+        FLAME_OPEN, FLAME_RISK, FLAME_TODAY, FLAME_ZERO, SPAN_DAY,
     )
     today = _day(today) or datetime.now(MSK).date()
     state = state or {}
@@ -610,10 +616,9 @@ def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
             lit.add(anchor - timedelta(days=shift))
     if both_done:
         lit.add(today)
-    names, marks = [], []
+    marks = []
     for shift in range(6, -1, -1):
         day = today - timedelta(days=shift)
-        names.append(FLAME_NAMES[day.weekday()])
         if day in lit:
             marks.append(FLAME_MARK)
         elif day == today:
@@ -621,14 +626,16 @@ def flame_strip(state, today=None, both_done=False, fading=False, clock=""):
         else:
             marks.append(FLAME_OFF)
     if fading and not both_done:
-        note = (FLAME_FIRST if closed <= 0 else FLAME_RISK).format(clock=clock or CLOCK_WORD)
+        note = FLAME_FIRST if closed <= 0 else FLAME_RISK
     elif closed <= 0 and not both_done:
         note = FLAME_ZERO
     elif today in lit:
         note = FLAME_LIT
     else:
         note = FLAME_OPEN
-    return FLAME_COUNT.format(days=closed) + "\n" + " ".join(names) + "\n" + " ".join(marks) + "\n" + note
+    head = FLAME_COUNT.format(days=closed, word=_ru(closed, *SPAN_DAY))
+    row = " ".join(marks) + "  " + FLAME_NOW
+    return head + "\n" + row + ("\n" + note if note else "")
 def care_meter(have, need):
     from marriage_engine.look import BAR_OFF, BAR_ON, METER_EXTRA, METER_LEFT, METER_READY
     have, need = max(0, int(have or 0)), max(1, int(need or 1))
@@ -651,30 +658,30 @@ def _meters(you, need, partner, other):
     ]
 def _step(view, you, other, need):
     from marriage_engine.look import (
-        CLOCK_WORD, STEP_FIRST_BOTH, STEP_FIRST_THEM, STEP_FIRST_WAIT, STEP_FIRST_YOU,
+        STEP_FIRST_BOTH, STEP_FIRST_THEM, STEP_FIRST_WAIT, STEP_FIRST_YOU,
         STEP_OPEN_BOTH, STEP_OPEN_THEM, STEP_OPEN_WAIT, STEP_OPEN_YOU, STEP_THEM, STEP_YOU,
     )
     you_left, them_left = max(0, int(need) - int(you or 0)), max(0, int(need) - int(other or 0))
-    clock = view.get("clock") or CLOCK_WORD
+    when = _when(view.get("clock"))
     days = int((view.get("state") or {}).get("spark_days") or 0)
     if view.get("both_done"):
         return ""
     if view.get("fading") and days <= 0:
         if you_left and them_left:
-            return STEP_FIRST_BOTH.format(clock=clock, you=you_left, them=them_left)
+            return STEP_FIRST_BOTH.format(when=when, you=you_left, them=them_left)
         if you_left:
-            return STEP_FIRST_YOU.format(clock=clock, left=you_left)
+            return STEP_FIRST_YOU.format(when=when, left=you_left)
         if them_left:
-            return STEP_FIRST_THEM.format(clock=clock, left=them_left)
-        return STEP_FIRST_WAIT.format(clock=clock)
+            return STEP_FIRST_THEM.format(when=when, left=them_left)
+        return STEP_FIRST_WAIT.format(when=when)
     if view.get("fading"):
         if you_left and them_left:
-            return STEP_OPEN_BOTH.format(clock=clock, you=you_left, them=them_left)
+            return STEP_OPEN_BOTH.format(when=when, you=you_left, them=them_left)
         if you_left:
-            return STEP_OPEN_YOU.format(clock=clock, left=you_left)
+            return STEP_OPEN_YOU.format(when=when, left=you_left)
         if them_left:
-            return STEP_OPEN_THEM.format(clock=clock, left=them_left)
-        return STEP_OPEN_WAIT.format(clock=clock)
+            return STEP_OPEN_THEM.format(when=when, left=them_left)
+        return STEP_OPEN_WAIT.format(when=when)
     if you_left:
         return STEP_YOU.format(left=you_left)
     if them_left:
@@ -697,15 +704,14 @@ def _next_gift(view):
     return ""
 def spark_home(a, b, span, date, view, you, partner_care, partner_name):
     from marriage_engine.look import (
-        HEART, LEVEL_EMPTY, SPARK_COAT, WAS_SHORT, SPAN_DAY, CARD_HEAD, CARD_TOGETHER, LIMIT_HEAD,
+        HEART, LEVEL_EMPTY, SPARK_COAT, WAS_SHORT, SPAN_DAY, CARD_HEAD, LIMIT_HEAD,
     )
     view = view or {}
     need = int(view.get("need") or 0)
     goal = int(view.get("goal") or 0)
     lines = [
         CARD_HEAD.format(heart=HEART, a=a, b=b),
-        CARD_TOGETHER.format(span=span),
-        "<b>" + str((view.get("level") or {}).get("name") or LEVEL_EMPTY) + "</b>",
+        "<b>Вместе " + span + " · " + str((view.get("level") or {}).get("name") or LEVEL_EMPTY) + "</b>",
         flame_strip(
             view.get("state"),
             both_done=bool(view.get("both_done")),
