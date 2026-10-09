@@ -191,7 +191,7 @@ SCREENS = {
         emoji=HEART,
         text="""
         {heart} <b>{a} зовёт {b}</b>
-        <i>Бесплатно. {which} из {free}. «Согласиться» «Отказать» «Отменить заявку». {minutes} мин.</i>
+        <i>Бесплатно. {which} из {free}. Огонёк на двоих: доброе слово растит лимит и награды. «Согласиться» «Отказать» «Отменить заявку». {minutes} мин.</i>
         """,
         buttons=[
             [
@@ -208,7 +208,7 @@ SCREENS = {
         emoji=HEART,
         text="""
         {heart} <b>{a} зовёт {b}</b>
-        <i>{price} кут. Свадьба {which}. «Согласиться» «Отказать» «Отменить заявку». {minutes} мин.</i>
+        <i>{price} кут. Свадьба {which}. Огонёк на двоих: доброе слово растит лимит и награды. «Согласиться» «Отказать» «Отменить заявку». {minutes} мин.</i>
         """,
         buttons=[
             [
@@ -225,7 +225,7 @@ SCREENS = {
         emoji=HEART,
         text="""
         {heart} <b>{a} и {b} вместе</b>
-        {spark} <i>Бесплатно. Каждому по {each}. Кнопка «Слово паре».</i>
+        {spark} <i>Бесплатно. Каждому по {each} искр в свою часть. Кнопка «Слово паре» закрывает день, когда готовы оба.</i>
         """,
     ),
 
@@ -233,7 +233,7 @@ SCREENS = {
         emoji=HEART,
         text="""
         {heart} <b>{a} и {b} вместе</b>
-        {spark} <i>{price} кут. Каждому по {each}. Кнопка «Слово паре».</i>
+        {spark} <i>{price} кут. Каждому по {each} искр в свою часть. Кнопка «Слово паре» закрывает день, когда готовы оба.</i>
         """,
     ),
 
@@ -259,7 +259,7 @@ SCREENS = {
     "on_already": msg(emoji=HEART, text=_line("""<i>Отношения здесь уже включены.</i>""")),
     "off_already": msg(emoji=HEART, text=_line("""<i>Отношения здесь уже выключены.</i>""")),
     "creator_only": msg(emoji=HEART, text=_line("""<b>+браки и -браки пишет создатель группы.</b>""")),
-    "need_reply": msg(emoji=HEART, text=_line("""<b>Ответьте «брак» на сообщение.</b> <i>{minutes} мин.</i>""")),
+    "need_reply": msg(emoji=HEART, text=_line("""<b>Ответьте «брак» на сообщение человека.</b> <i>Так вы зовёте в пару: общий огонёк, лимит и награды на двоих. {minutes} мин.</i>""")),
     "not_found": msg(emoji=HEART, text=_line("""<b>Не вижу, кого звать.</b>""")),
     "bot": msg(emoji=HEART, text=_line("""<b>Бота в брак не зовут.</b>""")),
     "self": msg(emoji=HEART, text=_line("""<b>Себя позвать нельзя.</b>""")),
@@ -269,7 +269,7 @@ SCREENS = {
     "busy": msg(emoji=HEART, text=_line("""<b>Сейчас заявка уже есть.</b>""")),
     "poor": msg(emoji=HEART, text=_line("""<b>Нужно {price} кут, у вас {have}.</b>""")),
     "poor_late": msg(emoji=HEART, text=_line("""<b>К согласию не хватило {price} кут.</b>""")),
-    "not_married": msg(emoji=HEART, text=_line("""<b>Брака нет.</b> <i>«брак» ответом. Огонёк на двоих.</i>""")),
+    "not_married": msg(emoji=HEART, text=_line("""<b>Брака нет.</b> <i>Ответьте «брак» на человека. Огонёк на двоих: доброе слово каждый день растит лимит и награды.</i>""")),
     "tone_old": msg(emoji=HEART, text=_line("""<b>Этот брак из старой книги.</b>""")),
 
     "expired": msg(emoji=HEART, text=_line("""<b>{minutes} мин. Заявка закрыта.</b>""")),
@@ -318,7 +318,7 @@ SCREENS = {
         ],
     ),
 
-    "rp_need": msg(emoji=HEART, text=_line("""<b>Сначала брак.</b> <i>Ответьте «брак» на сообщение.</i>""")),
+    "rp_need": msg(emoji=HEART, text=_line("""<b>Сначала брак.</b> <i>Ответьте «брак» на сообщение. Потом доброе слово каждый день растит огонёк, лимит и награды.</i>""")),
     "rp_pair": msg(emoji=HEART, text=_line("""<b>Только своей паре.</b>""")),
     "rp_done": msg(emoji=HEART, text=_line("""<b>Это слово уже было.</b>""")),
     "rp_wait": msg(
@@ -329,11 +329,13 @@ SCREENS = {
     "what": msg(
         emoji=HEART,
         text=_line("""
-        <b>что это</b>
-        <i>Доброе слово закрывает вашу часть лимита.</i>
+        <b>Что даёт брак</b>
+        Общий огонёк на двоих. Каждый день вы закрываете свою часть лимита добрым словом: обнять, поцеловать, похвалить.
+        <i>Выгода</i> — дольше горит огонёк, выше дневной лимит и крупнее награды за дни. В профиле видно, что вы пара.
+        Доброе слово закрывает вашу часть лимита. День горит, когда готовы оба, второго ответа можно не ждать.
         """),
         buttons=[
-            [b(text="Как зажечь", icon=HEART, color="primary", go="how", data="mrg:use:0")],
+            [b(text="Как кормить огонёк", icon=HEART, color="primary", go="how", data="mrg:use:0")],
             [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
@@ -341,14 +343,16 @@ SCREENS = {
     "how": msg(
         emoji=HEART,
         text=_line("""
-        <b>как</b>
-        <i>Обнять или поцеловать паре. День закроется, когда готовы оба.</i>
+        <b>Как кормить огонёк</b>
+        Нажмите «Слово паре» и выберите доброе слово. Искра ляжет в вашу часть лимита.
+        День закроется, когда готовы оба. Лишнее сверх части копится в запас и может закрыть следующий день.
+        Партнёру нужно то же самое. Одному огонёк не удержать, награда приходит за общий день.
         """),
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
             [b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0", when="play")],
             [
-                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
+                b(text="Что даёт брак", color="default", go="what", data="mrg:what:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -356,23 +360,25 @@ SCREENS = {
     "hold": msg(
         emoji=HEART,
         text=_line("""
-        <b>забыл</b>
-        <i>Часть не закрыта — огонёк тухнет. Срок на «Лимит дня».</i>
+        <b>Если день сорвался</b>
+        Огонёк жив, пока каждый день закрыты обе части. Не успели до срока на «Лимит дня» — серия сгорает, лимит падает к началу, награды откатываются.
+        До 12:00 ещё можно закрыть вчера. Спичка и утренний дар тоже спасают вчера. Запас тратится сам, если он есть у обоих.
+        Сегодня закройте свою часть добрым словом — огонёк снова пойдёт вверх.
         """),
         buttons=[
             [b(text="Лимит дня", icon=SPARK, color="primary", go="fire", data="mrg:fire:0", when="play")],
             [
-                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
+                b(text="Как кормить огонёк", color="default", go="how", data="mrg:use:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
     ),
     "gest_help": msg(
         emoji=HEART,
-        text="<b>слово паре</b>\n<i>Искры вам. Оба закрыли — день горит.</i>",
+        text="<b>Слово паре</b>\nВыберите слово ниже. Оно даст искры в вашу часть лимита.\n<i>Оба закрыли свою часть — день горит, серия длиннее, награды ближе. То же слово второй раз сегодня не считается.</i>",
         buttons=[
             [
-                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Если день сорвался", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -396,11 +402,11 @@ SCREENS = {
                 b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [
-                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
-                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
+                b(text="Что даёт брак", color="default", go="what", data="mrg:what:0"),
+                b(text="Как кормить огонёк", color="default", go="how", data="mrg:use:0"),
             ],
             [
-                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Если день сорвался", color="default", go="hold", data="mrg:hold:0"),
                 b(text="Все искры", color="default", go="stat", data="mrg:stat:0"),
             ],
             [b(text="Лента в профиле", color="default", go="rib", data="mrg:rib:0")],
@@ -412,7 +418,7 @@ SCREENS = {
         emoji=SPARK,
         text="""
         {spark} <b>Лимит</b>
-        <i>Своя часть — словом паре.</i>
+        <i>Своя часть закрывается словом паре. Оба закрыли — день горит, лимит выше, награды ближе.</i>
         """,
         buttons=[
             [b(text="Обнять", icon=HEART, color="primary", go="hug", data="mrg:act:hug:{token}")],
@@ -447,7 +453,7 @@ SCREENS = {
                 b(text="На ночь", icon=HEART, color="primary", go="night", data="mrg:act:night:{token}"),
             ],
             [
-                b(text="Если забыл", color="default", go="hold", data="mrg:hold:0"),
+                b(text="Если день сорвался", color="default", go="hold", data="mrg:hold:0"),
                 b(text="К паре", color="default", go="mine", data="mrg:mine:0"),
             ],
         ],
@@ -456,11 +462,11 @@ SCREENS = {
     # Кнопки экранов с числами. Сам текст собирается из строк ниже: числа пары живые.
     "spark_nav": msg(
         emoji=SPARK,
-        text=_line("""<b>Лимит</b> <i>На двоих. Каждому своя часть.</i>"""),
+        text=_line("""<b>Лимит</b> <i>На двоих. Каждому своя часть. Закрыли оба — день засчитан, серия и награды растут.</i>"""),
         buttons=[
             [b(text="Слово паре", icon=HEART, color="primary", go="care", data="mrg:care:0", when="play")],
             [
-                b(text="Как зажечь", color="default", go="how", data="mrg:use:0"),
+                b(text="Как кормить огонёк", color="default", go="how", data="mrg:use:0"),
                 b(text="Награды за дни", color="default", go="lvl", data="mrg:lvl:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
@@ -468,18 +474,18 @@ SCREENS = {
     ),
     "level_nav": msg(
         emoji=SPARK,
-        text=_line("""<b>Награды</b> <i>Больше дней — больше лимит.</i>"""),
+        text=_line("""<b>Награды</b> <i>Больше дней огонёк горит — выше лимит и щедрее дар. Это выгода держать пару.</i>"""),
         buttons=[
             [
                 b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
-                b(text="Зачем брак", color="default", go="what", data="mrg:what:0"),
+                b(text="Что даёт брак", color="default", go="what", data="mrg:what:0"),
             ],
             [b(text="К паре", color="default", go="mine", data="mrg:mine:0")],
         ],
     ),
     "stat_nav": msg(
         emoji=HEART,
-        text=_line("""<b>Всего</b> <i>Сколько искр в огоньке.</i>"""),
+        text=_line("""<b>Всего</b> <i>Сколько искр уже вложено. Чем больше дней, тем выше лимит и ближе награда.</i>"""),
         buttons=[
             [
                 b(text="Лимит дня", icon=SPARK, color="default", go="fire", data="mrg:fire:0"),
@@ -1539,9 +1545,10 @@ HELP_PAGE = (
     "{heart} <code>" + HELP_CMD + "</code>\n"
     "<i>{pay} «{yes}» «{no}» · {ladder}</i>\n"
     "{spark} искра тонус «{level}» — по {each}\n"
-    "<i>Доброе слово закрывает часть лимита.</i>"
+    "<i>Доброе слово закрывает часть лимита.</i>\n"
+    "<i>Огонёк на двоих. Дольше горит — выше лимит и награды.</i>"
 )
-PROFILE_EMPTY = "{heart} Брака нет. «брак» ответом на человека."
+PROFILE_EMPTY = "{heart} Брака нет. «брак» ответом на человека. Огонёк на двоих растит лимит и награды."
 PROFILE_WITH = "{mark} В браке с <b>{name}</b> · {span}"
 PROFILE_TONE = " · {tone}"
 TONE_LINE = "{spark} <b>Тонус {score} · {label}</b>{tail}"
