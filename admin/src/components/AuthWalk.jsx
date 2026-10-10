@@ -257,6 +257,7 @@ function KeyAfter({ onDone }) {
           </button>
         )}
         {step.stores && <StoreLinks />}
+        {step.id === 'digits' && <DigitSample />}
       </div>
       <StageNav
         index={stage.index}
@@ -318,7 +319,6 @@ export function CodeField({
   const [caret, setCaret] = useState(0)
   const spotTimer = useRef(0)
   const inputRef = useRef(null)
-  const stage = useStage(2)
   const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
 
   useEffect(() => () => window.clearTimeout(spotTimer.current), [])
@@ -340,12 +340,6 @@ export function CodeField({
   const show = () => {
     setOpen((was) => !was)
     setSpot(false)
-    stage.go(0)
-  }
-
-  const go = (next) => {
-    const landed = stage.go(next)
-    if (landed === 1) pulse()
   }
 
   return (
@@ -400,34 +394,13 @@ export function CodeField({
         {WORDS.codeFind}
       </button>
       {open && (
-        <div className="auth-stage" role="region" aria-label={WORDS.codeFind}>
-          <StageRail count={2} index={stage.index} onPick={go} label={WORDS.codeFind} />
-          <div
-            key={stage.index}
-            className={`auth-stage-view${stage.turned ? ' is-turn' : ''}`}
-            style={{ '--stage-x': stage.dir > 0 ? '14px' : '-14px' }}
-          >
-            {stage.index === 0 ? (
-              <>
-                <p className="auth-after-title">{WORDS.codeStage1}</p>
-                <DigitSample />
-                <p className="auth-where-lead">{WORDS.codeWhere}</p>
-              </>
-            ) : (
-              <>
-                <p className="auth-after-title">{WORDS.codeStage2}</p>
-                <p className="auth-where-next">
-                  {WORDS.codeThen} <b>{submitLabel}</b>.
-                </p>
-              </>
-            )}
-          </div>
-          <StageNav
-            index={stage.index}
-            last={stage.index === 1}
-            onPrev={() => go(stage.index - 1)}
-            onNext={() => (stage.index === 1 ? focusCode() : go(1))}
-            doneLabel={WORDS.walkDone}
+        <div role="region" aria-label={WORDS.codeFind}>
+          <KeyAfter
+            onDone={() => {
+              setOpen(false)
+              pulse()
+              focusCode()
+            }}
           />
         </div>
       )}

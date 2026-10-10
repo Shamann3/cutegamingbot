@@ -1933,6 +1933,9 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
                     <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
                     <span>
                       {person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}
+                      {person.mutedUntil ? ' · мут, должность на месте' : ''}
+                      {person.banUntil ? ' · бан, должность отложена' : ''}
+                      {person.paused ? ' · ждёт конца бана' : ''}
                       {person.accessOff ? ' · доступ выключен' : ''}
                     </span>
                     <div className="staff-ga-actions">

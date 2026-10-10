@@ -113,6 +113,15 @@
   color: var(--ent-ink);
 }
 
+.ent-trace-line.is-fault,
+.ent-trace-line:first-child.is-fault {
+  color: #c47a7a;
+}
+
+.ent-trace-line.is-healed {
+  animation: ent-heal 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .ent-trace-line.is-live {
   color: var(--ent-ink);
   animation: entTraceLive 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -120,6 +129,11 @@
 
 @keyframes entTraceLive {
   from { opacity: 0; transform: translate3d(0, 3px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes ent-heal {
+  from { opacity: 0.35; transform: translate3d(8px, 0, 0); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -772,8 +786,20 @@ body.perf-light .panel-brand-halo,
     opacity: 0 !important;
   }
 
-  .ent-trace-caret {
+  .ent-trace-caret,
+  .ent-trace-line,
+  .rite-digit,
+  .rite-ring,
+  .rite.is-dark .rite-cipher,
+  .rite.is-dark .rite-ring {
     animation: none !important;
+  }
+
+  .rite-bad,
+  .rite-ok,
+  .rite-x,
+  .rite-dot {
+    transition: none;
   }
 
   .ent-ring--c {
@@ -887,4 +913,187 @@ body.perf-light .panel-brand-halo {
   .ent-rule {
     display: none;
   }
+}
+
+.rite {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100dvh;
+  background: #000;
+  color: #f4f4f5;
+}
+
+.rite-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.rite-spell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 18rem;
+  height: 18rem;
+}
+
+.rite-ring {
+  position: absolute;
+  width: 16rem;
+  height: 16rem;
+  border: 1px solid color-mix(in srgb, var(--e-accent, #9ecbb4) 55%, transparent);
+  border-radius: 50%;
+  animation: rite-ring 1180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rite-cipher {
+  display: flex;
+  gap: 0.42rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 2.35rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.rite-digit {
+  display: inline-block;
+  min-width: 0.72em;
+  text-align: center;
+  color: var(--e-accent, #9ecbb4);
+  animation: rite-gather 980ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 50ms);
+}
+
+.rite.is-dark .rite-cipher,
+.rite.is-dark .rite-ring {
+  animation: rite-out 460ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.rite-board {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.35rem;
+  width: min(22rem, calc(100vw - 3rem));
+}
+
+.rite-cipher-ghost {
+  font-size: 1.35rem;
+  letter-spacing: 0.34em;
+  opacity: 0.78;
+}
+
+.rite-digit-still {
+  color: #f4f4f5;
+  animation: none;
+}
+
+.rite-faults {
+  list-style: none;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.rite-faults li {
+  display: grid;
+  grid-template-columns: 1.1rem 1fr;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 1.02rem;
+}
+
+.rite-bad,
+.rite-ok {
+  grid-column: 2;
+  grid-row: 1;
+  transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rite-bad { color: #c47a7a; }
+
+.rite-ok {
+  color: #f4f4f5;
+  opacity: 0;
+}
+
+.rite-faults li.is-healed .rite-bad { opacity: 0; }
+.rite-faults li.is-healed .rite-ok { opacity: 1; }
+
+.rite-mark {
+  position: relative;
+  width: 0.7rem;
+  height: 0.7rem;
+  justify-self: center;
+}
+
+.rite-x,
+.rite-dot {
+  position: absolute;
+  inset: 0;
+  transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rite-x::before,
+.rite-x::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: #d08080;
+}
+
+.rite-x::before { transform: rotate(45deg); }
+.rite-x::after { transform: rotate(-45deg); }
+
+.rite-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  margin: auto;
+  border-radius: 50%;
+  background: #f4f4f5;
+  opacity: 0;
+}
+
+.rite-faults li.is-healed .rite-x { opacity: 0; }
+.rite-faults li.is-healed .rite-dot { opacity: 1; }
+
+@keyframes rite-gather {
+  from {
+    opacity: 0;
+    transform: translate3d(calc((var(--i) - 2.5) * 46px), calc((var(--i) - 2.5) * -36px), 0) scale(1.35);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rite-ring {
+  from { opacity: 0; transform: scale(1.35) rotate(-18deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes rite-out {
+  to { opacity: 0; transform: scale(0.92); }
+}
+
+body.perf-light .rite-digit,
+body.perf-light .rite-ring {
+  animation-duration: 520ms;
+}
+
+body.perf-light .rite.is-dark .rite-cipher,
+body.perf-light .rite.is-dark .rite-ring {
+  animation-duration: 220ms;
 }

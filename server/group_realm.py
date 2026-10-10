@@ -1271,6 +1271,17 @@ async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: l
     return f"В группе стоит префикс «{text}»."
 
 
+HOLD_ACTIONS = frozenset({"unmute", "unban", "restore"})
+
+
+def hold_action(value: str) -> str | None:
+    """Снятие мута, снятие бана или возврат отложенной должности."""
+    action = (value or "").strip().lower()
+    if action in HOLD_ACTIONS:
+        return action
+    return None
+
+
 def should_pause_seat(*, actor_rank: int | None, target_rank: int | None, actor_is_staff: bool) -> bool:
     """Временный бан старшего снимает младшего с должности до конца бана.
 
@@ -2253,7 +2264,9 @@ async def _seated_people() -> dict[int, list[dict]]:
                    u.username, u.display_name, u.first_name,
                    aa.role AS staff_role, aa.status AS staff_status,
                    COALESCE(k.disabled, FALSE) AS access_off,
-                   mu.mute_until
+                   mu.mute_until, mu.mute_reason,
+                   bn.ban_until, bn.ban_reason,
+                   wn.warns
             FROM epsilon_seats s
             LEFT JOIN users u ON u.user_id = s.user_id
             LEFT JOIN epsilon_group_keys k ON k.user_id = s.user_id
@@ -2265,13 +2278,26 @@ async def _seated_people() -> dict[int, list[dict]]:
                 LIMIT 1
             ) aa ON TRUE
             LEFT JOIN LATERAL (
-                SELECT mute_until
+                SELECT mute_until, reason AS mute_reason
                 FROM active_mutes
                 WHERE user_id = s.user_id AND chat_id = s.chat_id
                   AND mute_until > NOW()
                   AND COALESCE(scope, 'chat') <> 'voice'
                 LIMIT 1
             ) mu ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT ban_until, reason AS ban_reason
+                FROM active_bans
+                WHERE user_id = s.user_id AND chat_id = s.chat_id
+                  AND ban_until > NOW()
+                LIMIT 1
+            ) bn ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT count(*)::int AS warns
+                FROM active_warns
+                WHERE user_id = s.user_id AND chat_id = s.chat_id
+                  AND (expires_at IS NULL OR expires_at > NOW())
+            ) wn ON TRUE
             ORDER BY s.created_at, s.user_id
             """
         )
@@ -2285,16 +2311,94 @@ async def _seated_people() -> dict[int, list[dict]]:
         )
         end = r["term_end"]
         muted = r["mute_until"]
+        banned = r["ban_until"]
         out.setdefault(int(r["chat_id"]), []).append({
             "userId": uid,
+            "chatId": int(r["chat_id"]),
             "name": r["display_name"] or r["first_name"] or str(uid),
             "username": r["username"] or "",
             "positionId": int(r["position_id"]),
             "seatPrefix": r["prefix"] or "",
             "termEnd": end.date().isoformat() if end else "",
             "mutedUntil": muted.isoformat() if muted else "",
+            "muteReason": (r["mute_reason"] or "")[:200],
+            "banUntil": banned.isoformat() if banned else "",
+            "banReason": (r["ban_reason"] or "")[:200],
+            "warns": int(r["warns"] or 0),
+            "paused": False,
+            "pauseUntil": "",
             "staff": bool(staff),
             "accessOff": bool(r["access_off"]),
+        })
+    return out
+
+
+def _clock(value) -> str:
+    if not value:
+        return ""
+    try:
+        return value.isoformat()
+    except AttributeError:
+        return ""
+
+
+async def _paused_people() -> dict[int, list[dict]]:
+    """Должность, отложенная временным баном. В списке администраторов она остаётся видимой."""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT p.chat_id, p.user_id, p.position_id, p.prefix, p.term_end, p.pause_until,
+                   u.username, u.display_name, u.first_name,
+                   pos.title AS position, pos.rank, pos.kind,
+                   bn.ban_until, bn.reason AS ban_reason,
+                   mu.mute_until, mu.reason AS mute_reason
+            FROM epsilon_seat_pause p
+            JOIN epsilon_positions pos ON pos.id = p.position_id
+            LEFT JOIN users u ON u.user_id = p.user_id
+            LEFT JOIN LATERAL (
+                SELECT ban_until, reason
+                FROM active_bans
+                WHERE user_id = p.user_id AND chat_id = p.chat_id AND ban_until > NOW()
+                LIMIT 1
+            ) bn ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT mute_until, reason
+                FROM active_mutes
+                WHERE user_id = p.user_id AND chat_id = p.chat_id
+                  AND mute_until > NOW()
+                  AND COALESCE(scope, 'chat') <> 'voice'
+                LIMIT 1
+            ) mu ON TRUE
+            ORDER BY p.pause_until NULLS LAST, p.user_id
+            """
+        )
+    except Exception:
+        _log.warning("paused people failed", exc_info=True)
+        return {}
+    out: dict[int, list[dict]] = {}
+    for r in rows:
+        end = r["term_end"]
+        out.setdefault(int(r["chat_id"]), []).append({
+            "userId": int(r["user_id"]),
+            "chatId": int(r["chat_id"]),
+            "name": r["display_name"] or r["first_name"] or str(r["user_id"]),
+            "username": r["username"] or "",
+            "positionId": int(r["position_id"]),
+            "position": r["position"] or "",
+            "rank": int(r["rank"] or 0),
+            "kind": r["kind"] or "",
+            "seatPrefix": r["prefix"] or "",
+            "prefix": r["prefix"] or "",
+            "termEnd": end.date().isoformat() if end else "",
+            "mutedUntil": _clock(r["mute_until"]),
+            "muteReason": (r["mute_reason"] or "")[:200],
+            "banUntil": _clock(r["ban_until"]),
+            "banReason": (r["ban_reason"] or "")[:200],
+            "warns": 0,
+            "paused": True,
+            "pauseUntil": _clock(r["pause_until"]),
+            "staff": False,
+            "accessOff": False,
         })
     return out
 
@@ -2307,6 +2411,7 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     await release_finished_holds()
     groups = await seats_for(user_id)
     seated = await _seated_people()
+    paused = await _paused_people()
     payload = []
     for group in groups:
         rows = await db.pool.fetch(
@@ -2334,9 +2439,51 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
                 "termEnd": person.get("termEnd") or "",
                 "rights": post["rights"],
                 "pages": post.get("pages"),
+                "chatId": int(group["chatId"]),
             })
+        seen = {int(person["userId"]) for person in seats}
+        for person in paused.get(int(group["chatId"]), []):
+            if int(person["userId"]) in seen:
+                continue
+            seats.append({**person, "chatId": int(group["chatId"])})
         payload.append({**group, "positions": positions, "seats": seats})
     return {"groups": payload}
+
+
+class HoldBody(BaseModel):
+    chat_id: int
+    user_id: int = Field(ge=1)
+    action: str = Field(min_length=2, max_length=16)
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/hold")
+async def lift_hold(body: HoldBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Создатель снимает мут или бан администратора, не забирая должность."""
+    _require_creator(user_id)
+    action = hold_action(body.action)
+    if not action:
+        raise HTTPException(status_code=400, detail="Можно снять мут, снять бан или вернуть должность")
+    await ensure_tables()
+    if action == "restore":
+        restored = await restore_paused_seat(int(body.user_id), int(body.chat_id))
+        if not restored:
+            raise HTTPException(status_code=404, detail="Отложенной должности нет")
+        return {"ok": True, "action": action}
+    from admin_groups import moderate_action
+
+    result = await moderate_action(
+        chat_id=int(body.chat_id),
+        user_id=int(body.user_id),
+        action=action,
+        reason="Снято с вкладки должностей",
+        admin_id=int(user_id),
+    )
+    if not result.get("ok"):
+        from offender_profile import failure_text
+
+        raise HTTPException(status_code=400, detail=failure_text(result))
+    return {"ok": True, "action": action}
 
 
 @router.get("/positions/{chat_id}")
@@ -3198,6 +3345,11 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
             prefix,
             local_start,
             local_end,
+        )
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+            int(body.user_id),
+            cid,
         )
         telegram_note = await _sync_chat_rights(
             cid,

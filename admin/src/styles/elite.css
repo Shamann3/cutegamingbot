@@ -9305,6 +9305,140 @@ html.accent-changing::after {
   overflow-wrap: anywhere;
 }
 
+.seat-roster {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0 1.25rem;
+}
+
+.seat-roster-head .realm-h,
+.seat-roster-group .realm-h {
+  margin-bottom: 0.2rem;
+}
+
+.seat-roster-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.seat-person {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.9rem 0.95rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.05rem;
+  background: #141416;
+  animation: seat-person-in 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.seat-person.is-held {
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.45);
+}
+
+.seat-person.is-paused {
+  background: #101012;
+}
+
+.seat-person-head strong {
+  display: block;
+  color: #f4f4f5;
+  font-size: 1rem;
+}
+
+.seat-person-head span,
+.seat-hold {
+  color: #aeaeb2;
+  line-height: 1.4;
+}
+
+.seat-hold {
+  margin: 0;
+}
+
+.seat-hold b {
+  color: #f4f4f5;
+  font-weight: 650;
+}
+
+.seat-holds {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.seat-person-actions,
+.seat-reissue-posts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.seat-person-actions button,
+.seat-reissue-posts button,
+.seat-reissue > button {
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: #f4f4f5;
+  font: inherit;
+  cursor: pointer;
+}
+
+.seat-reissue-posts button.is-on,
+.seat-reissue > button {
+  border-color: var(--e-accent);
+  background: var(--e-accent);
+  color: var(--e-accent-ink, #1a1024);
+}
+
+.seat-reissue {
+  display: grid;
+  gap: 0.55rem;
+  animation: seat-person-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.seat-reissue p,
+.seat-reissue-dates label {
+  margin: 0;
+  color: #aeaeb2;
+}
+
+.seat-reissue-dates {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.seat-reissue-dates input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 0.25rem;
+}
+
+.seat-person-actions button:disabled,
+.seat-reissue button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@keyframes seat-person-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-person,
+  .seat-reissue {
+    animation: none;
+  }
+}
+
+body.perf-light .seat-person,
+body.perf-light .seat-reissue {
+  animation-duration: 1ms;
+}
+
 .seat-everywhere {
   display: flex;
   align-items: center;

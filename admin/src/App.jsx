@@ -5,6 +5,7 @@ import { initAdminTelegram } from './lib/telegram'
 import AuthPage from './pages/AuthPage'
 import PanelShell from './pages/PanelShell'
 import EntranceSeal from './components/EntranceSeal'
+import EntryRite from './components/EntryRite'
 import GatePage from './pages/GatePage'
 import SecurityBoot from './components/SecurityBoot'
 import { accentIsPersonal, loadStoredAccent } from './lib/accentTheme'
@@ -55,7 +56,9 @@ export default function App() {
   const [applyPreview, setApplyPreview] = useState(false)
   const [groupAgain, setGroupAgain] = useState('')
   const [channel, setChannel] = useState(null)
+  const [rite, setRite] = useState('')
   const channelNext = useRef('gate')
+  const riteNext = useRef('')
 
   useEffect(() => {
     prepareMemeVisit()
@@ -74,11 +77,6 @@ export default function App() {
     if (!(isAdminSessionValid() || hasTelegramInitData())) return
     primeDashboardStats()
   }, [screen])
-
-  const finishAuth = useCallback(() => {
-    primeDashboardStats()
-    setScreen('entrance')
-  }, [])
 
   const finishEntrance = useCallback(() => {
     setScreen('panel')
@@ -107,6 +105,30 @@ export default function App() {
     setChannel(kind)
     setScreen('channel')
   }, [])
+
+  const openAfterRite = useCallback((digits, next) => {
+    const code = String(digits || '').replace(/\D/g, '').slice(0, 6)
+    if (code.length !== 6) {
+      if (next === 'entrance') setScreen('entrance')
+      else openChannel('group', 'group')
+      return
+    }
+    riteNext.current = next
+    setRite(code)
+  }, [openChannel])
+
+  const finishAuth = useCallback((digits) => {
+    primeDashboardStats()
+    openAfterRite(digits, 'entrance')
+  }, [openAfterRite])
+
+  const finishRite = useCallback(() => {
+    const next = riteNext.current
+    riteNext.current = ''
+    setRite('')
+    if (next === 'entrance') setScreen('entrance')
+    else openChannel('group', 'group')
+  }, [openChannel])
 
   const openStaff = useCallback(async (fromGate) => {
     if (fromGate?.isProjectCreator) {
@@ -152,7 +174,9 @@ export default function App() {
     setScreen('group-resume')
   }, [openChannel])
 
-  const passGroup = useCallback(() => openChannel('group', 'group'), [openChannel])
+  const passGroup = useCallback((digits) => {
+    openAfterRite(digits, 'group')
+  }, [openAfterRite])
 
   const openGroupApply = useCallback(() => {
     setApplyPreview(false)
@@ -167,6 +191,10 @@ export default function App() {
     setGroupAgain(message || '')
     setScreen('group-key')
   }, [groupPortrait, openChannel])
+
+  if (rite) {
+    return <EntryRite digits={rite} onDone={finishRite} />
+  }
 
   if (screen === 'boot') {
     return (

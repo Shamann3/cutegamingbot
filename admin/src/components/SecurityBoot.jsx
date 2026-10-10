@@ -230,15 +230,15 @@ export default function SecurityBoot({
           {script.steps.map((step) => {
             const on = progress + 0.001 >= step.at
             return (
-              <li key={step.label} className={on ? 'is-on' : ''}>
+              <li key={step.label} className={on ? 'is-on is-healed' : 'is-fault'}>
                 <span>{step.label}</span>
-                <span>{on ? 'готово' : 'ждём'}</span>
+                <span>{on ? 'верно' : 'ошибка'}</span>
               </li>
             )
           })}
           {script.needsData && (
             <li
-              className={`boot-log-data${dataReady ? ' is-on' : ' is-loading'}`}
+              className={`boot-log-data${dataReady ? ' is-on is-healed' : ' is-loading is-fault'}`}
               data-state={dataState}
             >
               <span>{DATA_STEP_LABEL}</span>

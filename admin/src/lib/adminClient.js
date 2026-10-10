@@ -2583,6 +2583,10 @@ export async function appointGroupAdmin(body) {
   return adminFetch('/group-realm/appoint', { method: 'POST', body })
 }
 
+export async function liftGroupHold(body) {
+  return adminFetch('/group-realm/hold', { method: 'POST', body })
+}
+
 export async function dismissGroupAdmin(body) {
   return adminFetch('/group-realm/dismiss', { method: 'POST', body })
 }

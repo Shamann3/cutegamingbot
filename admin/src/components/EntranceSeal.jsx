@@ -85,15 +85,20 @@ function ConsoleTrace({ durationMs, tail = null }) {
 
   return (
     <pre className="ent-trace" aria-hidden="true">
-      {visible.map((line, index) => (
+      {visible.map((line, index) => {
+        const live = done && tail && index === visible.length - 1
+        const waiting = live && line.includes('загрузка')
+        const fault = waiting || (!live && index === visible.length - 1 && !done)
+        return (
         <span
-          className={`ent-trace-line${done && tail && index === visible.length - 1 ? ' is-live' : ''}`}
+          className={`ent-trace-line${live ? ' is-live' : ''}${fault ? ' is-fault' : ' is-healed'}`}
           key={TRACE_LINES[index] || `tail-${index}`}
         >
           {line}
           {index === visible.length - 1 ? <i className="ent-trace-caret" /> : null}
         </span>
-      ))}
+        )
+      })}
     </pre>
   )
 }

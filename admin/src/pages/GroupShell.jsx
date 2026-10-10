@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   appointGroupAdmin,
+  liftGroupHold,
   checkRealmMember,
   dismissGroupAdmin,
   disableGroupAccess,
@@ -29,7 +30,8 @@ import { spanToSend } from '../lib/spanClock'
 import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
 import EverywhereSeat from '../components/EverywhereSeat'
-import GroupMuteLock, { muteClock } from '../components/GroupMuteLock'
+import GroupMuteLock from '../components/GroupMuteLock'
+import SeatRoster from '../components/SeatRoster'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { grantedWide } from '../lib/realmRights'
 import ApproveSeat from '../components/ApproveSeat'
@@ -211,6 +213,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const [memberNote, setMemberNote] = useState('')
   const [realmLogs, setRealmLogs] = useState([])
   const [holders, setHolders] = useState([])
+  const [rosterBusy, setRosterBusy] = useState('')
   const [accessSheet, setAccessSheet] = useState(null)
   const [accessBusy, setAccessBusy] = useState(false)
   const [savingId, setSavingId] = useState(null)
@@ -458,11 +461,11 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }, [])
 
   useEffect(() => {
-    if (!isCreator || !chatId) return undefined
+    if ((!isCreator && !isProjectCreator) || !chatId) return undefined
     if (chapter) loadLogs(chatId)
     if (chapter || activeTab === 'rights') loadHolders(chatId)
     return undefined
-  }, [chapter, activeTab, isCreator, chatId, loadLogs, loadHolders])
+  }, [chapter, activeTab, isCreator, isProjectCreator, chatId, loadLogs, loadHolders])
 
   const openCreator = async () => {
     setChapter(true)
@@ -601,6 +604,49 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     } finally {
       setAccessBusy(false)
       if (chatId) loadHolders(chatId).catch(() => {})
+    }
+  }
+
+  const liftHolder = async (person, action) => {
+    const id = Number(person.chatId || chatId)
+    setRosterBusy(`${id}-${person.userId}`)
+    setError('')
+    try {
+      await liftGroupHold({ chat_id: id, user_id: person.userId, action })
+      setNotice(action === 'unmute'
+        ? 'Мут снят. Должность на месте.'
+        : action === 'restore'
+          ? 'Должность возвращена.'
+          : 'Бан снят. Должность возвращена.')
+      await loadHolders(id)
+    } catch (err) {
+      setError(err.message || 'Наказание не снялось')
+    } finally {
+      setRosterBusy('')
+    }
+  }
+
+  const reissueHolder = async (person, position, fields) => {
+    const id = Number(person.chatId || chatId)
+    setRosterBusy(`${id}-${person.userId}`)
+    setError('')
+    try {
+      const data = await appointGroupAdmin({
+        chat_id: id,
+        user_id: person.userId,
+        position_id: position.id,
+        reason: 'Перевыдача с вкладки должностей',
+        prefix: position.kind === 'member' ? '' : (position.prefix || ''),
+        term_start: fields?.termStart || '',
+        term_end: fields?.termEnd || '',
+      })
+      setNotice(data?.telegram || `Должность «${position.title}» поставлена снова.`)
+      await loadHolders(id)
+      await loadPositions(id)
+    } catch (err) {
+      setError(err.message || 'Перевыдать не удалось')
+    } finally {
+      setRosterBusy('')
     }
   }
 
@@ -803,6 +849,22 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }
 
   const title = summary?.chat?.title || current?.title || 'Группа не выбрана'
+  const holderExtra = (person) => {
+    const isSelf = portrait?.userId != null && person.userId === portrait.userId
+    if (isSelf) return <OwnKeyControl variant="inline" />
+    if (!isProjectCreator) return null
+    if (!person.accessOff) {
+      return (
+        <button type="button" disabled={accessBusy} onClick={() => lookHolderKey(person)}>Ключ</button>
+      )
+    }
+    return (
+      <button type="button" disabled={accessBusy} onClick={() => setAccessSheet({ person, step: 'key', key: '', error: '' })}>
+        Выдать ключ
+      </button>
+    )
+  }
+
   const homeName = !chapter && activeTab === 'overview' && Boolean(chatId)
   const roleLabel = isCreator
     ? (current?.position || 'Создатель')
@@ -990,61 +1052,24 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 <EverywhereSeat on={everywhere} onChange={setEverywhere} />
                 <button type="submit" className="realm-back">Назначить</button>
               </form>
+              <SeatRoster
+                groups={[{ chatId, title, seats: holders, positions }]}
+                busyKey={rosterBusy}
+                onLift={liftHolder}
+                onDismiss={dismissHolder}
+                onReissue={reissueHolder}
+                renderExtra={(person) => (
+                  <>
+                    {holderExtra(person)}
+                    {portrait?.userId !== person.userId && !person.accessOff && (
+                      <button type="button" disabled={accessBusy} onClick={() => setAccessSheet({ person, step: 'off', key: '', error: '' })}>
+                        Отключить доступ
+                      </button>
+                    )}
+                  </>
+                )}
+              />
               <div className="staff-ga-seats">
-                <h3 className="realm-h">Сейчас на должностях</h3>
-                <p className="realm-copy">Отключение закрывает кабинет и гасит старый ключ. Должность остаётся. Снятие убирает должность и префикс, из чата человека не исключает.{portrait?.isProjectCreator ? ' Действующий ключ другого человека открывается кнопкой «Ключ».' : ''}</p>
-                {holders.length === 0 && <p className="realm-copy">В этой группе должностей ни у кого нет.</p>}
-                <ul className="realm-list">
-                  {holders.map((person) => {
-                    const isSelf = portrait?.userId != null && person.userId === portrait.userId
-                    return (
-                    <li key={person.userId} className={`realm-row staff-ga-person${person.accessOff ? ' is-access-off' : ''}`}>
-                      <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
-                      <span>
-                        {person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}
-                        {person.mutedUntil ? ` · мут до ${muteClock(person.mutedUntil)}, должность на месте` : ''}
-                        {person.accessOff ? ' · доступ выключен' : ''}
-                      </span>
-                      <div className="staff-ga-actions">
-                        {isSelf && <OwnKeyControl variant="inline" />}
-                        {portrait?.isProjectCreator && !isSelf && !person.accessOff && (
-                          <button
-                            type="button"
-                            className="sec-btn sec-btn-ghost sec-btn-sm"
-                            disabled={accessBusy}
-                            onClick={() => lookHolderKey(person)}
-                          >
-                            Ключ
-                          </button>
-                        )}
-                        {!isSelf && !person.accessOff && (
-                          <button
-                            type="button"
-                            className="sec-btn sec-btn-ghost sec-btn-sm"
-                            disabled={accessBusy}
-                            onClick={() => setAccessSheet({ person, step: 'off', key: '', error: '' })}
-                          >
-                            Отключить
-                          </button>
-                        )}
-                        {!isSelf && person.accessOff && (
-                          <button
-                            type="button"
-                            className="sec-btn sec-btn-sm sec-btn-success"
-                            disabled={accessBusy}
-                            onClick={() => setAccessSheet({ person, step: 'key', key: '', error: '' })}
-                          >
-                            Выдать ключ
-                          </button>
-                        )}
-                        <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => dismissHolder(person)}>
-                          Снять должность
-                        </button>
-                      </div>
-                    </li>
-                    )
-                  })}
-                </ul>
                 <AccessKeySheet
                   open={Boolean(accessSheet)}
                   name={accessSheet?.person?.name || (accessSheet ? String(accessSheet.person.userId) : '')}
@@ -1241,6 +1266,25 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
           {!chapter && activeTab === 'rights' && (
             <section>
+              {(isCreator || isProjectCreator) && (
+                <SeatRoster
+                  groups={[{ chatId, title, seats: holders, positions }]}
+                  busyKey={rosterBusy}
+                  onLift={liftHolder}
+                  onDismiss={dismissHolder}
+                  onReissue={reissueHolder}
+                  renderExtra={(person) => (
+                    <>
+                      {holderExtra(person)}
+                      {portrait?.userId !== person.userId && !person.accessOff && (
+                        <button type="button" disabled={accessBusy} onClick={() => setAccessSheet({ person, step: 'off', key: '', error: '' })}>
+                          Отключить доступ
+                        </button>
+                      )}
+                    </>
+                  )}
+                />
+              )}
               <h2 className="realm-h">Права должностей</h2>
               <p className="realm-copy">У должности два блока наказаний. «Наказания в этом чате» остаются в этой группе. «Наказания шире этого чата» — отдельные кнопки: все официальные группы или весь проект. Выключено — кнопки нет. Ранг 0 настраивается так же. Наказать можно только того, кто младше.</p>
               <label className="realm-field">Найти должность
@@ -1285,6 +1329,18 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 onOrder={isCreator ? saveOrder : null}
                 ordering={ordering}
                 canReorder={isCreator && !posQuery.trim()}
+              />
+              <AccessKeySheet
+                open={Boolean(accessSheet)}
+                name={accessSheet?.person?.name || (accessSheet ? String(accessSheet.person.userId) : '')}
+                kind="group"
+                step={accessSheet?.step || 'off'}
+                busy={accessBusy}
+                error={accessSheet?.error || ''}
+                issuedKey={accessSheet?.key || ''}
+                copy={accessSheet?.copy || ''}
+                onClose={() => { if (!accessBusy) setAccessSheet(null) }}
+                onConfirm={confirmHolderAccess}
               />
             </section>
           )}

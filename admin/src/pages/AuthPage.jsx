@@ -133,8 +133,8 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
 
         setInfo('')
         setSuccess('Подключение успешно')
-        // Короткая пауза на success-toast, затем печать входа (EntranceSeal).
-        window.setTimeout(() => onAuthenticated(), 320)
+        // Короткая пауза на success-toast, затем шифр из шести цифр и печать входа.
+        window.setTimeout(() => onAuthenticated(totp), 320)
       } catch (err) {
         setSuccess('')
         const status = err?.status ? ` [код ${err.status}]` : ''

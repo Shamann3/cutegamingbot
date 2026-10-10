@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPosition, fetchPanelAccess, fetchRightsBoard, orderGroupPositions, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import { appointGroupAdmin, createGroupPosition, createStaffPost, deleteGroupPosition, dismissGroupAdmin, fetchPanelAccess, fetchRightsBoard, liftGroupHold, orderGroupPositions, purgeStaffMember, saveGroupPosition, setPanelRoleDefault } from '../../lib/adminClient'
+import SeatRoster from '../../components/SeatRoster'
 import DarkPick from '../../components/DarkPick'
 import FocusWindow from '../../components/FocusWindow'
 import PositionEditor from '../../components/PositionEditor'
@@ -193,6 +194,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
   const [newTitle, setNewTitle] = useState('')
   const [newKind, setNewKind] = useState('post')
   const [ordering, setOrdering] = useState(false)
+  const [rosterBusy, setRosterBusy] = useState('')
 
   const load = useCallback(async () => {
     setError('')
@@ -309,6 +311,65 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
     return data
   }
 
+  const liftHere = async (person, action) => {
+    setRosterBusy(`${person.chatId}-${person.userId}`)
+    setError('')
+    setNotice('')
+    try {
+      await liftGroupHold({ chat_id: Number(person.chatId), user_id: person.userId, action })
+      setNotice(action === 'unmute'
+        ? 'Мут снят. Должность на месте.'
+        : action === 'restore'
+          ? 'Должность возвращена.'
+          : 'Бан снят. Должность возвращена.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Наказание не снялось')
+    } finally {
+      setRosterBusy('')
+    }
+  }
+
+  const reissueHere = async (person, position, fields) => {
+    setRosterBusy(`${person.chatId}-${person.userId}`)
+    setError('')
+    setNotice('')
+    try {
+      const data = await appointGroupAdmin({
+        chat_id: Number(person.chatId),
+        user_id: person.userId,
+        position_id: position.id,
+        reason: 'Перевыдача с вкладки должностей',
+        prefix: position.kind === 'member' ? '' : (position.prefix || ''),
+        term_start: fields?.termStart || '',
+        term_end: fields?.termEnd || '',
+      })
+      setNotice(data?.telegram || `Должность «${position.title}» поставлена снова.`)
+      await load()
+    } catch (err) {
+      setError(err.message || 'Перевыдать не удалось')
+    } finally {
+      setRosterBusy('')
+    }
+  }
+
+  const dismissHere = async (person) => {
+    const name = person.name || person.userId
+    if (!window.confirm(`Снять должность «${person.position}» с ${name}? Человек останется в группе, префикс в чате снимется.`)) return
+    setRosterBusy(`${person.chatId}-${person.userId}`)
+    setError('')
+    setNotice('')
+    try {
+      const data = await dismissGroupAdmin({ chat_id: Number(person.chatId), user_id: person.userId })
+      setNotice(data?.telegram || 'Должность снята. Префикс в группе убран.')
+      await load()
+    } catch (err) {
+      setError(err.message || 'Снять должность не удалось')
+    } finally {
+      setRosterBusy('')
+    }
+  }
+
   const purge = async (event) => {
     event.preventDefault()
     const id = Number(purgeId)
@@ -355,6 +416,13 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
       {chapter === 'staff' && <StaffTabsEditor />}
       {chapter === 'group' && (
       <>
+      <SeatRoster
+        groups={groups}
+        busyKey={rosterBusy}
+        onLift={liftHere}
+        onDismiss={dismissHere}
+        onReissue={reissueHere}
+      />
       {error && <p className="realm-alert" role="alert">{error}</p>}
       {notice && <p className="realm-note" role="status">{notice}</p>}
       {groups.length > 0 && (

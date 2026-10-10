@@ -113,7 +113,12 @@ describe('GroupKeyPage', () => {
     expect(document.querySelector('.auth-code-ask').parentElement.contains(code)).toBe(true)
     expect(code.parentElement.className).not.toContain('auth-side-ask')
     fireEvent.click(screen.getByRole('button', { name: 'Где мне найти эти 6 цифр?' }))
-    expect(screen.getByText(/Шесть цифр стоят в строке кабинета/)).toBeTruthy()
+    expect(screen.getByText('Скачайте приложение')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Google Play' })).toBeTruthy()
+    for (let step = 0; step < 5; step += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Дальше' }))
+    }
+    expect(screen.getByText('Возьмите шесть цифр')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Войти' }).disabled).toBe(true)
     fireEvent.change(code, { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: 'Войти' }))

@@ -144,7 +144,7 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
       { id: 'work', label: 'Работа' },
       { id: 'archive', label: 'Архив' },
       { id: 'activity', label: 'Активность' },
-      { id: 'rights', label: 'Права' },
+      { id: 'rights', label: 'Должности' },
       { id: 'switches', label: 'Переключатели' },
       { id: 'more', label: 'Ещё' },
     ])
@@ -172,7 +172,7 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
   if (has('view_members') || has('view_analytics') || [...set].some((item) => item.startsWith('punish_'))) {
     items.push({ id: 'activity', label: 'Активность' })
   }
-  if (has('manage_positions')) items.push({ id: 'rights', label: 'Права' })
+  if (has('manage_positions')) items.push({ id: 'rights', label: 'Должности' })
   items.push({ id: 'more', label: 'Ещё' })
   return placePay(items)
 }

@@ -20,6 +20,16 @@ def test_mute_keeps_the_seat_row():
     assert "title_parked" in source
 
 
+def test_hold_actions_are_only_lift_and_restore():
+    from group_realm import hold_action
+
+    assert hold_action("unmute") == "unmute"
+    assert hold_action(" unban ") == "unban"
+    assert hold_action("restore") == "restore"
+    assert hold_action("ban") is None
+    assert hold_action("mute") is None
+
+
 def test_appoint_can_cover_every_official_group():
     from group_realm import AppointBody
 

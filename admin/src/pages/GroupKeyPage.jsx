@@ -134,7 +134,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
         return
       }
       if (data?.entryPass) rememberGroupEntry(data.entryPass)
-      onPassed()
+      onPassed(needCode ? totp : undefined)
     } catch (err) {
       if (err?.code === 'need_apply') {
         onApply?.()
