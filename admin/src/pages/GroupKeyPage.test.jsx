@@ -77,8 +77,13 @@ describe('GroupKeyPage', () => {
     fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'right-key-123' } })
     await vi.advanceTimersByTimeAsync(800)
 
-    expect(screen.getByRole('button', { name: 'Скопировать ключ приложения' })).toBeTruthy()
+    const copy = screen.getByRole('button', { name: 'Скопировать ключ приложения' })
+    const veil = screen.getByRole('button', { name: 'Нажмите, чтобы увидеть' })
+    expect(copy.compareDocumentPosition(veil) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(0)
     expect(screen.getByAltText('QR-код для приложения с кодами').getAttribute('src')).toBe('data:image/png;base64,abc')
+    expect(screen.queryByText('APPSECRETKEY')).toBeNull()
+    fireEvent.click(veil)
+    await vi.advanceTimersByTimeAsync(400)
     expect(screen.getByText('APPSECRETKEY')).toBeTruthy()
   })
 

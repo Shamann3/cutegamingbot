@@ -5949,7 +5949,10 @@ button.entry-guide-row {
   .auth-walk-panel,
   .auth-walk-zoom,
   .auth-walk-zoom img,
-  .auth-path-stage.is-turn {
+  .auth-path-stage.is-turn,
+  .auth-setup-secret.is-veiled .auth-key-glitch,
+  .auth-setup-secret.is-veiled .auth-key-glitch::before,
+  .auth-setup-secret.is-veiled .auth-key-glitch::after {
     transition: none;
     animation: none;
   }
@@ -6488,18 +6491,101 @@ button.entry-guide-row {
 }
 
 .auth-setup-secret {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
   margin: 0;
-  padding: 0.7rem 0.85rem;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid rgba(126, 231, 255, 0.22);
   border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.42);
   color: #f4f4f5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92rem;
   line-height: 1.45;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-align: center;
   word-break: break-all;
+}
+
+.auth-setup-secret.is-veiled {
+  cursor: pointer;
+  user-select: none;
+}
+
+.auth-setup-secret.is-open {
+  cursor: text;
   user-select: all;
+  border-color: rgba(244, 244, 244, 0.22);
+}
+
+.auth-key-glitch {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.auth-key-hint {
+  color: rgba(244, 244, 245, 0.62);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.auth-setup-secret.is-veiled .auth-key-glitch {
+  color: transparent;
+  animation: key-jitter 0.72s steps(4, end) infinite;
+}
+
+.auth-setup-secret.is-veiled .auth-key-glitch::before,
+.auth-setup-secret.is-veiled .auth-key-glitch::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.auth-setup-secret.is-veiled .auth-key-glitch::before {
+  color: #7ee7ff;
+  animation: key-slice-a 0.84s steps(3, end) infinite;
+}
+
+.auth-setup-secret.is-veiled .auth-key-glitch::after {
+  color: #ff4d8d;
+  animation: key-slice-b 0.96s steps(3, end) infinite;
+}
+
+.auth-setup-secret.is-clearing .auth-key-glitch,
+.auth-setup-secret.is-clearing .auth-key-glitch::before,
+.auth-setup-secret.is-clearing .auth-key-glitch::after {
+  animation-iteration-count: 1;
+  animation-duration: 320ms;
+}
+
+@keyframes key-jitter {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-2px, 0, 0); }
+  50% { transform: translate3d(2px, 1px, 0); }
+  75% { transform: translate3d(-1px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes key-slice-a {
+  0% { transform: translate3d(2px, 0, 0); clip-path: inset(0 0 58% 0); }
+  34% { transform: translate3d(-3px, 0, 0); clip-path: inset(22% 0 28% 0); }
+  67% { transform: translate3d(2px, 0, 0); clip-path: inset(46% 0 6% 0); }
+  100% { transform: translate3d(0, 0, 0); clip-path: inset(0 0 64% 0); }
+}
+
+@keyframes key-slice-b {
+  0% { transform: translate3d(-2px, 0, 0); clip-path: inset(52% 0 0 0); }
+  50% { transform: translate3d(3px, 0, 0); clip-path: inset(12% 0 34% 0); }
+  100% { transform: translate3d(-1px, 0, 0); clip-path: inset(68% 0 0 0); }
 }
 
 .auth-path-line {

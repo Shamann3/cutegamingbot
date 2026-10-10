@@ -75,6 +75,7 @@ export const WORDS = {
   copyKey: 'Скопировать ключ приложения',
   appKeyTitle: 'Ключ приложения',
   appKeyLead: 'Снимите код камерой или вставьте этот ключ в Your key.',
+  appKeyHide: 'Нажмите, чтобы увидеть',
   copied: 'Ключ скопирован',
 
   boardTitle: 'Как человек входит',

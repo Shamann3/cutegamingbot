@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, WORDS } from '../entry_design'
 
@@ -114,9 +114,35 @@ export function AppKeyCard({ setup }) {
   )
 }
 
+const VEIL_GLYPHS = '█▓▒░#@$%&*+/='
+
+function veilText(secret) {
+  const count = Math.max(8, String(secret || '').length)
+  let text = ''
+  for (let index = 0; index < count; index += 1) text += VEIL_GLYPHS[index % VEIL_GLYPHS.length]
+  return text
+}
+
 export function CopyKey({ secret, expectQr = false, onNeedKey }) {
   const [copied, setCopied] = useState(false)
   const [held, setHeld] = useState(false)
+  const [phase, setPhase] = useState('veiled')
+  const revealTimer = useRef(0)
+  const mask = veilText(secret)
+  const open = phase === 'open'
+  const shown = phase === 'veiled' ? mask : secret
+
+  useEffect(() => () => window.clearTimeout(revealTimer.current), [])
+
+  const reveal = () => {
+    if (!secret || phase !== 'veiled') return
+    if (motionOff()) {
+      setPhase('open')
+      return
+    }
+    setPhase('clear')
+    revealTimer.current = window.setTimeout(() => setPhase('open'), 320)
+  }
 
   const copy = async () => {
     if (!secret) {
@@ -137,6 +163,21 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
 
   return (
     <div className="auth-setup">
+      {secret && (
+        open ? (
+          <code className="auth-setup-secret is-open" data-setup-secret={secret}>{secret}</code>
+        ) : (
+          <button
+            type="button"
+            className={`auth-setup-secret is-veiled${phase === 'clear' ? ' is-clearing' : ''}`}
+            aria-label={WORDS.appKeyHide}
+            onClick={reveal}
+          >
+            <span className="auth-key-glitch" data-text={shown}>{shown}</span>
+            {phase === 'veiled' && <span className="auth-key-hint">{WORDS.appKeyHide}</span>}
+          </button>
+        )
+      )}
       <button
         type="button"
         className="auth-path-next auth-setup-copy"
@@ -145,9 +186,6 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
       >
         {copied ? WORDS.copied : WORDS.copyKey}
       </button>
-      {secret && (
-        <code className="auth-setup-secret" data-setup-secret={secret}>{secret}</code>
-      )}
       {!secret && <p className="auth-help-wait">{WORDS.walkNoSecret}</p>}
       {held && <p className="auth-help-wait">{WORDS.walkHold}</p>}
     </div>
