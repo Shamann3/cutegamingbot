@@ -393,7 +393,24 @@ ADMIN_BOT_EXPECTED_ID = (
     or (ADMIN_BOT_TOKEN.split(":", 1)[0].strip() if ":" in (ADMIN_BOT_TOKEN or "") else "")
     or "8630275843"
 )
-ADMIN_WEBAPP_URL = _file_env("ADMIN_WEBAPP_URL")
+def _panel_url() -> str:
+    """Адрес панели для кнопки в боте.
+
+    Свой адрес важнее. Если его нет, панель живёт на том же сайте, что и игра:
+    к WEBAPP_URL добавляется /panel/. Иначе бот показывает ошибку 512910
+    и не ставит кнопки в кабинет.
+    """
+    direct = _file_env("ADMIN_WEBAPP_URL").rstrip("/")
+    if direct:
+        return direct + "/"
+    for key in ("WEBAPP_URL", "ADMIN_FRONTEND_ORIGIN", "FRONTEND_ORIGIN"):
+        base = _file_env(key).rstrip("/")
+        if base.startswith("http://") or base.startswith("https://"):
+            return base + "/panel/"
+    return ""
+
+
+ADMIN_WEBAPP_URL = _panel_url()
 # Токен бота модерации (bot/config/config.py → TOKEN): именно им приняты
 # фото-доказательства, поэтому только он (или его свежая версия того же bot_id)
 # может их скачать для архива. Берём из канонического файла — устойчиво к смене

@@ -741,17 +741,18 @@ function PositionSheet({
           </p>
         )}
         <fieldset className="realm-rights-block" disabled={rightsLocked}>
-          <legend>Что можно делать</legend>
+          <legend>Что видно в кабинете</legend>
+          <p className="realm-copy">Это не наказание. Здесь только то, что должность видит в этой группе.</p>
           <RightList items={pages} rights={rights} locked={rightsLocked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
         <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Наказания в этом чате</legend>
-          <p className="realm-copy">Включено — у всех на этой должности есть такая кнопка. Выключено — кнопки нет. За эту группу наказание не выходит.</p>
+          <p className="realm-copy">Только эта группа. Включено — кнопка есть. Выключено — кнопки нет. Другие чаты эти права не трогают.</p>
           <RightList items={PUNISH_RIGHTS} rights={rights} locked={rightsLocked} onToggle={toggle} compareSet={compareSet} />
         </fieldset>
         <fieldset className="realm-rights-block" disabled={rightsLocked}>
           <legend>Права Telegram в чате</legend>
-          <p className="realm-copy">Админское право ставится в чат. Ограничения отправки действуют, пока человек не администратор.</p>
+          <p className="realm-copy">Права внутри самого чата Telegram: удалять сообщения, звать людей, писать фото, стикеры и опросы.</p>
           <RightList
             items={TELEGRAM_ADMIN_RIGHTS}
             rights={rights}
@@ -763,8 +764,8 @@ function PositionSheet({
         <fieldset className="realm-rights-block">
           <legend>Наказания шире этого чата</legend>
           <p className="realm-copy">
-            Это отдельные кнопки. Мут или бан в чате их не включает.
-            Включено — кнопка есть у этой должности. Выключено — её нет.
+            Шире одной группы. Мут или бан в одном чате это не включает.
+            Включено — кнопка есть. Выключено — её нет.
             {creator ? '' : ' Меняет только создатель проекта.'}
           </p>
           <RightList

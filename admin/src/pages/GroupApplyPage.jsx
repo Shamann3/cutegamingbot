@@ -29,10 +29,10 @@ const PREVIEW_POSITIONS = [
 ]
 
 const RIGHT_GROUPS = [
-  { title: 'В панели', items: PAGE_RIGHTS, chips: false },
-  { title: 'Наказания в этом чате', items: PUNISH_RIGHTS, chips: false },
-  { title: 'На весь проект', items: PROJECT_RIGHTS, chips: false },
-  { title: 'В Telegram', items: TELEGRAM_ADMIN_RIGHTS, chips: true },
+  { title: 'В панели', note: 'Что вы видите в кабинете этой группы. Это ещё не наказание.', items: PAGE_RIGHTS, chips: false },
+  { title: 'Наказания в этом чате', note: 'Что вы можете сделать с человеком в этой группе.', items: PUNISH_RIGHTS, chips: false },
+  { title: 'На весь проект', note: 'Действует шире одной группы. Наказание одного чата этого не включает.', items: PROJECT_RIGHTS, chips: false },
+  { title: 'В Telegram', note: 'Что можно в самом чате: удалять, звать людей, писать фото и стикеры.', items: TELEGRAM_ADMIN_RIGHTS, chips: true },
 ]
 
 function RightsList({ rights }) {
@@ -50,6 +50,7 @@ function RightsList({ rights }) {
       {groups.map((group) => (
         <div key={group.title}>
           <p className="apply-rights-kind">{group.title}</p>
+          {group.note ? <p className="apply-rights-note">{group.note}</p> : null}
           {group.chips ? (
             <ul className="apply-rights-chips">
               {group.items.map((item) => (
