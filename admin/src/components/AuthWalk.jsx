@@ -96,6 +96,46 @@ function StoreLinks() {
   )
 }
 
+export function CopyKey({ secret, expectQr = false, onNeedKey }) {
+  const [copied, setCopied] = useState(false)
+  const [held, setHeld] = useState(false)
+
+  const copy = async () => {
+    if (!secret) {
+      onNeedKey?.()
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(secret)
+      setCopied(true)
+      setHeld(false)
+      window.setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setHeld(true)
+    }
+  }
+
+  if (!secret && !expectQr) return null
+
+  return (
+    <div className="auth-setup">
+      <button
+        type="button"
+        className="auth-path-next auth-setup-copy"
+        data-setup-secret={secret || undefined}
+        onClick={copy}
+      >
+        {copied ? WORDS.copied : WORDS.copyKey}
+      </button>
+      {secret && (
+        <code className="auth-setup-secret" data-setup-secret={secret}>{secret}</code>
+      )}
+      {!secret && <p className="auth-help-wait">{WORDS.walkNoSecret}</p>}
+      {held && <p className="auth-help-wait">{WORDS.walkHold}</p>}
+    </div>
+  )
+}
+
 function CodeClock() {
   const [left, setLeft] = useState(() => 30 - (Math.floor(Date.now() / 1000) % 30))
   useEffect(() => {
@@ -179,7 +219,7 @@ function FixList({ fixes, onShow }) {
 }
 
 /** Один кадр за раз. Смена шага — сдвиг, как переход между экранами телефона. */
-export default function AuthWalk({ onDone }) {
+export default function AuthWalk({ onDone, setup = null, expectQr = false }) {
   const [index, setIndex] = useState(0)
   const [dir, setDir] = useState(1)
   const [turned, setTurned] = useState(false)
@@ -216,7 +256,7 @@ export default function AuthWalk({ onDone }) {
         >
           <button
             type="button"
-            className="auth-path-frame"
+            className={`auth-path-frame${step.id === 'plus' ? ' is-mark' : ''}`}
             aria-label={`${WORDS.walkTap}: ${step.title}`}
             onClick={() => setZoom(index)}
           >
@@ -230,6 +270,20 @@ export default function AuthWalk({ onDone }) {
               ))}
             </span>
           </div>
+          {step.id === 'details' && (
+            setup?.totpSecret || expectQr ? (
+              <CopyKey
+                secret={setup?.totpSecret || ''}
+                expectQr={expectQr}
+                onNeedKey={() => {
+                  focusNamed('key')
+                  onDone?.()
+                }}
+              />
+            ) : (
+              <p className="auth-help-wait">{WORDS.walkReady}</p>
+            )
+          )}
         </div>
       </div>
       <div className="auth-path-dots" role="tablist" aria-label={WORDS.walkTitle}>
@@ -273,7 +327,6 @@ export function EntryHelp({ setup = null, expectQr = false }) {
   const titleId = useId()
   const [open, setOpen] = useState(false)
   const [leaving, setLeaving] = useState(false)
-  const [copied, setCopied] = useState(false)
   const close = useCallback(() => {
     setLeaving(true)
     window.setTimeout(() => {
@@ -291,13 +344,9 @@ export function EntryHelp({ setup = null, expectQr = false }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [open, leaving, close])
 
-  const copySecret = () => {
-    const value = setup?.totpSecret || ''
-    if (!value) return
-    navigator.clipboard?.writeText(value).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1600)
-    }).catch(() => {})
+  const revealKey = () => {
+    close()
+    window.setTimeout(() => focusNamed('key'), motionOff() ? 0 : 240)
   }
 
   return (
@@ -326,18 +375,13 @@ export function EntryHelp({ setup = null, expectQr = false }) {
                 ) : expectQr ? (
                   <p className="auth-help-wait">{WORDS.walkQrWait}</p>
                 ) : null}
-                {setup?.totpSecret && (
-                  <button
-                    type="button"
-                    className="auth-path-next"
-                    data-setup-secret={setup.totpSecret}
-                    onClick={copySecret}
-                  >
-                    {copied ? WORDS.copied : WORDS.copyKey}
-                  </button>
-                )}
+                <CopyKey
+                  secret={setup?.totpSecret || ''}
+                  expectQr={expectQr || Boolean(setup?.totpSecret)}
+                  onNeedKey={revealKey}
+                />
                 <StoreLinks />
-                <AuthWalk onDone={close} />
+                <AuthWalk setup={setup} expectQr={expectQr} onDone={close} />
               </div>
               <button type="button" className="choice-close" onClick={close}>{WORDS.close}</button>
             </div>

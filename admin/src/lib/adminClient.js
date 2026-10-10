@@ -63,6 +63,22 @@ function guardPreviewWrite(method, path) {
 
 
 
+const DEVICE_KEY = 'epsilon.panel.device'
+
+export function panelDeviceId() {
+  try {
+    const stored = localStorage.getItem(DEVICE_KEY) || ''
+    if (/^[a-f0-9]{32}$/.test(stored)) return stored
+    const bytes = new Uint8Array(16)
+    crypto.getRandomValues(bytes)
+    const next = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+    localStorage.setItem(DEVICE_KEY, next)
+    return next
+  } catch {
+    return ''
+  }
+}
+
 function adminHeaders() {
 
   const headers = {
@@ -78,6 +94,9 @@ function adminHeaders() {
   // вместо JSON на телефоне — из-за чего на ПК (dev) работало, а на телефоне нет.
   // Для не-ngrok доменов заголовок безвреден (просто игнорируется).
   headers['ngrok-skip-browser-warning'] = '1'
+
+  const device = panelDeviceId()
+  if (device) headers['X-Panel-Device'] = device
 
 
 
@@ -2080,6 +2099,8 @@ function _uploadHeaders() {
   else if (import.meta.env.DEV && import.meta.env.VITE_DEV_USER_ID) headers['X-Dev-User-Id'] = String(import.meta.env.VITE_DEV_USER_ID)
   const token = getAdminToken()
   if (token) headers.Authorization = `Bearer ${token}`
+  const device = panelDeviceId()
+  if (device) headers['X-Panel-Device'] = device
   return headers
 }
 

@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from admin_auth import (
@@ -24,6 +24,7 @@ from admin_auth import (
     get_any_telegram_user_id,
     get_optional_telegram_user_id,
     get_signed_in_user_id,
+    panel_device,
     totp_qr_data_url,
     verify_totp,
 )
@@ -937,6 +938,7 @@ async def ensure_tables() -> None:
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_start TIMESTAMPTZ;
         ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS term_end TIMESTAMPTZ;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_secret TEXT NOT NULL DEFAULT '';
+        ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS panel_device TEXT NOT NULL DEFAULT '';
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS totp_ready BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS disabled BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE epsilon_group_keys ADD COLUMN IF NOT EXISTS entry_key TEXT NOT NULL DEFAULT '';
@@ -3815,7 +3817,12 @@ async def _open_key(key: str, user_id: int | None) -> tuple[int, Any]:
 
 
 @router.post("/key/check")
-async def group_key_check(body: KeyBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+async def group_key_check(
+    body: KeyBody,
+    request: Request,
+    user_id: int | None = Depends(get_optional_telegram_user_id),
+):
+    await ensure_tables()
     owner_id, row = await _open_key(body.key, user_id)
     secret = str(row["totp_secret"] or "").strip()
     ready = bool(row["totp_ready"])
@@ -3833,12 +3840,26 @@ async def group_key_check(body: KeyBody, user_id: int | None = Depends(get_optio
         ready = False
     need_code = True
     payload = {"ok": True, "needCode": need_code}
-    if body.finish and ready:
+    bound_device = str(row["panel_device"] or "")
+    current_device = panel_device(request)
+    if body.finish and ready and bound_device and current_device != bound_device:
+        need_code = True
+    elif body.finish and ready:
         need_code = False
         payload["needCode"] = need_code
         entry_pass, exp = _issue_group_pass(owner_id, str(row["key_hash"]))
         payload["entryPass"] = entry_pass
         payload["exp"] = exp
+        if current_device and current_device != bound_device:
+            await db.pool.execute(
+                """
+                UPDATE epsilon_group_keys
+                SET panel_device = $2, updated_at = NOW()
+                WHERE user_id = $1
+                """,
+                int(owner_id),
+                current_device,
+            )
     elif not ready:
         uri = build_otpauth_uri(secret, account_name=f"group-{int(owner_id)}")
         payload["setup"] = {
@@ -3849,21 +3870,37 @@ async def group_key_check(body: KeyBody, user_id: int | None = Depends(get_optio
 
 
 @router.post("/key/enter")
-async def group_key_enter(body: KeyEnterBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+async def group_key_enter(
+    body: KeyEnterBody,
+    request: Request,
+    user_id: int | None = Depends(get_optional_telegram_user_id),
+):
+    await ensure_tables()
     owner_id, row = await _open_key(body.key, user_id)
     secret = str(row["totp_secret"] or "").strip()
     if not secret or not verify_totp(secret, body.totp):
         raise HTTPException(status_code=403, detail="Код не подошёл")
     await db.pool.execute(
-        "UPDATE epsilon_group_keys SET totp_ready = TRUE, updated_at = NOW() WHERE user_id = $1",
+        """
+        UPDATE epsilon_group_keys
+        SET totp_ready = TRUE,
+            panel_device = CASE WHEN $2 = '' THEN panel_device ELSE $2 END,
+            updated_at = NOW()
+        WHERE user_id = $1
+        """,
         int(owner_id),
+        panel_device(request),
     )
     entry_pass, exp = _issue_group_pass(owner_id, str(row["key_hash"]))
     return {"ok": True, "entryPass": entry_pass, "exp": exp}
 
 
 @router.post("/key/resume")
-async def group_key_resume(body: PassBody, user_id: int | None = Depends(get_optional_telegram_user_id)):
+async def group_key_resume(
+    body: PassBody,
+    request: Request,
+    user_id: int | None = Depends(get_optional_telegram_user_id),
+):
     parsed = _read_group_pass(body.entryPass)
     if not parsed:
         raise HTTPException(status_code=401, detail="Вход не узнан. Напишите ключ ещё раз.")
@@ -3873,6 +3910,15 @@ async def group_key_resume(body: PassBody, user_id: int | None = Depends(get_opt
     if user_id is not None and int(user_id) != int(pass_user):
         raise HTTPException(status_code=401, detail="Это вход другого человека. Напишите ключ ещё раз.")
     await ensure_tables()
+    bound = await db.pool.fetchval(
+        "SELECT panel_device FROM epsilon_group_keys WHERE user_id = $1",
+        int(pass_user),
+    )
+    if str(bound or "") and panel_device(request) != str(bound):
+        raise HTTPException(
+            status_code=403,
+            detail="Это другое устройство. Напишите ключ на экране входа.",
+        )
     key_hash = await _pass_key_hash(pass_user, stamp)
     entry_pass, exp = _issue_group_pass(pass_user, key_hash)
     return {"ok": True, "entryPass": entry_pass, "exp": exp}
@@ -3880,7 +3926,7 @@ async def group_key_resume(body: PassBody, user_id: int | None = Depends(get_opt
 
 async def _key_row(user_id: int, key: str):
     row = await db.pool.fetchrow(
-        "SELECT key_hash, totp_secret, totp_ready, disabled FROM epsilon_group_keys WHERE user_id = $1",
+        "SELECT key_hash, totp_secret, totp_ready, disabled, panel_device FROM epsilon_group_keys WHERE user_id = $1",
         int(user_id),
     )
     if not row:

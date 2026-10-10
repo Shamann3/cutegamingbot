@@ -6420,6 +6420,45 @@ button.entry-guide-row {
   pointer-events: none;
 }
 
+.auth-path-frame.is-mark {
+  display: flex;
+  justify-content: center;
+  padding: 0.15rem 0 0.35rem;
+}
+
+.auth-path-frame.is-mark img {
+  width: min(62%, 220px);
+  height: auto;
+  border-radius: 1.15rem;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+}
+
+.auth-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.auth-setup-copy {
+  width: 100%;
+}
+
+.auth-setup-secret {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f4f4f5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  text-align: center;
+  word-break: break-all;
+  user-select: all;
+}
+
 .auth-path-line {
   display: flex;
   align-items: flex-start;

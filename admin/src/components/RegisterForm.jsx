@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AuthRescue, EntryHelp } from './AuthWalk'
+import { AuthRescue, CopyKey, EntryHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -17,7 +17,6 @@ export default function RegisterForm({
 }) {
   const [inviteKey, setInviteKey] = useState('')
   const [totp, setTotp] = useState('')
-  const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState('')
   const lastTried = useRef('')
@@ -48,12 +47,6 @@ export default function RegisterForm({
     setInviteKey(next)
     setLocalError('')
     if (onEditKey) onEditKey()
-  }
-
-  const copyKey = () => {
-    navigator.clipboard?.writeText(setup?.totpSecret || '').catch(() => {})
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1800)
   }
 
   const runConfirm = async () => {
@@ -139,15 +132,7 @@ export default function RegisterForm({
               </div>
 
               {setup.totpSecret && (
-                <div className="auth-totp-key-block">
-                  <p className="auth-totp-key-label">{WORDS.manualKey}</p>
-                  <div className="auth-totp-key-row">
-                    <code className="auth-totp-key" data-copyable="1" data-setup-secret={setup.totpSecret}>{setup.totpSecret}</code>
-                    <button type="button" className="auth-totp-copy-btn" onClick={copyKey}>
-                      {copied ? '✓' : '📋'}
-                    </button>
-                  </div>
-                </div>
+                <CopyKey secret={setup.totpSecret} expectQr />
               )}
 
               <label className="auth-field">

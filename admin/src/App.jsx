@@ -92,8 +92,13 @@ export default function App() {
     setScreen(doorScreen(go))
   }, [])
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback((reason) => {
     logoutAdmin()
+    if (String(reason || '').includes('другое устройство')) {
+      setAuthMode('login')
+      setScreen('auth')
+      return
+    }
     setScreen('gate')
   }, [])
 
@@ -119,7 +124,7 @@ export default function App() {
       openChannel('staff', 'panel')
       return
     }
-    if (isAdminSessionValid() || hasTelegramInitData()) {
+    if (isAdminSessionValid()) {
       primeDashboardStats()
       openChannel('staff', 'panel')
       return

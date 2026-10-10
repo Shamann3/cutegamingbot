@@ -432,6 +432,14 @@ def _get_client_ip(request: Request) -> str:
     return forwarded[:64] if forwarded else (request.client.host if request.client else "unknown")
 
 
+def panel_device(request: Request) -> str:
+    """Идентификатор этого браузера. Пустой, если заголовок не похож на наш."""
+    raw = (request.headers.get("x-panel-device") or "").strip().lower()
+    if len(raw) == 32 and all(ch in "0123456789abcdef" for ch in raw):
+        return raw
+    return ""
+
+
 def _ua_fingerprint(request: Request) -> str:
     ua = request.headers.get("user-agent", "")[:256]
     return hashlib.sha256(ua.encode()).hexdigest()[:16]
@@ -495,10 +503,11 @@ async def store_session_fingerprint(user_id: int, request: Request) -> None:
             """
             UPDATE admin_accounts
             SET session_fingerprint = $2, last_ip = $3, last_seen_at = NOW(),
-                force_reauth_at = NULL
+                force_reauth_at = NULL,
+                panel_device = CASE WHEN $4 = '' THEN panel_device ELSE $4 END
             WHERE user_id = $1
             """,
-            user_id, fingerprint, ip,
+            user_id, fingerprint, ip, panel_device(request),
         )
     except Exception:
         pass
@@ -602,7 +611,7 @@ async def require_admin_session(
     try:
         from db import db
         row = await db.pool.fetchrow(
-            "SELECT session_fingerprint, force_reauth_at FROM admin_accounts WHERE user_id = $1",
+            "SELECT session_fingerprint, force_reauth_at, panel_device FROM admin_accounts WHERE user_id = $1",
             user_id,
         )
         if row:
@@ -616,6 +625,13 @@ async def require_admin_session(
                 raise HTTPException(
                     status_code=401,
                     detail="Требуется повторная аутентификация",
+                )
+            bound = str(row["panel_device"] or "")
+            current = panel_device(request)
+            if bound and current != bound:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Это другое устройство. Откройте вход и введите ключ.",
                 )
         _auth_debug(request, f"session OK user_id={user_id}")
         # Отпечаток устройства НЕ используем как жёсткий блок: он ломал вход с

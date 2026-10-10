@@ -421,6 +421,7 @@ ALTER TABLE admin_register_pending ADD COLUMN IF NOT EXISTS invite_token TEXT;
 
 -- Admin session security fields
 ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS session_fingerprint TEXT;
+ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS panel_device TEXT;
 ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS force_reauth_at TIMESTAMPTZ;
 ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS last_ip TEXT;
 ALTER TABLE admin_accounts ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;

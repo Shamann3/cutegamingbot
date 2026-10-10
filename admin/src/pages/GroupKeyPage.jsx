@@ -4,7 +4,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
-import { AuthRescue, EntryHelp } from '../components/AuthWalk'
+import { AuthRescue, CopyKey, EntryHelp } from '../components/AuthWalk'
 import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
 import { SCREENS, WORDS } from '../entry_design'
@@ -20,7 +20,6 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
   const [needCode, setNeedCode] = useState(false)
   const [setup, setSetup] = useState(null)
   const [totp, setTotp] = useState('')
-  const [copied, setCopied] = useState(false)
   const lastVerified = useRef('')
   const [gate, setGate] = useState('check')
 
@@ -171,7 +170,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
     >
       <form className="auth-form auth-step" onSubmit={submit}>
         <EntryGuide screen={SCREENS.groupKey} at={!verified ? 'key' : needCode && setup && !totp ? 'app' : 'code'} />
-        <EntryHelp setup={setup} />
+        <EntryHelp setup={setup} expectQr={!setup} />
 
         <KeyField
           label={WORDS.groupKey}
@@ -208,18 +207,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
                   <img className="auth-qr" src={setup.qrDataUrl} alt={WORDS.qrAlt} />
                 </div>
                 {setup.totpSecret && (
-                  <button
-                    type="button"
-                    className="choice-close"
-                    data-setup-secret={setup.totpSecret}
-                    onClick={() => {
-                      navigator.clipboard?.writeText(setup.totpSecret).catch(() => {})
-                      setCopied(true)
-                      window.setTimeout(() => setCopied(false), 1600)
-                    }}
-                  >
-                    {copied ? WORDS.copied : WORDS.copyKey}
-                  </button>
+                  <CopyKey secret={setup.totpSecret} expectQr />
                 )}
               </>
             )}

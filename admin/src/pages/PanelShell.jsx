@@ -387,9 +387,9 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
 
   // Register a global 401 handler so any request in any section auto-triggers logout
   useEffect(() => {
-    registerUnauthorizedHandler(() => {
+    registerUnauthorizedHandler((reason) => {
       logoutAdmin()
-      onLogout?.()
+      onLogout?.(reason)
     })
     return () => registerUnauthorizedHandler(null)
   }, [onLogout])
