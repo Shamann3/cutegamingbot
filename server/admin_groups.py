@@ -1459,16 +1459,25 @@ async def moderate_action(
         params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid, "permissions": perms}
         if muted and until_date:
             params["until_date"] = until_date
+        held = False
         if muted:
             try:
-                from group_realm import park_title_for_mute
-                await park_title_for_mute(int(target_chat), uid)
+                from group_realm import pause_seat_for_ban
+                held = await pause_seat_for_ban(
+                    int(admin_id or 0),
+                    uid,
+                    int(target_chat),
+                    datetime.now() + timedelta(seconds=max(35, until)) if until > 0 else datetime.now() + timedelta(days=3650),
+                    cause="mute",
+                )
             except Exception:
-                pass
+                held = False
         res = await _tg_api("restrictChatMember", **params)
         if (not muted and res.get("ok")) or (muted and not res.get("ok")):
             try:
-                from group_realm import restore_title_after_mute
+                from group_realm import restore_paused_seat, restore_title_after_mute
+                if held or not muted:
+                    await restore_paused_seat(uid, int(target_chat), force=bool(muted and held))
                 await restore_title_after_mute(int(target_chat), uid)
             except Exception:
                 pass
@@ -1493,27 +1502,38 @@ async def moderate_action(
             params["until_date"] = until_date
         return await _tg_api("restrictChatMember", **params)
 
-    async def _ban_chat(target_chat: int) -> Dict[str, Any]:
+    async def _ban_chat(target_chat: int, hold_action: str) -> Dict[str, Any]:
         params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid}
         if until_date:
             params["until_date"] = until_date
-        paused = False
-        if until > 0:
-            try:
-                from group_realm import pause_seat_for_ban
-                paused = await pause_seat_for_ban(
+        held = False
+        try:
+            from group_realm import pause_seat_for_ban, seat_hold_plan
+            plan = seat_hold_plan(hold_action, until if until > 0 else None)
+            if plan == "pause":
+                held = await pause_seat_for_ban(
                     int(admin_id or 0),
                     uid,
                     int(target_chat),
                     datetime.now() + timedelta(seconds=max(35, until)),
+                    cause=hold_action,
                 )
-            except Exception:
-                paused = False
+            elif plan == "strip":
+                held = await pause_seat_for_ban(
+                    int(admin_id or 0),
+                    uid,
+                    int(target_chat),
+                    None,
+                    permanent=True,
+                    cause=hold_action,
+                )
+        except Exception:
+            held = False
         res = await _tg_api("banChatMember", **params)
-        if paused and not res.get("ok"):
+        if held and not res.get("ok"):
             try:
                 from group_realm import restore_paused_seat
-                await restore_paused_seat(uid, int(target_chat))
+                await restore_paused_seat(uid, int(target_chat), force=True)
             except Exception:
                 pass
         return res
@@ -1670,7 +1690,7 @@ async def moderate_action(
         ok = True
         detail = "warnfull recorded"
     elif action == "ban":
-        res = await _ban_chat(cid)
+        res = await _ban_chat(cid, "ban")
         ok = bool(res.get("ok"))
         detail = res.get("description") or ""
         if ok:
@@ -1679,7 +1699,7 @@ async def moderate_action(
     elif action == "banall":
         ok_any = False
         for tc in staff_ids:
-            res = await _ban_chat(tc)
+            res = await _ban_chat(tc, "banall")
             results.append({"chat_id": tc, **res})
             if res.get("ok"):
                 ok_any = True
@@ -1689,7 +1709,7 @@ async def moderate_action(
     elif action == "banfull":
         ok_any = False
         for tc in staff_ids:
-            res = await _ban_chat(tc)
+            res = await _ban_chat(tc, "banfull")
             results.append({"chat_id": tc, **res})
             if res.get("ok"):
                 ok_any = True
@@ -1700,6 +1720,12 @@ async def moderate_action(
             ok_any = True
         except Exception as e:
             detail = str(e)
+        if ok_any:
+            try:
+                from group_realm import remember_project_strip
+                await remember_project_strip(uid, "banfull")
+            except Exception:
+                pass
         ok = ok_any
         if not detail:
             detail = "banfull"

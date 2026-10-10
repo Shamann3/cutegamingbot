@@ -42,7 +42,7 @@ function PersonCard({ person, positions, busy, onLift, onDismiss, onReissue, ren
           {person.prefix ? ` · «${person.prefix}»` : ''}
           {Number.isFinite(Number(person.rank)) ? ` · ранг ${person.rank}` : ''}
           {person.termEnd ? ` · срок до ${person.termEnd}` : ''}
-          {person.paused ? ' · должность отложена' : ''}
+          {person.permanent ? ' · должность снята навсегда' : person.paused ? ' · должность снята на время' : ''}
           {person.accessOff ? ' · доступ выключен' : ''}
         </span>
       </header>
@@ -52,9 +52,15 @@ function PersonCard({ person, positions, busy, onLift, onDismiss, onReissue, ren
           {person.banUntil && <HoldLine label="Бан" until={person.banUntil} reason={person.banReason} />}
           {person.paused && (
             <HoldLine
-              label="Должность снята на время бана"
-              until={person.pauseUntil || person.banUntil}
-              reason=""
+              label={
+                person.permanent
+                  ? 'Должность снята навсегда'
+                  : person.mutedUntil && !person.banUntil
+                    ? 'Должность снята до конца мута'
+                    : 'Должность снята до конца бана'
+              }
+              until={person.permanent ? '' : (person.pauseUntil || person.banUntil || person.mutedUntil)}
+              reason={person.permanent ? 'Вернуть может только создатель' : ''}
             />
           )}
           {person.warns > 0 && <p className="seat-hold"><b>Предупреждения</b>{` · ${person.warns}`}</p>}
@@ -67,7 +73,7 @@ function PersonCard({ person, positions, busy, onLift, onDismiss, onReissue, ren
         {person.banUntil && onLift && (
           <button type="button" disabled={busy} onClick={() => onLift(person, 'unban')}>Снять бан</button>
         )}
-        {person.paused && !person.banUntil && onLift && (
+        {person.paused && !person.permanent && !person.banUntil && !person.mutedUntil && onLift && (
           <button type="button" disabled={busy} onClick={() => onLift(person, 'restore')}>Вернуть должность</button>
         )}
         {onReissue && posts.length > 0 && (

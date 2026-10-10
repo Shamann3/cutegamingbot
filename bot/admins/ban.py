@@ -1008,22 +1008,40 @@ def _seat_realm():
   return group_realm
 
 
-async def _pause_junior_seat(actor_id: int, chat_id: int, user_id: int, tg_until: Optional[int]) -> None:
-  """Временный бан старшего откладывает должность младшего до этого же срока."""
-  if not actor_id or not tg_until or chat_id > 0:
+async def _pause_junior_seat(
+  actor_id: int,
+  chat_id: int,
+  user_id: int,
+  tg_until: Optional[int],
+  mode: str = "chat",
+) -> None:
+  """Бан снимает должность младшего. 30 дней и банфулл — навсегда."""
+  if not actor_id or chat_id > 0:
     return
-  try:
+  action = "banfull" if mode == "full" else ("banall" if mode == "all" else "ban")
+  seconds = None
+  until = None
+  if tg_until:
     until = datetime.fromtimestamp(int(tg_until))
-    await _seat_realm().pause_seat_for_ban(int(actor_id), int(user_id), int(chat_id), until)
+    seconds = max(0, int(tg_until) - int(datetime.now().timestamp()))
+  try:
+    realm = _seat_realm()
+    plan = realm.seat_hold_plan(action, seconds)
+    if plan == "pause" and until is not None:
+      await realm.pause_seat_for_ban(int(actor_id), int(user_id), int(chat_id), until, cause=action)
+    elif plan == "strip":
+      await realm.pause_seat_for_ban(
+        int(actor_id), int(user_id), int(chat_id), None, permanent=True, cause=action,
+      )
   except Exception as e:
     BanDebug.log("TG", "pause seat skip", err=str(e), chat_id=chat_id, user_id=user_id)
 
 
-async def _restore_junior_seat(chat_id: int, user_id: int) -> None:
+async def _restore_junior_seat(chat_id: int, user_id: int, *, force: bool = False) -> None:
   if chat_id > 0:
     return
   try:
-    await _seat_realm().restore_paused_seat(int(user_id), int(chat_id))
+    await _seat_realm().restore_paused_seat(int(user_id), int(chat_id), force=force)
   except Exception as e:
     BanDebug.log("TG", "restore seat skip", err=str(e), chat_id=chat_id, user_id=user_id)
 
@@ -1373,23 +1391,36 @@ async def _ban_with_scope(
   scope: Scope,
   source_chat_id: int,
   actor_id: int = 0,
+  mode: str = "chat",
+  hold_seats: bool = True,
 ) -> Tuple[int, List[int], List[str]]:
   """Блокирует в одной группе или во всех группах проекта."""
   if scope == "all":
-    return await _ban_in_all_staff_chats(target_id, tg_until, actor_id=actor_id)
+    count, ids, errors = await _ban_in_all_staff_chats(
+      target_id, tg_until, actor_id=actor_id, mode=mode, hold_seats=hold_seats,
+    )
+    if hold_seats and mode == "full" and count:
+      try:
+        await _seat_realm().remember_project_strip(int(target_id), "banfull")
+      except Exception as e:
+        BanDebug.log("TG", "project strip skip", err=str(e), user_id=target_id)
+    return count, ids, errors
 
   if not _is_staff_chat(source_chat_id):
     return 0, [], ["команда доступна только в официальных группах проекта"]
 
-  await _pause_junior_seat(actor_id, source_chat_id, target_id, tg_until)
+  if hold_seats:
+    await _pause_junior_seat(actor_id, source_chat_id, target_id, tg_until, mode)
   err = await _validate_ban_target_in_chat(source_chat_id, target_id)
   if err:
-    await _restore_junior_seat(source_chat_id, target_id)
+    if hold_seats:
+      await _restore_junior_seat(source_chat_id, target_id, force=True)
     return 0, [], [err]
 
   if await _ban_in_chat(source_chat_id, target_id, tg_until):
     return 1, [source_chat_id], []
-  await _restore_junior_seat(source_chat_id, target_id)
+  if hold_seats:
+    await _restore_junior_seat(source_chat_id, target_id, force=True)
   return 0, [], ["не удалось заблокировать в группе"]
 
 
@@ -1397,25 +1428,30 @@ async def _ban_in_all_staff_chats(
   target_id: int,
   tg_until: Optional[int],
   actor_id: int = 0,
+  mode: str = "all",
+  hold_seats: bool = True,
 ) -> Tuple[int, List[int], List[str]]:
   """Банит во всех группах проекта (в т.ч. превентивно, даже если сейчас не состоит)."""
   banned: List[int] = []
   errors: List[str] = []
   for cid in await official_chats_now():
-    await _pause_junior_seat(actor_id, cid, target_id, tg_until)
+    if hold_seats:
+      await _pause_junior_seat(actor_id, cid, target_id, tg_until, mode)
     err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
-      await _restore_junior_seat(cid, target_id)
+      if hold_seats:
+        await _restore_junior_seat(cid, target_id, force=True)
       errors.append(err)
       continue
     if err:
-      await _restore_junior_seat(cid, target_id)
+      if hold_seats:
+        await _restore_junior_seat(cid, target_id, force=True)
       errors.append(f"чат {cid}: {err}")
       continue
     if await _ban_in_chat(cid, target_id, tg_until):
       banned.append(cid)
-    else:
-      await _restore_junior_seat(cid, target_id)
+    elif hold_seats:
+      await _restore_junior_seat(cid, target_id, force=True)
   return len(banned), banned, errors
 
 
@@ -1808,6 +1844,7 @@ async def _finalize_ban(
     scope=parsed.scope,
     source_chat_id=chat_id,
     actor_id=message.from_user.id,
+    mode=parsed.mode,
   )
   hard = next(
     (err for err in errors if err in _BLOCKING_BAN_ERRORS or any(block in err for block in _BLOCKING_BAN_ERRORS)),
@@ -1941,6 +1978,8 @@ async def apply_ban_for_warns(
     scope=scope,
     source_chat_id=source_chat_id,
     actor_id=int(admin_id or 0),
+    mode=mode,
+    hold_seats=False,
   )
   # Полная блокировка во всём проекте для режима «варнфулл».
   if parsed.is_full:

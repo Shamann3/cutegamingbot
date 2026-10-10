@@ -1,93 +1,112 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-const FAULTS = [
-  ['связь оборвана', 'связь есть'],
-  ['ключ не тот', 'ключ ваш'],
-  ['цифры не сошлись', 'цифры сошлись'],
-  ['устройство чужое', 'устройство это'],
-  ['должность снята', 'должность на месте'],
-  ['панель закрыта', 'панель открыта'],
-  ['проверка с ошибкой', 'проверка верна'],
-  ['вход отказан', 'вход разрешён'],
-]
+export const RITE_FIELD_MS = 760
+export const RITE_GATHER_MS = 980
+export const RITE_BURST_MS = 540
+export const RITE_TAIL_MS = 90
+export const RITE_STILL_MS = 400
+
+const FULL = { cols: 8, rows: 12 }
+const LITE = { cols: 6, rows: 8 }
 
 function riteClock() {
   const still = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
   const lite = document.body.classList.contains('perf-light')
     || (navigator.hardwareConcurrency || 4) <= 2
-  if (still) return { still: true, spell: 0, dark: 0, step: 0, tail: 400 }
-  if (lite) return { still: false, spell: 640, dark: 260, step: 140, tail: 280 }
-  return { still: false, spell: 1180, dark: 460, step: 240, tail: 520 }
+  if (still) return { still: true, field: 0, gather: 0, burst: 0, tail: RITE_STILL_MS, ...LITE }
+  if (lite) return { still: false, field: 420, gather: 520, burst: 320, tail: 60, ...LITE }
+  return {
+    still: false,
+    field: RITE_FIELD_MS,
+    gather: RITE_GATHER_MS,
+    burst: RITE_BURST_MS,
+    tail: RITE_TAIL_MS,
+    ...FULL,
+  }
+}
+
+function fieldCells(digits, cols, rows) {
+  const marks = String(digits || '').replace(/\D/g, '').slice(0, 6).padEnd(6, '0').split('')
+  const total = cols * rows
+  const used = new Set()
+  const slots = [0.11, 0.26, 0.4, 0.57, 0.72, 0.88].map((place) => {
+    let index = Math.min(total - 1, Math.round(place * (total - 1)))
+    while (used.has(index)) index = (index + 1) % total
+    used.add(index)
+    return index
+  })
+  return Array.from({ length: total }, (_, index) => {
+    const slot = slots.indexOf(index)
+    return {
+      index,
+      slot,
+      digit: slot >= 0 ? marks[slot] : String((index * 7 + 3) % 10),
+      col: index % cols,
+      row: Math.floor(index / cols),
+    }
+  })
 }
 
 /**
- * Шесть цифр сходятся в шифр, экран гаснет, ошибки по одной становятся верными.
- * Дальше открывается обычная заставка входа.
+ * Весь экран в числах. Шесть цифр кода вытягиваются в центр,
+ * шифр вспыхивает с тряской, и только потом открывается загрузка панели.
  */
 export default function EntryRite({ digits = '', onDone }) {
   const doneRef = useRef(onDone)
   doneRef.current = onDone
+  const clock = useMemo(() => riteClock(), [])
+  const cells = useMemo(
+    () => fieldCells(digits, clock.cols, clock.rows),
+    [digits, clock.cols, clock.rows],
+  )
   const marks = String(digits || '').replace(/\D/g, '').slice(0, 6).split('')
-  const [phase, setPhase] = useState('spell')
-  const [healed, setHealed] = useState(0)
+  const [phase, setPhase] = useState(clock.still ? 'still' : 'field')
 
   useEffect(() => {
-    const clock = riteClock()
     if (clock.still) {
-      setPhase('faults')
-      setHealed(FAULTS.length)
       const timer = window.setTimeout(() => doneRef.current?.(), clock.tail)
       return () => window.clearTimeout(timer)
     }
-    const start = clock.spell + clock.dark
+    const gatherAt = clock.field
+    const burstAt = gatherAt + clock.gather
     const timers = [
-      window.setTimeout(() => setPhase('dark'), clock.spell),
-      window.setTimeout(() => setPhase('faults'), start),
+      window.setTimeout(() => setPhase('gather'), gatherAt),
+      window.setTimeout(() => setPhase('burst'), burstAt),
+      window.setTimeout(() => doneRef.current?.(), burstAt + clock.burst + clock.tail),
     ]
-    FAULTS.forEach((_, index) => {
-      timers.push(window.setTimeout(() => setHealed(index + 1), start + 160 + index * clock.step))
-    })
-    timers.push(window.setTimeout(
-      () => doneRef.current?.(),
-      start + 160 + FAULTS.length * clock.step + clock.tail,
-    ))
     return () => timers.forEach((timer) => window.clearTimeout(timer))
-  }, [])
+  }, [clock])
+
+  const note = phase === 'burst' || phase === 'still' ? 'Открываем загрузку' : 'Собираем ваш код'
 
   return (
-    <div className={`rite is-${phase}`} role="status" aria-live="polite" aria-label="Вход открывается">
-      <p className="rite-sr">Вход открывается</p>
-      {phase !== 'faults' && (
-        <div className="rite-spell" aria-hidden="true">
-          <span className="rite-ring" />
-          <p className="rite-cipher">
-            {marks.map((mark, index) => (
-              <span key={index} className="rite-digit" style={{ '--i': index }}>{mark}</span>
-            ))}
-          </p>
+    <div
+      className={`rite is-${phase}`}
+      style={{ '--cols': clock.cols, '--rows': clock.rows, '--pull': `${clock.gather}ms`, '--burst': `${clock.burst}ms` }}
+      role="status"
+      aria-live="polite"
+      aria-label={note}
+    >
+      <p className="rite-sr">{note}</p>
+      <div className="rite-world" aria-hidden="true">
+        <div className="rite-field">
+          {cells.map((cell) => (
+            <span
+              key={cell.index}
+              className={`rite-cell${cell.slot >= 0 ? ' is-key' : ''}`}
+              style={{ '--col': cell.col, '--row': cell.row, '--n': cell.index % 16, '--slot': Math.max(cell.slot, 0) }}
+            >
+              {cell.digit}
+            </span>
+          ))}
         </div>
+        <span className="rite-ring" />
+        <span className="rite-flash" />
+      </div>
+      {phase === 'still' && (
+        <p className="rite-lock" aria-hidden="true">{marks.join('')}</p>
       )}
-      {phase === 'faults' && (
-        <div className="rite-board" aria-hidden="true">
-          <p className="rite-cipher rite-cipher-ghost">
-            {marks.map((mark, index) => (
-              <span key={index} className="rite-digit rite-digit-still">{mark}</span>
-            ))}
-          </p>
-          <ol className="rite-faults">
-            {FAULTS.map(([bad, ok], index) => (
-              <li key={bad} className={index < healed ? 'is-healed' : 'is-fault'}>
-                <span className="rite-mark">
-                  <i className="rite-x" />
-                  <i className="rite-dot" />
-                </span>
-                <span className="rite-bad">{bad}</span>
-                <span className="rite-ok">{ok}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+      <p className="rite-note" aria-hidden="true">{note}</p>
     </div>
   )
 }

@@ -967,6 +967,15 @@ async def ensure_tables() -> None:
             term_end TIMESTAMPTZ,
             pause_until TIMESTAMPTZ,
             actor_id BIGINT,
+            permanent BOOLEAN NOT NULL DEFAULT FALSE,
+            PRIMARY KEY (user_id, chat_id)
+        );
+        ALTER TABLE epsilon_seat_pause ADD COLUMN IF NOT EXISTS permanent BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE TABLE IF NOT EXISTS epsilon_seat_strip (
+            user_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            cause TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (user_id, chat_id)
         );
         """
@@ -1282,11 +1291,16 @@ def hold_action(value: str) -> str | None:
     return None
 
 
-def should_pause_seat(*, actor_rank: int | None, target_rank: int | None, actor_is_staff: bool) -> bool:
-    """Временный бан старшего снимает младшего с должности до конца бана.
+# 30 суток. С этого срока бан снимает должность навсегда.
+HOLD_FOREVER_SECONDS = 30 * 24 * 3600
+STRIP_NOTE = "Должность снята навсегда. Вернуть её может только создатель."
 
-    Мут должность не трогает. Одинаковый ранг и создатель группы (ранг 5) не снимаются.
-    Сотрудник проекта без места в этой группе старше любой должности ниже создателя.
+
+def should_pause_seat(*, actor_rank: int | None, target_rank: int | None, actor_is_staff: bool) -> bool:
+    """Старший может снять младшего с должности. Одинаковый ранг и создатель группы нет.
+
+    Создатель группы — ранг 5. Сотрудник проекта без места в этой группе старше
+    любой должности ниже создателя.
     """
     if target_rank is None:
         return False
@@ -1303,6 +1317,38 @@ def should_pause_seat(*, actor_rank: int | None, target_rank: int | None, actor_
     except (TypeError, ValueError):
         return False
     return actor > target
+
+
+def seat_hold_plan(action: str, seconds: int | None) -> str:
+    """Что сделать с должностью, когда наказание уже выдано.
+
+    keep — предупреждение и кик должность не трогают.
+    pause — снять до конца срока и вернуть, когда срок прошёл или наказание сняли.
+    strip — снять навсегда. Разбан должность не возвращает.
+    """
+    name = (action or "").strip().lower()
+    if name in {"warn", "warnall", "warnfull", "kick", "kickall", "voice", "unvoice"}:
+        return "keep"
+    if name in {"mute", "muteall"}:
+        return "pause"
+    if name == "banfull":
+        return "strip"
+    if name in {"ban", "banall"}:
+        try:
+            span = int(seconds) if seconds is not None else 0
+        except (TypeError, ValueError):
+            span = 0
+        if span <= 0 or span >= HOLD_FOREVER_SECONDS:
+            return "strip"
+        return "pause"
+    return "keep"
+
+
+def seat_reissue_block(*, is_creator: bool, chat_locked: bool, project_locked: bool) -> str | None:
+    """После вечного снятия должность снова ставит только создатель проекта."""
+    if is_creator or not (chat_locked or project_locked):
+        return None
+    return STRIP_NOTE
 
 
 async def _demote_for_hold(chat_id: int, user_id: int) -> None:
@@ -1431,10 +1477,28 @@ async def pause_seat_for_ban(
     actor_id: int,
     user_id: int,
     chat_id: int,
-    pause_until: datetime,
+    pause_until: datetime | None,
+    *,
+    permanent: bool = False,
+    cause: str = "",
 ) -> bool:
-    """Временно убирает младшего с должности на срок бана. Мут эту функцию не вызывает."""
+    """Снимает младшего с должности до pause_until. permanent — навсегда, без возврата."""
     await ensure_tables()
+    if not permanent:
+        try:
+            sealed = await db.pool.fetchval(
+                """
+                SELECT permanent
+                FROM epsilon_seat_pause
+                WHERE user_id = $1 AND chat_id = $2
+                """,
+                int(user_id),
+                int(chat_id),
+            )
+        except Exception:
+            sealed = None
+        if sealed:
+            return False
     try:
         target = await db.pool.fetchrow(
             """
@@ -1451,6 +1515,8 @@ async def pause_seat_for_ban(
         _log.warning("pause lookup failed", exc_info=True)
         return False
     if not target:
+        if permanent:
+            return await _seal_open_pause(int(actor_id), int(user_id), int(chat_id), cause)
         return False
     actor_rank, actor_is_staff = await _actor_weight(int(actor_id), int(chat_id))
     if not should_pause_seat(
@@ -1464,9 +1530,9 @@ async def pause_seat_for_ban(
             """
             INSERT INTO epsilon_seat_pause (
                 user_id, chat_id, position_id, prefix, reason, appointed_by,
-                term_start, term_end, pause_until, actor_id
+                term_start, term_end, pause_until, actor_id, permanent
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (user_id, chat_id) DO UPDATE SET
                 position_id = EXCLUDED.position_id,
                 prefix = EXCLUDED.prefix,
@@ -1475,7 +1541,8 @@ async def pause_seat_for_ban(
                 term_start = EXCLUDED.term_start,
                 term_end = EXCLUDED.term_end,
                 pause_until = EXCLUDED.pause_until,
-                actor_id = EXCLUDED.actor_id
+                actor_id = EXCLUDED.actor_id,
+                permanent = EXCLUDED.permanent
             """,
             int(user_id),
             int(chat_id),
@@ -1485,8 +1552,9 @@ async def pause_seat_for_ban(
             target["appointed_by"],
             target["term_start"],
             target["term_end"],
-            pause_until,
+            None if permanent else pause_until,
             int(actor_id) if int(actor_id) > 0 else None,
+            bool(permanent),
         )
         await db.pool.execute(
             "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
@@ -1497,23 +1565,126 @@ async def pause_seat_for_ban(
         _log.warning("pause seat failed for %s in %s", user_id, chat_id, exc_info=True)
         return False
     await _demote_for_hold(int(chat_id), int(user_id))
+    if permanent:
+        await _remember_strip(int(user_id), int(chat_id), cause or "ban")
+    note = (
+        f"Должность «{target['title']}» снята навсегда."
+        if permanent else
+        f"Должность «{target['title']}» снята до конца наказания."
+    )
     await _realm_log(
         int(chat_id),
         int(user_id),
         "position_paused",
-        f"Должность «{target['title']}» снята на время бана.",
+        note,
         int(actor_id) if int(actor_id) > 0 else None,
     )
     return True
 
 
-async def restore_paused_seat(user_id: int, chat_id: int) -> bool:
-    """Возвращает должность, которую временный бан откладывал."""
+async def _seal_open_pause(actor_id: int, user_id: int, chat_id: int, cause: str) -> bool:
+    """Мут уже отложил должность. Долгий бан делает это снятие постоянным."""
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT pos.rank
+            FROM epsilon_seat_pause p
+            JOIN epsilon_positions pos ON pos.id = p.position_id
+            WHERE p.user_id = $1 AND p.chat_id = $2
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("seal pause lookup failed", exc_info=True)
+        return False
+    if not row:
+        return False
+    actor_rank, actor_is_staff = await _actor_weight(int(actor_id), int(chat_id))
+    if not should_pause_seat(
+        actor_rank=actor_rank,
+        target_rank=int(row["rank"]),
+        actor_is_staff=actor_is_staff,
+    ):
+        return False
+    try:
+        await db.pool.execute(
+            """
+            UPDATE epsilon_seat_pause
+            SET permanent = TRUE, pause_until = NULL, actor_id = $3
+            WHERE user_id = $1 AND chat_id = $2
+            """,
+            int(user_id),
+            int(chat_id),
+            int(actor_id) if int(actor_id) > 0 else None,
+        )
+    except Exception:
+        _log.warning("seal pause failed", exc_info=True)
+        return False
+    await _remember_strip(int(user_id), int(chat_id), cause or "ban")
+    return True
+
+
+async def _remember_strip(user_id: int, chat_id: int, cause: str) -> None:
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_seat_strip (user_id, chat_id, cause)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, chat_id) DO UPDATE SET cause = EXCLUDED.cause
+            """,
+            int(user_id),
+            int(chat_id),
+            (cause or "")[:40],
+        )
+    except Exception:
+        _log.warning("seat strip remember failed", exc_info=True)
+
+
+async def remember_project_strip(user_id: int, cause: str) -> None:
+    """Банфулл: в любой официальной группе должность снова ставит только создатель."""
+    await ensure_tables()
+    await _remember_strip(int(user_id), 0, cause or "banfull")
+
+
+async def seat_strip_flags(user_id: int, chat_id: int) -> tuple[bool, bool]:
+    await ensure_tables()
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT chat_id
+            FROM epsilon_seat_strip
+            WHERE user_id = $1 AND chat_id IN ($2, 0)
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("seat strip read failed", exc_info=True)
+        return False, False
+    chats = {int(row["chat_id"]) for row in rows}
+    return int(chat_id) in chats, 0 in chats
+
+
+async def clear_chat_strip(user_id: int, chat_id: int) -> None:
+    """Создатель снова выдал должность в этой группе. Замок проекта остаётся."""
+    try:
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_strip WHERE user_id = $1 AND chat_id = $2",
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("seat strip clear failed", exc_info=True)
+
+
+async def restore_paused_seat(user_id: int, chat_id: int, *, force: bool = False) -> bool:
+    """Возвращает должность, снятую до конца мута или короткого бана."""
     await ensure_tables()
     try:
         row = await db.pool.fetchrow(
             """
-            SELECT position_id, prefix, reason, appointed_by, term_start, term_end
+            SELECT position_id, prefix, reason, appointed_by, term_start, term_end, permanent
             FROM epsilon_seat_pause
             WHERE user_id = $1 AND chat_id = $2
             """,
@@ -1523,7 +1694,7 @@ async def restore_paused_seat(user_id: int, chat_id: int) -> bool:
     except Exception:
         _log.warning("paused seat read failed", exc_info=True)
         return False
-    if not row:
+    if not row or (row["permanent"] and not force):
         return False
     pos = await db.pool.fetchrow(
         """
@@ -1593,11 +1764,13 @@ async def restore_paused_seat(user_id: int, chat_id: int) -> bool:
             )
         except Exception:
             pass
+    if force:
+        await clear_chat_strip(int(user_id), int(chat_id))
     await _realm_log(
         int(chat_id),
         int(user_id),
         "position_restored",
-        f"Должность «{pos['title']}» вернулась: срок бана прошёл.",
+        f"Должность «{pos['title']}» вернулась: срок наказания прошёл.",
         None,
     )
     return True
@@ -1611,7 +1784,8 @@ async def release_finished_holds() -> None:
             """
             SELECT user_id, chat_id
             FROM epsilon_seat_pause
-            WHERE pause_until IS NOT NULL AND pause_until <= NOW()
+            WHERE permanent = FALSE
+              AND pause_until IS NOT NULL AND pause_until <= NOW()
             LIMIT 40
             """
         )
@@ -2348,6 +2522,7 @@ async def _paused_people() -> dict[int, list[dict]]:
         rows = await db.pool.fetch(
             """
             SELECT p.chat_id, p.user_id, p.position_id, p.prefix, p.term_end, p.pause_until,
+                   p.permanent,
                    u.username, u.display_name, u.first_name,
                    pos.title AS position, pos.rank, pos.kind,
                    bn.ban_until, bn.reason AS ban_reason,
@@ -2396,6 +2571,7 @@ async def _paused_people() -> dict[int, list[dict]]:
             "banReason": (r["ban_reason"] or "")[:200],
             "warns": 0,
             "paused": True,
+            "permanent": bool(r["permanent"]),
             "pauseUntil": _clock(r["pause_until"]),
             "staff": False,
             "accessOff": False,
@@ -2468,6 +2644,9 @@ async def lift_hold(body: HoldBody, user_id: int = Depends(get_any_telegram_user
     if action == "restore":
         restored = await restore_paused_seat(int(body.user_id), int(body.chat_id))
         if not restored:
+            locked, project = await seat_strip_flags(int(body.user_id), int(body.chat_id))
+            if locked or project:
+                raise HTTPException(status_code=409, detail=STRIP_NOTE)
             raise HTTPException(status_code=404, detail="Отложенной должности нет")
         return {"ok": True, "action": action}
     from admin_groups import moderate_action
@@ -3294,6 +3473,16 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         )
         if creator_seat:
             continue
+        chat_locked, project_locked = await seat_strip_flags(int(body.user_id), cid)
+        blocked = seat_reissue_block(
+            is_creator=_is_creator(int(user_id)),
+            chat_locked=chat_locked,
+            project_locked=project_locked,
+        )
+        if blocked:
+            if not body.everywhere:
+                raise HTTPException(status_code=403, detail=blocked)
+            continue
         position_id = await _match_or_clone(pos, cid)
         if not position_id:
             continue
@@ -3351,6 +3540,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
             int(body.user_id),
             cid,
         )
+        await clear_chat_strip(int(body.user_id), cid)
         telegram_note = await _sync_chat_rights(
             cid,
             int(body.user_id),
@@ -3789,6 +3979,12 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     prefix, _prefix_error = chat_title(kind, pos["title"] or "", pos["prefix"] or "", "")
     held_rights = rights_for_kind(kind, int(pos["rank"]), _rights(pos["rights"]), creator=True)
     seat_chat = int(pos["chat_id"])
+    await db.pool.execute(
+        "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+        int(app["user_id"]),
+        seat_chat,
+    )
+    await clear_chat_strip(int(app["user_id"]), seat_chat)
     await db.pool.execute(
         """
         INSERT INTO epsilon_seats (user_id, chat_id, position_id, appointed_by, reason, prefix)

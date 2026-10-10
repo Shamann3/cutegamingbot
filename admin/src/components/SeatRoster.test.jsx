@@ -35,6 +35,16 @@ const groups = [{
     paused: true,
     pauseUntil: '2026-10-12T12:00:00',
     mutedUntil: '',
+  }, {
+    userId: 9,
+    chatId: -100,
+    name: 'Пётр',
+    position: 'Хелпер',
+    rank: 2,
+    paused: true,
+    permanent: true,
+    banUntil: '',
+    mutedUntil: '',
   }],
 }]
 
@@ -48,6 +58,9 @@ describe('SeatRoster', () => {
     expect(screen.getByText(/Предупреждения/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Снять мут' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Снять бан' })).toBeTruthy()
+    expect(screen.getByText(/Должность снята навсегда/)).toBeTruthy()
+    expect(screen.getByText(/Вернуть может только создатель/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Вернуть должность' })).toBeNull()
   })
 
   it('lifts a mute and opens reissue under the card', () => {

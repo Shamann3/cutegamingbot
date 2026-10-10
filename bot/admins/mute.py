@@ -4745,13 +4745,14 @@ async def _apply_mute_restrictions(
   *,
   scope: Scope,
   source_chat_id: int,
+  actor_id: int = 0,
 ) -> bool:
   """Применяет ограничение в Telegram с учётом охвата команды."""
   if scope == "all":
-    return await _restrict_in_all_staff_chats(user_id, until)
+    return await _restrict_in_all_staff_chats(user_id, until, actor_id=actor_id)
   if not _is_staff_chat(source_chat_id):
     return False
-  ok = await _restrict_in_chat(source_chat_id, user_id, until)
+  ok = await _restrict_in_chat(source_chat_id, user_id, until, actor_id=actor_id)
   if ok:
     _register_chat_mute(source_chat_id, user_id, until)
   return ok
@@ -5254,14 +5255,22 @@ def _seat_realm():
   return group_realm
 
 
-async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime]) -> bool:
+async def _restrict_in_chat(
+  chat_id: int,
+  user_id: int,
+  until: Optional[datetime],
+  actor_id: int = 0,
+) -> bool:
   if chat_id > 0:
     return True
-  parked = False
+  held = False
   try:
-    parked = await _seat_realm().park_title_for_mute(int(chat_id), int(user_id))
+    pause_until = until or (datetime.now() + timedelta(days=3650))
+    held = await _seat_realm().pause_seat_for_ban(
+      int(actor_id or 0), int(user_id), int(chat_id), pause_until, cause="mute",
+    )
   except Exception as e:
-    MuteDebug.log("TG", "park title skip", err=str(e), chat_id=chat_id, user_id=user_id)
+    MuteDebug.log("TG", "pause seat skip", err=str(e), chat_id=chat_id, user_id=user_id)
   try:
     bot = _bot()
     until_arg = _until_to_telegram_date(until)
@@ -5274,9 +5283,9 @@ async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime
     MuteDebug.log("TG", "restrict OK", chat_id=chat_id, user_id=user_id, until=str(until))
     return True
   except Exception as e:
-    if parked:
+    if held:
       try:
-        await _seat_realm().restore_title_after_mute(int(chat_id), int(user_id))
+        await _seat_realm().restore_paused_seat(int(user_id), int(chat_id), force=True)
       except Exception:
         pass
     from bot.admins.punish_validate import is_invalid_telegram_user_error
@@ -5287,11 +5296,15 @@ async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime
     return False
 
 
-async def _restrict_in_all_staff_chats(user_id: int, until: Optional[datetime]) -> bool:
+async def _restrict_in_all_staff_chats(
+  user_id: int,
+  until: Optional[datetime],
+  actor_id: int = 0,
+) -> bool:
   """Ограничивает пользователя во всех официальных группах проекта."""
   ok_any = False
   for cid in await official_chats_now():
-    if await _restrict_in_chat(cid, user_id, until):
+    if await _restrict_in_chat(cid, user_id, until, actor_id=actor_id):
       ok_any = True
       _register_chat_mute(cid, user_id, until)
   return ok_any
@@ -5320,6 +5333,7 @@ async def _unrestrict_in_chat(chat_id: int, user_id: int) -> bool:
       until_date=None,
     )
     try:
+      await _seat_realm().restore_paused_seat(int(user_id), int(chat_id))
       await _seat_realm().restore_title_after_mute(int(chat_id), int(user_id))
     except Exception as e:
       MuteDebug.log("TG", "restore title skip", err=str(e), chat_id=chat_id, user_id=user_id)
@@ -5817,6 +5831,7 @@ async def _finalize_mute(
     parsed.mute_until,
     scope=parsed.scope,
     source_chat_id=chat_id,
+    actor_id=message.from_user.id,
   )
   try:
     from bot.admins import punish_timers
