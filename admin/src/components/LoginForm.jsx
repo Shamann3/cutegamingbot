@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, revealLoginCode, verifyLoginKey } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AuthWalkHelp } from './AuthWalk'
+import { AuthRescue, AuthWalkHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -116,7 +116,10 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
       )}
 
       {!verified && !verifying && shownError && (
-        <p className="auth-message auth-message-error">{shownError}</p>
+        <>
+          <p className="auth-message auth-message-error">{shownError}</p>
+          <AuthRescue error={shownError} />
+        </>
       )}
 
       <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
@@ -143,7 +146,10 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
 
           {info && <p className="auth-message auth-message-info">{info}</p>}
           {verified && shownError && (
-            <p className="auth-message auth-message-error">{shownError}</p>
+            <>
+              <p className="auth-message auth-message-error">{shownError}</p>
+              <AuthRescue error={shownError} />
+            </>
           )}
 
           <button

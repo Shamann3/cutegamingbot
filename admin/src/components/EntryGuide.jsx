@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { OFFICE_SCREENS, SCREENS, WORDS } from '../entry_design'
 import { blocksOf, inlineParts, stepStates } from '../lib/guideText'
+import AuthWalk, { preloadAuthShots } from './AuthWalk'
 
 const LEAVE_MS = 220
 // Запоздалый click того же касания не должен закрыть только что открытый лист.
@@ -55,7 +56,7 @@ function GuideBody({ text }) {
   })
 }
 
-function GuideSheet({ open, title, text, onClose, backTo }) {
+function GuideSheet({ open, title, text, visual = false, onClose, backTo }) {
   const titleId = useId()
   const sheetRef = useRef(null)
   const [mounted, setMounted] = useState(open)
@@ -102,7 +103,7 @@ function GuideSheet({ open, title, text, onClose, backTo }) {
       <div className="choice-sheet-motion">
         <div
           ref={sheetRef}
-          className="choice-sheet entry-guide-sheet"
+          className={`choice-sheet entry-guide-sheet${visual ? ' is-visual' : ''}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -111,7 +112,7 @@ function GuideSheet({ open, title, text, onClose, backTo }) {
         >
           <p id={titleId} className="choice-sheet-title">{title}</p>
           <div className="entry-guide-body">
-            <GuideBody text={text} />
+            {visual ? <AuthWalk onDone={onClose} /> : <GuideBody text={text} />}
           </div>
           <button type="button" className="choice-close" onClick={onClose}>
             {WORDS.close}
@@ -130,6 +131,9 @@ function GuideSheet({ open, title, text, onClose, backTo }) {
 export default function EntryGuide({ screen, at, onPick = null }) {
   const [open, setOpen] = useState(false)
   const moreRef = useRef(null)
+  useEffect(() => {
+    if (screen?.visual) preloadAuthShots()
+  }, [screen])
   const openedAt = useRef(0)
   const show = useCallback(() => {
     openedAt.current = Date.now()
@@ -182,8 +186,9 @@ export default function EntryGuide({ screen, at, onPick = null }) {
       </ol>
       <GuideSheet
         open={open}
-        title={screen.title}
+        title={screen.visual ? WORDS.walkTitle : screen.title}
         text={screen.more}
+        visual={Boolean(screen.visual)}
         backTo={moreRef}
         onClose={hide}
       />

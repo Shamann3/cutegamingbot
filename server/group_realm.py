@@ -27,7 +27,7 @@ from admin_auth import (
     totp_qr_data_url,
     verify_totp,
 )
-from config import ADMIN_JWT_SECRET, is_plain_user, owner_user_ids
+from config import ADMIN_BOT_TOKEN, ADMIN_JWT_SECRET, ADMIN_WEBAPP_URL, BOT_TOKEN, is_plain_user, owner_user_ids
 from db import db
 from punish_rights import may_punish_rank
 import punish_rights
@@ -3131,13 +3131,25 @@ async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram
     entry_key = await _issue_key(int(app["user_id"]))
     from telegram_notify import send_telegram_message
 
+    notice = _approval_key_message(group_title, post_title, entry_key)
+    chat_id = str(int(app["user_id"]))
     try:
-        await send_telegram_message(
-            _approval_key_message(group_title, post_title, entry_key),
-            chat_id=str(int(app["user_id"])),
-        )
+        await send_telegram_message(notice, chat_id=chat_id)
     except Exception:
-        pass
+        _log.exception("ключ заявки не ушёл в игровой бот user_id=%s", chat_id)
+    if ADMIN_BOT_TOKEN and ADMIN_BOT_TOKEN != BOT_TOKEN:
+        buttons = None
+        if ADMIN_WEBAPP_URL:
+            buttons = [[{"text": "Открыть панель", "url": ADMIN_WEBAPP_URL, "type": "web_app"}]]
+        try:
+            await send_telegram_message(
+                notice,
+                chat_id=chat_id,
+                token=ADMIN_BOT_TOKEN,
+                buttons=buttons,
+            )
+        except Exception:
+            _log.exception("ключ заявки не ушёл в бота Эпсилона user_id=%s", chat_id)
     return {"ok": True, "status": "approved", "entryKey": entry_key, "position": post_title, "group": group_title}
 
 

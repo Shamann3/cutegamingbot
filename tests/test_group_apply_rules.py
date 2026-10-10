@@ -26,4 +26,5 @@ def test_application_needs_the_rules_mark_not_a_channel_scrape():
     assert "len(groups)" not in door
     decide = src[src.index("async def group_decide"):src.index("async def load_activity")]
     assert "send_telegram_message" in decide
-    assert "Ваш ключ:" in decide
+    assert "Ключ входа" in src[src.index("def _approval_key_message"):src.index("async def _realm_log")]
+    assert "ADMIN_BOT_TOKEN" in decide

@@ -4,7 +4,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
-import AuthWalk, { AuthWalkHelp } from '../components/AuthWalk'
+import AuthWalk, { AuthRescue, AuthWalkHelp } from '../components/AuthWalk'
 import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
 import { SCREENS, WORDS } from '../entry_design'
@@ -130,13 +130,16 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
       if (data?.entryPass) rememberGroupEntry(data.entryPass)
       onPassed()
     } catch (err) {
-      setVerified(false)
-      lastVerified.current = ''
       if (err?.code === 'need_apply') {
         onApply?.()
         return
       }
-      setError(err.message || 'Ключ не подошёл')
+      const message = err.message || 'Ключ не подошёл'
+      if (!/код не подош/i.test(message)) {
+        setVerified(false)
+        lastVerified.current = ''
+      }
+      setError(message)
       setShake((n) => n + 1)
     } finally {
       setBusy(false)
@@ -189,7 +192,10 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
         )}
 
         {!verified && !verifying && error && (
-          <p className="auth-message auth-message-error" role="alert">{error}</p>
+          <>
+            <p className="auth-message auth-message-error" role="alert">{error}</p>
+            <AuthRescue error={error} />
+          </>
         )}
 
         <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
@@ -204,6 +210,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
                   <button
                     type="button"
                     className="choice-close"
+                    data-setup-secret={setup.totpSecret}
                     onClick={() => {
                       navigator.clipboard?.writeText(setup.totpSecret).catch(() => {})
                       setCopied(true)
@@ -217,6 +224,12 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
               </>
             )}
             {verified && needCode && !setup && <AuthWalkHelp />}
+            {error && verified && (
+              <>
+                <p className="auth-message auth-message-error" role="alert">{error}</p>
+                <AuthRescue error={error} />
+              </>
+            )}
             {needCode && (
               <label className="auth-field">
                 <span className="auth-label">{WORDS.code}</span>

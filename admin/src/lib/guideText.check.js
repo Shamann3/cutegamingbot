@@ -1,5 +1,5 @@
 import { blocksOf, inlineParts, stepStates } from './guideText.js'
-import { AUTH_STEPS, OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
+import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
 
 function assert(cond, message) {
   if (!cond) throw new Error(message)
@@ -48,7 +48,19 @@ assert(AUTH_STEPS.length === 4, 'четыре картинки аутентиф�
 assert(new Set(AUTH_STEPS.map((step) => step.id)).size === 4, 'id картинок не повторяются')
 for (const step of AUTH_STEPS) {
   assert(step.file.endsWith('.jpg') && step.title && step.line, `${step.id}: файл, заголовок и пояснение`)
+  assert(step.line.length < 120, `${step.id}: подпись короткая, картинка говорит сама`)
   assert(!/can_/.test(step.line), `${step.id}: пояснение без сырых прав`)
 }
+assert(SCREENS.staffRegister.visual && SCREENS.staffLogin.visual && SCREENS.groupKey.visual, '«Подробнее» на входе открывает картинки')
+assert(!SCREENS.groupApply.visual, 'заявка в группу остаётся текстом')
+assert(AUTH_STORES.length === 2, 'два магазина')
+assert(AUTH_STORES.every((store) => store.href.startsWith('https://')), 'магазины — прямые ссылки')
+assert(AUTH_FIXES.length >= 6, 'варианты, если не получается')
+for (const fix of AUTH_FIXES) {
+  assert(fix.ask && fix.do && fix.id, `${fix.id}: проблема и что сделать`)
+}
+assert(AUTH_FIXES.some((fix) => fix.stores), 'если приложения нет — кнопки магазинов')
+assert(AUTH_FIXES.some((fix) => fix.copy), 'если ключ не тот — его можно скопировать')
+assert(AUTH_FIXES.some((fix) => fix.clock && /код не подош/.test(fix.match)), 'неверный код сам предлагает дождаться новых цифр')
 
 console.log('guideText ok')
