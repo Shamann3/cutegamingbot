@@ -998,24 +998,56 @@ async def _delete_active_ban(user_id: int, chat_id: int) -> None:
     BanDebug.log("DB", "delete active ban skip", err=str(e), user=user_id, chat=chat_id)
 
 
+def _seat_realm():
+  import sys
+  from pathlib import Path
+  folder = str(Path(__file__).resolve().parents[2] / "server")
+  if folder not in sys.path:
+    sys.path.insert(0, folder)
+  import group_realm
+  return group_realm
+
+
+async def _pause_junior_seat(actor_id: int, chat_id: int, user_id: int, tg_until: Optional[int]) -> None:
+  """Временный бан старшего откладывает должность младшего до этого же срока."""
+  if not actor_id or not tg_until or chat_id > 0:
+    return
+  try:
+    until = datetime.fromtimestamp(int(tg_until))
+    await _seat_realm().pause_seat_for_ban(int(actor_id), int(user_id), int(chat_id), until)
+  except Exception as e:
+    BanDebug.log("TG", "pause seat skip", err=str(e), chat_id=chat_id, user_id=user_id)
+
+
+async def _restore_junior_seat(chat_id: int, user_id: int) -> None:
+  if chat_id > 0:
+    return
+  try:
+    await _seat_realm().restore_paused_seat(int(user_id), int(chat_id))
+  except Exception as e:
+    BanDebug.log("TG", "restore seat skip", err=str(e), chat_id=chat_id, user_id=user_id)
+
+
 async def _unban_in_chat(chat_id: int, user_id: int) -> bool:
   """Снимает блокировку в группе (идемпотентно; Telegram уже мог снять по сроку)."""
   if chat_id > 0:
     return False
+  ok = False
   try:
     await _bot().unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
     BanDebug.log("TG", "unban OK", chat_id=chat_id, user_id=user_id)
-    return True
+    ok = True
   except TypeError:
     try:
       await _bot().unban_chat_member(chat_id=chat_id, user_id=user_id)
-      return True
+      ok = True
     except Exception as e:
       BanDebug.error("TG", "unban", e, chat_id=chat_id, user_id=user_id)
-      return False
   except Exception as e:
     BanDebug.error("TG", "unban", e, chat_id=chat_id, user_id=user_id)
-    return False
+  if ok:
+    await _restore_junior_seat(chat_id, user_id)
+  return ok
 
 
 async def _notify_ban_expired_group(
@@ -1340,40 +1372,50 @@ async def _ban_with_scope(
   *,
   scope: Scope,
   source_chat_id: int,
+  actor_id: int = 0,
 ) -> Tuple[int, List[int], List[str]]:
   """Блокирует в одной группе или во всех группах проекта."""
   if scope == "all":
-    return await _ban_in_all_staff_chats(target_id, tg_until)
+    return await _ban_in_all_staff_chats(target_id, tg_until, actor_id=actor_id)
 
   if not _is_staff_chat(source_chat_id):
     return 0, [], ["команда доступна только в официальных группах проекта"]
 
+  await _pause_junior_seat(actor_id, source_chat_id, target_id, tg_until)
   err = await _validate_ban_target_in_chat(source_chat_id, target_id)
   if err:
+    await _restore_junior_seat(source_chat_id, target_id)
     return 0, [], [err]
 
   if await _ban_in_chat(source_chat_id, target_id, tg_until):
     return 1, [source_chat_id], []
+  await _restore_junior_seat(source_chat_id, target_id)
   return 0, [], ["не удалось заблокировать в группе"]
 
 
 async def _ban_in_all_staff_chats(
   target_id: int,
   tg_until: Optional[int],
+  actor_id: int = 0,
 ) -> Tuple[int, List[int], List[str]]:
   """Банит во всех группах проекта (в т.ч. превентивно, даже если сейчас не состоит)."""
   banned: List[int] = []
   errors: List[str] = []
   for cid in await official_chats_now():
+    await _pause_junior_seat(actor_id, cid, target_id, tg_until)
     err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
+      await _restore_junior_seat(cid, target_id)
       errors.append(err)
       continue
     if err:
+      await _restore_junior_seat(cid, target_id)
       errors.append(f"чат {cid}: {err}")
       continue
     if await _ban_in_chat(cid, target_id, tg_until):
       banned.append(cid)
+    else:
+      await _restore_junior_seat(cid, target_id)
   return len(banned), banned, errors
 
 
@@ -1765,6 +1807,7 @@ async def _finalize_ban(
     _ban_until_for_telegram(parsed),
     scope=parsed.scope,
     source_chat_id=chat_id,
+    actor_id=message.from_user.id,
   )
   hard = next(
     (err for err in errors if err in _BLOCKING_BAN_ERRORS or any(block in err for block in _BLOCKING_BAN_ERRORS)),
@@ -1897,6 +1940,7 @@ async def apply_ban_for_warns(
     _ban_until_for_telegram(parsed),
     scope=scope,
     source_chat_id=source_chat_id,
+    actor_id=int(admin_id or 0),
   )
   # Полная блокировка во всём проекте для режима «варнфулл».
   if parsed.is_full:

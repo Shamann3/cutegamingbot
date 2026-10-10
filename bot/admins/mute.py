@@ -5243,9 +5243,25 @@ def _until_to_telegram_date(until: Optional[datetime]) -> Optional[Union[int, da
   return _safe_unix_timestamp(until)
 
 
+def _seat_realm():
+  """Панель и команды чата держат одну должность. Импорт ленивый, цикла нет."""
+  import sys
+  from pathlib import Path
+  folder = str(Path(__file__).resolve().parents[2] / "server")
+  if folder not in sys.path:
+    sys.path.insert(0, folder)
+  import group_realm
+  return group_realm
+
+
 async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime]) -> bool:
   if chat_id > 0:
     return True
+  parked = False
+  try:
+    parked = await _seat_realm().park_title_for_mute(int(chat_id), int(user_id))
+  except Exception as e:
+    MuteDebug.log("TG", "park title skip", err=str(e), chat_id=chat_id, user_id=user_id)
   try:
     bot = _bot()
     until_arg = _until_to_telegram_date(until)
@@ -5258,6 +5274,11 @@ async def _restrict_in_chat(chat_id: int, user_id: int, until: Optional[datetime
     MuteDebug.log("TG", "restrict OK", chat_id=chat_id, user_id=user_id, until=str(until))
     return True
   except Exception as e:
+    if parked:
+      try:
+        await _seat_realm().restore_title_after_mute(int(chat_id), int(user_id))
+      except Exception:
+        pass
     from bot.admins.punish_validate import is_invalid_telegram_user_error
     if is_invalid_telegram_user_error(e):
       MuteDebug.log("TG", "restrict invalid user", chat_id=chat_id, user_id=user_id)
@@ -5298,6 +5319,10 @@ async def _unrestrict_in_chat(chat_id: int, user_id: int) -> bool:
       permissions=_PERM_FULL,
       until_date=None,
     )
+    try:
+      await _seat_realm().restore_title_after_mute(int(chat_id), int(user_id))
+    except Exception as e:
+      MuteDebug.log("TG", "restore title skip", err=str(e), chat_id=chat_id, user_id=user_id)
     MuteDebug.log("TG", "unrestrict OK", chat_id=chat_id, user_id=user_id)
     return True
   except Exception as e:

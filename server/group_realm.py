@@ -955,6 +955,20 @@ async def ensure_tables() -> None:
         );
         CREATE INDEX IF NOT EXISTS epsilon_realm_log_chat_idx
             ON epsilon_realm_log (chat_id, created_at DESC);
+        ALTER TABLE epsilon_seats ADD COLUMN IF NOT EXISTS title_parked BOOLEAN NOT NULL DEFAULT FALSE;
+        CREATE TABLE IF NOT EXISTS epsilon_seat_pause (
+            user_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            position_id BIGINT NOT NULL,
+            prefix TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            appointed_by BIGINT,
+            term_start TIMESTAMPTZ,
+            term_end TIMESTAMPTZ,
+            pause_until TIMESTAMPTZ,
+            actor_id BIGINT,
+            PRIMARY KEY (user_id, chat_id)
+        );
         """
     )
     chats = await db.pool.fetch(
@@ -1255,6 +1269,395 @@ async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: l
     if not titled:
         return f"Админка в группе есть. Префикс «{text}» не встал: {title_err}"
     return f"В группе стоит префикс «{text}»."
+
+
+def should_pause_seat(*, actor_rank: int | None, target_rank: int | None, actor_is_staff: bool) -> bool:
+    """Временный бан старшего снимает младшего с должности до конца бана.
+
+    Мут должность не трогает. Одинаковый ранг и создатель группы (ранг 5) не снимаются.
+    Сотрудник проекта без места в этой группе старше любой должности ниже создателя.
+    """
+    if target_rank is None:
+        return False
+    try:
+        target = int(target_rank)
+    except (TypeError, ValueError):
+        return False
+    if target >= 5:
+        return False
+    if actor_rank is None:
+        return bool(actor_is_staff)
+    try:
+        actor = int(actor_rank)
+    except (TypeError, ValueError):
+        return False
+    return actor > target
+
+
+async def _demote_for_hold(chat_id: int, user_id: int) -> None:
+    """Снимает админку Telegram, не возвращая право писать и не трогая строку должности."""
+    await _telegram_call(
+        "promoteChatMember",
+        _promote_body(int(chat_id), int(user_id), None),
+    )
+
+
+async def park_title_for_mute(chat_id: int, user_id: int) -> bool:
+    """Прячет префикс в чате, чтобы мут смог закрыть сообщения. Должность в панели остаётся."""
+    await ensure_tables()
+    try:
+        seat = await db.pool.fetchrow(
+            """
+            SELECT 1
+            FROM epsilon_seats
+            WHERE user_id = $1 AND chat_id = $2
+              AND (term_end IS NULL OR term_end > NOW())
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("park seat lookup failed for %s in %s", user_id, chat_id, exc_info=True)
+        return False
+    if not seat:
+        return False
+    try:
+        await db.pool.execute(
+            """
+            UPDATE epsilon_seats
+            SET title_parked = TRUE
+            WHERE user_id = $1 AND chat_id = $2
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("park flag failed for %s in %s", user_id, chat_id, exc_info=True)
+        return False
+    await _demote_for_hold(int(chat_id), int(user_id))
+    return True
+
+
+async def restore_title_after_mute(chat_id: int, user_id: int) -> bool:
+    """Возвращает префикс с той же должности, если мут уже не держит чат."""
+    await ensure_tables()
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT s.prefix, s.title_parked, p.kind, p.title, p.rank, p.rights, p.prefix AS post_prefix
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.user_id = $1 AND s.chat_id = $2
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("restore title lookup failed", exc_info=True)
+        return False
+    if not row or not row["title_parked"]:
+        return False
+    kind = row["kind"] if row["kind"] in KINDS else KIND_POST
+    prefix = row["prefix"] or row["post_prefix"] or ""
+    rights = rights_for_kind(kind, int(row["rank"]), _rights(row["rights"]), creator=True)
+    try:
+        await _sync_chat_rights(int(chat_id), int(user_id), prefix, rights, kind=kind)
+        await db.pool.execute(
+            """
+            UPDATE epsilon_seats
+            SET title_parked = FALSE
+            WHERE user_id = $1 AND chat_id = $2
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("restore title failed for %s in %s", user_id, chat_id, exc_info=True)
+        return False
+    return True
+
+
+async def _actor_weight(actor_id: int, chat_id: int) -> tuple[int | None, bool]:
+    if int(actor_id) <= 0:
+        return None, False
+    if _is_creator(int(actor_id)):
+        return 5, True
+    rank = None
+    staff = False
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT p.rank
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.user_id = $1 AND s.chat_id = $2
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+            """,
+            int(actor_id),
+            int(chat_id),
+        )
+        if row:
+            rank = int(row["rank"])
+        account = await db.pool.fetchrow(
+            """
+            SELECT role, status
+            FROM admin_accounts
+            WHERE user_id = $1
+            ORDER BY registered_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            int(actor_id),
+        )
+        if account and account["status"] == "active" and account["role"] in STAFF_PANEL_ROLES:
+            staff = True
+    except Exception:
+        _log.warning("actor weight failed for %s", actor_id, exc_info=True)
+    return rank, staff
+
+
+async def pause_seat_for_ban(
+    actor_id: int,
+    user_id: int,
+    chat_id: int,
+    pause_until: datetime,
+) -> bool:
+    """Временно убирает младшего с должности на срок бана. Мут эту функцию не вызывает."""
+    await ensure_tables()
+    try:
+        target = await db.pool.fetchrow(
+            """
+            SELECT s.position_id, s.prefix, s.reason, s.appointed_by, s.term_start, s.term_end, p.rank, p.title
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.user_id = $1 AND s.chat_id = $2
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("pause lookup failed", exc_info=True)
+        return False
+    if not target:
+        return False
+    actor_rank, actor_is_staff = await _actor_weight(int(actor_id), int(chat_id))
+    if not should_pause_seat(
+        actor_rank=actor_rank,
+        target_rank=int(target["rank"]),
+        actor_is_staff=actor_is_staff,
+    ):
+        return False
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_seat_pause (
+                user_id, chat_id, position_id, prefix, reason, appointed_by,
+                term_start, term_end, pause_until, actor_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (user_id, chat_id) DO UPDATE SET
+                position_id = EXCLUDED.position_id,
+                prefix = EXCLUDED.prefix,
+                reason = EXCLUDED.reason,
+                appointed_by = EXCLUDED.appointed_by,
+                term_start = EXCLUDED.term_start,
+                term_end = EXCLUDED.term_end,
+                pause_until = EXCLUDED.pause_until,
+                actor_id = EXCLUDED.actor_id
+            """,
+            int(user_id),
+            int(chat_id),
+            int(target["position_id"]),
+            target["prefix"] or "",
+            target["reason"] or "",
+            target["appointed_by"],
+            target["term_start"],
+            target["term_end"],
+            pause_until,
+            int(actor_id) if int(actor_id) > 0 else None,
+        )
+        await db.pool.execute(
+            "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("pause seat failed for %s in %s", user_id, chat_id, exc_info=True)
+        return False
+    await _demote_for_hold(int(chat_id), int(user_id))
+    await _realm_log(
+        int(chat_id),
+        int(user_id),
+        "position_paused",
+        f"Должность «{target['title']}» снята на время бана.",
+        int(actor_id) if int(actor_id) > 0 else None,
+    )
+    return True
+
+
+async def restore_paused_seat(user_id: int, chat_id: int) -> bool:
+    """Возвращает должность, которую временный бан откладывал."""
+    await ensure_tables()
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT position_id, prefix, reason, appointed_by, term_start, term_end
+            FROM epsilon_seat_pause
+            WHERE user_id = $1 AND chat_id = $2
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("paused seat read failed", exc_info=True)
+        return False
+    if not row:
+        return False
+    pos = await db.pool.fetchrow(
+        """
+        SELECT id, kind, title, rank, rights, prefix
+        FROM epsilon_positions
+        WHERE id = $1 AND chat_id = $2 AND rank < 5
+        """,
+        int(row["position_id"]),
+        int(chat_id),
+    )
+    if not pos:
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+            int(user_id),
+            int(chat_id),
+        )
+        return False
+    try:
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_seats (
+                user_id, chat_id, position_id, appointed_by, reason, prefix, term_start, term_end, title_parked
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+            ON CONFLICT (user_id, chat_id) DO UPDATE
+            SET position_id = EXCLUDED.position_id,
+                appointed_by = EXCLUDED.appointed_by,
+                reason = EXCLUDED.reason,
+                prefix = EXCLUDED.prefix,
+                term_start = EXCLUDED.term_start,
+                term_end = EXCLUDED.term_end,
+                title_parked = FALSE,
+                created_at = NOW()
+            """,
+            int(user_id),
+            int(chat_id),
+            int(pos["id"]),
+            row["appointed_by"],
+            row["reason"] or "",
+            row["prefix"] or "",
+            row["term_start"],
+            row["term_end"],
+        )
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("restore paused seat failed", exc_info=True)
+        return False
+    kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
+    prefix = row["prefix"] or pos["prefix"] or ""
+    rights = rights_for_kind(kind, int(pos["rank"]), _rights(pos["rights"]), creator=True)
+    try:
+        await _sync_chat_rights(int(chat_id), int(user_id), prefix, rights, kind=kind)
+    except Exception:
+        _log.warning("restore paused title failed", exc_info=True)
+        try:
+            await db.pool.execute(
+                """
+                UPDATE epsilon_seats SET title_parked = TRUE
+                WHERE user_id = $1 AND chat_id = $2
+                """,
+                int(user_id),
+                int(chat_id),
+            )
+        except Exception:
+            pass
+    await _realm_log(
+        int(chat_id),
+        int(user_id),
+        "position_restored",
+        f"Должность «{pos['title']}» вернулась: срок бана прошёл.",
+        None,
+    )
+    return True
+
+
+async def release_finished_holds() -> None:
+    """Возвращает должности, у которых бан или мут уже кончился."""
+    await ensure_tables()
+    try:
+        paused = await db.pool.fetch(
+            """
+            SELECT user_id, chat_id
+            FROM epsilon_seat_pause
+            WHERE pause_until IS NOT NULL AND pause_until <= NOW()
+            LIMIT 40
+            """
+        )
+    except Exception:
+        paused = []
+    for row in paused:
+        await restore_paused_seat(int(row["user_id"]), int(row["chat_id"]))
+    try:
+        parked = await db.pool.fetch(
+            """
+            SELECT s.user_id, s.chat_id
+            FROM epsilon_seats s
+            WHERE s.title_parked
+              AND NOT EXISTS (
+                    SELECT 1 FROM active_mutes m
+                    WHERE m.user_id = s.user_id AND m.chat_id = s.chat_id
+                      AND m.mute_until > NOW()
+                      AND COALESCE(m.scope, 'chat') <> 'voice'
+              )
+              AND NOT EXISTS (
+                    SELECT 1 FROM active_bans b
+                    WHERE b.user_id = s.user_id AND b.chat_id = s.chat_id AND b.ban_until > NOW()
+              )
+            LIMIT 40
+            """
+        )
+    except Exception:
+        parked = []
+    for row in parked:
+        await restore_title_after_mute(int(row["user_id"]), int(row["chat_id"]))
+
+
+async def mute_lock_for(user_id: int, chat_id: int) -> dict | None:
+    """Мут именно этой группы. Голосовой мут кабинет не закрывает."""
+    await ensure_tables()
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT m.mute_until, COALESCE(g.title, '') AS title
+            FROM active_mutes m
+            LEFT JOIN epsilon_official_groups g ON g.chat_id = m.chat_id
+            WHERE m.user_id = $1 AND m.chat_id = $2
+              AND m.mute_until > NOW()
+              AND COALESCE(m.scope, 'chat') <> 'voice'
+            """,
+            int(user_id),
+            int(chat_id),
+        )
+    except Exception:
+        _log.warning("mute lock failed", exc_info=True)
+        return None
+    if not row or not row["mute_until"]:
+        return None
+    return {
+        "until": row["mute_until"].isoformat(),
+        "group": (row["title"] or str(chat_id))[:120],
+    }
 
 
 async def _telegram_member(chat_id: int, user_id: int) -> dict:
@@ -1576,6 +1979,7 @@ class AppointBody(BaseModel):
     prefix: str = Field(default="", max_length=16)
     term_start: str = Field(default="", max_length=10)
     term_end: str = Field(default="", max_length=10)
+    everywhere: bool = False
     model_config = {"extra": "forbid"}
 
 
@@ -1848,7 +2252,8 @@ async def _seated_people() -> dict[int, list[dict]]:
             SELECT s.chat_id, s.user_id, s.position_id, s.prefix, s.term_end,
                    u.username, u.display_name, u.first_name,
                    aa.role AS staff_role, aa.status AS staff_status,
-                   COALESCE(k.disabled, FALSE) AS access_off
+                   COALESCE(k.disabled, FALSE) AS access_off,
+                   mu.mute_until
             FROM epsilon_seats s
             LEFT JOIN users u ON u.user_id = s.user_id
             LEFT JOIN epsilon_group_keys k ON k.user_id = s.user_id
@@ -1859,6 +2264,14 @@ async def _seated_people() -> dict[int, list[dict]]:
                 ORDER BY registered_at DESC NULLS LAST
                 LIMIT 1
             ) aa ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT mute_until
+                FROM active_mutes
+                WHERE user_id = s.user_id AND chat_id = s.chat_id
+                  AND mute_until > NOW()
+                  AND COALESCE(scope, 'chat') <> 'voice'
+                LIMIT 1
+            ) mu ON TRUE
             ORDER BY s.created_at, s.user_id
             """
         )
@@ -1871,6 +2284,7 @@ async def _seated_people() -> dict[int, list[dict]]:
             r["staff_status"] == "active" and r["staff_role"] in STAFF_PANEL_ROLES
         )
         end = r["term_end"]
+        muted = r["mute_until"]
         out.setdefault(int(r["chat_id"]), []).append({
             "userId": uid,
             "name": r["display_name"] or r["first_name"] or str(uid),
@@ -1878,6 +2292,7 @@ async def _seated_people() -> dict[int, list[dict]]:
             "positionId": int(r["position_id"]),
             "seatPrefix": r["prefix"] or "",
             "termEnd": end.date().isoformat() if end else "",
+            "mutedUntil": muted.isoformat() if muted else "",
             "staff": bool(staff),
             "accessOff": bool(r["access_off"]),
         })
@@ -1889,6 +2304,7 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
     await ensure_tables()
     await sweep_expired_spamblocks()
+    await release_finished_holds()
     groups = await seats_for(user_id)
     seated = await _seated_people()
     payload = []
@@ -2614,6 +3030,69 @@ async def drop_group_access(user_id: int) -> dict:
     return {"seats": _count(seats), "keys": _count(keys)}
 
 
+def _json_cell(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value)
+
+
+async def _match_or_clone(source, chat_id: int) -> int | None:
+    """Та же должность в другой официальной группе: по названию, иначе копия."""
+    if int(source["chat_id"]) == int(chat_id):
+        return int(source["id"])
+    kind = source["kind"] if source["kind"] in KINDS else KIND_POST
+    title = " ".join(str(source["title"] or "").split())[:40]
+    found = await db.pool.fetchrow(
+        """
+        SELECT id
+        FROM epsilon_positions
+        WHERE chat_id = $1 AND rank < 5 AND kind = $2 AND lower(title) = lower($3)
+        ORDER BY id
+        LIMIT 1
+        """,
+        int(chat_id),
+        kind,
+        title,
+    )
+    if found:
+        return int(found["id"])
+    if kind in (KIND_SPAMBLOCK, KIND_MEMBER):
+        existing = await db.pool.fetchrow(
+            """
+            SELECT id
+            FROM epsilon_positions
+            WHERE chat_id = $1 AND kind = $2 AND rank < 5
+            ORDER BY id
+            LIMIT 1
+            """,
+            int(chat_id),
+            kind,
+        )
+        if existing:
+            return int(existing["id"])
+    rank = int(source["rank"] or 0)
+    if rank >= 5 or rank < 0:
+        return None
+    row = await db.pool.fetchrow(
+        """
+        INSERT INTO epsilon_positions (chat_id, title, rank, rights, accepting, kind, prefix, pages)
+        VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb)
+        RETURNING id
+        """,
+        int(chat_id),
+        title or "Должность",
+        rank,
+        _json_cell(source["rights"]) or "[]",
+        bool(source["accepting"]) if kind == KIND_POST else False,
+        kind,
+        source["prefix"] or "",
+        _json_cell(source["pages"]),
+    )
+    return int(row["id"]) if row else None
+
+
 @router.post("/appoint")
 async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegram_user_id)):
     _require_creator(user_id)
@@ -2623,7 +3102,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     await sweep_expired_spamblocks()
     pos = await db.pool.fetchrow(
         """
-        SELECT p.id, p.kind, p.prefix, p.title, p.rank, p.rights
+        SELECT p.id, p.chat_id, p.kind, p.prefix, p.title, p.rank, p.rights, p.pages, p.accepting
         FROM epsilon_positions p
         JOIN epsilon_official_groups g ON g.chat_id = p.chat_id AND g.is_official
         WHERE p.id = $1 AND p.chat_id = $2 AND p.rank < 5
@@ -2634,57 +3113,128 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     if not pos:
         raise HTTPException(status_code=400, detail="Должность не найдена в официальной группе")
     kind = pos["kind"] if pos["kind"] in KINDS else KIND_POST
-    prefix, prefix_error = chat_title(kind, pos["title"] or "", pos["prefix"] or "", body.prefix)
-    if prefix_error:
-        raise HTTPException(status_code=400, detail=prefix_error)
     term_start = None
     term_end = None
     if kind == KIND_SPAMBLOCK:
         term_start, term_end, term_error = term_bounds(body.term_start, body.term_end)
         if term_error:
             raise HTTPException(status_code=400, detail=term_error)
-    held_rights = rights_for_kind(kind, int(pos["rank"]), _rights(pos["rights"]), creator=True)
-    await db.pool.execute(
-        """
-        INSERT INTO epsilon_seats (
-            user_id, chat_id, position_id, appointed_by, reason, prefix, term_start, term_end
+    if body.everywhere:
+        chats = await db.pool.fetch(
+            """
+            SELECT chat_id
+            FROM epsilon_official_groups
+            WHERE is_official
+            ORDER BY chat_id
+            """
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (user_id, chat_id) DO UPDATE
-        SET position_id = EXCLUDED.position_id,
-            appointed_by = EXCLUDED.appointed_by,
-            reason = EXCLUDED.reason,
-            prefix = EXCLUDED.prefix,
-            term_start = EXCLUDED.term_start,
-            term_end = EXCLUDED.term_end,
-            created_at = NOW()
-        """,
-        int(body.user_id),
-        int(body.chat_id),
-        int(body.position_id),
-        int(user_id),
-        body.reason.strip(),
-        prefix,
-        term_start,
-        term_end,
-    )
-    telegram_note = await _sync_chat_rights(
-        int(body.chat_id),
-        int(body.user_id),
-        prefix,
-        held_rights,
-        kind=kind,
-    )
-    detail = f"«{pos['title']}»"
-    if kind == KIND_SPAMBLOCK and term_end:
-        detail += f", до {term_end.date().isoformat()}"
-    if prefix:
-        detail += f", префикс «{prefix}»"
-    if telegram_note:
-        detail += f". {telegram_note}"
-    await _realm_log(int(body.chat_id), int(body.user_id), "appointed", detail, int(user_id))
+    else:
+        chats = [{"chat_id": int(body.chat_id)}]
+    placed = 0
+    first_note = ""
+    first_prefix = ""
+    for chat in chats:
+        cid = int(chat["chat_id"])
+        creator_seat = await db.pool.fetchrow(
+            """
+            SELECT 1
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.user_id = $1 AND s.chat_id = $2 AND p.rank >= 5
+            """,
+            int(body.user_id),
+            cid,
+        )
+        if creator_seat:
+            continue
+        position_id = await _match_or_clone(pos, cid)
+        if not position_id:
+            continue
+        local = await db.pool.fetchrow(
+            """
+            SELECT id, kind, prefix, title, rank, rights
+            FROM epsilon_positions
+            WHERE id = $1 AND chat_id = $2 AND rank < 5
+            """,
+            int(position_id),
+            cid,
+        )
+        if not local:
+            continue
+        local_kind = local["kind"] if local["kind"] in KINDS else KIND_POST
+        prefix, prefix_error = chat_title(
+            local_kind, local["title"] or "", local["prefix"] or "", body.prefix,
+        )
+        if prefix_error:
+            if not body.everywhere:
+                raise HTTPException(status_code=400, detail=prefix_error)
+            continue
+        local_start = term_start if local_kind == KIND_SPAMBLOCK else None
+        local_end = term_end if local_kind == KIND_SPAMBLOCK else None
+        held_rights = rights_for_kind(
+            local_kind, int(local["rank"]), _rights(local["rights"]), creator=True,
+        )
+        await db.pool.execute(
+            """
+            INSERT INTO epsilon_seats (
+                user_id, chat_id, position_id, appointed_by, reason, prefix, term_start, term_end, title_parked
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+            ON CONFLICT (user_id, chat_id) DO UPDATE
+            SET position_id = EXCLUDED.position_id,
+                appointed_by = EXCLUDED.appointed_by,
+                reason = EXCLUDED.reason,
+                prefix = EXCLUDED.prefix,
+                term_start = EXCLUDED.term_start,
+                term_end = EXCLUDED.term_end,
+                title_parked = FALSE,
+                created_at = NOW()
+            """,
+            int(body.user_id),
+            cid,
+            int(local["id"]),
+            int(user_id),
+            body.reason.strip(),
+            prefix,
+            local_start,
+            local_end,
+        )
+        telegram_note = await _sync_chat_rights(
+            cid,
+            int(body.user_id),
+            prefix,
+            held_rights,
+            kind=local_kind,
+        )
+        detail = f"«{local['title']}»"
+        if local_kind == KIND_SPAMBLOCK and local_end:
+            detail += f", до {local_end.date().isoformat()}"
+        if prefix:
+            detail += f", префикс «{prefix}»"
+        if body.everywhere:
+            detail += ". Сразу во все официальные группы"
+        if telegram_note:
+            detail += f". {telegram_note}"
+        await _realm_log(cid, int(body.user_id), "appointed", detail, int(user_id))
+        placed += 1
+        if not first_note:
+            first_note = telegram_note or ""
+            first_prefix = prefix
+    if placed == 0:
+        raise HTTPException(status_code=400, detail="Должность ни в одной официальной группе не встала")
     entry_key = await _issue_key(int(body.user_id))
-    return {"ok": True, "entryKey": entry_key, "telegram": telegram_note, "prefix": prefix}
+    if body.everywhere:
+        telegram = f"Должность выдана в {placed} официальных группах."
+    else:
+        telegram = first_note
+    return {
+        "ok": True,
+        "entryKey": entry_key,
+        "telegram": telegram,
+        "prefix": first_prefix,
+        "everywhere": bool(body.everywhere),
+        "placed": placed,
+    }
 
 
 class DismissBody(BaseModel):
@@ -3493,6 +4043,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
     access = await _access(user_id, chat_id)
     if not access:
         raise HTTPException(status_code=403, detail="В этой группе у вас нет должности")
+    await release_finished_holds()
     from admin_groups import _activity_hint, _moderation_counts, chat_warn_watch
 
     activity = await _activity_hint(int(chat_id))
@@ -3516,6 +4067,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
         },
         "wide": position_wide(access.get("rights") or []),
         "staffActs": await _staff_acts(int(user_id)),
+        "muteLock": await mute_lock_for(int(user_id), int(chat_id)),
     }
 
 

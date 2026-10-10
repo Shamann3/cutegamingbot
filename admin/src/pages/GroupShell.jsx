@@ -28,6 +28,8 @@ import { punishmentHours } from '../lib/gateRecovery'
 import { spanToSend } from '../lib/spanClock'
 import { moderationDelta, samePulse } from '../lib/liveMerge'
 import { applicationPerson } from '../lib/applicationPerson'
+import EverywhereSeat from '../components/EverywhereSeat'
+import GroupMuteLock, { muteClock } from '../components/GroupMuteLock'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { grantedWide } from '../lib/realmRights'
 import ApproveSeat from '../components/ApproveSeat'
@@ -204,6 +206,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const [termStart, setTermStart] = useState('')
   const [termEnd, setTermEnd] = useState('')
   const [termOpen, setTermOpen] = useState(false)
+  const [everywhere, setEverywhere] = useState(false)
+  const shellRef = useRef(null)
   const [memberNote, setMemberNote] = useState('')
   const [realmLogs, setRealmLogs] = useState([])
   const [holders, setHolders] = useState([])
@@ -528,6 +532,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
         prefix: appointPrefix.trim(),
         term_start: spamPick ? termStart : '',
         term_end: spamPick ? termEnd : '',
+        everywhere,
       })
       if (data.entryKey) setEntryKey(data.entryKey)
       setNotice(data.telegram ? `Должность назначена. ${data.telegram}` : 'Должность назначена. Ключ показан один раз.')
@@ -819,7 +824,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
 
   return (
-    <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+    <div ref={shellRef} className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+      <GroupMuteLock rootRef={shellRef} lock={summary?.muteLock} />
       <AccentAura />
       {banner}
       {!preview && <PanelBackgroundMusic volume={musicVolume} />}
@@ -972,7 +978,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 )}
                 {spamPick && (
                   <p className="realm-copy">
-                    Спам-блок не даёт наказаний. В чате человек числится администратором без бана и удаления — иначе Telegram не пускает писать. Срок задаётся в окне, по окончании должность снимается сама.
+                    Спам-блок не даёт наказаний. В чате человек числится администратором без бана и удаления — иначе Telegram не пускает писать. Мут должность не снимает: префикс в чате на время гаснет и возвращается сам. Срок задаётся в окне, по окончании должность снимается сама.
                   </p>
                 )}
                 <label>для чего?<input value={appointReason} onChange={(event) => setAppointReason(event.target.value)} /></label>
@@ -981,6 +987,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                     {termEnd ? `Срок до ${termEnd}` : 'Задать срок спам-блока'}
                   </button>
                 )}
+                <EverywhereSeat on={everywhere} onChange={setEverywhere} />
                 <button type="submit" className="realm-back">Назначить</button>
               </form>
               <div className="staff-ga-seats">
@@ -995,6 +1002,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                       <strong>{person.name || person.userId}{person.username ? ` · @${person.username}` : ''}</strong>
                       <span>
                         {person.position}{person.prefix ? ` · «${person.prefix}»` : ''}{person.termEnd ? ` · до ${person.termEnd}` : ''}
+                        {person.mutedUntil ? ` · мут до ${muteClock(person.mutedUntil)}, должность на месте` : ''}
                         {person.accessOff ? ' · доступ выключен' : ''}
                       </span>
                       <div className="staff-ga-actions">

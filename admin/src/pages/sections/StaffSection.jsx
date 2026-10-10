@@ -73,6 +73,7 @@ import OfficialGroupsPane from './OfficialGroupsPane'
 import GroupPreviewPane from './GroupPreviewPane'
 import AccessKeySheet from '../../components/AccessKeySheet'
 import OwnKeyControl from '../../components/OwnKeyControl'
+import EverywhereSeat from '../../components/EverywhereSeat'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1548,6 +1549,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
   const [gaStart, setGaStart] = useState('')
   const [gaEnd, setGaEnd] = useState('')
   const [gaCheck, setGaCheck] = useState('')
+  const [gaEverywhere, setGaEverywhere] = useState(false)
   const [accessSheet, setAccessSheet] = useState(null)
   const [ownSheet, setOwnSheet] = useState(null)
 
@@ -1630,6 +1632,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
         prefix: gaPrefix,
         term_start: gaSpam ? gaStart : '',
         term_end: gaSpam ? gaEnd : '',
+        everywhere: gaEverywhere,
       })
       setGaKey(res?.entryKey || '')
       setGaNote(res?.telegram || (gaPrefix ? `В группе стоит префикс «${gaPrefix}».` : 'Должность назначена.'))
@@ -1906,6 +1909,7 @@ function InvitesTab({ isProjectCreator = false, scope = 'both', myUserId = null 
                 autoComplete="off"
               />
             </label>
+            <EverywhereSeat on={gaEverywhere} onChange={setGaEverywhere} />
             <button type="submit" className="sec-btn sec-btn-sm" disabled={busy === 'ga'}>
               {busy === 'ga' ? '…' : 'Назначить и выдать ключ'}
             </button>

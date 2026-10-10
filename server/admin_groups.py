@@ -1459,7 +1459,20 @@ async def moderate_action(
         params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid, "permissions": perms}
         if muted and until_date:
             params["until_date"] = until_date
-        return await _tg_api("restrictChatMember", **params)
+        if muted:
+            try:
+                from group_realm import park_title_for_mute
+                await park_title_for_mute(int(target_chat), uid)
+            except Exception:
+                pass
+        res = await _tg_api("restrictChatMember", **params)
+        if (not muted and res.get("ok")) or (muted and not res.get("ok")):
+            try:
+                from group_realm import restore_title_after_mute
+                await restore_title_after_mute(int(target_chat), uid)
+            except Exception:
+                pass
+        return res
 
     async def _restrict_voice(target_chat: int, blocked: bool) -> Dict[str, Any]:
         """Только голос и кружки: текст в чате остаётся."""
@@ -1484,7 +1497,26 @@ async def moderate_action(
         params: Dict[str, Any] = {"chat_id": int(target_chat), "user_id": uid}
         if until_date:
             params["until_date"] = until_date
-        return await _tg_api("banChatMember", **params)
+        paused = False
+        if until > 0:
+            try:
+                from group_realm import pause_seat_for_ban
+                paused = await pause_seat_for_ban(
+                    int(admin_id or 0),
+                    uid,
+                    int(target_chat),
+                    datetime.now() + timedelta(seconds=max(35, until)),
+                )
+            except Exception:
+                paused = False
+        res = await _tg_api("banChatMember", **params)
+        if paused and not res.get("ok"):
+            try:
+                from group_realm import restore_paused_seat
+                await restore_paused_seat(uid, int(target_chat))
+            except Exception:
+                pass
+        return res
 
     async def _record_mute(target_chat: int, scope: str) -> None:
         try:
@@ -1679,6 +1711,11 @@ async def moderate_action(
             await db.pool.execute("DELETE FROM active_bans WHERE user_id = $1 AND chat_id = $2", uid, cid)
         except Exception:
             pass
+        try:
+            from group_realm import restore_paused_seat
+            await restore_paused_seat(uid, cid)
+        except Exception:
+            pass
         results.append(res)
     elif action == "unbanall":
         ok_any = False
@@ -1691,6 +1728,12 @@ async def moderate_action(
         try:
             await db.pool.execute("DELETE FROM active_bans WHERE user_id = $1", uid)
             ok_any = True
+        except Exception:
+            pass
+        try:
+            from group_realm import restore_paused_seat
+            for tc in staff:
+                await restore_paused_seat(uid, int(tc))
         except Exception:
             pass
         ok = ok_any
