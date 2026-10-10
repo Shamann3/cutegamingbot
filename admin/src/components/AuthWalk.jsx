@@ -96,6 +96,24 @@ function StoreLinks() {
   )
 }
 
+export function AppKeyCard({ setup }) {
+  if (!setup?.qrDataUrl && !setup?.totpSecret) return null
+  return (
+    <section className="app-key-card" aria-label={WORDS.appKeyTitle}>
+      <p className="app-key-title">{WORDS.appKeyTitle}</p>
+      <p className="app-key-lead">{WORDS.appKeyLead}</p>
+      {setup.authenticatorLabel && <p className="app-key-name">{setup.authenticatorLabel}</p>}
+      {setup.qrDataUrl && (
+        <figure className="auth-help-qr app-key-qr">
+          <img src={setup.qrDataUrl} alt={WORDS.qrAlt} />
+          <figcaption>{WORDS.walkQrShot}</figcaption>
+        </figure>
+      )}
+      <CopyKey secret={setup.totpSecret || ''} expectQr />
+    </section>
+  )
+}
+
 export function CopyKey({ secret, expectQr = false, onNeedKey }) {
   const [copied, setCopied] = useState(false)
   const [held, setHeld] = useState(false)

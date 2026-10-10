@@ -4,7 +4,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
-import { AuthRescue, CopyKey, EntryHelp } from '../components/AuthWalk'
+import { AppKeyCard, AuthRescue, EntryHelp } from '../components/AuthWalk'
 import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
 import { SCREENS, WORDS } from '../entry_design'
@@ -65,6 +65,13 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
     setVerified(false)
     if (isGroupPreviewKey(next)) {
       lastVerified.current = next
+      setNeedCode(true)
+      setSetup({
+        qrDataUrl: 'data:image/svg+xml,' + encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#fff"/><path fill="#111" d="M4 4h20v20H4zm4 4v12h12V8zm28-4h20v20H36zm4 4v12h12V8zM4 36h20v20H4zm4 4v12h12V40zm8-28h4v4h-4zm28 0h4v4h-4zM36 36h8v4h-8zm12 0h8v8h-4v-4h-4zm-8 8h4v8h-4zm8 4h8v8h-8zM28 4h4v8h-4zm0 12h4v8h-8v-4h4zm8 8h8v4h-8zM4 28h8v4H4zm16 0h12v4H20zm16 0h8v4h-8zm16 0h4v8h-4z"/></svg>',
+        ),
+        totpSecret: 'JBSWY3DPEHPK3PXP',
+      })
       setVerified(true)
       setError('')
       return undefined
@@ -200,17 +207,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
 
         <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
           <div className="auth-reveal-inner">
-            {needCode && setup && (
-              <>
-                <p className="auth-form-lead">{WORDS.groupFirst}</p>
-                <div className="auth-qr-wrap">
-                  <img className="auth-qr" src={setup.qrDataUrl} alt={WORDS.qrAlt} />
-                </div>
-                {setup.totpSecret && (
-                  <CopyKey secret={setup.totpSecret} expectQr />
-                )}
-              </>
-            )}
+            {needCode && setup && <AppKeyCard setup={setup} />}
             {error && verified && (
               <>
                 <p className="auth-message auth-message-error" role="alert">{error}</p>

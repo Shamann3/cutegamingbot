@@ -1298,7 +1298,14 @@ async def admin_login_verify_key(
     if not totp_secret:
         raise HTTPException(status_code=403, detail="TOTP не настроен. Пройдите регистрацию заново.")
 
-    return {"ok": True}
+    uri = build_otpauth_uri(totp_secret, account_name=f"staff-{int(user_id)}")
+    return {
+        "ok": True,
+        "setup": {
+            "qrDataUrl": totp_qr_data_url(uri),
+            "totpSecret": totp_secret,
+        },
+    }
 
 
 @router.post("/auth/login/reveal-code")

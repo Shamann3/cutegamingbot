@@ -3842,9 +3842,8 @@ async def group_key_check(
     payload = {"ok": True, "needCode": need_code}
     bound_device = str(row["panel_device"] or "")
     current_device = panel_device(request)
-    if body.finish and ready and bound_device and current_device != bound_device:
-        need_code = True
-    elif body.finish and ready:
+    other_device = bool(bound_device and current_device != bound_device)
+    if body.finish and ready and not other_device:
         need_code = False
         payload["needCode"] = need_code
         entry_pass, exp = _issue_group_pass(owner_id, str(row["key_hash"]))
@@ -3860,7 +3859,7 @@ async def group_key_check(
                 int(owner_id),
                 current_device,
             )
-    elif not ready:
+    if need_code and secret:
         uri = build_otpauth_uri(secret, account_name=f"group-{int(owner_id)}")
         payload["setup"] = {
             "qrDataUrl": totp_qr_data_url(uri),

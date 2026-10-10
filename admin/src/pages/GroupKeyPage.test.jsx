@@ -66,6 +66,22 @@ describe('GroupKeyPage', () => {
     expect(onPassed).toHaveBeenCalledTimes(1)
   })
 
+  it('после ключа показывает QR и кнопку ключа приложения', async () => {
+    vi.mocked(checkGroupKey).mockResolvedValue({
+      ok: true,
+      needCode: true,
+      setup: { qrDataUrl: 'data:image/png;base64,abc', totpSecret: 'APPSECRETKEY' },
+    })
+    await showKey(<GroupKeyPage onBack={() => {}} onPassed={() => {}} onApply={() => {}} onPreview={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('Ключ кабинета'), { target: { value: 'right-key-123' } })
+    await vi.advanceTimersByTimeAsync(800)
+
+    expect(screen.getByRole('button', { name: 'Скопировать ключ приложения' })).toBeTruthy()
+    expect(screen.getByAltText('QR-код для приложения с кодами').getAttribute('src')).toBe('data:image/png;base64,abc')
+    expect(screen.getByText('APPSECRETKEY')).toBeTruthy()
+  })
+
   it('после ключа просит код из приложения', async () => {
     vi.mocked(checkGroupKey).mockResolvedValue({ ok: true, needCode: true })
     vi.mocked(enterGroupKey).mockResolvedValue({ ok: true, entryPass: 'g.kept.pass' })

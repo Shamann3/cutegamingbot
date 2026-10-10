@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AuthRescue, CopyKey, EntryHelp } from './AuthWalk'
+import { AppKeyCard, AuthRescue, EntryHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -124,16 +124,7 @@ export default function RegisterForm({
         <div className="auth-reveal-inner">
           {setup && (
             <>
-              <div className="auth-qr-wrap">
-                <img className="auth-qr" src={setup.qrDataUrl} alt={WORDS.qrAlt} />
-                {setup.authenticatorLabel && (
-                  <p className="auth-qr-caption">{setup.authenticatorLabel}</p>
-                )}
-              </div>
-
-              {setup.totpSecret && (
-                <CopyKey secret={setup.totpSecret} expectQr />
-              )}
+              <AppKeyCard setup={setup} />
 
               <label className="auth-field">
                 <span className="auth-label">{WORDS.code}</span>

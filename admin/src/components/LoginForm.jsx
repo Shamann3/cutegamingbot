@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, revealLoginCode, verifyLoginKey } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AuthRescue, EntryHelp } from './AuthWalk'
+import { AppKeyCard, AuthRescue, EntryHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -14,6 +14,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
   const [verifying, setVerifying] = useState(false)
   const [verified, setVerified] = useState(false)
   const [localError, setLocalError] = useState('')
+  const [setup, setSetup] = useState(null)
   const lastVerified = useRef('')
 
   // Автопроверка ключа входа: код появляется только при верном ключе.
@@ -21,6 +22,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
     const key = loginKey.trim()
     if (!key) {
       setVerified(false)
+      setSetup(null)
       return
     }
     if (key === lastVerified.current) {
@@ -39,9 +41,10 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
       setVerifying(true)
       setLocalError('')
       try {
-        await verifyLoginKey(key)
+        const data = await verifyLoginKey(key)
         if (active) {
           lastVerified.current = key
+          setSetup(data?.setup || null)
           setVerified(true)
         }
       } catch (err) {
@@ -99,7 +102,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
   return (
     <form className="auth-form auth-step" onSubmit={handleSubmit}>
       <EntryGuide screen={SCREENS.staffLogin} at={verified ? 'code' : 'key'} />
-      <EntryHelp />
+      <EntryHelp setup={setup} expectQr={!setup} />
 
       <KeyField
         label={WORDS.loginKey}
@@ -125,6 +128,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
 
       <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
         <div className="auth-reveal-inner">
+          {setup && <AppKeyCard setup={setup} />}
           <label className="auth-field">
             <span className="auth-label">{WORDS.code}</span>
             <input
