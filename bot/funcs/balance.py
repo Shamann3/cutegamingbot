@@ -2749,7 +2749,14 @@ async def balance(message: Message):
             print("[FLAG_REMOVE] 🛑 Завершаем обработку (return)")
             return
 
-        user_country_name = country_dict.get(user_country , "флаг неизвестен")
+        from bot.funcs.flag_book import country_title, normalize_flag
+        user_country = normalize_flag(user_country) or user_country
+        shop_name = ""
+        try:
+            shop_name = await db.get_flag_item_name(user_country)
+        except Exception:
+            shop_name = ""
+        user_country_name = shop_name or country_title(user_country) or "флаг неизвестен"
         print(f"[FLAG_REMOVE] 🏷️ Название страны: {user_country_name}")
 
         print("[FLAG_REMOVE] 🎛️ Создаём клавиатуру подтверждения")
@@ -4149,23 +4156,26 @@ async def process_callback(callback_query: types.CallbackQuery):
     # Проверяем значение callback_data
     print(f"Callback data: {callback_query.data}")
 
-    # Извлечение эмодзи флага из callback_data
-    flag_emoji = callback_query.data.split("_") [ -1 ]
+    from bot.funcs.flag_book import country_title, normalize_flag
+    stored = normalize_flag(await db.get_user_country(user_id)) or ""
+    flag_emoji = stored or normalize_flag(callback_query.data.split("2flagconfirm_flag_removal_", 1)[-1])
     print(f"Flag emoji: {flag_emoji}")
 
     try:
-        # Удаление флага пользователя из базы данных
         await db.remove_user_country(user_id)
 
-        # Определение названия страны по эмодзи флага
-        flag_name = country_dict.get(flag_emoji , "Unknown Flag")
+        flag_name = await db.get_flag_item_name(flag_emoji) or await db.get_item_name_by_emoji(flag_emoji)
+        if not flag_name:
+            flag_name = country_title(flag_emoji)
         print(f"Flag name: {flag_name}")
 
-        # Создание названия предмета
-        item_name = f"Флаг ({flag_name})"
-
-        # Выдача предмета пользователю
-        await db.set_items(user_id , flag_name , 1)
+        if flag_name and flag_name != "Неизвестная страна":
+            await db.set_items(user_id, flag_name, 1)
+        try:
+            from bot.funcs.profile import refresh_all_profile_messages_for_user
+            await refresh_all_profile_messages_for_user(user_id, bot1, db)
+        except Exception as refresh_error:
+            print(f"[FLAG] профиль после снятия не обновился: {refresh_error}")
 
         # Отправка сообщения пользователю о снятии флага
         await bot1.edit_message_text(

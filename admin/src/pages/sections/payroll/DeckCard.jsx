@@ -3,6 +3,7 @@ import PhotoLook from '../../../components/PhotoLook'
 import { loadTgPhotoUrl } from '../../../components/TgPhoto'
 import { fetchDeedPulse, getAdminToken, isPanelPreviewMode } from '../../../lib/adminClient'
 import { pileLine } from '../../../lib/liveMerge'
+import { issuerReason } from '../../../lib/deedSort'
 
 export const FLY_MS = 420
 
@@ -346,6 +347,8 @@ export default function DeckCard({ card, band, tone = '', note = '', stamps, dep
   const issuer = issued?.title
     ? `${issued.title} ${card.adminName || ''}`.trim()
     : (card.adminName || 'администратор')
+  const spoken = issuerReason(card.reason)
+  const speaker = card.adminName || 'Администратор'
   const motion = fly ? ` is-fly-${fly}` : back ? ` is-back-${back}` : ''
   return (
     <div ref={swipe.stageRef} className={`tinder-stage depth-${depth}${fly ? ' is-flying' : ''}`} {...swipe.handlers}>
@@ -357,13 +360,24 @@ export default function DeckCard({ card, band, tone = '', note = '', stamps, dep
               {stamp.label}
             </span>
           ))}
+          <div className="deed-why">
+            <p className="deed-why-kicker">Причина наказания</p>
+            {spoken
+              ? <p className="deed-reason">{spoken}</p>
+              : <p className="deed-reason is-empty">{speaker} не записал причину. Смотрите фото, срок и само наказание.</p>}
+            <p className="deed-why-note">
+              {spoken
+                ? `Записал: ${speaker}. Сверьте эти слова с фото и со сроком.`
+                : 'Дальше на карточке фото, срок и какое это наказание.'}
+            </p>
+          </div>
           <div className="deed-face">
             {card.hasProof && card.proofMediaId
               ? <PhotoLook fileId={card.proofMediaId} eager alt="Фото доказательства" />
               : (
                 <div className="deed-photo deed-photo-empty">
                   <strong>{card.actionLabel}</strong>
-                  <span>{card.reason ? 'Фото нет — смотрите причину ниже.' : 'Ни фото, ни причины не записано.'}</span>
+                  <span>Фото к этому наказанию нет.</span>
                 </div>
               )}
           </div>
@@ -388,7 +402,6 @@ export default function DeckCard({ card, band, tone = '', note = '', stamps, dep
                 ))}
               </ol>
             )}
-            <p className="deed-reason">{card.reason || 'Причина в архиве не записана'}</p>
           </div>
         </article>
       </div>

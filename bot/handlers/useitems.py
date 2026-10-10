@@ -907,37 +907,55 @@ async def coupon_possibilities(db, user_id, message):
     )
 
 
-async def country1(user_id , message , country_emoji):
-    # Определяем название страны по эмодзи
-    country = country_dict.get(country_emoji , "Неизвестная страна")
+async def _refresh_hung_flag(user_id):
+    """Профиль на экране должен сразу показать новый флаг, без старого кэша."""
+    try:
+        db.invalidate_profile_bundle_cache(int(user_id))
+    except Exception:
+        pass
+    try:
+        from bot.funcs.profile import refresh_all_profile_messages_for_user
+        await refresh_all_profile_messages_for_user(int(user_id), bot1, db)
+    except Exception as error:
+        print(f"[FLAG] профиль не обновился сразу: {error}")
+
+
+async def country1(user_id, message, country_emoji, title=""):
+    from bot.funcs.flag_book import country_title, normalize_flag
+
+    country_emoji = normalize_flag(country_emoji) or str(country_emoji or "")
+    country = str(title or "").strip() or country_title(country_emoji)
+    if not country:
+        country = "Неизвестная страна"
 
     if not country_emoji:
         raise ValueError("Не найдено эмодзи флага")
 
-    # Проверяем, есть ли у пользователя уже установленный флаг
-    current_flag = await db.get_user_flag(user_id)
+    current_flag = normalize_flag(await db.get_user_flag(user_id))
 
     if current_flag:
-        # Находим название текущего флага через эмодзи
-        flag_name = await db.get_item_name_by_emoji(current_flag)
+        flag_name = await db.get_flag_item_name(current_flag) or await db.get_item_name_by_emoji(current_flag)
+        if not flag_name:
+            flag_name = country_title(current_flag)
+
+        if current_flag == country_emoji:
+            await message.reply(
+                f"❕ У вас уже повешен {country_emoji} <b>{country}</b>.",
+                parse_mode="HTML",
+            )
+            if flag_name:
+                await db.set_items(user_id, flag_name, 1)
+            return
 
         if flag_name:
-            # Если пользователь пытается установить тот же флаг, отправляем ошибку
-            if current_flag == country_emoji:
-                await message.reply(
-                    f"❕ У вас уже установлен флаг <code>{country_emoji}</code> <b>{country}</b>." , parse_mode="HTML")
-                await db.set_items(user_id , flag_name , 1)
-                return  # Прерываем выполнение функции
+            await db.set_items(user_id, flag_name, 1)
 
-            # Возвращаем текущий флаг обратно в инвентарь
-            await db.set_items(user_id , flag_name , 1)
-        else:
-            print("Произошла ошибка: не удалось найти название флага.")
-
-    # Если флага нет, обновляем страну пользователя
-    await db.update_user_country(user_id , country_emoji)
+    await db.update_user_country(user_id, country_emoji)
+    await _refresh_hung_flag(user_id)
     await message.reply(
-        f'<code>{country_emoji}</code> Вы повесили <b>{country}</b> в своем профиле' , parse_mode="HTML")
+        f"{country_emoji} Вы повесили <b>{country}</b> в своём профиле",
+        parse_mode="HTML",
+    )
 
 
 

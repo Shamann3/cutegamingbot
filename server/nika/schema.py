@@ -28,10 +28,11 @@ from asyncpg.exceptions import DeadlockDetectedError, UniqueViolationError
 
 from nika.ids import GROWTH_FUND_OWNER_NOTIFY_USER_ID, PROFIT_JAR_CHAT_ID
 
-# Первая группа под Никой - решение владельца. Сид одноразовый (ON CONFLICT DO
-# NOTHING), поэтому все последующие правки владельца переживают перезапуск.
+# Раньше эти константы сами ставили @CuteGamingChat под долив на 5000.
+# Список групп теперь только тот, что создатель нажал во вкладке «Группы».
 FIRST_MANAGED_CHAT_ID = -1001612636292
 FIRST_MANAGED_TARGET = 5000
+AUTO_GROUP_NOTE = "первая группа под Никой"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS nika_settings (
@@ -285,13 +286,11 @@ CREATE INDEX IF NOT EXISTS idx_gf_ledger_chat_created
     ON growth_fund_ledger (chat_id, created_at DESC);
 """
 
-_SEED_FIRST_GROUP = """
-INSERT INTO nika_group_settings (
-    chat_id, enabled, target_balance, speed_mode,
-    max_transfer, max_daily_topup, max_daily_sweep, note
-)
-VALUES ($1, TRUE, $2, 'auto', $3, $4, $4, 'первая группа под Никой')
-ON CONFLICT (chat_id) DO NOTHING
+_DROP_AUTO_GROUP = """
+DELETE FROM nika_group_settings
+WHERE chat_id = $1
+  AND note = $2
+  AND updated_by IS NULL
 """
 
 
@@ -316,12 +315,11 @@ async def ready_nika_pool(db) -> None:
 
 
 async def ensure_nika_schema(db) -> None:
-    """Создать/досоздать таблицы Ники и засеять первую обслуживаемую группу."""
+    """Создать таблицы Ники. Группу под долив код сам не ставит."""
     await ready_nika_pool(db)
 
-    from nika.policy import SOURCE_LADDER, suggest_caps
+    from nika.policy import SOURCE_LADDER
 
-    caps = suggest_caps(FIRST_MANAGED_TARGET)
     owner_id = int(GROWTH_FUND_OWNER_NOTIFY_USER_ID or 0) or None
     forbidden = {int(cid) for cid, _ in SOURCE_LADDER}
     forbidden.add(int(PROFIT_JAR_CHAT_ID))
@@ -334,11 +332,9 @@ async def ensure_nika_schema(db) -> None:
                     await conn.execute("SELECT pg_advisory_xact_lock(hashtext('nika_schema'))")
                     await conn.execute(_DDL)
                     await conn.execute(
-                        _SEED_FIRST_GROUP,
+                        _DROP_AUTO_GROUP,
                         int(FIRST_MANAGED_CHAT_ID),
-                        int(FIRST_MANAGED_TARGET),
-                        int(caps["max_transfer"]),
-                        int(caps["max_daily_topup"]),
+                        AUTO_GROUP_NOTE,
                     )
                     await conn.execute(
                         """

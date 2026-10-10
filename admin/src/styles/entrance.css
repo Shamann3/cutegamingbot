@@ -268,6 +268,71 @@
   to { transform: rotate(-360deg); }
 }
 
+.ent-orbit {
+  position: absolute;
+  inset: 2%;
+  pointer-events: none;
+  animation: entSpin 18s linear infinite;
+}
+
+.ent-spark {
+  position: absolute;
+  left: calc(var(--x) * 1%);
+  top: calc(var(--y) * 1%);
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: #f4f4f5;
+  box-shadow: 0 0 10px rgba(var(--ent-accent-rgb), 0.8);
+  opacity: 0;
+  animation: entSpark 2.8s calc(0.2s + var(--i) * 0.09s) ease-in-out infinite;
+}
+
+@keyframes entSpark {
+  0% { opacity: 0; transform: scale(0.35); }
+  16% { opacity: 1; transform: scale(1); }
+  48% { opacity: 0.28; transform: scale(0.62); }
+  100% { opacity: 0.92; transform: scale(1); }
+}
+
+.ent-beam {
+  position: absolute;
+  top: 46%;
+  left: -30%;
+  width: 42%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--ent-accent-rgb), 0.95), transparent);
+  opacity: 0;
+  pointer-events: none;
+  animation: entBeam 1.7s 1.7s var(--ent-ease-soft) both;
+}
+
+@keyframes entBeam {
+  0% { opacity: 0; transform: translateX(0); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(320%); }
+}
+
+.ent-ripple {
+  position: absolute;
+  inset: 26%;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--ent-accent-rgb), 0.6);
+  opacity: 0;
+  pointer-events: none;
+  animation: entRipple 1.45s 2.35s var(--ent-ease-soft) both;
+}
+
+.ent-ripple-late {
+  animation-delay: 3.55s;
+}
+
+@keyframes entRipple {
+  0% { opacity: 0.75; transform: scale(0.7); }
+  100% { opacity: 0; transform: scale(1.65); }
+}
+
 /* --- Угловые скобы --- */
 
 .ent-brackets {
@@ -720,13 +785,19 @@ body.perf-light .ent-matrix,
 body.perf-light .ent-trace,
 body.perf-light .ent-ring--a,
 body.perf-light .ent-ring--b,
+body.perf-light .ent-orbit,
+body.perf-light .ent-beam,
+body.perf-light .ent-ripple,
 .ent-root--lite .ent-grid,
 .ent-root--lite .ent-stamp,
 .ent-root--lite .ent-flash,
 .ent-root--lite .ent-matrix,
 .ent-root--lite .ent-trace,
 .ent-root--lite .ent-ring--a,
-.ent-root--lite .ent-ring--b {
+.ent-root--lite .ent-ring--b,
+.ent-root--lite .ent-orbit,
+.ent-root--lite .ent-beam,
+.ent-root--lite .ent-ripple {
   animation: none !important;
   opacity: 0 !important;
 }
@@ -781,7 +852,11 @@ body.perf-light .panel-brand-halo,
   .ent-matrix,
   .ent-trace,
   .ent-ring--a,
-  .ent-ring--b {
+  .ent-ring--b,
+  .ent-orbit,
+  .ent-beam,
+  .ent-ripple,
+  .ent-spark {
     animation: none !important;
     opacity: 0 !important;
   }

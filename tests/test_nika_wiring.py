@@ -121,6 +121,12 @@ def test_schema_uses_timestamptz_and_idempotency():
     assert "idx_nika_transfer_pending" in schema
     assert "FIRST_MANAGED_CHAT_ID = -1001612636292" in schema
     assert "FIRST_MANAGED_TARGET = 5000" in schema
+    assert "_SEED_FIRST_GROUP" not in schema
+    assert "ON CONFLICT (chat_id) DO NOTHING" not in schema
+    assert "updated_by IS NULL" in schema
+    server_schema = _read("server", "nika", "schema.py")
+    assert "_SEED_FIRST_GROUP" not in server_schema
+    assert "updated_by IS NULL" in server_schema
     assert "sweep_speed" in schema
     assert "topup_pace" in schema
     assert "BETWEEN 15 AND 3600" in schema

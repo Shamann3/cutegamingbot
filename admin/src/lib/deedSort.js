@@ -11,6 +11,13 @@ export const VERDICT_BUTTON = {
   weak: 'Непонятно',
 }
 
+/** Слова, которые написал выдавший. Служебная пометка панели — не причина. */
+export function issuerReason(reason) {
+  const text = String(reason || '').replace(/\s+/g, ' ').trim()
+  if (!text || /^panel:/i.test(text)) return ''
+  return text
+}
+
 export const BAND_LABEL = {
   photo: 'Есть фото',
   reason: 'Фото нет, есть причина',

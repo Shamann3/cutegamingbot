@@ -9734,6 +9734,9 @@ class Database:
                     """
                     SELECT u.user_id, u.first_name, u.username, u.balance, u.data,
                            u.refferals, u.xpp, u.country,
+                           (SELECT d.name FROM dex d
+                             WHERE d.emoji = u.country AND d.name1 = 'Russian'
+                             LIMIT 1) AS flag_name,
                            u.idemo, u.nameemo, u.usernameemo, u.balanceemo, u.winamountemo,
                            u.marryemo, u.repemo, u.limitemo, u.refemo, u.prgl, u.dataemo,
                            u.wins, u.loose, u.winamount, u.donate, u.canwithdrawal, u.give,
@@ -9779,6 +9782,7 @@ class Database:
                 "referrals": user_row.get("refferals") or 0,
                 "xpp": user_row.get("xpp") or 0,
                 "country_emoji": user_row.get("country") or "",
+                "flag_name": user_row.get("flag_name") or "",
                 "referer_name": user_row.get("referer_name"),
                 "give_limite": user_row.get("give") or 0,
                 "reputation_plus1": user_row.get("rep_plus") or 0,
@@ -13710,6 +13714,23 @@ class Database:
             # Если результат найден, возвращаем значение из столбца "country"
             return result [ 'country' ] if result else None
 
+    async def get_flag_item_name(self, emoji: str) -> str:
+        """Название флага в магазине по самому флагу."""
+        from bot.funcs.flag_book import normalize_flag
+
+        key = normalize_flag(emoji)
+        if not key or not self.pool:
+            return ""
+        try:
+            async with self.pool.acquire() as connection:
+                name = await connection.fetchval(
+                    "SELECT name FROM dex WHERE emoji = $1 AND name1 = 'Russian' LIMIT 1",
+                    key,
+                )
+            return str(name or "")
+        except Exception:
+            return ""
+
     async def remove_user_country(self, user_id):
         """
         Удаление информации о стране пользователя, устанавливая значение NULL.
@@ -13717,6 +13738,7 @@ class Database:
         query = "UPDATE users SET country = NULL WHERE user_id = $1"
         async with self.pool.acquire() as connection:
             await connection.execute(query, user_id)
+            self.invalidate_profile_bundle_cache(int(user_id))
             print(f"Страна пользователя с ID {user_id} успешно удалена.")
 
     async def get_firstname_by_user_id(self , user_id):
@@ -14119,10 +14141,14 @@ class Database:
             return None
 
     async def update_user_country(self, user_id, country_emoji):
+        from bot.funcs.flag_book import normalize_flag
+
+        country_emoji = normalize_flag(country_emoji) or country_emoji
         try:
             # Обновляем страну пользователя в базе данных
             async with self.pool.acquire() as connection:
                 await connection.execute('''UPDATE users SET country = $1 WHERE user_id = $2''', country_emoji, user_id)
+            self.invalidate_profile_bundle_cache(int(user_id))
             print(f"Страна пользователя с ID {user_id} обновлена на {country_emoji}")
         except Exception as e:
             print("Ошибка при обновлении страны пользователя:", e)

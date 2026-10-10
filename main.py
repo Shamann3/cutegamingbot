@@ -31024,7 +31024,14 @@ async def handle_back_to_menu(call: types.CallbackQuery):
     reputation = await db.get_reputation_by_user_id(call.from_user.id)
 
     country_emoji = await db.get_country_emoji_by_user_id(call.from_user.id)
-    country_text = country_dict.get(country_emoji, 'Неизвестная страна')
+    from bot.funcs.flag_book import country_title
+    shop_name = ""
+    if getattr(db, "get_flag_item_name", None):
+        try:
+            shop_name = await db.get_flag_item_name(country_emoji)
+        except Exception:
+            shop_name = ""
+    country_text = country_title(country_emoji, shop_name) or "Неизвестная страна"
 
     balance = await db.get_user_balance(user_id)
     formatted_balance = "{:,.0f}".format(balance or 0).replace(",", ".")
@@ -31114,7 +31121,7 @@ async def handle_back_to_menu(call: types.CallbackQuery):
     referrals_text = "Рефералов"
 
     nationality_line = (
-        f"<code>{country_emoji}</code> <b>Повешан {country_text}</b> <code>{country_emoji}</code>\n"
+        f"{country_emoji} <b>Повешен {country_text}</b> {country_emoji}\n"
         if country_emoji else ""
     )
 

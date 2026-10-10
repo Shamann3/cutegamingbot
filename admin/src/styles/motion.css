@@ -2732,10 +2732,44 @@ html[data-viewport="phone"] .deck-toast {
 }
 
 .tinder-card > .deed-face,
-.tinder-card > .deed-copy {
+.tinder-card > .deed-copy,
+.tinder-card > .deed-why {
   flex: 1 1 100%;
   width: 100%;
   min-width: 0;
+}
+
+.tinder-card > .deed-why {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 1.05rem 1.2rem 0.95rem;
+  background: rgba(255, 255, 255, 0.045);
+  border-bottom: 1px solid var(--e-line, rgba(255, 255, 255, 0.08));
+}
+
+.deed-why-kicker {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.deed-why .deed-reason {
+  margin: 0;
+}
+
+.deed-reason.is-empty {
+  font-weight: 550;
+  color: var(--e-text-2, #aeaeb2);
+}
+
+.deed-why-note {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--e-text-2, #aeaeb2);
 }
 
 /* Фото во всю ширину карточки, текст под ним — с полями. */
@@ -2759,6 +2793,7 @@ html[data-viewport="phone"] .deck-toast {
 
 .tinder-card .deed-photo-empty {
   border-radius: 0;
+  min-height: 7.5rem;
   padding: 1.3rem 1.35rem;
 }
 

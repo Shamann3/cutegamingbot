@@ -227,6 +227,19 @@ export default function EntranceSeal({
             <circle className="ent-ring ent-ring--c" cx="100" cy="100" r="64" />
           </svg>
 
+          {!lite && (
+            <>
+              <div className="ent-orbit" aria-hidden="true">
+                {[[50, 2], [84, 16], [98, 50], [84, 84], [50, 98], [16, 84], [2, 50], [16, 16]].map(([x, y], index) => (
+                  <i key={index} className="ent-spark" style={{ '--i': index, '--x': x, '--y': y }} />
+                ))}
+              </div>
+              <div className="ent-beam" aria-hidden="true" />
+              <div className="ent-ripple" aria-hidden="true" />
+              <div className="ent-ripple ent-ripple-late" aria-hidden="true" />
+            </>
+          )}
+
           <div className="ent-brackets" aria-hidden="true">
             <span className="ent-bracket ent-bracket--tl" />
             <span className="ent-bracket ent-bracket--tr" />

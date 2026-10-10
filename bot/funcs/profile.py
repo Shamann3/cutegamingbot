@@ -959,7 +959,10 @@ async def _profile_collect_state_for_render(
     chat_pulse = await pulse_task
     marriage_line = await marriage_task
     if bundle:
-        country_text = country_dict.get(bundle.get("country_emoji", ""), "Неизвестная страна")
+        from bot.funcs.flag_book import country_title
+        country_text = country_title(bundle.get("country_emoji", ""), bundle.get("flag_name", ""))
+        if not country_text:
+            country_text = "Неизвестная страна"
         growth_fund_contributed = await _profile_get_growth_fund_contributed(db, user_id)
         growth_fund_milestone = await _profile_get_growth_fund_milestone(db, user_id)
         return {
@@ -1007,7 +1010,13 @@ async def _profile_collect_state_for_render(
     xpp = await _safe_db_call(lambda: db.get_user_experience(user_id), 0, "PROFILE-STATE") or 0
 
     country_emoji = await _safe_db_call(lambda: db.get_country_emoji_by_user_id(user_id), "", "PROFILE-STATE")
-    country_text = country_dict.get(country_emoji, "Неизвестная страна")
+    from bot.funcs.flag_book import country_title
+    shop_name = ""
+    if getattr(db, "get_flag_item_name", None):
+        shop_name = await _safe_db_call(lambda: db.get_flag_item_name(country_emoji), "", "PROFILE-STATE")
+    country_text = country_title(country_emoji, shop_name)
+    if not country_text:
+        country_text = "Неизвестная страна"
 
     first_name_ref = await _safe_db_call(lambda: db.find_referer_name(user_id), None, "PROFILE-STATE")
     give_limite = await _safe_db_call(lambda: db.get_user_give_limit(user_id), 0, "PROFILE-STATE")
@@ -1180,9 +1189,9 @@ async def _build_profile_caption_for_target(
     )
 
     nationality_line = (
-        f"<code>{_profile_escape(state['country_emoji'])}</code> "
-        f"<b>Повешан {_profile_escape(state['country_text'])}</b> "
-        f"<code>{_profile_escape(state['country_emoji'])}</code>\n"
+        f"{_profile_escape(state['country_emoji'])} "
+        f"<b>Повешен {_profile_escape(state['country_text'])}</b> "
+        f"{_profile_escape(state['country_emoji'])}\n"
         if state["country_emoji"] else ""
     )
 

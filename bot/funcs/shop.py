@@ -2865,7 +2865,9 @@ async def shop_op(message: Message):
                 parse_mode="HTML" , disable_web_page_preview=True)
             return
 
-        item_emoji = "".join(parts[1].split())
+        from bot.funcs.flag_book import normalize_flag
+        typed = "".join(parts[1].split())
+        item_emoji = normalize_flag(typed) or typed
         print(f"Команда 'использовать' для предмета с эмодзи: {item_emoji}")
 
         # Получаем инвентарь пользователя (нужно использовать await)
@@ -2936,9 +2938,10 @@ async def shop_op(message: Message):
         # Обработка использования предмета
         second_name = item_info [ 'name1' ]
         print(f"Второе название предмета: {second_name}")
-        if "Russian" in str(second_name):
-            country_emoji = item_emoji  # Устанавливаем эмодзи флага как country_emoji
-            await country1(user_id , message , country_emoji)
+        if str(second_name).strip() == "Russian":
+            from bot.funcs.flag_book import normalize_flag
+            catalog_emoji = normalize_flag(item_info.get("emoji") or "") or item_emoji
+            await country1(user_id, message, catalog_emoji, title=item_info.get("name") or "")
             await db.delete_user_inventory1(user_id , item_name)
 
         elif "case5000_15000" in str(second_name):
