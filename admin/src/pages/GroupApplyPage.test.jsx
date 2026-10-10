@@ -68,9 +68,12 @@ describe('GroupApplyPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Модератор' }))
     await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
+    expect(screen.getByText('Кто пишет')).toBeTruthy()
+    expect(screen.getByText('Мут')).toBeTruthy()
+    expect(screen.queryByText(/can_/)).toBeNull()
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Слежу за чатом' } })
-    expect(await screen.findByText('Ещё 6 символов')).toBeTruthy()
+    expect(await screen.findByText('Ещё 36 символов')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Слежу за чатом по вечерам и разбираю споры спокойно.' } })

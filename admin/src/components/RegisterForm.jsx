@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
+import AuthWalk from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -144,6 +145,8 @@ export default function RegisterForm({
                   </div>
                 </div>
               )}
+
+              <AuthWalk />
 
               <label className="auth-field">
                 <span className="auth-label">{WORDS.code}</span>

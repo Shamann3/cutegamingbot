@@ -1,5 +1,5 @@
 import { blocksOf, inlineParts, stepStates } from './guideText.js'
-import { OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
+import { AUTH_STEPS, OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
 
 function assert(cond, message) {
   if (!cond) throw new Error(message)
@@ -44,5 +44,11 @@ for (const [office, ids] of Object.entries(OFFICE_SCREENS)) {
   }
 }
 assert(WORDS.enter === 'Войти' && WORDS.groupKey === 'Ключ кабинета' && WORDS.code === 'Код из приложения', 'подписи, на которые смотрят тесты')
+assert(AUTH_STEPS.length === 4, 'четыре картинки аутентификатора')
+assert(new Set(AUTH_STEPS.map((step) => step.id)).size === 4, 'id картинок не повторяются')
+for (const step of AUTH_STEPS) {
+  assert(step.file.endsWith('.jpg') && step.title && step.line, `${step.id}: файл, заголовок и пояснение`)
+  assert(!/can_/.test(step.line), `${step.id}: пояснение без сырых прав`)
+}
 
 console.log('guideText ok')

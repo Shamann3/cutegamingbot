@@ -6,7 +6,7 @@ export const APPLICATION_QUESTIONS = [
     id: 'experience',
     label: 'Чем занимаешься? Опыт модерации',
     type: 'textarea',
-    placeholder: 'Расскажи о себе и опыте модерации/администрирования',
+    placeholder: 'От 50 до 2000 символов. Чем вы полезны команде.',
     required: true,
   },
   {
@@ -27,7 +27,7 @@ export const APPLICATION_QUESTIONS = [
     id: 'motivation',
     label: 'Почему хочешь к нам?',
     type: 'textarea',
-    placeholder: 'Пара предложений',
+    placeholder: 'От 50 до 2000 символов, если пишете',
     required: false,
   },
 ]

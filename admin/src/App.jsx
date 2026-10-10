@@ -31,10 +31,26 @@ function markBootSplashSeen() {
   } catch { /* ignore */ }
 }
 
+function askedDoor() {
+  try {
+    return new URLSearchParams(window.location.search).get('go') || ''
+  } catch {
+    return ''
+  }
+}
+
+function doorScreen(go) {
+  if (go === 'group-apply') return 'group-apply'
+  if (go === 'group-enter') return readGroupEntry() ? 'group-resume' : 'group-key'
+  if (go === 'staff-register' || go === 'staff-enter') return 'auth'
+  return 'gate'
+}
+
 export default function App() {
-  const [screen, setScreen] = useState(() => (shouldShowBootSplash() ? 'boot' : 'gate'))
+  const door = askedDoor()
+  const [screen, setScreen] = useState(() => (shouldShowBootSplash() ? 'boot' : doorScreen(door)))
   const [displayName, setDisplayName] = useState('admin')
-  const [authMode, setAuthMode] = useState('login')
+  const [authMode, setAuthMode] = useState(door === 'staff-register' ? 'register' : 'login')
   const [groupPortrait, setGroupPortrait] = useState(null)
   const [applyPreview, setApplyPreview] = useState(false)
   const [groupAgain, setGroupAgain] = useState('')
@@ -70,7 +86,10 @@ export default function App() {
 
   const finishBootSplash = useCallback(() => {
     markBootSplashSeen()
-    setScreen('gate')
+    const go = askedDoor()
+    if (go === 'staff-register') setAuthMode('register')
+    if (go === 'staff-enter') setAuthMode('login')
+    setScreen(doorScreen(go))
   }, [])
 
   const handleLogout = useCallback(() => {

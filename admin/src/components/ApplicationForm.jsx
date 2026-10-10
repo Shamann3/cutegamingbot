@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminSelect from './AdminSelect'
 import { APPLICATION_QUESTIONS, PAYOUT_OPTIONS } from '../config/applicationQuestions'
 import { fetchApplicationQuestions } from '../lib/adminClient'
+import { APPLY_MAX, applyHint, applyReady } from '../lib/applyLimits'
 import { playMeme } from '../lib/memeSounds'
 
 // Нормализует вопрос из БД (поле key) или статического списка (поле id) к единому виду
@@ -44,9 +45,11 @@ export default function ApplicationForm({ onSubmit, loading, error, info }) {
   }
 
   const canSubmit = useMemo(() => {
-    return questions.every(
-      (q) => !q.required || (answers[q.id] || '').trim(),
-    )
+    return questions.every((q) => {
+      const value = String(answers[q.id] || '').trim()
+      if (q.type === 'textarea') return q.required ? applyReady(value) : value === '' || applyReady(value)
+      return !q.required || value.length > 0
+    })
   }, [answers, questions])
 
   const handleSubmit = (event) => {
@@ -67,26 +70,31 @@ export default function ApplicationForm({ onSubmit, loading, error, info }) {
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <p className="auth-form-lead">
-        Ответьте коротко. Создатель решит, пускать ли вас.
+        Длинный ответ — от 50 до 2000 символов. Короткий можно написать как есть. Создатель решит, пускать ли вас.
       </p>
 
       {questions.map((q) => (
         <label className="auth-field" key={q.id}>
           <span className="auth-label">{q.label}</span>
           {q.type === 'textarea' ? (
-            <textarea
-              className="auth-input auth-textarea"
-              rows={3}
-              placeholder={q.placeholder || ''}
-              value={answers[q.id] || ''}
-              onChange={(event) => setAnswer(q.id, event.target.value)}
-              required={q.required}
-            />
+            <>
+              <textarea
+                className="auth-input auth-textarea"
+                rows={4}
+                maxLength={APPLY_MAX}
+                placeholder={q.placeholder || 'От 50 до 2000 символов'}
+                value={answers[q.id] || ''}
+                onChange={(event) => setAnswer(q.id, event.target.value)}
+                required={q.required}
+              />
+              <p className="apply-hint">{applyHint(answers[q.id] || '', !q.required)}</p>
+            </>
           ) : (
             <input
               className="auth-input"
               type="text"
               autoComplete="off"
+              maxLength={200}
               placeholder={q.placeholder || ''}
               value={answers[q.id] || ''}
               onChange={(event) => setAnswer(q.id, event.target.value)}

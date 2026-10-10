@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, revealLoginCode, verifyLoginKey } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
+import { AuthWalkHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -120,6 +121,7 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
 
       <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
         <div className="auth-reveal-inner">
+          <AuthWalkHelp />
           <label className="auth-field">
             <span className="auth-label">{WORDS.code}</span>
             <input

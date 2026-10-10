@@ -2,34 +2,80 @@
 
 from __future__ import annotations
 
+import asyncio
+import html
 import logging
 import time
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.filters import Command
-from aiogram.types import MenuButtonWebApp, WebAppInfo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, WebAppInfo
 
+from admin_bot_design import ERROR_NO_PANEL, WAVE, button_rows, emoji_id, screen_text
 from config import ADMIN_BOT_TOKEN, ADMIN_ENABLED, ADMIN_WEBAPP_URL, admin_user_ids
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("cute-farm.admin-bot")
 
 
-def _webapp_url_fresh(url: str) -> str:
+def _webapp_url_fresh(url: str, door: str = "") -> str:
     """Добавляет метку версии (?v=timestamp) к URL панели.
 
     Telegram WebView агрессивно кэширует мини-приложение по URL. Свежая метка
     заставляет клиент загрузить актуальный код при каждом открытии — иначе на
-    телефоне могла жить старая версия панели, и правки не подхватывались."""
+    телефоне могла жить старая версия панели, и правки не подхватывались.
+    door — какой экран открыть: заявка группы, вход в кабинет, заявка сотрудника."""
     try:
         parts = urlparse(url)
         query = dict(parse_qsl(parts.query))
         query["v"] = str(int(time.time()))
+        if door:
+            query["go"] = door
         return urlunparse(parts._replace(query=urlencode(query)))
     except Exception:
         return url
+
+
+def _screen_name(user_id: int, asked: str) -> str:
+    if asked == "start" and _is_admin(user_id):
+        return "start_known"
+    if asked == "start":
+        return "start"
+    return asked if asked in ("apply", "start_known") else "start"
+
+
+def _markup(name: str) -> InlineKeyboardMarkup:
+    rows = []
+    for row in button_rows(name):
+        built = []
+        for btn in row:
+            door = str(btn.get("webapp") or "")
+            icon = emoji_id(btn.get("icon") or "")
+            if door:
+                if not ADMIN_WEBAPP_URL:
+                    continue
+                kwargs = {
+                    "text": btn["text"],
+                    "web_app": WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL, door)),
+                }
+            else:
+                kwargs = {"text": btn["text"], "callback_data": "eps:" + str(btn.get("go") or "start")}
+            if icon:
+                kwargs["icon_custom_emoji_id"] = icon
+            built.append(InlineKeyboardButton(**kwargs))
+        if built:
+            rows.append(built)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _start_body(name: str, user_name: str) -> str:
+    safe = html.escape(user_name or "admin").replace("{", "").replace("}", "")
+    text = screen_text(name, wave=WAVE, name=safe)
+    if not ADMIN_WEBAPP_URL:
+        text += "\n\n" + ERROR_NO_PANEL
+    return text
 
 
 def _is_admin(user_id: int) -> bool:
@@ -86,36 +132,28 @@ async def run_admin_bot() -> None:
     async def cmd_start(message: types.Message):
         user_id = message.from_user.id
         name = message.from_user.first_name or "admin"
-        if _is_admin(user_id):
-            text = f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
-        else:
-            # Кандидаты/новый персонал: доступ внутри панели проверяется по ключу.
-            text = (
-                f"<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Добро пожаловать, {name}.\nЭто бот модерации всей экосистемой Cute.</b>\n<b>Откройте панель и пройдите регистрацию по выданному ключу.</b>\n<blockquote><b>Виво-Эпсилон!</b></blockquote>"
-            )
+        screen = _screen_name(user_id, "start")
+        await message.answer(
+            _start_body(screen, name),
+            reply_markup=_markup(screen),
+            parse_mode="HTML",
+        )
 
-        if ADMIN_WEBAPP_URL:
-            await message.answer(
-                text,
-                reply_markup=types.InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            types.InlineKeyboardButton(
-                                text="Открыть панель",
-                                web_app=WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL)),
-                                icon_custom_emoji_id="5361948635317680832",
-                            )
-                        ]
-                    ]
-                ),
+    @dp.callback_query(F.data.startswith("eps:"))
+    async def on_screen(query: types.CallbackQuery):
+        asked = (query.data or "").split(":", 1)[1]
+        user = query.from_user
+        name = (user.first_name if user else "") or "admin"
+        screen = _screen_name(user.id if user else 0, "start" if asked == "start" else asked)
+        await query.answer()
+        try:
+            await query.message.edit_text(
+                _start_body(screen, name),
+                reply_markup=_markup(screen),
                 parse_mode="HTML",
             )
-        else:
-            #ошибка 512910 ADMIN_WEBAPP_URL не задан в .env
-            await message.answer(
-                text + "\n\n<b>Ошибка <code>#512910</code> ( обратитесь к сотрудникам эпсилона )</b> ",
-                parse_mode="HTML",
-            )
+        except Exception:
+            logger.debug("admin start screen edit skipped", exc_info=True)
 
     await run_polling(dp, bot, label="admin-bot")
 

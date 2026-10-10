@@ -1199,12 +1199,29 @@ async def admin_submit_application(
     if payout_type not in PAYOUT_TYPES:
         raise HTTPException(status_code=400, detail="Неверный способ выплаты")
 
-    # Чистим анкету: только непустые строковые ответы, до 2000 символов
-    answers = {
-        str(k)[:64]: str(v).strip()[:2000]
-        for k, v in (body.answers or {}).items()
-        if str(v).strip()
-    }
+    # Длинный ответ анкеты — от 50 до 2000 символов. Короткое поле — до 200.
+    questions = await list_application_questions(enabled_only=True)
+    kinds = {str(item.get("key") or ""): str(item.get("type") or "text") for item in questions}
+    answers = {}
+    for key, raw in (body.answers or {}).items():
+        name = str(key)[:64]
+        value = str(raw).strip()
+        if not value:
+            continue
+        if name in kinds:
+            essay = kinds[name] == "textarea"
+        else:
+            essay = name in {"experience", "motivation"}
+        if essay and (len(value) < 50 or len(value) > 2000):
+            raise HTTPException(status_code=400, detail="Развёрнутый ответ — от 50 до 2000 символов")
+        if not essay and len(value) > 200:
+            raise HTTPException(status_code=400, detail="Короткий ответ — не длиннее 200 символов")
+        answers[name] = value
+    missing = [item.get("label") or item.get("key") for item in questions if item.get("required") and str(item.get("key") or "") not in answers]
+    if missing:
+        raise HTTPException(status_code=400, detail="Заполните: " + ", ".join(str(item) for item in missing))
+    if not questions and not any(len(value) >= 50 for value in answers.values()):
+        raise HTTPException(status_code=400, detail="Развёрнутый ответ — от 50 до 2000 символов")
 
     tg_user = getattr(request.state, "telegram_user", {}) or {}
     created = await create_application(

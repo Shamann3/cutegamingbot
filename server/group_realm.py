@@ -1034,8 +1034,12 @@ async def _issue_key(user_id: int) -> str:
     return plain
 
 
-def _about_word_count(text: str) -> int:
-    return len([part for part in (text or "").split() if part])
+ABOUT_MIN_CHARS = 50
+ABOUT_MAX_CHARS = 2000
+
+
+def _about_length(text: str) -> int:
+    return len((text or "").strip())
 
 
 def _approval_key_message(group_title: str, post_title: str, entry_key: str) -> str:
@@ -1583,7 +1587,7 @@ class PrefixBody(BaseModel):
 class ApplyBody(BaseModel):
     chat_id: int
     position_id: int = Field(ge=1)
-    body: str = Field(min_length=20, max_length=8000)
+    body: str = Field(min_length=1, max_length=2000)
     rules_read: bool
     rules_ids: list[int] = Field(default_factory=list, max_length=80)
     model_config = {"extra": "forbid"}
@@ -1714,8 +1718,9 @@ async def group_apply(body: ApplyBody, user_id: int = Depends(get_any_telegram_u
     await ensure_tables()
     if not body.rules_read:
         raise HTTPException(status_code=400, detail="Сначала отметьте, что вы знаете правила")
-    if _about_word_count(body.body) > 70:
-        raise HTTPException(status_code=400, detail="Описание о себе — не больше 70 слов")
+    about = _about_length(body.body)
+    if about < ABOUT_MIN_CHARS or about > ABOUT_MAX_CHARS:
+        raise HTTPException(status_code=400, detail="О себе — от 50 до 2000 символов")
     pos = await db.pool.fetchrow(
         """
         SELECT p.id, p.rank, p.accepting, p.kind, g.is_official

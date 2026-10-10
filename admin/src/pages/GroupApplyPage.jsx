@@ -5,6 +5,8 @@ import ChoiceSheet from '../components/ChoiceSheet'
 import EntryFrame from '../components/EntryFrame'
 import EntryGuide from '../components/EntryGuide'
 import { SCREENS } from '../entry_design'
+import { APPLY_MAX, APPLY_MIN, applyHint, applyLength, applyReady, symbolsWord } from '../lib/applyLimits'
+import { PAGE_RIGHTS, PROJECT_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
 import { playMeme } from '../lib/memeSounds'
 
 const RULES_CHANNEL = 'https://t.me/CuteRules'
@@ -26,33 +28,48 @@ const PREVIEW_POSITIONS = [
   },
 ]
 
-const RIGHT_LABEL = {
-  view_members: 'участники',
-  view_archive: 'архив',
-  view_analytics: 'цифры',
-  punish_mute: 'мут',
-  punish_ban: 'бан',
-  punish_kick: 'кик',
-  punish_warn: 'варн',
-  punish_voice: 'голос',
-  manage_positions: 'должности',
-}
+const RIGHT_GROUPS = [
+  { title: 'В панели', items: PAGE_RIGHTS, chips: false },
+  { title: 'Наказания в этом чате', items: PUNISH_RIGHTS, chips: false },
+  { title: 'На весь проект', items: PROJECT_RIGHTS, chips: false },
+  { title: 'В Telegram', items: TELEGRAM_ADMIN_RIGHTS, chips: true },
+]
 
-const MIN_BODY = 20
-const MAX_WORDS = 70
-
-function countWords(value) {
-  const clean = String(value || '').trim()
-  if (!clean) return 0
-  return clean.split(/\s+/).length
-}
-
-function wordsLabel(count) {
-  const mod10 = count % 10
-  const mod100 = count % 100
-  if (mod10 === 1 && mod100 !== 11) return 'слово'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'слова'
-  return 'слов'
+function RightsList({ rights }) {
+  const have = new Set(rights || [])
+  const groups = RIGHT_GROUPS
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => have.has(item.id)),
+    }))
+    .filter((group) => group.items.length)
+  if (!groups.length) return null
+  return (
+    <div className="apply-rights">
+      <p className="apply-rights-title">Что можно на этой должности</p>
+      {groups.map((group) => (
+        <div key={group.title}>
+          <p className="apply-rights-kind">{group.title}</p>
+          {group.chips ? (
+            <ul className="apply-rights-chips">
+              {group.items.map((item) => (
+                <li key={item.id} title={item.hint}>{item.label}</li>
+              ))}
+            </ul>
+          ) : (
+            <ul>
+              {group.items.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.label}</strong>
+                  <span>{item.hint}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function groupHandle(username) {
@@ -80,14 +97,7 @@ function HiddenKey({ value }) {
 }
 
 function symbolsLeft(count) {
-  const mod10 = count % 10
-  const mod100 = count % 100
-  const word = mod10 === 1 && mod100 !== 11
-    ? 'символ'
-    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-      ? 'символа'
-      : 'символов'
-  return `Ещё ${count} ${word}`
+  return `Ещё ${count} ${symbolsWord(count)}`
 }
 
 function sendFailure(err) {
@@ -172,9 +182,9 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   }, [preview, loadOpen])
 
   const text = body.trim()
-  const words = countWords(text)
-  const tooMany = words > MAX_WORDS
-  const enough = text.length >= MIN_BODY && !tooMany
+  const length = applyLength(text)
+  const tooMany = length > APPLY_MAX
+  const enough = applyReady(text)
   const canSend = rulesKnown && Boolean(chatId) && Boolean(positionId) && enough
 
   useLayoutEffect(() => {
@@ -225,12 +235,12 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       return
     }
     if (tooMany) {
-      const over = words - MAX_WORDS
-      setError(`Слишком длинно: уберите ${over} ${wordsLabel(over)}. Можно не больше ${MAX_WORDS} слов.`)
+      const over = length - APPLY_MAX
+      setError(`Слишком длинно: уберите ${over} ${symbolsWord(over)}. Можно не больше ${APPLY_MAX} символов.`)
       return
     }
     if (!enough) {
-      setError(symbolsLeft(MIN_BODY - text.length))
+      setError(symbolsLeft(APPLY_MIN - text.length))
       return
     }
     if (!rulesKnown) {
@@ -402,29 +412,20 @@ export default function GroupApplyPage({ onBack, preview = false }) {
                 {chosen?.held && (
                   <p className="realm-copy">Эта должность уже ваша. Заявка нужна, чтобы создатель выдал ключ.</p>
                 )}
-                {chosen && (
-                  <p className="realm-copy">
-                    Права: {(chosen.rights || []).map((right) => RIGHT_LABEL[right] || right).join(', ')}
-                  </p>
-                )}
+                {chosen && <RightsList rights={chosen.rights} />}
                 <label className="auth-field">
                   <span className="auth-form-lead">Напишите, чем вы полезны для группы, которую вы выбрали</span>
                   <textarea
                     className="auth-input"
                     value={body}
                     onChange={(e) => setBody(e.target.value)}
-                    rows={4}
-                    placeholder="До 70 слов о себе"
+                    rows={5}
+                    maxLength={APPLY_MAX}
+                    placeholder="От 50 до 2000 символов"
                   />
                 </label>
                 <p className={`apply-hint${tooMany ? ' is-over' : ''}`}>
-                  {tooMany
-                    ? `Слишком длинно: ${words} из ${MAX_WORDS} слов. Уберите ${words - MAX_WORDS} ${wordsLabel(words - MAX_WORDS)}.`
-                    : words === 0
-                      ? `До ${MAX_WORDS} слов о себе`
-                      : text.length < MIN_BODY
-                        ? `${symbolsLeft(MIN_BODY - text.length)}. Не больше ${MAX_WORDS} слов.`
-                        : `${words} из ${MAX_WORDS} слов`}
+                  {applyHint(text)}
                 </p>
               </div>
             </div>
