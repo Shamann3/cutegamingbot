@@ -26,7 +26,7 @@ def _webapp_url_fresh(url: str, door: str = "") -> str:
     Telegram WebView агрессивно кэширует мини-приложение по URL. Свежая метка
     заставляет клиент загрузить актуальный код при каждом открытии — иначе на
     телефоне могла жить старая версия панели, и правки не подхватывались.
-    door — какой экран открыть: заявка группы, вход в кабинет, заявка сотрудника."""
+    door — пусто, если открывается сама панель, без кабинета."""
     try:
         parts = urlparse(url)
         query = dict(parse_qsl(parts.query))
@@ -56,9 +56,13 @@ def _markup(name: str) -> InlineKeyboardMarkup:
             if door:
                 if not ADMIN_WEBAPP_URL:
                     continue
+                # panel — сама панель, дверь человек выбирает уже внутри.
                 kwargs = {
                     "text": btn["text"],
-                    "web_app": WebAppInfo(url=_webapp_url_fresh(ADMIN_WEBAPP_URL, door)),
+                    "web_app": WebAppInfo(url=_webapp_url_fresh(
+                        ADMIN_WEBAPP_URL,
+                        "" if door == "panel" else door,
+                    )),
                 }
             else:
                 kwargs = {"text": btn["text"], "callback_data": "eps:" + str(btn.get("go") or "start")}
