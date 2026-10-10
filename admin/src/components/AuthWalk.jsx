@@ -178,7 +178,9 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
       {secret && <p className="auth-key-kicker">{WORDS.appKeyHead}</p>}
       {secret && (
         open ? (
-          <code className="auth-setup-secret is-open">{secret}</code>
+          <button type="button" className="auth-setup-secret is-open" onClick={copy}>
+            {secret}
+          </button>
         ) : (
           <button
             type="button"
