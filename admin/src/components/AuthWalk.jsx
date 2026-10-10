@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, WORDS } from '../entry_design'
 
@@ -222,11 +222,14 @@ export default function AuthWalk({ onDone }) {
           >
             <img src={stepSrc(step.file)} alt="" decoding="async" fetchPriority="high" draggable={false} />
           </button>
-          <p className="auth-path-line" aria-live="polite">
+          <div className="auth-path-line" aria-live="polite">
             <span className="auth-shot-num" aria-hidden="true">{index + 1}</span>
-            {step.line}
-          </p>
-          {step.id === 'store' && <StoreLinks />}
+            <span className="design-lines">
+              {String(step.line).split('\n').map((line) => line.trim()).filter(Boolean).map((line, lineIndex) => (
+                <span key={lineIndex} className="design-line">{line}</span>
+              ))}
+            </span>
+          </div>
         </div>
       </div>
       <div className="auth-path-dots" role="tablist" aria-label={WORDS.walkTitle}>
@@ -262,6 +265,87 @@ export default function AuthWalk({ onDone }) {
         <WalkZoom src={stepSrc(zoomStep.file)} title={zoomStep.line} onClose={() => setZoom(-1)} />
       )}
     </section>
+  )
+}
+
+/** Первый вход: маленькая кнопка открывает QR, магазин и картинки целиком. */
+export function EntryHelp({ setup = null, expectQr = false }) {
+  const titleId = useId()
+  const [open, setOpen] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const close = useCallback(() => {
+    setLeaving(true)
+    window.setTimeout(() => {
+      setOpen(false)
+      setLeaving(false)
+    }, motionOff() ? 0 : 220)
+  }, [])
+
+  useEffect(() => {
+    if (!open || leaving) return undefined
+    const onKey = (event) => {
+      if (event.key === 'Escape') close()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, leaving, close])
+
+  const copySecret = () => {
+    const value = setup?.totpSecret || ''
+    if (!value) return
+    navigator.clipboard?.writeText(value).then(() => {
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1600)
+    }).catch(() => {})
+  }
+
+  return (
+    <>
+      <button type="button" className="auth-ask" onClick={() => setOpen(true)}>
+        {WORDS.walkAsk}
+      </button>
+      {open && createPortal(
+        <div className={`choice-layer entry-guide-layer auth-walk-layer${leaving ? ' is-leaving' : ''}`} onClick={close}>
+          <div className="choice-dim" />
+          <div className="choice-sheet-motion">
+            <div
+              className="choice-sheet entry-guide-sheet auth-help-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={titleId}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p id={titleId} className="choice-sheet-title">{WORDS.walkAsk}</p>
+              <div className="entry-guide-body auth-help">
+                {setup?.qrDataUrl ? (
+                  <figure className="auth-help-qr">
+                    <img src={setup.qrDataUrl} alt={WORDS.qrAlt} />
+                    <figcaption>{WORDS.walkQrShot}</figcaption>
+                  </figure>
+                ) : expectQr ? (
+                  <p className="auth-help-wait">{WORDS.walkQrWait}</p>
+                ) : null}
+                {setup?.totpSecret && (
+                  <button
+                    type="button"
+                    className="auth-path-next"
+                    data-setup-secret={setup.totpSecret}
+                    onClick={copySecret}
+                  >
+                    {copied ? WORDS.copied : WORDS.copyKey}
+                  </button>
+                )}
+                <StoreLinks />
+                <AuthWalk onDone={close} />
+              </div>
+              <button type="button" className="choice-close" onClick={close}>{WORDS.close}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 

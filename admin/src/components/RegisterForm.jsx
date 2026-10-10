@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import AuthWalk, { AuthRescue } from './AuthWalk'
+import { AuthRescue, EntryHelp } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -100,6 +100,7 @@ export default function RegisterForm({
   return (
     <form className="auth-form auth-step" onSubmit={handleFormSubmit}>
       <EntryGuide screen={SCREENS.staffRegister} at={setup ? (totp ? 'code' : 'app') : 'key'} />
+      <EntryHelp setup={setup} expectQr={!setup} />
 
       <KeyField
         label={WORDS.registerKey}
@@ -148,8 +149,6 @@ export default function RegisterForm({
                   </div>
                 </div>
               )}
-
-              <AuthWalk />
 
               <label className="auth-field">
                 <span className="auth-label">{WORDS.code}</span>

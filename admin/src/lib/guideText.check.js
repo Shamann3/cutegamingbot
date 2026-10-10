@@ -48,11 +48,11 @@ assert(AUTH_STEPS.length === 4, 'четыре картинки аутентиф�
 assert(new Set(AUTH_STEPS.map((step) => step.id)).size === 4, 'id картинок не повторяются')
 for (const step of AUTH_STEPS) {
   assert(step.file.endsWith('.jpg') && step.title && step.line, `${step.id}: файл, заголовок и пояснение`)
-  assert(step.line.length < 120, `${step.id}: подпись короткая, картинка говорит сама`)
+  assert(step.line.split('\n').every((piece) => piece.trim()), `${step.id}: пустая строка после переноса`)
   assert(!/can_/.test(step.line), `${step.id}: пояснение без сырых прав`)
 }
-assert(SCREENS.staffRegister.visual && SCREENS.staffLogin.visual && SCREENS.groupKey.visual, '«Подробнее» на входе открывает картинки')
-assert(!SCREENS.groupApply.visual, 'заявка в группу остаётся текстом')
+assert(AUTH_STEPS.find((step) => step.id === 'details').line.includes('\n'), 'перенос в подписи четвёртого кадра')
+assert(WORDS.walkAsk === 'Я не знаю как зайти', 'кнопка первого входа')
 assert(AUTH_STORES.length === 2, 'два магазина')
 assert(AUTH_STORES.every((store) => store.href.startsWith('https://')), 'магазины — прямые ссылки')
 assert(AUTH_FIXES.length >= 6, 'варианты, если не получается')

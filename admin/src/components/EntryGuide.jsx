@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { OFFICE_SCREENS, SCREENS, WORDS } from '../entry_design'
 import { blocksOf, inlineParts, stepStates } from '../lib/guideText'
-import AuthWalk, { preloadAuthShots } from './AuthWalk'
 
 const LEAVE_MS = 220
 // Запоздалый click того же касания не должен закрыть только что открытый лист.
@@ -22,6 +21,19 @@ function part(node, key) {
 
 function Rich({ text }) {
   return <>{inlineParts(text).map(part)}</>
+}
+
+/** Текст до \\n — отдельная строка, со своим воздухом. */
+function DesignLines({ text }) {
+  const lines = String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
+  if (!lines.length) return null
+  return (
+    <span className="design-lines">
+      {lines.map((line, index) => (
+        <span key={index} className="design-line"><Rich text={line} /></span>
+      ))}
+    </span>
+  )
 }
 
 function GuideBody({ text }) {
@@ -46,17 +58,14 @@ function GuideBody({ text }) {
     return (
       <p key={index} className="entry-guide-p">
         {block.lines.map((line, i) => (
-          <Fragment key={i}>
-            {i > 0 && <br />}
-            <Rich text={line} />
-          </Fragment>
+          <span key={i} className="design-line"><Rich text={line} /></span>
         ))}
       </p>
     )
   })
 }
 
-function GuideSheet({ open, title, text, visual = false, onClose, backTo }) {
+function GuideSheet({ open, title, text, onClose, backTo }) {
   const titleId = useId()
   const sheetRef = useRef(null)
   const [mounted, setMounted] = useState(open)
@@ -103,7 +112,7 @@ function GuideSheet({ open, title, text, visual = false, onClose, backTo }) {
       <div className="choice-sheet-motion">
         <div
           ref={sheetRef}
-          className={`choice-sheet entry-guide-sheet${visual ? ' is-visual' : ''}`}
+          className="choice-sheet entry-guide-sheet"
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
@@ -112,7 +121,7 @@ function GuideSheet({ open, title, text, visual = false, onClose, backTo }) {
         >
           <p id={titleId} className="choice-sheet-title">{title}</p>
           <div className="entry-guide-body">
-            {visual ? <AuthWalk onDone={onClose} /> : <GuideBody text={text} />}
+            <GuideBody text={text} />
           </div>
           <button type="button" className="choice-close" onClick={onClose}>
             {WORDS.close}
@@ -131,9 +140,6 @@ function GuideSheet({ open, title, text, visual = false, onClose, backTo }) {
 export default function EntryGuide({ screen, at, onPick = null }) {
   const [open, setOpen] = useState(false)
   const moreRef = useRef(null)
-  useEffect(() => {
-    if (screen?.visual) preloadAuthShots()
-  }, [screen])
   const openedAt = useRef(0)
   const show = useCallback(() => {
     openedAt.current = Date.now()
@@ -175,7 +181,7 @@ export default function EntryGuide({ screen, at, onPick = null }) {
                   <span className="entry-guide-name">{step.title}</span>
                   <span className="entry-guide-line-slot" aria-hidden={state === 'now' ? undefined : true}>
                     <span className="entry-guide-line">
-                      <span><Rich text={step.line} /></span>
+                      <span><DesignLines text={step.line} /></span>
                     </span>
                   </span>
                 </span>
@@ -186,9 +192,8 @@ export default function EntryGuide({ screen, at, onPick = null }) {
       </ol>
       <GuideSheet
         open={open}
-        title={screen.visual ? WORDS.walkTitle : screen.title}
+        title={screen.title}
         text={screen.more}
-        visual={Boolean(screen.visual)}
         backTo={moreRef}
         onClose={hide}
       />
