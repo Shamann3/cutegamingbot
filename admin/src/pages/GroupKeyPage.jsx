@@ -4,7 +4,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
-import { AppKeyCard, AuthRescue, EntryHelp } from '../components/AuthWalk'
+import { AppKeyCard, AuthRescue, CodeField } from '../components/AuthWalk'
 import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
 import { SCREENS, WORDS } from '../entry_design'
@@ -177,7 +177,6 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
     >
       <form className="auth-form auth-step" onSubmit={submit}>
         <EntryGuide screen={SCREENS.groupKey} at={!verified ? 'key' : needCode && setup && !totp ? 'app' : 'code'} />
-        <EntryHelp setup={setup} expectQr={!setup} />
 
         <KeyField
           label={WORDS.groupKey}
@@ -215,23 +214,14 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
               </>
             )}
             {needCode && (
-              <label className="auth-field">
-                <span className="auth-label">{WORDS.code}</span>
-                <input
-                  className="auth-input auth-input-code"
-                  name="totp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={totp}
-                  onChange={(event) => {
-                    setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
-                    setError('')
-                  }}
-                  disabled={busy}
-                />
-              </label>
+              <CodeField
+                value={totp}
+                disabled={busy}
+                onChange={(event) => {
+                  setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
+                  setError('')
+                }}
+              />
             )}
             <button
               type="submit"

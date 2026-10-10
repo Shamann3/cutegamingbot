@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { hasTelegramInitData, revealLoginCode, verifyLoginKey } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AppKeyCard, AuthRescue, EntryHelp } from './AuthWalk'
+import { AppKeyCard, AuthRescue, CodeField } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -102,7 +102,6 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
   return (
     <form className="auth-form auth-step" onSubmit={handleSubmit}>
       <EntryGuide screen={SCREENS.staffLogin} at={verified ? 'code' : 'key'} />
-      <EntryHelp setup={setup} expectQr={!setup} />
 
       <KeyField
         label={WORDS.loginKey}
@@ -129,24 +128,15 @@ export default function LoginForm({ onSubmit, loading, error, info }) {
       <div className={`auth-reveal-slot${verified ? ' is-open' : ''}`} aria-hidden={verified ? undefined : true}>
         <div className="auth-reveal-inner">
           {setup && <AppKeyCard setup={setup} />}
-          <label className="auth-field">
-            <span className="auth-label">{WORDS.code}</span>
-            <input
-              className="auth-input auth-input-code"
-              name="totp"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="000000"
-              maxLength={6}
-              tabIndex={verified ? 0 : -1}
-              value={totp}
-              onChange={(event) => {
-                setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
-                setLocalError('')
-              }}
-              disabled={working}
-            />
-          </label>
+          <CodeField
+            value={totp}
+            tabIndex={verified ? 0 : -1}
+            disabled={working}
+            onChange={(event) => {
+              setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
+              setLocalError('')
+            }}
+          />
 
           {info && <p className="auth-message auth-message-info">{info}</p>}
           {verified && shownError && (

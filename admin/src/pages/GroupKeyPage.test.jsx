@@ -88,6 +88,15 @@ describe('GroupKeyPage', () => {
     const secret = screen.getByText('APPSECRETKEY')
     const copy = screen.getByRole('button', { name: 'Нажмите чтобы скопировать ключ' })
     expect(secret.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Что мне с этим делать дальше?' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Я не знаю как зайти' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Что мне с этим делать дальше?' }))
+    expect(screen.getByText('Скачайте приложение')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Google Play' })).toBeTruthy()
+    expect(screen.queryByText('Нажмите плюс')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Дальше' }))
+    expect(screen.getByText('Скопируйте ключ')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Где мне найти эти 6 цифр?' })).toBeTruthy()
   })
 
   it('после ключа просит код из приложения', async () => {
@@ -100,6 +109,11 @@ describe('GroupKeyPage', () => {
     await vi.advanceTimersByTimeAsync(800)
 
     const code = screen.getByLabelText('Код из приложения')
+    expect(document.querySelectorAll('.otp-cell')).toHaveLength(6)
+    expect(document.querySelector('.auth-code-ask').parentElement.contains(code)).toBe(true)
+    expect(code.parentElement.className).not.toContain('auth-side-ask')
+    fireEvent.click(screen.getByRole('button', { name: 'Где мне найти эти 6 цифр?' }))
+    expect(screen.getByText(/Шесть цифр стоят в строке кабинета/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Войти' }).disabled).toBe(true)
     fireEvent.change(code, { target: { value: '123456' } })
     fireEvent.click(screen.getByRole('button', { name: 'Войти' }))

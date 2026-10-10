@@ -1,5 +1,5 @@
 import { blocksOf, inlineParts, stepStates } from './guideText.js'
-import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
+import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, KEY_AFTER, OFFICE_SCREENS, SCREENS, WORDS, t } from '../entry_design.js'
 
 function assert(cond, message) {
   if (!cond) throw new Error(message)
@@ -52,7 +52,12 @@ for (const step of AUTH_STEPS) {
   assert(!/can_/.test(step.line), `${step.id}: пояснение без сырых прав`)
 }
 assert(AUTH_STEPS.find((step) => step.id === 'details').line.includes('\n'), 'перенос в подписи четвёртого кадра')
-assert(WORDS.walkAsk === 'Я не знаю как зайти', 'кнопка первого входа')
+assert(WORDS.appKeyNext === 'Что мне с этим делать дальше?', 'подсказка после ключа')
+assert(KEY_AFTER[0]?.id === 'store' && KEY_AFTER[0].stores, 'первая стадия — скачать приложение')
+assert(WORDS.codeFind === 'Где мне найти эти 6 цифр?', 'подсказка у шести цифр')
+assert(WORDS.codeStage1 && WORDS.codeStage2, 'стадии шести цифр')
+assert(KEY_AFTER.length >= 3, 'после ключа есть путь')
+assert(KEY_AFTER.filter((step) => step.step).every((step) => AUTH_STEPS.some((shot) => shot.id === step.step)), 'шаги после ключа ссылаются на картинки')
 assert(AUTH_STORES.length === 2, 'два магазина')
 assert(AUTH_STORES.every((store) => store.href.startsWith('https://')), 'магазины — прямые ссылки')
 assert(AUTH_FIXES.length >= 6, 'варианты, если не получается')

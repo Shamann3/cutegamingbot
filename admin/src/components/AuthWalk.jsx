@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, WORDS } from '../entry_design'
+import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, KEY_AFTER, WORDS } from '../entry_design'
 
 function stepSrc(file) {
   const base = import.meta.env.BASE_URL || '/'
@@ -115,6 +115,51 @@ export function AppKeyCard({ setup }) {
 }
 
 const VEIL_GLYPHS = '█▓▒░#@$%&*+/='
+const VEILS = ['scan', 'rain', 'shutter']
+const SAMPLE_CODES = ['482193', '705614', '193850']
+
+function useVeilCycle(active) {
+  const nodeRef = useRef(null)
+  const [veil, setVeil] = useState(() => VEILS[Math.floor(Math.random() * VEILS.length)])
+
+  useEffect(() => {
+    if (!active || motionOff()) return undefined
+    const node = nodeRef.current
+    let timer = 0
+    let seen = true
+    const wait = document.body.classList.contains('perf-light') ? 7200 : 4200
+    const stop = () => window.clearInterval(timer)
+    const arm = () => {
+      stop()
+      if (!seen || document.hidden) return
+      timer = window.setInterval(() => {
+        setVeil((current) => VEILS[(VEILS.indexOf(current) + 1) % VEILS.length])
+      }, wait)
+    }
+    let observer
+    if (node && typeof IntersectionObserver === 'function') {
+      observer = new IntersectionObserver(([entry]) => {
+        seen = Boolean(entry?.isIntersecting)
+        if (seen) arm()
+        else stop()
+      })
+      observer.observe(node)
+    }
+    const onVis = () => {
+      if (document.hidden) stop()
+      else if (seen) arm()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    arm()
+    return () => {
+      stop()
+      observer?.disconnect()
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [active])
+
+  return [veil, nodeRef]
+}
 
 function veilText(secret) {
   const count = Math.max(8, String(secret || '').length)
@@ -123,14 +168,283 @@ function veilText(secret) {
   return text
 }
 
+function StageRail({ count, index, onPick, label }) {
+  return (
+    <div className="auth-stage-rail" role="tablist" aria-label={label}>
+      {Array.from({ length: count }, (_, dot) => (
+        <button
+          key={dot}
+          type="button"
+          className={`auth-stage-dot${dot === index ? ' is-on' : ''}${dot < index ? ' is-done' : ''}`}
+          aria-label={`${dot + 1} из ${count}`}
+          aria-current={dot === index ? 'step' : undefined}
+          onClick={() => onPick(dot)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function StageNav({ index, last, onPrev, onNext, doneLabel }) {
+  return (
+    <div className="auth-stage-nav">
+      <button type="button" className="auth-stage-back" disabled={index === 0} onClick={onPrev}>
+        {WORDS.walkBack}
+      </button>
+      <button type="button" className="auth-stage-next" onClick={onNext}>
+        {last ? doneLabel : WORDS.walkNext}
+      </button>
+    </div>
+  )
+}
+
+function useStage(count) {
+  const [index, setIndex] = useState(0)
+  const [dir, setDir] = useState(1)
+  const [turned, setTurned] = useState(false)
+  const go = (next) => {
+    const clamped = Math.max(0, Math.min(count - 1, next))
+    if (clamped === index) return clamped
+    setDir(clamped > index ? 1 : -1)
+    setTurned(true)
+    setIndex(clamped)
+    return clamped
+  }
+  return { index, dir, turned, go }
+}
+
+function KeyAfter({ onDone }) {
+  const [zoom, setZoom] = useState(-1)
+  const stage = useStage(KEY_AFTER.length)
+  const step = KEY_AFTER[stage.index]
+  const shot = step.step ? AUTH_STEPS.find((item) => item.id === step.step) : null
+  const zoomStep = zoom >= 0 ? AUTH_STEPS[zoom] : null
+  const last = stage.index === KEY_AFTER.length - 1
+
+  useEffect(() => {
+    const nextId = KEY_AFTER[stage.index + 1]?.step
+    const files = [
+      shot?.file,
+      nextId ? AUTH_STEPS.find((item) => item.id === nextId)?.file : '',
+    ].filter(Boolean)
+    for (const file of files) {
+      const img = new Image()
+      img.src = stepSrc(file)
+    }
+  }, [shot, stage.index])
+
+  return (
+    <div className="auth-stage">
+      <StageRail count={KEY_AFTER.length} index={stage.index} onPick={stage.go} label={WORDS.appKeyNext} />
+      <div
+        key={step.id}
+        className={`auth-stage-view${stage.turned ? ' is-turn' : ''}`}
+        style={{ '--stage-x': stage.dir > 0 ? '14px' : '-14px' }}
+      >
+        <p className="auth-after-title">
+          <span className="auth-shot-num" aria-hidden="true">{stage.index + 1}</span>
+          {step.title}
+        </p>
+        <p className="auth-after-line">{step.line}</p>
+        {shot && (
+          <button
+            type="button"
+            className={`auth-path-frame auth-after-shot${shot.id === 'plus' ? ' is-mark' : ''}`}
+            aria-label={`${WORDS.walkTap}: ${shot.title}`}
+            onClick={() => setZoom(AUTH_STEPS.indexOf(shot))}
+          >
+            <img src={stepSrc(shot.file)} alt="" decoding="async" draggable={false} />
+          </button>
+        )}
+        {step.stores && <StoreLinks />}
+      </div>
+      <StageNav
+        index={stage.index}
+        last={last}
+        onPrev={() => stage.go(stage.index - 1)}
+        onNext={() => (last ? onDone() : stage.go(stage.index + 1))}
+        doneLabel={WORDS.walkDone}
+      />
+      {zoomStep && (
+        <WalkZoom src={stepSrc(zoomStep.file)} title={zoomStep.title} onClose={() => setZoom(-1)} />
+      )}
+    </div>
+  )
+}
+
+function DigitSample() {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    if (motionOff()) return undefined
+    const wait = document.body.classList.contains('perf-light') ? 3200 : 1800
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % SAMPLE_CODES.length)
+    }, wait)
+    return () => window.clearInterval(timer)
+  }, [])
+  const digits = SAMPLE_CODES[index]
+  return (
+    <div className="auth-digit-card" aria-hidden="true">
+      <span className="auth-digit-app">Google Authenticator</span>
+      <span className="auth-digit-row">
+        <span className="auth-digit-name">Epsilon</span>
+        <span key={digits} className="auth-digit-code">{`${digits.slice(0, 3)} ${digits.slice(3)}`}</span>
+      </span>
+      <span className="auth-digit-seek" />
+      <span className="auth-digit-note">{WORDS.codeSample}</span>
+    </div>
+  )
+}
+
+function placeInCode(event, value) {
+  const cells = event.currentTarget.parentElement?.querySelectorAll('.otp-cell') || []
+  let index = String(value || '').length
+  cells.forEach((cell, cellIndex) => {
+    if (event.clientX >= cell.getBoundingClientRect().left) index = cellIndex
+  })
+  return Math.min(index, String(value || '').length)
+}
+
+export function CodeField({
+  value,
+  onChange,
+  disabled = false,
+  tabIndex,
+  submitLabel = WORDS.enter,
+}) {
+  const [open, setOpen] = useState(false)
+  const [spot, setSpot] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [caret, setCaret] = useState(0)
+  const spotTimer = useRef(0)
+  const inputRef = useRef(null)
+  const stage = useStage(2)
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
+
+  useEffect(() => () => window.clearTimeout(spotTimer.current), [])
+
+  const commit = (raw, nextCaret) => {
+    const next = String(raw || '').replace(/\D/g, '').slice(0, 6)
+    onChange({ target: { value: next } })
+    const place = Math.min(nextCaret ?? next.length, next.length)
+    setCaret(place)
+    inputRef.current?.setSelectionRange(place, place)
+  }
+
+  const pulse = () => {
+    setSpot(true)
+    window.clearTimeout(spotTimer.current)
+    spotTimer.current = window.setTimeout(() => setSpot(false), motionOff() ? 0 : 1600)
+  }
+
+  const show = () => {
+    setOpen((was) => !was)
+    setSpot(false)
+    stage.go(0)
+  }
+
+  const go = (next) => {
+    const landed = stage.go(next)
+    if (landed === 1) pulse()
+  }
+
+  return (
+    <div className={`auth-code-block${spot ? ' is-spot' : ''}${open ? ' is-open' : ''}`}>
+      <label className="auth-field">
+        <span className="auth-label">{WORDS.code}</span>
+        <div className={`otp${focused ? ' is-focus' : ''}`}>
+          <div className="otp-cells" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => {
+              const mark = digits[index] || ''
+              const active = focused && (caret === index || (caret >= 6 && index === 5))
+              return (
+                <span
+                  key={index}
+                  className={`otp-cell${mark ? ' is-filled' : ''}${active ? ' is-on' : ''}${index === 2 ? ' is-gap' : ''}`}
+                >
+                  {mark ? <span key={mark} className="otp-digit">{mark}</span> : null}
+                </span>
+              )
+            })}
+          </div>
+          <input
+            ref={inputRef}
+            className="otp-capture"
+            name="totp"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoCorrect="off"
+            spellCheck="false"
+            maxLength={6}
+            tabIndex={tabIndex}
+            value={digits}
+            disabled={disabled}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onSelect={(event) => setCaret(event.target.selectionStart || 0)}
+            onClick={(event) => {
+              const place = placeInCode(event, digits)
+              setCaret(place)
+              event.currentTarget.setSelectionRange(place, place)
+            }}
+            onChange={(event) => commit(event.target.value, event.target.selectionStart)}
+          />
+        </div>
+      </label>
+      <button
+        type="button"
+        className="auth-side-ask auth-code-ask"
+        aria-expanded={open}
+        onClick={show}
+      >
+        {WORDS.codeFind}
+      </button>
+      {open && (
+        <div className="auth-stage" role="region" aria-label={WORDS.codeFind}>
+          <StageRail count={2} index={stage.index} onPick={go} label={WORDS.codeFind} />
+          <div
+            key={stage.index}
+            className={`auth-stage-view${stage.turned ? ' is-turn' : ''}`}
+            style={{ '--stage-x': stage.dir > 0 ? '14px' : '-14px' }}
+          >
+            {stage.index === 0 ? (
+              <>
+                <p className="auth-after-title">{WORDS.codeStage1}</p>
+                <DigitSample />
+                <p className="auth-where-lead">{WORDS.codeWhere}</p>
+              </>
+            ) : (
+              <>
+                <p className="auth-after-title">{WORDS.codeStage2}</p>
+                <p className="auth-where-next">
+                  {WORDS.codeThen} <b>{submitLabel}</b>.
+                </p>
+              </>
+            )}
+          </div>
+          <StageNav
+            index={stage.index}
+            last={stage.index === 1}
+            onPrev={() => go(stage.index - 1)}
+            onNext={() => (stage.index === 1 ? focusCode() : go(1))}
+            doneLabel={WORDS.walkDone}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CopyKey({ secret, expectQr = false, onNeedKey }) {
   const [copied, setCopied] = useState(false)
   const [held, setHeld] = useState(false)
   const [phase, setPhase] = useState('veiled')
+  const [next, setNext] = useState(false)
   const revealTimer = useRef(0)
   const mask = veilText(secret)
   const open = phase === 'open'
   const shown = phase === 'veiled' ? mask : secret
+  const [veil, veilRef] = useVeilCycle(Boolean(secret) && !open)
 
   useEffect(() => () => window.clearTimeout(revealTimer.current), [])
 
@@ -177,25 +491,45 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
     <div className="auth-setup" data-setup-secret={secret || undefined}>
       {secret && <p className="auth-key-kicker">{WORDS.appKeyHead}</p>}
       {secret && (
-        open ? (
-          <button type="button" className="auth-setup-secret is-open" onClick={copy}>
-            {secret}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`auth-setup-secret is-veiled${phase === 'clear' ? ' is-clearing' : ''}`}
-            aria-label={WORDS.appKeyHead}
-            onClick={reveal}
-          >
-            <span className="auth-key-glitch" data-text={shown}>{shown}</span>
-          </button>
-        )
+        <div className="auth-key-stage">
+          {open ? (
+            <button type="button" className="auth-setup-secret is-open" onClick={copy}>
+              {secret}
+            </button>
+          ) : (
+            <button
+              type="button"
+              ref={veilRef}
+              className={`auth-setup-secret is-veiled is-${veil}${phase === 'clear' ? ' is-clearing' : ''}`}
+              aria-label={WORDS.appKeyHead}
+              onClick={reveal}
+            >
+              <span className="auth-key-glitch" data-text={shown}>{shown}</span>
+            </button>
+          )}
+          {open && (
+            <button
+              type="button"
+              className="auth-side-ask"
+              aria-expanded={next}
+              onClick={() => setNext((openNow) => !openNow)}
+            >
+              {WORDS.appKeyNext}
+            </button>
+          )}
+        </div>
       )}
       {secret && open && (
         <button type="button" className="auth-key-copy" onClick={copy}>
           {copied ? WORDS.copied : WORDS.appKeyCopy}
         </button>
+      )}
+      {secret && open && next && (
+        <KeyAfter onDone={() => {
+          setNext(false)
+          focusCode()
+        }}
+        />
       )}
       {!secret && <p className="auth-help-wait">{WORDS.walkNoSecret}</p>}
       {held && <p className="auth-help-wait">{WORDS.walkHold}</p>}

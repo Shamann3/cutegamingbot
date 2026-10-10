@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revealRegisterCode } from '../lib/adminClient'
 import { SCREENS, WORDS } from '../entry_design'
-import { AppKeyCard, AuthRescue, EntryHelp } from './AuthWalk'
+import { AppKeyCard, AuthRescue, CodeField } from './AuthWalk'
 import EntryGuide from './EntryGuide'
 import KeyField from './KeyField'
 
@@ -93,7 +93,6 @@ export default function RegisterForm({
   return (
     <form className="auth-form auth-step" onSubmit={handleFormSubmit}>
       <EntryGuide screen={SCREENS.staffRegister} at={setup ? (totp ? 'code' : 'app') : 'key'} />
-      <EntryHelp setup={setup} expectQr={!setup} />
 
       <KeyField
         label={WORDS.registerKey}
@@ -126,23 +125,15 @@ export default function RegisterForm({
             <>
               <AppKeyCard setup={setup} />
 
-              <label className="auth-field">
-                <span className="auth-label">{WORDS.code}</span>
-                <input
-                  className="auth-input auth-input-code"
-                  name="totp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  maxLength={6}
-                  value={totp}
-                  onChange={(event) => {
-                    setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
-                    setLocalError('')
-                  }}
-                  disabled={working}
-                />
-              </label>
+              <CodeField
+                value={totp}
+                disabled={working}
+                submitLabel={WORDS.finish}
+                onChange={(event) => {
+                  setTotp(event.target.value.replace(/\D/g, '').slice(0, 6))
+                  setLocalError('')
+                }}
+              />
 
               {info && <p className="auth-message auth-message-info">{info}</p>}
               {shownError && (
