@@ -4,7 +4,7 @@ import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { isGroupPreviewKey } from '../lib/groupPreviewKey'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EntryFrame from '../components/EntryFrame'
-import AuthWalk, { AuthRescue, AuthWalkHelp } from '../components/AuthWalk'
+import AuthWalk, { AuthRescue } from '../components/AuthWalk'
 import EntryGuide from '../components/EntryGuide'
 import KeyField from '../components/KeyField'
 import { SCREENS, WORDS } from '../entry_design'
@@ -223,7 +223,7 @@ export default function GroupKeyPage({ onBack, onPassed, onApply, onPreview, aga
                 <AuthWalk />
               </>
             )}
-            {verified && needCode && !setup && <AuthWalkHelp />}
+            {verified && needCode && !setup && <AuthWalk />}
             {error && verified && (
               <>
                 <p className="auth-message auth-message-error" role="alert">{error}</p>

@@ -5933,9 +5933,14 @@ button.entry-guide-row {
   .entry-guide-step::before,
   .auth-walk-panel,
   .auth-walk-zoom,
-  .auth-walk-zoom img {
+  .auth-walk-zoom img,
+  .auth-path-stage.is-turn {
     transition: none;
     animation: none;
+  }
+
+  .auth-path-dot::before {
+    transition: none;
   }
 }
 
@@ -6343,6 +6348,161 @@ button.entry-guide-row {
 
 .auth-shots .auth-walk-next {
   align-self: flex-start;
+}
+
+/* Смена кадра: сдвиг и лёгкое прояснение, как следующий экран телефона. */
+.auth-path {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.7rem;
+  width: 100%;
+}
+
+.auth-path-viewport {
+  width: 100%;
+  overflow: hidden;
+}
+
+.auth-path-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.auth-path-stage.is-turn {
+  animation: auth-turn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes auth-turn {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--auth-turn), 0, 0) scale(0.985);
+    filter: blur(7px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.auth-path-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: min(34vh, 220px);
+  padding: 0.35rem;
+  border: 0;
+  border-radius: 1rem;
+  background: #070708;
+  cursor: zoom-in;
+}
+
+.entry-guide-body .auth-path-frame {
+  height: min(46vh, 300px);
+}
+
+.auth-path-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0.55rem;
+  pointer-events: none;
+}
+
+.auth-path-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  margin: 0;
+  color: #e4e4e7;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.auth-path-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.auth-path-dot {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.auth-path-dot::before {
+  content: '';
+  width: 1.15rem;
+  height: 0.38rem;
+  border-radius: 99px;
+  background: rgba(244, 244, 244, 0.32);
+  transform: scaleX(0.42);
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms ease;
+}
+
+.auth-path-dot.is-on::before {
+  transform: scaleX(1);
+  background: #f4f4f4;
+}
+
+.auth-path-nav {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.auth-path-back,
+.auth-path-next {
+  min-height: 44px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.auth-path-back {
+  flex: 0 0 auto;
+  padding: 0.45rem 1rem;
+  border: 1px solid rgba(244, 244, 244, 0.24);
+  background: transparent;
+  color: #f4f4f4;
+}
+
+.auth-path-back:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.auth-path-next {
+  flex: 1 1 auto;
+  border: 0;
+  background: var(--e-accent, #f4f4f4);
+  color: var(--e-accent-ink, #0b0b0c);
+}
+
+.auth-path-next:active,
+.auth-path-back:active:not(:disabled),
+.auth-path-dot:active {
+  transform: scale(0.98);
+}
+
+.auth-path-frame:focus-visible,
+.auth-path-dot:focus-visible,
+.auth-path-back:focus-visible,
+.auth-path-next:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.92);
+  outline-offset: 2px;
 }
 
 

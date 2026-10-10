@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AUTH_FIXES, AUTH_STEPS, AUTH_STORES, WORDS } from '../entry_design'
 
@@ -178,16 +178,28 @@ function FixList({ fixes, onShow }) {
   )
 }
 
-/** Картинки Google Authenticator: сразу кадр, одна строка, куда нажать. */
-export default function AuthWalk({ onDone, returning = false }) {
+/** Один кадр за раз. Смена шага — сдвиг, как переход между экранами телефона. */
+export default function AuthWalk({ onDone }) {
+  const [index, setIndex] = useState(0)
+  const [dir, setDir] = useState(1)
+  const [turned, setTurned] = useState(false)
   const [stuck, setStuck] = useState(false)
-  const [showShots, setShowShots] = useState(!returning)
   const [zoom, setZoom] = useState(-1)
+  const step = AUTH_STEPS[index]
+  const last = index === AUTH_STEPS.length - 1
   const zoomStep = zoom >= 0 ? AUTH_STEPS[zoom] : null
 
   useEffect(() => {
     preloadAuthShots()
   }, [])
+
+  const go = (next) => {
+    const clamped = Math.max(0, Math.min(AUTH_STEPS.length - 1, next))
+    if (clamped === index) return
+    setDir(clamped > index ? 1 : -1)
+    setTurned(true)
+    setIndex(clamped)
+  }
 
   const finish = () => {
     focusCode()
@@ -195,58 +207,48 @@ export default function AuthWalk({ onDone, returning = false }) {
   }
 
   return (
-    <section className="auth-shots" aria-label={WORDS.walkTitle}>
-      {returning && (
-        <>
-          <p className="auth-shot-have">{WORDS.walkHave}</p>
-          <button type="button" className="auth-walk-next auth-walk-next-inline" onClick={finish}>
-            {WORDS.walkDone}
-          </button>
+    <section className="auth-path" aria-label={WORDS.walkTitle}>
+      <div className="auth-path-viewport">
+        <div
+          key={step.id}
+          className={`auth-path-stage${turned ? ' is-turn' : ''}`}
+          style={{ '--auth-turn': dir > 0 ? '22px' : '-22px' }}
+        >
           <button
             type="button"
-            className="auth-walk-missing"
-            aria-expanded={showShots}
-            onClick={() => setShowShots((open) => !open)}
+            className="auth-path-frame"
+            aria-label={`${WORDS.walkTap}: ${step.title}`}
+            onClick={() => setZoom(index)}
           >
-            {WORDS.walkMissing}
+            <img src={stepSrc(step.file)} alt="" decoding="async" fetchPriority="high" draggable={false} />
           </button>
-        </>
-      )}
-
-      {showShots && (
-        <ol className="auth-shot-list">
-          {AUTH_STEPS.map((step, index) => (
-            <li key={step.id} className="auth-shot">
-              <button
-                type="button"
-                className="auth-shot-frame"
-                aria-label={`${WORDS.walkTap}: ${step.title}`}
-                onClick={() => setZoom(index)}
-              >
-                <img
-                  src={stepSrc(step.file)}
-                  alt=""
-                  decoding="async"
-                  fetchPriority={index === 0 ? 'high' : 'low'}
-                  draggable={false}
-                />
-              </button>
-              <p className="auth-shot-line">
-                <span className="auth-shot-num" aria-hidden="true">{index + 1}</span>
-                {step.line}
-              </p>
-              {step.id === 'store' && <StoreLinks />}
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {showShots && (
-        <button type="button" className="auth-walk-next" onClick={finish}>
-          {WORDS.walkDone}
+          <p className="auth-path-line" aria-live="polite">
+            <span className="auth-shot-num" aria-hidden="true">{index + 1}</span>
+            {step.line}
+          </p>
+          {step.id === 'store' && <StoreLinks />}
+        </div>
+      </div>
+      <div className="auth-path-dots" role="tablist" aria-label={WORDS.walkTitle}>
+        {AUTH_STEPS.map((item, dot) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`auth-path-dot${dot === index ? ' is-on' : ''}`}
+            aria-label={item.title}
+            aria-current={dot === index ? 'step' : undefined}
+            onClick={() => go(dot)}
+          />
+        ))}
+      </div>
+      <div className="auth-path-nav">
+        <button type="button" className="auth-path-back" disabled={index === 0} onClick={() => go(index - 1)}>
+          {WORDS.walkBack}
         </button>
-      )}
-
+        <button type="button" className="auth-path-next" onClick={() => (last ? finish() : go(index + 1))}>
+          {last ? WORDS.walkDone : WORDS.walkNext}
+        </button>
+      </div>
       <button
         type="button"
         className="auth-walk-missing"
@@ -256,7 +258,6 @@ export default function AuthWalk({ onDone, returning = false }) {
         {WORDS.walkStuck}
       </button>
       {stuck && <FixList fixes={AUTH_FIXES} onShow={setZoom} />}
-
       {zoomStep && (
         <WalkZoom src={stepSrc(zoomStep.file)} title={zoomStep.line} onClose={() => setZoom(-1)} />
       )}
@@ -280,54 +281,3 @@ export function AuthRescue({ error }) {
   )
 }
 
-/** Обычный вход: шесть цифр уже в приложении. Картинки — если строки нет. */
-export function AuthWalkHelp() {
-  const titleId = useId()
-  const [open, setOpen] = useState(false)
-  const [leaving, setLeaving] = useState(false)
-  const close = useCallback(() => {
-    setLeaving(true)
-    window.setTimeout(() => {
-      setOpen(false)
-      setLeaving(false)
-    }, motionOff() ? 0 : 220)
-  }, [])
-
-  useEffect(() => {
-    if (!open || leaving) return undefined
-    const onKey = (event) => {
-      if (event.key === 'Escape') close()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, leaving, close])
-
-  return (
-    <>
-      <button type="button" className="auth-walk-help" onClick={() => setOpen(true)}>
-        {WORDS.walkLost}
-      </button>
-      {open && createPortal(
-        <div className={`choice-layer entry-guide-layer auth-walk-layer${leaving ? ' is-leaving' : ''}`} onClick={close}>
-          <div className="choice-dim" />
-          <div className="choice-sheet-motion">
-            <div
-              className="choice-sheet entry-guide-sheet auth-walk-sheet is-visual"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby={titleId}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <p id={titleId} className="choice-sheet-title">{WORDS.walkLost}</p>
-              <div className="entry-guide-body">
-                <AuthWalk returning onDone={close} />
-              </div>
-              <button type="button" className="choice-close" onClick={close}>{WORDS.close}</button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-    </>
-  )
-}
