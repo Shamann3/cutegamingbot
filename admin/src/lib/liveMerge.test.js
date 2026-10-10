@@ -63,5 +63,8 @@ describe('live archive merge', () => {
     }
     expect(samePulse(moderation, { ...moderation })).toBe(true)
     expect(samePulse(moderation, { ...moderation, bans: 2 })).toBe(false)
+    const removed = { people: 3, month: 1, active: 2 }
+    expect(samePulse(moderation, { ...moderation, captchaRemoved: removed })).toBe(false)
+    expect(samePulse({ ...moderation, captchaRemoved: removed }, { ...moderation, captchaRemoved: removed })).toBe(true)
   })
 })

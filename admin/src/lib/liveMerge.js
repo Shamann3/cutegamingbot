@@ -57,6 +57,14 @@ export function samePulse(moderation, pulse) {
   for (const key of keys) {
     if (Number(moderation[key]) !== Number(pulse[key])) return false
   }
+  const left = moderation.captchaRemoved
+  const right = pulse.captchaRemoved
+  if (right && !left) return false
+  if (left && right) {
+    if (Number(left.people) !== Number(right.people)) return false
+    if (Number(left.month) !== Number(right.month)) return false
+    if (Number(left.active) !== Number(right.active)) return false
+  }
   return watchKey(moderation.watch) === watchKey(pulse.watch)
 }
 

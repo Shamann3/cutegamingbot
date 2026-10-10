@@ -134,6 +134,25 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
 
   useEffect(() => () => window.clearTimeout(revealTimer.current), [])
 
+  const markCopied = (ok) => {
+    if (ok) {
+      setCopied(true)
+      setHeld(false)
+      window.setTimeout(() => setCopied(false), 1600)
+      return
+    }
+    setHeld(true)
+  }
+
+  const writeSecret = async () => {
+    try {
+      await navigator.clipboard.writeText(secret)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const reveal = () => {
     if (!secret || phase !== 'veiled') return
     if (motionOff()) {
@@ -149,43 +168,33 @@ export function CopyKey({ secret, expectQr = false, onNeedKey }) {
       onNeedKey?.()
       return
     }
-    try {
-      await navigator.clipboard.writeText(secret)
-      setCopied(true)
-      setHeld(false)
-      window.setTimeout(() => setCopied(false), 1600)
-    } catch {
-      setHeld(true)
-    }
+    markCopied(await writeSecret())
   }
 
   if (!secret && !expectQr) return null
 
   return (
-    <div className="auth-setup">
+    <div className="auth-setup" data-setup-secret={secret || undefined}>
+      {secret && <p className="auth-key-kicker">{WORDS.appKeyHead}</p>}
       {secret && (
         open ? (
-          <code className="auth-setup-secret is-open" data-setup-secret={secret}>{secret}</code>
+          <code className="auth-setup-secret is-open">{secret}</code>
         ) : (
           <button
             type="button"
             className={`auth-setup-secret is-veiled${phase === 'clear' ? ' is-clearing' : ''}`}
-            aria-label={WORDS.appKeyHide}
+            aria-label={WORDS.appKeyHead}
             onClick={reveal}
           >
             <span className="auth-key-glitch" data-text={shown}>{shown}</span>
-            {phase === 'veiled' && <span className="auth-key-hint">{WORDS.appKeyHide}</span>}
           </button>
         )
       )}
-      <button
-        type="button"
-        className="auth-path-next auth-setup-copy"
-        data-setup-secret={secret || undefined}
-        onClick={copy}
-      >
-        {copied ? WORDS.copied : WORDS.copyKey}
-      </button>
+      {secret && open && (
+        <button type="button" className="auth-key-copy" onClick={copy}>
+          {copied ? WORDS.copied : WORDS.appKeyCopy}
+        </button>
+      )}
       {!secret && <p className="auth-help-wait">{WORDS.walkNoSecret}</p>}
       {held && <p className="auth-help-wait">{WORDS.walkHold}</p>}
     </div>
@@ -228,7 +237,7 @@ function FixBody({ fix, onShow }) {
       {fix.clock && <CodeClock />}
       {fix.copy && (
         <button type="button" className="auth-walk-next auth-walk-next-inline" onClick={copySecret}>
-          {WORDS.copyKey}
+          {WORDS.appKeyCopy}
         </button>
       )}
       {copyState === 'ok' && <p className="auth-fix-note">{WORDS.walkCopied}</p>}

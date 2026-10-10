@@ -5018,6 +5018,16 @@ async def admin_groups_studio_moderate(
     return result
 
 
+@router.get("/captcha/archive-stat")
+async def admin_captcha_archive_stat(
+    _admin_id: int = Depends(require_admin_session),
+):
+    """Короткая сводка для «Архива»: сотрудники и создатель."""
+    from admin_captcha import captcha_removed_stat
+
+    return await captcha_removed_stat()
+
+
 @router.get("/captcha/overview")
 async def admin_captcha_overview(
     admin_id: int = Depends(require_admin_role(ROLE_OWNER)),

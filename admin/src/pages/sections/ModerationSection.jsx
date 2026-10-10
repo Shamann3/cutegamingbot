@@ -18,6 +18,7 @@ import StaffDesk from './payroll/StaffDesk'
 import UserLookupPreview from '../../components/UserLookupPreview'
 import OpenUserLink from '../../components/OpenUserLink'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
+import CaptchaArchiveNote from '../../components/CaptchaArchiveNote'
 
 function askUnbanConfirm(message) {
   const tg = window.Telegram?.WebApp
@@ -1160,6 +1161,7 @@ export default function ModerationSection({
           <div className="arc-title-block">
             <div className="arc-title">Главный Архив</div>
             <div className="arc-subtitle">Наказания людей во всём проекте. Записи самого бота скрыты. Фото в деле открывается целиком. {total.toLocaleString('ru-RU')} записей</div>
+            {activeMainTab === 'archive' && <CaptchaArchiveNote load />}
           </div>
           {liveLine && <p className="g-arc-live" role="status">{liveLine}</p>}
         </div>

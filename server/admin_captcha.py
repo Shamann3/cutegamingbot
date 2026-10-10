@@ -39,6 +39,8 @@ EVENT_LABELS = {
 # Бан, который бот ставит сам после серии ошибок. «blocked» в событиях капчи —
 # это удалённое сообщение, не блокировка человека.
 BOT_BLOCK_ACTIONS = ("ban", "banall", "banfull")
+# Бан и кик убирают человека из группы. Мут и варн его оставляют.
+CAPTCHA_REMOVE_ACTIONS = ("ban", "banall", "banfull", "kick", "kickall")
 _BOT_ACTOR = "admin_user_id = 0 AND admin_name = 'Капча'"
 _PENALTY_FACE = {key: (label, place) for key, label, place, _hint, _needs in PENALTIES}
 
@@ -744,6 +746,59 @@ def _bot_where(chat_id: Optional[int], params: List[Any]) -> str:
         params.append(int(chat_id))
         parts.append(f"chat_id = ${len(params)}")
     return " AND ".join(parts)
+
+
+def empty_captcha_removed() -> Dict[str, int]:
+    return {"people": 0, "month": 0, "active": 0}
+
+
+async def captcha_removed_stat(chat_id: Optional[int] = None) -> Dict[str, int]:
+    """Сколько людей капча убрала из групп. Короткая сводка для вкладки «Архив»."""
+    empty = empty_captcha_removed()
+    pool = getattr(db, "pool", None)
+    if pool is None:
+        return empty
+    params: List[Any] = [list(CAPTCHA_REMOVE_ACTIONS)]
+    chat_sql = ""
+    if chat_id:
+        params.append(int(chat_id))
+        chat_sql = f" AND chat_id = ${len(params)}"
+    try:
+        row = await pool.fetchrow(
+            f"""
+            SELECT count(DISTINCT target_player_id)::int AS people,
+                   count(DISTINCT target_player_id) FILTER (
+                     WHERE created_at > NOW() - INTERVAL '30 days'
+                   )::int AS month
+              FROM staff_actions
+             WHERE admin_user_id = 0
+               AND admin_name = 'Капча'
+               AND target_player_id IS NOT NULL
+               AND action_type = ANY($1::text[])
+               {chat_sql}
+            """,
+            *params,
+        )
+        active_params: List[Any] = [int(chat_id)] if chat_id else []
+        active_sql = " AND chat_id = $1" if chat_id else ""
+        active = await pool.fetchval(
+            f"""
+            SELECT count(DISTINCT user_id)::int
+              FROM active_bans
+             WHERE admin_name = 'Капча'
+               AND ban_until > NOW()
+               {active_sql}
+            """,
+            *active_params,
+        )
+    except Exception:
+        log.warning("captcha archive stat failed", exc_info=True)
+        return empty
+    return {
+        "people": _iint(row["people"]) if row else 0,
+        "month": _iint(row["month"]) if row else 0,
+        "active": _iint(active),
+    }
 
 
 async def bot_blocks(chat_id: Optional[int] = None) -> Dict[str, Any]:

@@ -3512,6 +3512,7 @@ async def group_summary(chat_id: int, user_id: int = Depends(get_any_telegram_us
             "kicks": mods.get("kicks"),
             "recent": mods.get("recent") or [],
             "watch": watch,
+            "captchaRemoved": await _captcha_removed(int(chat_id)),
         },
         "wide": position_wide(access.get("rights") or []),
         "staffActs": await _staff_acts(int(user_id)),
@@ -3536,7 +3537,19 @@ async def group_pulse(chat_id: int, user_id: int = Depends(get_any_telegram_user
         "kicks": mods.get("kicks"),
         "recent": mods.get("recent") or [],
         "watch": watch,
+        "captchaRemoved": await _captcha_removed(int(chat_id)),
     }
+
+
+async def _captcha_removed(chat_id: int) -> dict:
+    """Сводка капчи не должна ронять архив группы."""
+    try:
+        from admin_captcha import captcha_removed_stat
+
+        return await captcha_removed_stat(int(chat_id))
+    except Exception:
+        _log.warning("captcha removed stat for %s failed", chat_id, exc_info=True)
+        return {"people": 0, "month": 0, "active": 0}
 
 
 async def _staff_acts(user_id: int) -> list[dict]:

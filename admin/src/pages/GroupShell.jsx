@@ -31,6 +31,7 @@ import { applicationPerson } from '../lib/applicationPerson'
 import { groupCabinetTabs, positionSaveBody } from '../lib/panelPreview'
 import { grantedWide } from '../lib/realmRights'
 import ApproveSeat from '../components/ApproveSeat'
+import CaptchaArchiveNote from '../components/CaptchaArchiveNote'
 import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import KutRate from './sections/payroll/KutRate'
@@ -393,6 +394,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
               kicks: data?.kicks,
               recent: next.recent,
               watch: data?.watch ?? prev.moderation.watch,
+              captchaRemoved: data?.captchaRemoved ?? prev.moderation.captchaRemoved,
             },
           }
         })
@@ -1213,6 +1215,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 За 30 дней {fmt(mods.actions30d)} наказаний: муты {fmt(mods.mutes)}, баны {fmt(mods.bans)}, кики {fmt(mods.kicks)}, предупреждения {fmt(mods.warns)}.
               </p>
               )}
+              <CaptchaArchiveNote stat={mods?.captchaRemoved} />
               <GroupArchive
                 rows={mods?.recent || []}
                 repeats={repeats}

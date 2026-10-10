@@ -5952,7 +5952,8 @@ button.entry-guide-row {
   .auth-path-stage.is-turn,
   .auth-setup-secret.is-veiled .auth-key-glitch,
   .auth-setup-secret.is-veiled .auth-key-glitch::before,
-  .auth-setup-secret.is-veiled .auth-key-glitch::after {
+  .auth-setup-secret.is-veiled .auth-key-glitch::after,
+  .auth-key-copy {
     transition: none;
     animation: none;
   }
@@ -6486,8 +6487,42 @@ button.entry-guide-row {
   gap: 0.55rem;
 }
 
-.auth-setup-copy {
-  width: 100%;
+.auth-key-kicker,
+.auth-key-copy {
+  margin: 0;
+  color: #8d8d93;
+  font-size: 0.74rem;
+  font-weight: 560;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.auth-key-copy {
+  padding: 0.15rem 0.4rem 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  animation: key-line-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-key-copy:hover,
+.auth-key-copy:focus-visible {
+  color: #c8c8ce;
+}
+
+@keyframes key-line-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .auth-setup-secret {
@@ -6498,7 +6533,7 @@ button.entry-guide-row {
   width: 100%;
   margin: 0;
   padding: 0.72rem 0.85rem;
-  border: 1px solid rgba(126, 231, 255, 0.22);
+  border: 1px solid rgba(244, 244, 244, 0.22);
   border-radius: 0.85rem;
   background: rgba(0, 0, 0, 0.42);
   color: #f4f4f5;
@@ -6551,12 +6586,12 @@ button.entry-guide-row {
 }
 
 .auth-setup-secret.is-veiled .auth-key-glitch::before {
-  color: #7ee7ff;
+  color: #f4f4f5;
   animation: key-slice-a 0.84s steps(3, end) infinite;
 }
 
 .auth-setup-secret.is-veiled .auth-key-glitch::after {
-  color: #ff4d8d;
+  color: #8d8d93;
   animation: key-slice-b 0.96s steps(3, end) infinite;
 }
 

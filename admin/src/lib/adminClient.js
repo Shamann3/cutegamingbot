@@ -1697,6 +1697,10 @@ export async function fetchCaptchaOverview() {
   return adminFetch('/captcha/overview')
 }
 
+export async function fetchCaptchaArchiveStat() {
+  return adminFetch('/captcha/archive-stat')
+}
+
 export async function fetchCaptchaPenalty() {
   return adminFetch('/captcha/penalty')
 }
