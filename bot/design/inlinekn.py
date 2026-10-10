@@ -626,13 +626,14 @@ async def inline_help_game(inline_query: types.InlineQuery):
     # Логика поиска и отображения результатов
     results = [ ]
 
-    referral_message = (f"🎩")
+    from bot.funcs.referral_copy import referral_button_label, referral_share_text
+    referral_message = referral_share_text(ref_coin)
 
     # Генерация реферальной ссылки
     referral_link = await get_start_link(inline_query.from_user.id)
 
     referral_button = InlineKeyboardButton(
-        text=f"💰 Получить {ref_coin} кут!" , url=referral_link)
+        text=referral_button_label() , url=referral_link)
 
     referral_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[ [ referral_button ] ])

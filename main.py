@@ -7753,6 +7753,7 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
     # Доп. проверка чата:
     # В начале убедитесь, что user_id определён (если нет выше):
     user_id = message.from_user.id
+    referral_verdict_now = None
 
     if message.chat.type == ChatType.PRIVATE:
         parts = message.text.split()
@@ -7767,73 +7768,51 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
                 except Exception:
                     bio = "Нет информации о био"
 
-                # Создаём/обновляем основного пользователя
-                await measure_time(
-                    add_or_update_user_info(message=message , db=db , start_balance=start_balance , bot=message.bot) ,
-                    "3Добавление / обновление информации о пользователе в базе")
-                await db.add_data(user_id , first_name , username , bio , start_balance)
+                from bot.funcs.referral_copy import inviter_arrived_text, visitor_text
 
-                # Проверяем, не было ли уже реферального перехода (таблица usersref)
-                already_referred = await db.check_user_id_in_users(user_id)
-
-                # Если записи о реферале ЕЩЁ НЕТ — обрабатываем ссылку
-                if not already_referred:
-                    if reffer_id != user_id:
-                        # Фиксируем реферальную связь
-                        await db.add_ref1(user_id , reffer_id)
+                # Сначала решение по ссылке, потом запись профиля.
+                # Иначе новый человек уже выглядит как тот, кто открывал бота.
+                referral_verdict_now = await db.claim_referral(
+                    user_id,
+                    reffer_id,
+                    first_name=first_name,
+                    username=username or "",
+                    bio=bio,
+                    start_balance=start_balance,
+                )
+                verdict = referral_verdict_now
+                if verdict == "ok":
+                    try:
                         await db.check_and_update_bio(user_id , bot1)
-
-                        inviting_user_data = await db.get_user_data(reffer_id)
-                        if inviting_user_data:
-                            ref_first_name = await db.get_firstname_by_user_id(reffer_id)
-                            first_name_hui = await db.get_firstname_by_user_id(user_id)
-                            await db.insert_refcheck_entry(
-                                user_id=user_id , ref_user_id=reffer_id , first_name=first_name_hui ,
-                                ref_first_name=ref_first_name)
-
-                            await db.remove_expired_refout()
-
-                            current_time = time.time()
-                            last_open_time , data_open = await db.get_ref_times(user_id , reffer_id)
-                            if last_open_time is None or data_open is None:
-                                last_open_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                data_open_ts = current_time + timerefout
-                                user_name = await db.get_firstname_by_user_id(user_id)
-                                await db.add_refout(
-                                    user_id , reffer_id , user_name , last_open_time ,
-                                    datetime.fromtimestamp(data_open_ts).strftime("%Y-%m-%d %H:%M:%S"))
-
-                            # Уведомление пригласившему
-                            markup112132 = InlineKeyboardMarkup(
-                                inline_keyboard=[ [ InlineKeyboardButton(
-                                    text="Играть" , switch_inline_query="игры" ,
-                                    icon_custom_emoji_id="5470088387048266598") ] ])
-                            new_user_link = await create_user_link(user_id , first_name , username)
-                            await bot1.send_message(
-                                reffer_id , ("<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> <b>По вашей реф-ссылке перешёл новый пользователь!</b>\n"
-                                             f"<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>{new_user_link}</b>\n\n"
-                                             f"<tg-emoji emoji-id='5278428495121248059'>🪴</tg-emoji> <b>Чтобы получить {ref_coin} кут за приглашение — "
-                                             "приглашённый должен сыграть в любую игру | результат не важен.</b>\n\n"
-                                             "<tg-emoji emoji-id='5224257782013769471'>💰</tg-emoji> <b>+ Вы будете зарабатывать 25% от его покупок в магазине!</b>") ,
-                                reply_markup=markup112132 , parse_mode="HTML" , disable_web_page_preview=True)
-
-                            # ===== НОВОЕ: приветствие для самого перешедшего пользователя =====
-                            await bot1.send_message(
-                                user_id , "<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>Вы перешли по реферальной ссылке!</b>\n"
-                                          f"<tg-emoji emoji-id='5317000922096769303'>🎁</tg-emoji> <b>Ваш друг получит {ref_coin} кут, когда вы сыграете в любую игру.</b>\n"
-                                          "<tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> <b>А вы будете получать 25% от его покупок в магазине!</b>" , parse_mode="HTML")
-                            # =================================================================
-                            print(f"🔋 Уведомление отправлено. Время: {time.time() - start_time:.3f} сек.")
-                    else:
+                        await db.remove_expired_refout()
+                        current_time = time.time()
+                        last_open_time , data_open = await db.get_ref_times(user_id , reffer_id)
+                        if last_open_time is None or data_open is None:
+                            last_open_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            data_open_ts = current_time + timerefout
+                            user_name = await db.get_firstname_by_user_id(user_id)
+                            await db.add_refout(
+                                user_id , reffer_id , user_name , last_open_time ,
+                                datetime.fromtimestamp(data_open_ts).strftime("%Y-%m-%d %H:%M:%S"))
+                        markup112132 = InlineKeyboardMarkup(
+                            inline_keyboard=[ [ InlineKeyboardButton(
+                                text="Играть" , switch_inline_query="игры" ,
+                                icon_custom_emoji_id="5470088387048266598") ] ])
+                        new_user_link = await create_user_link(user_id , first_name , username)
                         await bot1.send_message(
-                            user_id , "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Нельзя регистрироваться по своей ссылке.</b>" , parse_mode="HTML" ,
-                            disable_web_page_preview=True)
-                else:
-                    # Уже использовал реферальную ссылку ранее
+                            reffer_id ,
+                            inviter_arrived_text(new_user_link, ref_coin),
+                            reply_markup=markup112132 , parse_mode="HTML" , disable_web_page_preview=True)
+                    except Exception as e:
+                        print(f"[REF] уведомление пригласившему не ушло: {e!r}")
+                try:
                     await bot1.send_message(
-                        user_id , "<tg-emoji emoji-id='5397718596132554015'>🤙</tg-emoji> <b>Вы уже использовали кут ранее, реферальная ссылка не засчитана</b>" ,
-                        parse_mode="HTML" , disable_web_page_preview=True)
-                    print('Пользователь уже использовал кут ранее.')
+                        user_id ,
+                        visitor_text(verdict, ref_coin) ,
+                        parse_mode="HTML" ,
+                        disable_web_page_preview=True)
+                except Exception as e:
+                    print(f"[REF] ответ гостю не ушёл: {e!r}")
             except ValueError:
                 await bot1.send_message(
                     user_id , "<tg-emoji emoji-id='5213205860498549992'>⚠️</tg-emoji> <b>Некорректный реферальный ID. Попробуйте ещё раз.</b>" , parse_mode="HTML" ,
@@ -7853,10 +7832,12 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         from bot.funcs.onboarding import start_screen, start_payload_screen
 
         # Дата первого /start — окно обучающих подсказок (2 суток).
-        try:
-            await db.ensure_bot_first_start(user_id)
-        except Exception as e:
-            print(f"[START] ensure_bot_first_start({user_id}): {e!r}")
+        # Сбой записи приглашения не должен пометить человека как уже открывшего бота.
+        if referral_verdict_now != "bad":
+            try:
+                await db.ensure_bot_first_start(user_id)
+            except Exception as e:
+                print(f"[START] ensure_bot_first_start({user_id}): {e!r}")
 
         payload_screen = await start_payload_screen(user_id, deep)
         if payload_screen is not None:
@@ -7909,9 +7890,10 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
         bns_add_request(user_id , sent_message.message_id , reason="print('🏉🏉🏉🏉🏉🏉 message_text : ', message.text)")
         message_state [ message.from_user.id ] = sent_message.message_id
 
-        await measure_time(
-            add_or_update_user_info(message=message , db=db , start_balance=start_balance , bot=message.bot) ,
-            "2Добавление / обновление информации о пользователе в базе")
+        if referral_verdict_now != "bad":
+            await measure_time(
+                add_or_update_user_info(message=message , db=db , start_balance=start_balance , bot=message.bot) ,
+                "2Добавление / обновление информации о пользователе в базе")
         return
 
 
@@ -12949,15 +12931,8 @@ async def show_ref_link_cb(callback: CallbackQuery):
         return
 
     link = await get_start_link(user_id)
-    ref_coin_formatted = "{:,.0f}".format(ref_coin).replace(",", ".")
-
-    text = (
-        f"<tg-emoji emoji-id='5451910260090485999'>🔥</tg-emoji> <b>Ваша реферальная ссылка :</b>\n\n"
-        f"<code>{link}</code>\n\n"
-        f"<tg-emoji emoji-id='5318818590911131584'>🎩</tg-emoji> <b>1 друг = {ref_coin_formatted} кут</b>\n"
-        f"<tg-emoji emoji-id='5354904111563176042'>🍭</tg-emoji> <b>+ 25% с покупок реферала в магазине!</b>\n"
-        f"<tg-emoji emoji-id='5292246912446000135'>🎁</tg-emoji> <b>Каждый приглашённый - рост вашей реферальной статистики!</b>"
-    )
+    from bot.funcs.referral_copy import referral_card
+    text = referral_card(link, ref_coin)
 
     rows = [
         [InlineKeyboardButton(text="Проверить", callback_data="check_x2_again", style="default",
@@ -26022,19 +25997,11 @@ async def process_callback_kb1btn1(call: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[ [ button ] ])  # Важно: inline_keyboard должен быть списком списков
 
+    from bot.funcs.referral_copy import referral_card
     try:
         await bot1.edit_message_text(
-            message_id=call.message.message_id , chat_id=call.message.chat.id , text=f'''
-<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> <b>Ваша реферальная ссылка :</b> 
-
-<code>{link}</code>
-
-<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> <b>1 друг = 1 кут </b>
-
-<tg-emoji emoji-id='5278428495121248059'>🪴</tg-emoji> <b>+ 25% с каждой покупки, которую совершит ваш реферал в магазине!</b>
-
-<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>+ Каждый приглашённый - рост вашей реферальной статистики!</b>
-''' , reply_markup=keyboard ,
+            message_id=call.message.message_id , chat_id=call.message.chat.id ,
+            text=referral_card(link, ref_coin) , reply_markup=keyboard ,
         parse_mode="HTML")
     except TelegramBadRequest as e:
         # Игнорируем только ошибку "message is not modified"

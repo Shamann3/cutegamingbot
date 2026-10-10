@@ -2995,21 +2995,13 @@ async def process_callback_kb1btn1(call: types.CallbackQuery):
 
     button = InlineKeyboardButton(text="Назад", callback_data="back_to_menu1")
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
+    from bot.funcs.referral_copy import referral_card
 
     try:
         await bot1.edit_message_text(
             message_id=call.message.message_id,
             chat_id=call.message.chat.id,
-            text=f'''
-<tg-emoji emoji-id='5449850741667668411'>🌿</tg-emoji> <b>Ваша реферальная ссылка :</b> 
-
-<code>{link}</code>
-
-<tg-emoji emoji-id='5449372007432985754'>🌴</tg-emoji> <b>1 друг = 1 кут </b>
-
-<tg-emoji emoji-id='5278428495121248059'>🪴</tg-emoji> <b>+ 25% с каждой покупки, которую совершит ваш реферал в магазине!</b>
-
-<tg-emoji emoji-id='5449885771420934013'>🌱</tg-emoji> <b>+ Каждый приглашённый - рост вашей реферальной статистики!</b>''',
+            text=referral_card(link, ref_coin),
             reply_markup=keyboard,
             parse_mode="HTML"
         )

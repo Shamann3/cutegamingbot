@@ -8939,6 +8939,7 @@ class Database:
             found_by = None
             ref_deleted = False
             will_notify = False
+            continue_payout = False
 
             # Доп.предикаты по составу игры: актёр должен быть участником (если известен состав)
             if game_participants is not None and user_id not in game_participants:
@@ -8990,6 +8991,20 @@ class Database:
                                     print("[update_user_wins] ⚠️ Несоответствие refferer_id - не начисляю")
                                     inviter_id = referral_id = None
                                 else:
+                                    already_marked = await connection.fetchval(
+                                        "SELECT COALESCE(usersref, 0) FROM users WHERE user_id = $1",
+                                        referral_id,
+                                    )
+                                    if int(already_marked or 0) == 1:
+                                        await connection.execute(
+                                            "DELETE FROM refcheck WHERE user_id = $1", referral_id,
+                                        )
+                                        print("[update_user_wins] приглашение уже было засчитано раньше")
+                                        inviter_id = referral_id = None
+                                        continue_payout = False
+                                    else:
+                                        continue_payout = True
+                                if inviter_id and referral_id and continue_payout:
                                     # ── НАЧИСЛЕНИЯ (атомарно) ─────────────────────────────
                                     print("[update_user_wins] 💰 Готовлю начисления (в транзакции)")
                                     inviter_balance_old = await self.get_user_balance(inviter_id)
@@ -9060,23 +9075,18 @@ class Database:
                     win_amount_formatted = "{:,.0f}".format(ref_coin).replace("," , ".")
                     print(f"[update_user_wins] 🔗 Ссылка на реферала: {referral_link}")
 
-                    if _should_send("ping_inviter" , inviter_id , inviter_id , referral_id):
-                        await bot1.send_message(
-                            chat_id=inviter_id , text="🍀" , parse_mode="HTML" , disable_web_page_preview=True)
-                        print(f"[update_user_wins] ✅ Пинг пригласителю: chat_id={inviter_id}")
-
                     if _should_send("inviter_notify" , inviter_id , inviter_id , referral_id):
+                        from bot.funcs.referral_copy import counted_inviter_text
                         print(f"[update_user_wins] ✉️ Отправляю уведомление пригласителю: chat_id={inviter_id}")
                         await bot1.send_message(
                             chat_id=inviter_id ,
-                            text=(f"<b>🌿 Реферал засчитан, вы получили {win_amount_formatted} кут!</b>\n"
-                                  f"<b>🌴 {referral_link} прошёл(-ла) верификацию</b>") , parse_mode="HTML" ,
+                            text=counted_inviter_text(referral_link, ref_coin) , parse_mode="HTML" ,
                             disable_web_page_preview=True)
                         print("[update_user_wins] ✅ Уведомление пригласителю отправлено")
 
                     if _should_send("referral_verified" , referral_id , inviter_id , referral_id):
-                        verification_msg = (f"<b>🌿 Верификация реферальной системы пройдена!</b>\n"
-                                            f"<b>🌴 Вы получили {win_amount_formatted} кут</b>")
+                        from bot.funcs.referral_copy import counted_guest_text
+                        verification_msg = counted_guest_text(ref_coin)
                         print(f"[update_user_wins] ✉️ Отправляю уведомление рефералу: chat_id={referral_id}")
                         await bot1.send_message(
                             chat_id=referral_id , text=verification_msg , parse_mode="HTML" ,
@@ -9182,6 +9192,7 @@ class Database:
             found_by = None
             ref_deleted = False
             will_notify = False
+            continue_payout = False
 
             # Доп.предикаты по составу игры: актёр должен быть участником (если известен состав)
             if game_participants is not None and user_id not in game_participants:
@@ -9232,6 +9243,20 @@ class Database:
                                     print("[update_user_loose] ⚠️ Несоответствие refferer_id - не начисляю")
                                     inviter_id = referral_id = None
                                 else:
+                                    already_marked = await connection.fetchval(
+                                        "SELECT COALESCE(usersref, 0) FROM users WHERE user_id = $1",
+                                        referral_id,
+                                    )
+                                    if int(already_marked or 0) == 1:
+                                        await connection.execute(
+                                            "DELETE FROM refcheck WHERE user_id = $1", referral_id,
+                                        )
+                                        print("[update_user_loose] приглашение уже было засчитано раньше")
+                                        inviter_id = referral_id = None
+                                        continue_payout = False
+                                    else:
+                                        continue_payout = True
+                                if inviter_id and referral_id and continue_payout:
                                     # ── НАЧИСЛЕНИЯ (атомарно) ─────────────────────────────
                                     print("[update_user_loose] 💰 Готовлю начисления (в транзакции)")
                                     inviter_balance_old = await self.get_user_balance(inviter_id)
@@ -9301,23 +9326,18 @@ class Database:
                     win_amount_formatted2 = "{:,.0f}".format(ref_coin).replace("," , ".")
                     print(f"[update_user_loose] 🔗 Ссылка на реферала: {referral_link}")
 
-                    if _should_send("ping_inviter" , inviter_id , inviter_id , referral_id):
-                        await bot1.send_message(
-                            chat_id=inviter_id , text="🍀" , parse_mode="HTML" , disable_web_page_preview=True)
-                        print(f"[update_user_loose] ✅ Пинг пригласителю: chat_id={inviter_id}")
-
                     if _should_send("inviter_notify" , inviter_id , inviter_id , referral_id):
+                        from bot.funcs.referral_copy import counted_inviter_text
                         print(f"[update_user_loose] ✉️ Отправляю уведомление пригласителю: chat_id={inviter_id}")
                         await bot1.send_message(
                             chat_id=inviter_id ,
-                            text=(f"<b>🌿 Реферал засчитан, вы получили {win_amount_formatted2} кут!</b>\n"
-                                  f"<b>🌴 {referral_link} прошёл(-ла) верификацию</b>") , parse_mode="HTML" ,
+                            text=counted_inviter_text(referral_link, ref_coin) , parse_mode="HTML" ,
                             disable_web_page_preview=True)
                         print("[update_user_loose] ✅ Уведомление пригласителю отправлено")
 
                     if _should_send("referral_verified" , referral_id , inviter_id , referral_id):
-                        verification_msg = (f"<b>🌿 Верификация реферальной системы пройдена!</b>\n"
-                                            f"<b>🌴 Вы получили {win_amount_formatted2} кут</b>")
+                        from bot.funcs.referral_copy import counted_guest_text
+                        verification_msg = counted_guest_text(ref_coin)
                         print(f"[update_user_loose] ✉️ Отправляю уведомление рефералу: chat_id={referral_id}")
                         await bot1.send_message(
                             chat_id=referral_id , text=verification_msg , parse_mode="HTML" ,
@@ -9464,37 +9484,37 @@ class Database:
                 except Exception as e:
                     print(f"[insert_refcheck_entry] ⚠️ Не удалось получить advisory lock: {e}")
 
-                # 1) Пробуем ОБНОВИТЬ существующую запись по user_id
+                # Имя можно обновить. Пригласителя — нет: чужая ссылка не переписывает первую.
                 print("[insert_refcheck_entry] ✏️ UPDATE ... RETURNING")
                 updated_row = await connection.fetchrow(
                     """
                     UPDATE refcheck
-                       SET ref_user_id    = $2,
-                           first_name     = $3,
+                       SET first_name     = $3,
                            ref_first_name = $4,
                            date           = $5
-                     WHERE user_id       = $1
+                     WHERE user_id = $1 AND ref_user_id = $2
                  RETURNING user_id
                     """ , user_id , ref_user_id , first_name , ref_first_name , date)
 
                 if updated_row:
                     print(f"[insert_refcheck_entry] ✅ Обновлена существующая запись для user_id={user_id}")
                 else:
-                    # 2) Не нашли - ВСТАВЛЯЕМ новую запись
-                    print("[insert_refcheck_entry] ➕ Запись не найдена - выполняю INSERT")
-                    await connection.execute(
-                        """
-                        INSERT INTO refcheck (user_id, ref_user_id, first_name, ref_first_name, date)
-                        VALUES ($1, $2, $3, $4, $5)
-                        """ , user_id , ref_user_id , first_name , ref_first_name , date)
-                    print(f"[insert_refcheck_entry] ✅ Вставлена новая запись для user_id={user_id}")
-
-                # 3) Нормализация: удалим возможные дубли по этому user_id
-                # 3.1) Сначала уберём строки с другим ref_user_id (если такие были)
-                print("[insert_refcheck_entry] 🧹 Удаляю строки с другим ref_user_id")
-                del_status = await connection.execute(
-                    "DELETE FROM refcheck WHERE user_id = $1 AND ref_user_id <> $2" , user_id , ref_user_id)
-                print(f"[insert_refcheck_entry] 🧾 DELETE <> статус: {del_status}")
+                    existing_ref = await connection.fetchval(
+                        "SELECT ref_user_id FROM refcheck WHERE user_id = $1 LIMIT 1", user_id,
+                    )
+                    if existing_ref is not None:
+                        print(
+                            f"[insert_refcheck_entry] пригласитель уже {existing_ref}, "
+                            f"не меняю на {ref_user_id}"
+                        )
+                    else:
+                        print("[insert_refcheck_entry] ➕ Запись не найдена - выполняю INSERT")
+                        await connection.execute(
+                            """
+                            INSERT INTO refcheck (user_id, ref_user_id, first_name, ref_first_name, date)
+                            VALUES ($1, $2, $3, $4, $5)
+                            """ , user_id , ref_user_id , first_name , ref_first_name , date)
+                        print(f"[insert_refcheck_entry] ✅ Вставлена новая запись для user_id={user_id}")
 
                 # 3.2) Если вдруг остались дубликаты с тем же ref_user_id - оставим одну самую свежую
                 # Используем ctid и window function, чтобы удалить все кроме одной
@@ -14546,51 +14566,158 @@ class Database:
         except Exception as e:
             print(f"Ошибка при добавлении пользователя {username}: {e}")
 
-    async def add_ref1(self , user_id: int , refferer_id: int) -> bool:
-        """
-        Устанавливает/заменяет пригласителя (refferer_id) для user_id.
+    async def _referral_invitee_row(self, conn, user_id: int):
+        row = await conn.fetchrow(
+            """
+            SELECT refferer_id, usersref, wins, loose, refcheckgame, bot_first_start_at, data
+            FROM users
+            WHERE user_id = $1
+            """,
+            int(user_id),
+        )
+        check_ref = await conn.fetchval(
+            "SELECT ref_user_id FROM refcheck WHERE user_id = $1 LIMIT 1",
+            int(user_id),
+        )
+        if row is None and check_ref is None:
+            return None
+        data = dict(row) if row is not None else {}
+        data["registered_at"] = data.get("data")
+        data["refcheck_ref_user_id"] = check_ref
+        return data
 
-        Поведение:
-          - Если строки в users нет - создаёт и ставит refferer_id.
-          - Если строка есть - ПЕРЕЗАПИСЫВАЕТ refferer_id на новый.
-          - Если новое значение совпадает со старым - возвращает False (no-op).
-          - Самореф (user_id == refferer_id) запрещён → False.
+    async def referral_status(self, user_id: int, referrer_id: int) -> str:
+        """Смотрит, сработает ли ссылка, и ничего не записывает."""
+        from bot.funcs.referral_gate import referral_verdict
 
-        Возвращает:
-          True  - если была вставка или реальное изменение значения.
-          False - если ничего не изменилось (уже стоял тот же refferer_id) или самореф.
-        """
-        if not isinstance(user_id , int) or not isinstance(refferer_id , int):
-            raise ValueError("user_id и refferer_id должны быть int")
-
-        if user_id == refferer_id:
-            # Нельзя назначать себя пригласителем
-            return False
-
-        # Опционально гарантируем, что у пригласителя есть строка в users (заглушка)
+        try:
+            user_id = int(user_id)
+            referrer_id = int(referrer_id)
+        except (TypeError, ValueError):
+            return "bad"
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING;" , refferer_id)
-
-                # Апсертом вставляем или обновляем, НО апдейт делаем только если значение реально меняется
-                # (IS DISTINCT FROM корректно сравнивает с учётом NULL).
-                changed_sql = """
-                    WITH upsert AS (
-                      INSERT INTO users (user_id, refferer_id)
-                      VALUES ($1, $2)
-                      ON CONFLICT (user_id) DO UPDATE
-                        SET refferer_id = EXCLUDED.refferer_id
-                        WHERE users.refferer_id IS DISTINCT FROM EXCLUDED.refferer_id
-                      RETURNING 1
-                    )
-                    SELECT EXISTS (SELECT 1 FROM upsert);
-                """
-                changed = await conn.fetchval(changed_sql , user_id , refferer_id)
-                return bool(changed)
+                referrer_exists = bool(await conn.fetchval(
+                    "SELECT 1 FROM users WHERE user_id = $1", referrer_id,
+                ))
+                invitee = await self._referral_invitee_row(conn, user_id)
+            return referral_verdict(
+                user_id=user_id,
+                referrer_id=referrer_id,
+                referrer_exists=referrer_exists,
+                invitee=invitee,
+            )
         except Exception as e:
-            print(f"[ERROR] add_ref1(user_id={user_id}, refferer_id={refferer_id}): {e}")
+            print(f"[ERROR] referral_status(user_id={user_id}, referrer_id={referrer_id}): {e}")
+            return "bad"
+
+    async def claim_referral(
+        self,
+        user_id: int,
+        referrer_id: int,
+        first_name: str = "",
+        username: str = "",
+        bio: str = "",
+        start_balance: int = 0,
+    ) -> str:
+        """
+        Записывает приглашение один раз.
+        Повтор той же ссылки, чужая ссылка и человек, который уже открывал бота, не проходят.
+        Пригласителя в базе не создаёт.
+        """
+        from bot.funcs.referral_gate import referral_verdict
+
+        try:
+            user_id = int(user_id)
+            referrer_id = int(referrer_id)
+            start_balance = int(start_balance or 0)
+        except (TypeError, ValueError):
+            return "bad"
+        first_name = (first_name or "").strip() or "Неизвестный"
+        username = username or ""
+        bio = bio or ""
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock($1)", user_id)
+                    referrer_exists = bool(await conn.fetchval(
+                        "SELECT 1 FROM users WHERE user_id = $1", referrer_id,
+                    ))
+                    invitee = await self._referral_invitee_row(conn, user_id)
+                    verdict = referral_verdict(
+                        user_id=user_id,
+                        referrer_id=referrer_id,
+                        referrer_exists=referrer_exists,
+                        invitee=invitee,
+                    )
+                    if verdict != "ok":
+                        return verdict
+                    written = await conn.fetchval(
+                        """
+                        INSERT INTO users (
+                            user_id, data, first_name, username, bio, balance, refferer_id
+                        )
+                        VALUES ($1, NOW(), $2, $3, $4, $5, $6)
+                        ON CONFLICT (user_id) DO UPDATE
+                        SET refferer_id = EXCLUDED.refferer_id,
+                            data = COALESCE(users.data, NOW()),
+                            balance = CASE
+                                WHEN users.data IS NULL AND COALESCE(users.balance, 0) = 0
+                                THEN EXCLUDED.balance
+                                ELSE users.balance
+                            END
+                        WHERE users.refferer_id IS NULL
+                          AND COALESCE(users.usersref, 0) <> 1
+                          AND COALESCE(users.wins, 0) = 0
+                          AND COALESCE(users.loose, 0) = 0
+                          AND COALESCE(users.refcheckgame, 0) <> 1
+                          AND users.bot_first_start_at IS NULL
+                          AND users.data IS NULL
+                        RETURNING user_id
+                        """,
+                        user_id,
+                        first_name,
+                        username,
+                        bio,
+                        start_balance,
+                        referrer_id,
+                    )
+                    if not written:
+                        invitee = await self._referral_invitee_row(conn, user_id)
+                        again = referral_verdict(
+                            user_id=user_id,
+                            referrer_id=referrer_id,
+                            referrer_exists=referrer_exists,
+                            invitee=invitee,
+                        )
+                        return "used" if again == "ok" else again
+                    ref_name = await conn.fetchval(
+                        "SELECT first_name FROM users WHERE user_id = $1", referrer_id,
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO refcheck (user_id, ref_user_id, first_name, ref_first_name, date)
+                        SELECT $1, $2, $3, $4, NOW()
+                        WHERE NOT EXISTS (SELECT 1 FROM refcheck WHERE user_id = $1)
+                        """,
+                        user_id,
+                        referrer_id,
+                        first_name,
+                        ref_name or "",
+                    )
+                    return "ok"
+        except Exception as e:
+            print(f"[ERROR] claim_referral(user_id={user_id}, referrer_id={referrer_id}): {e}")
+            return "bad"
+
+    async def add_ref1(self , user_id: int , refferer_id: int) -> bool:
+        """Совместимый вход. True только когда приглашение записано впервые."""
+        try:
+            user_id = int(user_id)
+            refferer_id = int(refferer_id)
+        except (TypeError, ValueError):
             return False
+        return await self.claim_referral(user_id, refferer_id) == "ok"
 
     async def set_active(self, user_id, active):
         """Обновляет статус активности пользователя."""

@@ -3137,26 +3137,29 @@ async def balance(message: Message):
                     "<b>💭 Нельзя пригласить бота</b>" , parse_mode="HTML")
                 return
 
-            # 3) Проверка регистрации целевого пользователя
-            already = await db.is_user_registered(target_id)
-            print(f"[cute] Цель {target_id} уже зарегистрирован: {already}")
-
-            if already:
-                await message.reply(
-                    "<b>💭 Пользователь уже зарегистрирован, попробуйте другого</b>" , parse_mode="HTML")
+            from bot.funcs.referral_copy import (
+                inviter_skip_text, referral_button_label, referral_share_text,
+            )
+            status = await db.referral_status(target_id, inviter_id)
+            print(f"[cute] Цель {target_id} статус приглашения: {status}")
+            if status != "ok":
+                await message.reply(inviter_skip_text(status), parse_mode="HTML")
                 return
 
             # 4) Генерация реферальной ссылки на старт бота
             referral_link = await get_start_link(inviter_id)
             print(f"[cute] Сгенерирован deep-link для inviter={inviter_id}: {referral_link}")
 
-            # 5) Клавиатура с кнопкой «получить кут»
             kb = InlineKeyboardMarkup(
-                inline_keyboard=[ [ InlineKeyboardButton(text=f"💰 Получить {ref_coin} кут" , url=referral_link) ] ])
+                inline_keyboard=[ [ InlineKeyboardButton(text=referral_button_label(), url=referral_link) ] ])
 
-            # 6) Отправляем эмодзи-ответ ИМЕННО на сообщение цели
             await bot1.send_message(
-                chat_id=message.chat.id , text="<tg-emoji emoji-id='5318959255385043017'>🎩</tg-emoji>" , reply_markup=kb , reply_to_message_id=r.message_id, parse_mode="HTML")
+                chat_id=message.chat.id,
+                text=referral_share_text(ref_coin),
+                reply_markup=kb,
+                reply_to_message_id=r.message_id,
+                parse_mode="HTML",
+            )
             print(f"[cute] Кнопка отправлена в чат {message.chat.id} в ответ на {r.message_id}")
 
         except Exception as e:
