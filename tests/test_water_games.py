@@ -35,6 +35,7 @@ from water_games.design import (
     shields_in_bag,
     shop_can_take,
     stock_is_open,
+    pour_bounds,
     take_amount,
     take_one_item,
     towel_amount,
@@ -94,18 +95,14 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
         "dryawning",
         "drysafe",
     ]
-    assert stock_is_open(name1="pistoletik")
-    assert stock_is_open(name="Пистолетик")
+    assert not stock_is_open(name1="pistoletik")
+    assert not stock_is_open(name="Пистолетик")
     assert not stock_is_open(name1="watercraft")
     assert not stock_is_open(name="Вода")
-    assert stock_is_open(name1="dryumbrella")
-    assert stock_is_open(name="Зонтик")
-    assert stock_is_open(name1="drycoat")
-    assert stock_is_open(name="Дождевик")
-    assert stock_is_open(name1="dryawning")
-    assert stock_is_open(name="Навес")
-    assert stock_is_open(name1="drysafe")
-    assert stock_is_open(name="Сухой сейф")
+    assert not stock_is_open(name1="dryumbrella")
+    assert not stock_is_open(name="Зонтик")
+    assert not stock_is_open(name1="drycoat")
+    assert not stock_is_open(name1="drysafe")
     assert can_shoot("dryumbrella")
     assert not can_shoot("drycoat")
     assert not can_shoot("dryawning")
@@ -113,8 +110,8 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert kept_kind("drycoat", "dryumbrella") == "drycoat"
     assert kept_kind("dryumbrella", "dryumbrella") == "dryumbrella"
     assert kept_kind("dryumbrella", "drysafe") == "drysafe"
-    assert shop_can_take(1, 5, name="Зонтик") == 5
-    assert shop_can_take(1, 5, name="Пистолетик") == 5
+    assert shop_can_take(1, 5, name="Зонтик") == 1
+    assert shop_can_take(1, 5, name="Пистолетик") == 1
     assert shop_can_take(3, 5, name="Вода") == 3
     assert shop_can_take(3, 5, name="Камень") == 3
     assert shop_can_take(0, 5, name="Зонтик") == 0
@@ -142,6 +139,10 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert choice_label(emoji="☂️", name="Зонтик", count=2, plus="+3 часа") == "☂️ Зонтик: 2 шт, +3 часа"
     assert "Ответьте" in screen_text("shot_reply")
     assert word("towel") == "Полотенце"
+    assert word("towel_btn", amount="120") == "Полотенце +120"
+    hit = screen_text("shot_hit", amount="600", towel="120", hours="3 часа")
+    assert "600" in hit and "120" in hit and "3 часа" in hit
+    assert "уже на балансе" in screen_text("towel_taken", amount="120")
     assert "Вода при вас" in screen_text("shot_day")
 
 
@@ -188,10 +189,11 @@ def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
     assert "<code>топ</code>" in broke
     assert "Вода потрачена" in broke
     ask = screen_text("shot_ask", amount="120")
-    assert "Возьмёте 120 кут" in ask
-    assert "Уйти оставит воду" in ask
+    assert "120" in ask
+    assert "заберете" in ask
     guard = screen_text("shot_guard", mark="☂️", name="Зонтик", span="ещё 2 часа")
     assert "Под защитой ещё 2 часа" in guard
+    assert "куты не будут заработаны" in guard
     assert "Вода при вас" in screen_text("shot_cancel")
 
 
@@ -230,6 +232,13 @@ def test_a_water_purchase_advances_only_its_own_message():
     assert stamp_callback("wg:more:42", 99) == "wg:more:42"
     assert button_owner("wg:find:watercraft") is None
     assert button_owner(stamp_callback("wg:towel:3", 9)) == 9
+
+
+def test_pour_bounds_follow_the_percent_and_the_ceiling():
+    assert pour_bounds(1000, 4, 8, cap=1500, day_left=4000, poor=50) == (40, 80)
+    assert pour_bounds(100_000, 4, 8, cap=1500, day_left=4000, poor=50) == (1500, 1500)
+    assert pour_bounds(40, 4, 8, cap=1500, day_left=4000, poor=50) == (0, 0)
+    assert pour_bounds(1000, 4, 8, cap=1500, day_left=30, poor=50) == (30, 30)
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():

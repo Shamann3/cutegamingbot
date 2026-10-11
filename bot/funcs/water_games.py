@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import aiohttp
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
+from bot.db_create.db import InsufficientBalanceError
 from bot.db_create.items_codec import decode_items, encode_items
 from bot.funcs.water_games_design import (
     BTN_BACK,
@@ -38,6 +39,7 @@ from bot.funcs.water_games_design import (
     find_button_rows,
     kept_kind,
     after_buy_text,
+    default_rules,
     extend_empty_text,
     extend_list_text,
     shield_mark,
@@ -123,15 +125,44 @@ def _home_text() -> str:
     return screen_text("home")
 
 
-def _rules_text() -> str:
+def _rules_text(rules: dict | None = None) -> str:
+    rules = rules or default_rules()
     return screen_text(
         "rules",
-        low=PERCENT_LOW,
-        high=PERCENT_HIGH,
-        cap=SHOT_CAP,
-        day=DAY_CAP,
-        poor=POOR_BALANCE,
+        low=rules["percentLow"],
+        high=rules["percentHigh"],
+        cap=rules["shotCap"],
+        day=rules["dayCap"],
+        poor=rules["poorBalance"],
     )
+
+
+async def _shot_rules() -> dict:
+    """Живые числа создателя. Нет строки — остаются стартовые 4–8% и потолки."""
+    base = default_rules()
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance
+            FROM water_rules WHERE id = 1
+            """
+        )
+    except Exception:
+        log.exception("water rules")
+        return base
+    if not row:
+        return base
+    low = max(1, min(100, int(row["percent_low"])))
+    high = max(1, min(100, int(row["percent_high"])))
+    if low > high:
+        low, high = high, low
+    return {
+        "percentLow": low,
+        "percentHigh": high,
+        "shotCap": max(1, int(row["shot_cap"])),
+        "dayCap": max(1, int(row["day_cap"])),
+        "poorBalance": max(0, int(row["poor_balance"])),
+    }
 
 
 async def ensure() -> None:
@@ -200,6 +231,32 @@ async def ensure() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
+    )
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_rules (
+            id SMALLINT PRIMARY KEY,
+            percent_low INT NOT NULL,
+            percent_high INT NOT NULL,
+            shot_cap INT NOT NULL,
+            day_cap INT NOT NULL,
+            poor_balance INT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    base = default_rules()
+    await pool.execute(
+        """
+        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance)
+        VALUES (1, $1, $2, $3, $4, $5)
+        ON CONFLICT (id) DO NOTHING
+        """,
+        base["percentLow"],
+        base["percentHigh"],
+        base["shotCap"],
+        base["dayCap"],
+        base["poorBalance"],
     )
     await pool.execute(
         """
@@ -664,6 +721,7 @@ def _guard_span(row) -> str:
 
 async def _preview_shot(message, user_id: int, target_id: int, now, day_start, edit_call=None) -> None:
     """Показывает сумму или срок защиты. Вода списывается только после «Облить»."""
+    rules = await _shot_rules()
     target_shield = await _shield(target_id)
     kind = "hit"
     amount = 0
@@ -675,7 +733,7 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
         if enemy["row"] is None:
             await message.reply(screen_text("shot_unknown"), parse_mode="HTML")
             return
-        if enemy["balance"] < POOR_BALANCE:
+        if enemy["balance"] < rules["poorBalance"]:
             kind = "broke"
         else:
             taken_today = int(await db.pool.fetchval(
@@ -685,12 +743,15 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
                 """,
                 int(target_id), day_start,
             ) or 0)
-            day_left = max(0, DAY_CAP - taken_today)
+            day_left = max(0, rules["dayCap"] - taken_today)
             if day_left < 1:
                 await message.reply(screen_text("shot_day"), parse_mode="HTML")
                 return
-            percent = random.randint(PERCENT_LOW, PERCENT_HIGH)
-            amount = take_amount(enemy["balance"], percent, cap=SHOT_CAP, day_left=day_left)
+            percent = random.randint(rules["percentLow"], rules["percentHigh"])
+            amount = take_amount(
+                enemy["balance"], percent,
+                cap=rules["shotCap"], day_left=day_left, poor=rules["poorBalance"],
+            )
             if amount < 1:
                 await message.reply(screen_text("shot_dry"), parse_mode="HTML")
                 return
@@ -722,19 +783,8 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
 
 
 async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, now) -> tuple[str, object]:
-    await db.pool.execute(
-        "UPDATE users SET balance = balance - $2 WHERE user_id = $1",
-        int(target_id), int(amount),
-    )
-    await db.pool.execute(
-        "UPDATE users SET balance = balance + $2 WHERE user_id = $1",
-        int(user_id), int(amount),
-    )
-    try:
-        await db.cutehistory_minus(target_id, amount, word("history_shot"))
-        await db.cutehistory_plus(user_id, amount, word("history_shot"))
-    except Exception:
-        log.warning("water history failed", exc_info=True)
+    """Перевод через общий путь баланса: база, история и кэш меняются вместе."""
+    await db.transfer_currency(int(target_id), int(user_id), int(amount), word("history_shot"))
     await _log(user_id, target_id, chat_id, amount, "hit")
     towel = towel_amount(amount)
     until = now + timedelta(hours=TOWEL_HOURS)
@@ -746,10 +796,15 @@ async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, no
         """,
         int(target_id), int(towel), until,
     )
-    text = screen_text("shot_hit", amount=_money(amount), hours=hours_phrase(TOWEL_HOURS))
+    text = screen_text(
+        "shot_hit",
+        amount=_money(amount),
+        towel=_money(towel),
+        hours=hours_phrase(TOWEL_HOURS),
+    )
     markup = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text=word("towel"),
+            text=word("towel_btn", amount=_money(towel)),
             callback_data=stamp_callback(f"wg:towel:{int(towel_id)}", target_id),
             style="success",
         ),
@@ -782,6 +837,7 @@ async def _finish_pour(call, offer_id: int) -> None:
         await call.answer()
         return
     now = datetime.now(timezone.utc)
+    rules = await _shot_rules()
     shield = await _shield(target_id)
     if _still(shield):
         await _spend_water(user_id, items)
@@ -798,10 +854,10 @@ async def _finish_pour(call, offer_id: int) -> None:
         await _edit_call(call, screen_text("shot_unknown"))
         await call.answer()
         return
-    if enemy["balance"] < POOR_BALANCE:
+    if enemy["balance"] < rules["poorBalance"]:
         await _spend_water(user_id, items)
         await _log(user_id, target_id, chat_id, 0, "broke")
-        await _edit_call(call, screen_text("shot_broke", poor=POOR_BALANCE))
+        await _edit_call(call, screen_text("shot_broke", poor=rules["poorBalance"]))
         await call.answer()
         return
     if str(row["kind"]) == "broke":
@@ -816,13 +872,16 @@ async def _finish_pour(call, offer_id: int) -> None:
         """,
         target_id, day_start,
     ) or 0)
-    day_left = max(0, DAY_CAP - taken_today)
+    day_left = max(0, rules["dayCap"] - taken_today)
     if day_left < 1:
         await _edit_call(call, screen_text("shot_day"))
         await call.answer()
         return
-    percent = int(row["percent"] or 0) or random.randint(PERCENT_LOW, PERCENT_HIGH)
-    amount = take_amount(enemy["balance"], percent, cap=SHOT_CAP, day_left=day_left)
+    percent = int(row["percent"] or 0) or random.randint(rules["percentLow"], rules["percentHigh"])
+    amount = take_amount(
+        enemy["balance"], percent,
+        cap=rules["shotCap"], day_left=day_left, poor=rules["poorBalance"],
+    )
     stored = int(row["amount"] or 0)
     if stored > 0:
         amount = min(stored, amount)
@@ -830,8 +889,14 @@ async def _finish_pour(call, offer_id: int) -> None:
         await _edit_call(call, screen_text("shot_dry"))
         await call.answer()
         return
+    try:
+        text, markup = await _apply_hit(user_id, target_id, chat_id, amount, now)
+    except InsufficientBalanceError as exc:
+        screen = "shot_gift" if "подароч" in str(exc) else "shot_dry"
+        await _edit_call(call, screen_text(screen))
+        await call.answer()
+        return
     await _spend_water(user_id, items)
-    text, markup = await _apply_hit(user_id, target_id, chat_id, amount, now)
     await _edit_call(call, text, markup)
     await call.answer()
 
@@ -1281,7 +1346,7 @@ async def water_click(call):
         await _show(call, "home", text, markup=markup)
         return
     if data == "wg:rules":
-        await _show(call, "rules", _rules_text())
+        await _show(call, "rules", _rules_text(await _shot_rules()))
         return
     if data == "wg:shield":
         rows = []
@@ -1457,15 +1522,34 @@ async def water_click(call):
         if row["until"] <= datetime.now(timezone.utc):
             await call.answer(word("towel_dry"), show_alert=True)
             return
-        await db.pool.execute("UPDATE water_towels SET claimed = TRUE WHERE id = $1", towel_id)
-        await db.pool.execute(
-            "UPDATE users SET balance = balance + $2 WHERE user_id = $1",
-            int(call.from_user.id), int(row["amount"]),
+        claimed = await db.pool.fetchrow(
+            """
+            UPDATE water_towels
+            SET claimed = TRUE
+            WHERE id = $1 AND user_id = $2 AND claimed = FALSE AND until > NOW()
+            RETURNING amount
+            """,
+            towel_id,
+            int(call.from_user.id),
         )
+        if not claimed:
+            await call.answer(word("towel_lost"), show_alert=True)
+            return
+        amount = int(claimed["amount"])
+        updated = await db.update_user_balance(int(call.from_user.id), f"+{amount}")
+        if updated is None:
+            await db.pool.execute(
+                "UPDATE water_towels SET claimed = FALSE WHERE id = $1",
+                towel_id,
+            )
+            await call.answer(word("towel_lost"), show_alert=True)
+            return
         try:
-            await db.cutehistory_plus(call.from_user.id, int(row["amount"]), word("history_towel"))
+            await db.cutehistory_plus(call.from_user.id, amount, word("history_towel"))
         except Exception:
             log.warning("towel history failed", exc_info=True)
-        await call.answer(word("towel_got", amount=int(row["amount"])), show_alert=True)
+        shown = _money(amount)
+        await _edit_call(call, screen_text("towel_taken", amount=shown))
+        await call.answer(word("towel_got", amount=shown), show_alert=True)
         return
     await call.answer()

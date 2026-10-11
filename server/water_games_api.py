@@ -40,6 +40,21 @@ class PriceBody(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class StockBody(BaseModel):
+    id: int = Field(ge=1)
+    remains: int = Field(ge=0, le=99_999_999)
+    model_config = {"extra": "forbid"}
+
+
+class RulesBody(BaseModel):
+    percentLow: int = Field(ge=1, le=100)
+    percentHigh: int = Field(ge=1, le=100)
+    shotCap: int = Field(ge=1, le=99_999_999)
+    dayCap: int = Field(ge=1, le=99_999_999)
+    poorBalance: int = Field(ge=0, le=99_999_999)
+    model_config = {"extra": "forbid"}
+
+
 def _pool():
     from db import db
     return db.pool
@@ -76,8 +91,52 @@ async def _ensure(pool) -> None:
     py = str(Path(__file__).resolve().parent / "py")
     if py not in sys.path:
         sys.path.insert(0, py)
-    from water_games.design import settle_umbrella
+    from water_games.design import default_rules, settle_umbrella
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_rules (
+            id SMALLINT PRIMARY KEY,
+            percent_low INT NOT NULL,
+            percent_high INT NOT NULL,
+            shot_cap INT NOT NULL,
+            day_cap INT NOT NULL,
+            poor_balance INT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    base = default_rules()
+    await pool.execute(
+        """
+        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance)
+        VALUES (1, $1, $2, $3, $4, $5)
+        ON CONFLICT (id) DO NOTHING
+        """,
+        base["percentLow"],
+        base["percentHigh"],
+        base["shotCap"],
+        base["dayCap"],
+        base["poorBalance"],
+    )
     await settle_umbrella(pool)
+
+
+def _rules_view(row) -> dict:
+    from water_games.design import default_rules
+    base = default_rules()
+    if not row:
+        return base
+    low = int(row["percent_low"])
+    high = int(row["percent_high"])
+    if low > high:
+        low, high = high, low
+    return {
+        "percentLow": low,
+        "percentHigh": high,
+        "shotCap": int(row["shot_cap"]),
+        "dayCap": int(row["day_cap"]),
+        "poorBalance": int(row["poor_balance"]),
+    }
 
 
 @router.get("")
@@ -178,7 +237,14 @@ async def water_board(_user_id: int = Depends(_creator)):
     def person(user_id: int) -> dict:
         return {"userId": int(user_id), "name": names.get(int(user_id)) or "Игрок"}
 
+    rules = await pool.fetchrow(
+        """
+        SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance
+        FROM water_rules WHERE id = 1
+        """
+    )
     return {
+        "rules": _rules_view(rules),
         "totals": {
             "hits": int(totals["hits"] or 0) if totals else 0,
             "broke": int(totals["broke"] or 0) if totals else 0,
@@ -259,3 +325,51 @@ async def water_price(body: PriceBody, _user_id: int = Depends(_creator)):
     if not row:
         raise HTTPException(status_code=404, detail="Предмета ещё нет в dex")
     return {"ok": True, "id": str(row["id"]), "name": row["name"], "price": int(row["price"])}
+
+
+@router.post("/stock")
+async def water_stock(body: StockBody, _user_id: int = Depends(_creator)):
+    pool = _pool()
+    row = await pool.fetchrow(
+        """
+        UPDATE dex SET remains = $2
+        WHERE id = $1
+          AND (name1 = ANY($3::text[]) OR name = ANY($4::text[]))
+        RETURNING id, name, remains
+        """,
+        int(body.id),
+        int(body.remains),
+        list(KEYS),
+        list(NAMES),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Предмета ещё нет в dex")
+    return {"ok": True, "id": str(row["id"]), "name": row["name"], "remains": int(row["remains"] or 0)}
+
+
+@router.post("/rules")
+async def water_rules(body: RulesBody, _user_id: int = Depends(_creator)):
+    if body.percentLow > body.percentHigh:
+        raise HTTPException(status_code=400, detail="Нижний процент больше верхнего")
+    pool = _pool()
+    await _ensure(pool)
+    row = await pool.fetchrow(
+        """
+        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance, updated_at)
+        VALUES (1, $1, $2, $3, $4, $5, NOW())
+        ON CONFLICT (id) DO UPDATE
+        SET percent_low = EXCLUDED.percent_low,
+            percent_high = EXCLUDED.percent_high,
+            shot_cap = EXCLUDED.shot_cap,
+            day_cap = EXCLUDED.day_cap,
+            poor_balance = EXCLUDED.poor_balance,
+            updated_at = NOW()
+        RETURNING percent_low, percent_high, shot_cap, day_cap, poor_balance
+        """,
+        int(body.percentLow),
+        int(body.percentHigh),
+        int(body.shotCap),
+        int(body.dayCap),
+        int(body.poorBalance),
+    )
+    return {"ok": True, "rules": _rules_view(row)}

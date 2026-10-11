@@ -225,10 +225,11 @@ WORDS = {
     "open_buy": "Открыть покупку",
     "open_unlot": "Снять лот",
     "towel": "Полотенце",
-    "towel_lost": "Полотенце уже не найти",
-    "towel_not_yours": "Это полотенце не вам.",
-    "towel_dry": "Полотенце высохло",
-    "towel_got": "Полотенце: +{amount} кут",
+    "towel_btn": "Полотенце +{amount}",
+    "towel_lost": "Полотенце уже забрали.",
+    "towel_not_yours": "Это полотенце для того, кого облили.",
+    "towel_dry": "Время вышло. Полотенце больше не вернёт кут.",
+    "towel_got": "+{amount} кут уже на балансе.",
     "shield_name": "защита",
     "where_market": "на бирже",
     "where_shop": "в магазине",
@@ -578,7 +579,23 @@ screen(
     "shot_hit",
     """
     <b>Вы забрали {amount} кут</b>
-    <i>«Полотенце» на {hours} вернёт ему часть. Нажимает только он.</i>
+    <i>Полотенце вернёт ему {towel} кут. Кнопка действует {hours}. Нажимает только он.</i>
+    """,
+)
+
+screen(
+    "shot_gift",
+    """
+    <b>Подарочные кут</b>
+    <i>Их нельзя забрать. Вода при вас.</i>
+    """,
+)
+
+screen(
+    "towel_taken",
+    """
+    <b>Полотенце вернуло {amount} кут</b>
+    <i>Они уже на балансе.</i>
     """,
 )
 
@@ -801,8 +818,9 @@ def is_water_ask(text: str) -> bool:
     return any(all(part in raw for part in pair) for pair in _ASK_PARTS)
 
 
-def take_amount(balance: int, percent: int, *, cap: int, day_left: int) -> int:
-    if int(balance) < POOR_BALANCE:
+def take_amount(balance: int, percent: int, *, cap: int, day_left: int, poor: int | None = None) -> int:
+    floor = POOR_BALANCE if poor is None else int(poor)
+    if int(balance) < floor:
         return 0
     raw = int(int(balance) * int(percent) / 100)
     if raw < 1:
@@ -813,27 +831,36 @@ def take_amount(balance: int, percent: int, *, cap: int, day_left: int) -> int:
     return min(raw, room)
 
 
+def default_rules() -> dict:
+    """То, с чего начинается выстрел, пока создатель не задал свои числа."""
+    return {
+        "percentLow": PERCENT_LOW,
+        "percentHigh": PERCENT_HIGH,
+        "shotCap": SHOT_CAP,
+        "dayCap": DAY_CAP,
+        "poorBalance": POOR_BALANCE,
+    }
+
+
+def pour_bounds(balance: int, low: int, high: int, *, cap: int, day_left: int, poor: int) -> tuple[int, int]:
+    """Сколько кут заберёт выстрел на этом балансе: от меньшего процента до большего."""
+    left = int(low)
+    right = int(high)
+    if left > right:
+        left, right = right, left
+    small = take_amount(balance, left, cap=cap, day_left=day_left, poor=poor)
+    large = take_amount(balance, right, cap=cap, day_left=day_left, poor=poor)
+    return min(small, large), max(small, large)
+
+
 def btn_join(fee: int = EXTEND_FEE) -> str:
     return f"Улучшить за {int(fee)} кут"
 
 
 def stock_is_open(name1: str = "", name: str = "") -> bool:
-    """Защита водных игр не кончается на складе."""
-    key = str(name1 or "").strip().lower()
-    title = str(name or "").strip().lower()
-    return key in {
-        "pistoletik",
-        "dryumbrella",
-        "drycoat",
-        "dryawning",
-        "drysafe",
-    } or title in {
-        "пистолетик",
-        "зонтик",
-        "дождевик",
-        "навес",
-        "сухой сейф",
-    }
+    """Остаток задаёт создатель во вкладке. Безлимита нет: ноль — предмета нет в продаже."""
+    del name1, name
+    return False
 
 
 def can_shoot(kind: str) -> bool:
@@ -1142,8 +1169,7 @@ async def settle_umbrella(pool) -> None:
             SET bio = $1,
                 emoji = $2,
                 sorting = '🔫',
-                "use" = 1,
-                remains = CASE WHEN COALESCE(remains, 0) < 1 THEN 1 ELSE remains END
+                "use" = 1
             WHERE name1 = $3 OR lower(name) = lower($4)
             """,
             str(item.get("bio") or ""),

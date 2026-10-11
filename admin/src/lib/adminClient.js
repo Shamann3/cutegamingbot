@@ -558,6 +558,20 @@ export async function saveWaterPrice({ id, price }) {
   })
 }
 
+export async function saveWaterStock({ id, remains }) {
+  return adminRequest('/water-games/stock', {
+    method: 'POST',
+    body: { id, remains },
+  })
+}
+
+export async function saveWaterRules(rules) {
+  return adminRequest('/water-games/rules', {
+    method: 'POST',
+    body: rules,
+  })
+}
+
 
 
 export async function fetchAdminMe() {

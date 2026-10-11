@@ -53,6 +53,87 @@
   animation: water-in 320ms ease both;
 }
 
+.water-rules {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.water-rules.is-saved {
+  animation: water-saved 420ms ease;
+}
+
+.water-rule-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.water-rule-span {
+  grid-column: 1 / -1;
+}
+
+.water-meter {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.water-meter i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  transition: left 320ms ease, width 320ms ease;
+}
+
+.water-pour {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+  animation: water-in 320ms ease;
+}
+
+.water-shop-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.water-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.water-card.is-saved {
+  animation: water-saved 420ms ease;
+}
+
+.water-card strong {
+  font-size: 1rem;
+}
+
+.water-now {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.85rem;
+}
+
+.water-card .sec-btn {
+  justify-self: start;
+  width: auto;
+}
+
 .water-price.is-saved {
   animation: water-saved 420ms ease;
 }
@@ -144,10 +225,32 @@
   font-size: 0.85rem;
 }
 
+.water-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 0.7rem;
+}
+
+.water-field span {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
 .water-price input {
   display: block;
   width: 100%;
-  margin-top: 0.55rem;
+}
+
+@media (max-width: 640px) {
+  .water-fields,
+  .water-rule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .water-rule-span {
+    grid-column: auto;
+  }
 }
 
 .water-price button {
@@ -181,6 +284,10 @@
   .water-person,
   .water-price,
   .water-price.is-saved,
+  .water-rules,
+  .water-rules.is-saved,
+  .water-meter i,
+  .water-pour,
   .water-pane,
   .water-rank li,
   .water-recent li,
