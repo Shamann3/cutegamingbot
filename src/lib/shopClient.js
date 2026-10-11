@@ -30,6 +30,11 @@ export function fetchShopCatalog({
   return apiRequest(`/api/shop/catalog?${params}`)
 }
 
+export function fetchShopOffer(itemId) {
+  const params = new URLSearchParams({ itemId: String(itemId ?? '').trim() })
+  return apiRequest(`/api/shop/offer?${params}`)
+}
+
 export function buyShopItem(itemId, options = {}) {
   const {
     category = 'all',

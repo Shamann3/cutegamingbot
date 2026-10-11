@@ -25,7 +25,7 @@ import { useSwipeTabs } from './hooks/useSwipeTabs'
 import { usePresencePing } from './hooks/usePresencePing'
 import { syncSession } from './lib/sessionClient'
 import { canAuthenticate, getStartTab } from './lib/telegram'
-import { resolveStartTab } from './utils/tradeNav'
+import { aimedItemIds, resolveStartTab } from './utils/tradeNav'
 import { fetchAppStatus } from './lib/apiClient'
 import GlobalSeasonLayer from './components/decor/GlobalSeasonLayer'
 
@@ -153,10 +153,10 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
   const blockSwipe = Boolean(onboarding?.visible)
   const { equipped } = useEquippedCosmetics()
   const [shopSearch, setShopSearch] = useState('')
-  const [shopItemId, setShopItemId] = useState('')
+  const [shopItemId, setShopItemId] = useState(() => aimedItemIds(getStartTab() ?? '').shopItemId)
   const [shopHighlightOnly, setShopHighlightOnly] = useState(false)
   const [marketSearch, setMarketSearch] = useState('')
-  const [marketItemId, setMarketItemId] = useState('')
+  const [marketItemId, setMarketItemId] = useState(() => aimedItemIds(getStartTab() ?? '').marketItemId)
   const [marketHighlightOnly, setMarketHighlightOnly] = useState(false)
 
   // Модалка покупки поверх текущей вкладки — не уводим с фермы,

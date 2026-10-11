@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSettings } from '../context/SettingsContext'
 import FarmBackground from './FarmBackground'
 import VineFrame from './VineFrame'
@@ -13,6 +13,7 @@ import KutBalance from './KutBalance'
 import TabAtmosphere from './TabAtmosphere'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import { useShop } from '../hooks/useShop'
+import { fetchShopOffer } from '../lib/shopClient'
 import { useShopFavorites } from '../hooks/useShopFavorites'
 
 function errorClass(code) {
@@ -66,6 +67,8 @@ export default function ExchangeModule({
   const [selectedItem, setSelectedItem] = useState(null)
   const [pendingGuide, setPendingGuide] = useState(null)
   const [highlightItemId, setHighlightItemId] = useState(null)
+  const [offerMeta, setOfferMeta] = useState(null)
+  const aimedRequest = useRef('')
 
   useEffect(() => {
     if (!isActive) return
@@ -98,6 +101,25 @@ export default function ExchangeModule({
     setPendingGuide(null)
     onSearchUsed?.()
   }, [pendingGuide, initialLoading, items, onSearchUsed])
+
+  // Ссылка shop-<id> открывает окно покупки сразу, не дожидаясь страницы полки.
+  useEffect(() => {
+    if (!isActive || initialHighlightOnly || !initialItemId) return undefined
+    const key = String(initialItemId)
+    if (aimedRequest.current === key) return undefined
+    aimedRequest.current = key
+    fetchShopOffer(key).then((data) => {
+      if (aimedRequest.current !== key || !data?.item) return
+      setSelectedItem(data.item)
+      setOfferMeta({
+        itemId: String(data.item.id),
+        couponCount: data.couponCount,
+        couponDiscount: data.couponDiscount,
+        kut: data.kut,
+      })
+    }).catch(() => {})
+    return undefined
+  }, [isActive, initialHighlightOnly, initialItemId])
 
   useEffect(() => {
     if (!highlightItemId) return undefined
@@ -223,9 +245,9 @@ export default function ExchangeModule({
 
       <ShopPurchaseModal
         item={selectedItem}
-        kut={kut}
-        couponCount={couponCount}
-        couponDiscount={couponDiscount}
+        kut={initialLoading && offerMeta?.kut != null ? offerMeta.kut : kut}
+        couponCount={initialLoading && offerMeta?.couponCount != null ? offerMeta.couponCount : couponCount}
+        couponDiscount={initialLoading && offerMeta?.couponDiscount ? offerMeta.couponDiscount : couponDiscount}
         isOpen={Boolean(selectedItem)}
         isBuying={buyingItemId === selectedItem?.id}
         onClose={() => setSelectedItem(null)}

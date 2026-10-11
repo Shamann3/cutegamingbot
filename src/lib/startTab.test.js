@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getStartTab, pickStartTab, readStartParam } from './telegram'
-import { resolveStartTab } from '../utils/tradeNav'
+import { aimedItemIds, resolveStartTab } from '../utils/tradeNav'
 
 describe('readStartParam', () => {
   it('reads the section Telegram put in the launch hash', () => {
@@ -30,6 +30,9 @@ describe('readStartParam', () => {
     expect(pickStartTab('shop-42')).toBe('shop-42')
     expect(resolveStartTab('shop-42')).toEqual({ tab: 'trade', tradeSegment: 'shop', itemId: '42' })
     expect(resolveStartTab('market-7')).toEqual({ tab: 'trade', tradeSegment: 'market', itemId: '7' })
+    expect(aimedItemIds('shop-277')).toEqual({ shopItemId: '277', marketItemId: '' })
+    expect(aimedItemIds('market-294')).toEqual({ shopItemId: '', marketItemId: '294' })
+    expect(aimedItemIds('shop')).toEqual({ shopItemId: '', marketItemId: '' })
   })
 
   it('keeps craft and farm as their own screens', () => {

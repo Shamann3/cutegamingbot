@@ -52,6 +52,11 @@ export function fetchMarketCatalog(options = {}) {
   return apiRequest(`/api/market/catalog?${params}`)
 }
 
+export function fetchMarketOffer(itemId) {
+  const params = new URLSearchParams({ itemId: String(itemId ?? '').trim() })
+  return apiRequest(`/api/market/offer?${params}`)
+}
+
 export function fetchMarketSellable() {
   return apiRequest('/api/market/sellable')
 }

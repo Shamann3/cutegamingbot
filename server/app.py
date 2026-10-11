@@ -916,6 +916,18 @@ async def shop_catalog(
         raise _server_error(e, request)
 
 
+@app.get("/api/shop/offer")
+async def shop_offer(
+    request: Request,
+    user_id: int = Depends(rate_limit),
+    itemId: str = "",
+):
+    try:
+        return await db.get_shop_offer(user_id, itemId)
+    except Exception as e:
+        raise _server_error(e, request)
+
+
 @app.post("/api/shop/buy")
 async def shop_buy(request: Request, body: ShopBuyAction, user_id: int = Depends(rate_limit)):
     try:
@@ -961,6 +973,18 @@ async def market_catalog(
             sort_order=sortOrder,
             page_size=pageSize,
         )
+    except Exception as e:
+        raise _server_error(e, request)
+
+
+@app.get("/api/market/offer")
+async def market_offer(
+    request: Request,
+    user_id: int = Depends(rate_limit),
+    itemId: str = "",
+):
+    try:
+        return await db.get_market_offer(user_id, itemId)
     except Exception as e:
         raise _server_error(e, request)
 

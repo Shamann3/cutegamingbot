@@ -1480,6 +1480,46 @@ class Database:
         }
         return result
 
+    async def get_shop_offer(self, user_id, item_id):
+        """Один предмет магазина по id, без страницы полки.
+
+        Кнопка «открыть магазин» должна сразу показать окно покупки,
+        даже если предмет не попал на первую страницу каталога.
+        """
+        from shop_catalog import item_to_client
+        from coupon_rules import discount_bounds, COUPON_DISCOUNTED_UNITS
+
+        await self.ensure_user(user_id)
+        try:
+            dex_id = int(str(item_id).strip())
+        except (TypeError, ValueError):
+            dex_id = 0
+        row = None
+        if dex_id > 0:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, name, name1, emoji, price, dis, remains, sorting,
+                           stick, use, bonus, craft, bio
+                    FROM dex
+                    WHERE id = $1 AND remains > 0
+                    """,
+                    dex_id,
+                )
+        balance = await self.get_user_balance(user_id)
+        coupon_count = await self._get_coupon_count(user_id)
+        coupon_min, coupon_max = discount_bounds()
+        return {
+            "item": item_to_client(dict(row)) if row else None,
+            "kut": int(balance or 0),
+            "couponCount": coupon_count,
+            "couponDiscount": {
+                "minPercent": coupon_min,
+                "maxPercent": coupon_max,
+                "units": COUPON_DISCOUNTED_UNITS,
+            },
+        }
+
     async def _get_coupon_count(self, user_id) -> int:
         """Сколько «Купон на скидку» у игрока. Через dex_catalog.count_in_raw_items —
         считает по всем алиасам предмета, а не только по точному ключу (см. баг
@@ -3355,6 +3395,73 @@ class Database:
             "totalItems": total,
             "totalPages": total_pages,
             "items": items,
+        }
+
+    async def get_market_offer(self, user_id, item_id):
+        """Самый дешёвый чужой лот предмета. Свой — только если других нет."""
+        from market_catalog import listing_to_client
+        from market_rules import market_commission_meta
+
+        await self.ensure_user(user_id)
+        try:
+            dex_id = int(str(item_id).strip())
+        except (TypeError, ValueError):
+            dex_id = 0
+        row = None
+        if dex_id > 0:
+            item_key = str(dex_id)
+            listing_sql = """
+                SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
+                       l.created_at,
+                       d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
+                       d.craft, d.bio,
+                       u.username AS seller_username,
+                       u.first_name AS seller_first_name,
+                       u.last_name AS seller_last_name,
+                       u.display_name AS seller_display_name,
+                       u.photo_url AS seller_photo_url
+                FROM market_listings l
+                JOIN dex d ON CAST(d.id AS TEXT) = l.item_id
+                LEFT JOIN users u ON u.user_id = l.seller_id
+                WHERE l.status = 'active' AND l.quantity > 0 AND l.item_id = $1
+                ORDER BY (l.seller_id = $2) ASC, l.price ASC, l.created_at ASC
+                LIMIT 1
+            """
+            listing_sql_legacy = """
+                SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
+                       l.created_at,
+                       d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
+                       d.craft, d.bio,
+                       u.username AS seller_username,
+                       u.first_name AS seller_first_name,
+                       u.last_name AS seller_last_name,
+                       NULL::text AS seller_display_name,
+                       NULL::text AS seller_photo_url
+                FROM market_listings l
+                JOIN dex d ON CAST(d.id AS TEXT) = l.item_id
+                LEFT JOIN users u ON u.user_id = l.seller_id
+                WHERE l.status = 'active' AND l.quantity > 0 AND l.item_id = $1
+                ORDER BY (l.seller_id = $2) ASC, l.price ASC, l.created_at ASC
+                LIMIT 1
+            """
+            async with self.pool.acquire() as conn:
+                try:
+                    row = await conn.fetchrow(listing_sql, item_key, int(user_id))
+                except Exception as listing_err:
+                    if type(listing_err).__name__ not in (
+                        "UndefinedColumnError",
+                        "UndefinedColumn",
+                    ):
+                        raise
+                    row = await conn.fetchrow(listing_sql_legacy, item_key, int(user_id))
+        balance = await self.get_user_balance(user_id)
+        item = None
+        if row:
+            item = listing_to_client(dict(row), viewer_id=user_id)
+        return {
+            "item": item,
+            "kut": int(balance or 0),
+            **market_commission_meta(),
         }
 
     async def get_market_sellable(self, user_id):

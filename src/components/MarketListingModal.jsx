@@ -59,7 +59,7 @@ export default function MarketListingModal({
   const actionLabel = item ? `Купить «${item.name}» на бирже` : 'Покупка на бирже'
   const suggestedTopUp = needsTopUp ? suggestDonateAmount(balance, totalCost) : 0
 
-  let confirmLabel = 'Купить'
+  let confirmLabel = 'Подтвердить покупку'
   if (isBusy) confirmLabel = 'Оформляем…'
   else if (item?.isMine) confirmLabel = 'Это ваш лот'
   else if (outOfStock) confirmLabel = 'Нет в наличии'
@@ -121,7 +121,7 @@ export default function MarketListingModal({
             {!item.isMine ? (
               <div className="shop-modal-quantity">
                 <div className="shop-modal-quantity-head">
-                  <span className="shop-modal-quantity-label">Сколько купить</span>
+                  <span className="shop-modal-quantity-label">Количество к покупке</span>
                   <span className="shop-modal-quantity-limit">доступно: {formatKut(maxQty)}</span>
                 </div>
                 <div className="shop-modal-quantity-stepper">
@@ -175,11 +175,11 @@ export default function MarketListingModal({
 
             <div className="shop-modal-stats">
               <div className="shop-modal-stat">
-                <span className="shop-modal-stat-label">В лоте</span>
+                <span className="shop-modal-stat-label">{item.isMine ? 'В лоте' : 'В наличии'}</span>
                 <span className="shop-modal-stat-value">{formatKut(item.quantity)}</span>
               </div>
               <div className="shop-modal-stat">
-                <span className="shop-modal-stat-label">Цена за шт</span>
+                <span className="shop-modal-stat-label">Цена</span>
                 <span className="shop-modal-stat-value">{formatKut(price)}</span>
               </div>
               {!item.isMine ? (

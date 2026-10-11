@@ -21,3 +21,12 @@ export function resolveStartTab(rawTab) {
   }
   return { tab: rawTab || 'farm', tradeSegment: 'shop' }
 }
+
+/** id предмета из shop-277 / market-277 для окна покупки при старте. */
+export function aimedItemIds(rawTab) {
+  const next = resolveStartTab(rawTab)
+  const itemId = next.itemId ? String(next.itemId) : ''
+  if (!itemId) return { shopItemId: '', marketItemId: '' }
+  if (next.tradeSegment === 'market') return { shopItemId: '', marketItemId: itemId }
+  return { shopItemId: itemId, marketItemId: '' }
+}

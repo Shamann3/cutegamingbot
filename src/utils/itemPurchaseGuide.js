@@ -1,5 +1,5 @@
-import { fetchShopCatalog } from '../lib/shopClient'
-import { fetchMarketCatalog } from '../lib/marketClient'
+import { fetchShopCatalog, fetchShopOffer } from '../lib/shopClient'
+import { fetchMarketCatalog, fetchMarketOffer } from '../lib/marketClient'
 import { createDexResolver } from './dexResolve'
 
 const CATALOG_PROBE_SIZE = 48
@@ -43,6 +43,30 @@ function pickMatch(items, target) {
 function uniqueSearches(target) {
   const values = [target.name, target.searchQuery, target.canonId]
   return [...new Set(values.map((value) => String(value ?? '').trim()).filter(Boolean))]
+}
+
+function isDexId(value) {
+  return /^\d+$/.test(String(value ?? '').trim())
+}
+
+async function offerShop(target) {
+  if (!isDexId(target.canonId)) return null
+  const data = await fetchShopOffer(target.canonId)
+  const item = data?.item
+  if (item && Number(item.remains ?? 0) > 0) {
+    return { item, kut: Number(data.kut ?? 0) }
+  }
+  return null
+}
+
+async function offerMarket(target) {
+  if (!isDexId(target.canonId)) return null
+  const data = await fetchMarketOffer(target.canonId)
+  const item = data?.item
+  if (item && Number(item.quantity ?? 0) > 0 && !item.isMine) {
+    return { item, kut: Number(data.kut ?? 0) }
+  }
+  return null
 }
 
 async function probeShop(target) {
@@ -139,10 +163,22 @@ export async function guideToItemPurchase(target = {}) {
   const ctx = buildTarget(target)
 
   try {
+    const shopOffer = await offerShop(ctx)
+    if (shopOffer) {
+      openShopPurchase(shopOffer.item, shopOffer.kut)
+      return { destination: 'shop', item: shopOffer.item }
+    }
+
     const shopResult = await probeShop(ctx)
     if (shopResult) {
       openShopPurchase(shopResult.item, shopResult.kut)
       return { destination: 'shop', item: shopResult.item }
+    }
+
+    const marketOffer = await offerMarket(ctx)
+    if (marketOffer) {
+      openMarketPurchase(marketOffer.item, marketOffer.kut)
+      return { destination: 'market', item: marketOffer.item }
     }
 
     const marketResult = await probeMarket(ctx)

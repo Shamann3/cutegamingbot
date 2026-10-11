@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSettings } from '../context/SettingsContext'
 import FarmBackground from './FarmBackground'
 import VineFrame from './VineFrame'
@@ -12,6 +12,7 @@ import MarketShelfTile from './MarketShelfTile'
 import MarketListingModal from './MarketListingModal'
 import MarketSellModal from './MarketSellModal'
 import { useMarketplace } from '../hooks/useMarketplace'
+import { fetchMarketOffer } from '../lib/marketClient'
 import { useOpenPlayerProfile } from '../context/PlayerProfileContext'
 import { useContextualDonate } from '../hooks/useContextualDonate'
 import TabAtmosphere from './TabAtmosphere'
@@ -79,6 +80,8 @@ export default function MarketplaceModule({
   const [selectedItem, setSelectedItem] = useState(null)
   const [pendingGuide, setPendingGuide] = useState(null)
   const [highlightItemId, setHighlightItemId] = useState(null)
+  const [offerKut, setOfferKut] = useState(null)
+  const aimedRequest = useRef('')
   const [sellOpen, setSellOpen] = useState(false)
   const {
     donateOpen,
@@ -125,6 +128,20 @@ export default function MarketplaceModule({
     setPendingGuide(null)
     onSearchUsed?.()
   }, [pendingGuide, initialLoading, items, onSearchUsed])
+
+  // Ссылка market-<id> открывает окно покупки лота сразу, без поиска по страницам.
+  useEffect(() => {
+    if (!isActive || initialHighlightOnly || !initialItemId) return undefined
+    const key = String(initialItemId)
+    if (aimedRequest.current === key) return undefined
+    aimedRequest.current = key
+    fetchMarketOffer(key).then((data) => {
+      if (aimedRequest.current !== key || !data?.item) return
+      setSelectedItem(data.item)
+      if (data.kut != null) setOfferKut(Number(data.kut))
+    }).catch(() => {})
+    return undefined
+  }, [isActive, initialHighlightOnly, initialItemId])
 
   useEffect(() => {
     if (!highlightItemId) return undefined
@@ -304,7 +321,7 @@ export default function MarketplaceModule({
 
       <MarketListingModal
         item={selectedItem}
-        kut={kut}
+        kut={initialLoading && offerKut != null ? offerKut : kut}
         isOpen={Boolean(selectedItem)}
         isBusy={busyListingId === selectedItem?.id}
         commissionPercent={commissionPercent}
