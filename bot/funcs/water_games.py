@@ -103,8 +103,12 @@ def _open_button(text: str, startapp: str, private: bool, style: str = "primary"
 
 
 def _home_text() -> str:
+    return screen_text("home")
+
+
+def _rules_text() -> str:
     return screen_text(
-        "home",
+        "rules",
         low=PERCENT_LOW,
         high=PERCENT_HIGH,
         cap=SHOT_CAP,
@@ -869,7 +873,7 @@ async def water_click(call):
         await _show(call, "home", _home_text())
         return
     if data == "wg:rules":
-        await _show(call, "rules", screen_text("rules"))
+        await _show(call, "rules", _rules_text())
         return
     if data == "wg:shield":
         await _show(call, "shield", screen_text("shield", fee=EXTEND_FEE))
