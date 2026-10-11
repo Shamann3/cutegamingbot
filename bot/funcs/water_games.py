@@ -37,6 +37,7 @@ from bot.funcs.water_games_design import (
     after_buy_text,
     extend_empty_text,
     extend_list_text,
+    shield_mark,
     shield_profile_line,
     extend_pick_text,
     forever_worn_text,
@@ -180,6 +181,20 @@ async def ensure() -> None:
     )
     await pool.execute(
         """
+        CREATE TABLE IF NOT EXISTS water_shot_offers (
+            id BIGSERIAL PRIMARY KEY,
+            shooter_id BIGINT NOT NULL,
+            target_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            amount INT NOT NULL DEFAULT 0,
+            percent INT NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await pool.execute(
+        """
         CREATE TABLE IF NOT EXISTS water_buy_prompts (
             user_id BIGINT PRIMARY KEY,
             chat_id BIGINT NOT NULL,
@@ -293,7 +308,7 @@ async def shield_profile_html(user_id: int) -> str:
     forever = row["until"] is None
     left = "" if forever else _left_of(row["until"], datetime.now(timezone.utc))
     return shield_profile_line(
-        emoji=view["emoji"],
+        emoji=shield_mark(row["kind"]),
         name=view["name"],
         forever=forever,
         left=left,
@@ -611,69 +626,100 @@ async def splash_from_item(message) -> None:
             await message.reply(screen_text("shot_pair_wait", left=left_phrase(int(wait))), parse_mode="HTML")
             return
 
+    await _preview_shot(message, user_id, target_id, now, day_start)
+
+
+def _ask_markup(offer_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        _button(word("leave"), f"wg:leave:{int(offer_id)}", "danger"),
+        _button(word("pour"), f"wg:pour:{int(offer_id)}", "success"),
+    ]])
+
+
+def _money(amount: int) -> str:
+    return f"{int(amount):,}".replace(",", " ")
+
+
+def _guard_span(row) -> str:
+    if row["until"] is None:
+        return "навсегда"
+    return "ещё " + _left_of(row["until"], datetime.now(timezone.utc))
+
+
+async def _preview_shot(message, user_id: int, target_id: int, now, day_start, edit_call=None) -> None:
+    """Показывает сумму или срок защиты. Вода списывается только после «Облить»."""
     target_shield = await _shield(target_id)
+    kind = "hit"
+    amount = 0
+    percent = 0
     if _still(target_shield):
-        await _spend_water(user_id, items)
-        await _log(user_id, target_id, message.chat.id, 0, "shield")
-        kind = SHIELDS.get(str(target_shield["kind"]), {})
-        title = kind.get("line") or word("shield_name")
-        await message.reply(
-            screen_text("shot_bounce", emoji=kind.get("emoji") or "💧", title=title),
-            parse_mode="HTML",
-        )
-        return
-
-    enemy = await _inventory(target_id)
-    if enemy["row"] is None:
-        await message.reply(screen_text("shot_unknown"), parse_mode="HTML")
-        return
-    if enemy["balance"] < POOR_BALANCE:
-        await _spend_water(user_id, items)
-        await _log(user_id, target_id, message.chat.id, 0, "broke")
-        await message.reply(
-            screen_text("shot_broke", poor=POOR_BALANCE),
-            parse_mode="HTML",
-        )
-        return
-
-    taken_today = int(await db.pool.fetchval(
+        kind = "shield"
+    else:
+        enemy = await _inventory(target_id)
+        if enemy["row"] is None:
+            await message.reply(screen_text("shot_unknown"), parse_mode="HTML")
+            return
+        if enemy["balance"] < POOR_BALANCE:
+            kind = "broke"
+        else:
+            taken_today = int(await db.pool.fetchval(
+                """
+                SELECT COALESCE(SUM(amount), 0) FROM water_splashes
+                WHERE target_id = $1 AND outcome = 'hit' AND created_at > $2
+                """,
+                int(target_id), day_start,
+            ) or 0)
+            day_left = max(0, DAY_CAP - taken_today)
+            if day_left < 1:
+                await message.reply(screen_text("shot_day"), parse_mode="HTML")
+                return
+            percent = random.randint(PERCENT_LOW, PERCENT_HIGH)
+            amount = take_amount(enemy["balance"], percent, cap=SHOT_CAP, day_left=day_left)
+            if amount < 1:
+                await message.reply(screen_text("shot_dry"), parse_mode="HTML")
+                return
+    offer_id = await db.pool.fetchval(
         """
-        SELECT COALESCE(SUM(amount), 0) FROM water_splashes
-        WHERE target_id = $1 AND outcome = 'hit' AND created_at > $2
+        INSERT INTO water_shot_offers (shooter_id, target_id, chat_id, amount, percent, kind)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
         """,
-        int(target_id), day_start,
-    ) or 0)
-    day_left = max(0, DAY_CAP - taken_today)
-    if day_left < 1:
-        await message.reply(screen_text("shot_day"), parse_mode="HTML")
+        int(user_id), int(target_id), int(message.chat.id), int(amount), int(percent), kind,
+    )
+    if kind == "shield":
+        view = _kind_view(target_shield["kind"])
+        text = screen_text(
+            "shot_guard",
+            mark=shield_mark(target_shield["kind"]),
+            name=view["name"],
+            span=_guard_span(target_shield),
+        )
+    elif kind == "broke":
+        text = screen_text("shot_ask_broke")
+    else:
+        text = screen_text("shot_ask", amount=_money(amount))
+    markup = _ask_markup(offer_id)
+    if edit_call is not None:
+        await _edit_call(edit_call, text, markup)
         return
-    percent = random.randint(PERCENT_LOW, PERCENT_HIGH)
-    if target_shield and target_shield["half_next"]:
-        percent = max(PERCENT_LOW, percent // 2)
-    amount = take_amount(enemy["balance"], percent, cap=SHOT_CAP, day_left=day_left)
-    if amount < 1:
-        await message.reply(screen_text("shot_dry"), parse_mode="HTML")
-        return
-    await _spend_water(user_id, items)
+    await message.reply(text, parse_mode="HTML", reply_markup=markup)
+
+
+async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, now) -> tuple[str, object]:
     await db.pool.execute(
         "UPDATE users SET balance = balance - $2 WHERE user_id = $1",
-        int(target_id), amount,
+        int(target_id), int(amount),
     )
     await db.pool.execute(
         "UPDATE users SET balance = balance + $2 WHERE user_id = $1",
-        int(user_id), amount,
+        int(user_id), int(amount),
     )
     try:
         await db.cutehistory_minus(target_id, amount, word("history_shot"))
         await db.cutehistory_plus(user_id, amount, word("history_shot"))
     except Exception:
         log.warning("water history failed", exc_info=True)
-    if target_shield and target_shield["half_next"]:
-        await db.pool.execute(
-            "UPDATE water_shields SET half_next = FALSE WHERE user_id = $1",
-            int(target_id),
-        )
-    await _log(user_id, target_id, message.chat.id, amount, "hit")
+    await _log(user_id, target_id, chat_id, amount, "hit")
     towel = towel_amount(amount)
     until = now + timedelta(hours=TOWEL_HOURS)
     towel_id = await db.pool.fetchval(
@@ -682,16 +728,108 @@ async def splash_from_item(message) -> None:
         VALUES ($1, $2, $3)
         RETURNING id
         """,
-        int(target_id), towel, until,
+        int(target_id), int(towel), until,
     )
-    shown = f"{amount:,}".replace(",", " ")
-    await message.reply(
-        screen_text("shot_hit", amount=shown, hours=hours_phrase(TOWEL_HOURS)),
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=word("towel"), callback_data=f"wg:towel:{int(towel_id)}", style="success"),
-        ]]),
+    text = screen_text("shot_hit", amount=_money(amount), hours=hours_phrase(TOWEL_HOURS))
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=word("towel"), callback_data=f"wg:towel:{int(towel_id)}", style="success"),
+    ]])
+    return text, markup
+
+
+async def _finish_pour(call, offer_id: int) -> None:
+    row = await db.pool.fetchrow(
+        """
+        DELETE FROM water_shot_offers
+        WHERE id = $1 AND shooter_id = $2
+        RETURNING shooter_id, target_id, chat_id, amount, percent, kind
+        """,
+        int(offer_id), int(call.from_user.id),
     )
+    if not row:
+        await call.answer(word("offer_gone"), show_alert=True)
+        return
+    user_id = int(row["shooter_id"])
+    target_id = int(row["target_id"])
+    chat_id = int(row["chat_id"])
+    bag = await _inventory(user_id)
+    items = bag["items"]
+    pistol_left = await _holds(user_id, "pistoletik", items)
+    water_left = await _holds(user_id, "watercraft", items)
+    if not pistol_left or not water_left:
+        missing = word("missing_pistol") if not pistol_left else word("missing_water")
+        await _edit_call(call, screen_text("splash_need", missing=missing))
+        await call.answer()
+        return
+    now = datetime.now(timezone.utc)
+    shield = await _shield(target_id)
+    if _still(shield):
+        await _spend_water(user_id, items)
+        await _log(user_id, target_id, chat_id, 0, "shield")
+        view = _kind_view(shield["kind"])
+        await _edit_call(call, screen_text(
+            "shot_bounce",
+            title=f"{view['name']}: под защитой {_guard_span(shield)}",
+        ))
+        await call.answer()
+        return
+    enemy = await _inventory(target_id)
+    if enemy["row"] is None:
+        await _edit_call(call, screen_text("shot_unknown"))
+        await call.answer()
+        return
+    if enemy["balance"] < POOR_BALANCE:
+        await _spend_water(user_id, items)
+        await _log(user_id, target_id, chat_id, 0, "broke")
+        await _edit_call(call, screen_text("shot_broke", poor=POOR_BALANCE))
+        await call.answer()
+        return
+    if str(row["kind"]) == "broke":
+        await _preview_shot(call.message, user_id, target_id, now, now - timedelta(hours=24), edit_call=call)
+        await call.answer()
+        return
+    day_start = now - timedelta(hours=24)
+    taken_today = int(await db.pool.fetchval(
+        """
+        SELECT COALESCE(SUM(amount), 0) FROM water_splashes
+        WHERE target_id = $1 AND outcome = 'hit' AND created_at > $2
+        """,
+        target_id, day_start,
+    ) or 0)
+    day_left = max(0, DAY_CAP - taken_today)
+    if day_left < 1:
+        await _edit_call(call, screen_text("shot_day"))
+        await call.answer()
+        return
+    percent = int(row["percent"] or 0) or random.randint(PERCENT_LOW, PERCENT_HIGH)
+    amount = take_amount(enemy["balance"], percent, cap=SHOT_CAP, day_left=day_left)
+    stored = int(row["amount"] or 0)
+    if stored > 0:
+        amount = min(stored, amount)
+    if amount < 1:
+        await _edit_call(call, screen_text("shot_dry"))
+        await call.answer()
+        return
+    await _spend_water(user_id, items)
+    text, markup = await _apply_hit(user_id, target_id, chat_id, amount, now)
+    await _edit_call(call, text, markup)
+    await call.answer()
+
+
+async def _leave_shot(call, offer_id: int) -> None:
+    row = await db.pool.fetchrow(
+        """
+        DELETE FROM water_shot_offers
+        WHERE id = $1 AND shooter_id = $2
+        RETURNING id
+        """,
+        int(offer_id), int(call.from_user.id),
+    )
+    if not row:
+        await call.answer(word("offer_gone"), show_alert=True)
+        return
+    await _edit_call(call, screen_text("shot_cancel"))
+    await call.answer()
 
 
 def _term(spec: dict) -> str:
@@ -791,7 +929,7 @@ async def wear_shield(message, name1: str) -> bool:
         half = False
     else:
         until = now + timedelta(hours=int(spec["hours"]))
-        half = name1 == "drycoat"
+        half = False
     await db.pool.execute(
         """
         INSERT INTO water_shields (user_id, kind, until, drip_until, half_next, updated_at)
@@ -967,7 +1105,7 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
                             half = False
                         else:
                             new_until = now + timedelta(hours=int(spec["hours"]))
-                            half = name1 == "drycoat"
+                            half = False
                         await conn.execute(
                             "UPDATE users SET items = $2 WHERE user_id = $1",
                             int(user_id), encode_items(taken),
@@ -989,7 +1127,7 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
                             half = False
                         else:
                             new_until = joined_until(shield["until"], spec["hours"], now)
-                            half = bool(shield["half_next"]) or name1 == "drycoat"
+                            half = False
                         status = await conn.execute(
                             """
                             UPDATE users
@@ -1084,6 +1222,22 @@ async def _show(call, name: str, text: str, markup=None, **slots) -> None:
 async def water_click(call):
     await ensure()
     data = call.data
+    if data.startswith("wg:leave:"):
+        try:
+            offer_id = int(data.split(":")[2])
+        except (IndexError, ValueError):
+            await call.answer(word("offer_gone"), show_alert=True)
+            return
+        await _leave_shot(call, offer_id)
+        return
+    if data.startswith("wg:pour:"):
+        try:
+            offer_id = int(data.split(":")[2])
+        except (IndexError, ValueError):
+            await call.answer(word("offer_gone"), show_alert=True)
+            return
+        await _finish_pour(call, offer_id)
+        return
     if data == "wg:home":
         try:
             text, markup = await _guide_view(call.from_user.id, call.message)

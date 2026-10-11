@@ -191,6 +191,9 @@ WORDS = {
     "where_shop": "в магазине",
     "place_market": "биржа",
     "place_shop": "магазин",
+    "leave": "Уйти",
+    "pour": "Облить",
+    "offer_gone": "Это уже решено",
     "missing_pistol": "Нужен Пистолетик.",
     "missing_water": "Нужна Вода: один выстрел списывает одну.",
     "water_held": "Вода не стреляет. Откройте Пистолетик.",
@@ -210,6 +213,24 @@ SHIELDS = {
     "dryawning": {"hours": 72, "name": "Навес", "emoji": "🛖", "line": "Под навесом"},
     "drysafe": {"hours": None, "name": "Сухой сейф", "emoji": "💎", "line": "Сухой сейф"},
 }
+
+# Премиум-значок защиты. У навеса его нет: в тексте и в профиле остаётся 🛖.
+SHIELD_PREMIUM = {
+    "dryumbrella": "5224681716760715555",
+    "drycoat": "5388820858414313315",
+    "drysafe": "5471952986970267163",
+}
+SHOOT_EMOJI = "5317000922096769303"
+
+
+def shield_mark(kind: str) -> str:
+    """Значок защиты: премиум-эмодзи в тексте, у навеса обычный символ."""
+    spec = SHIELDS.get(str(kind or "")) or {}
+    plain = spec.get("emoji") or "💧"
+    icon = SHIELD_PREMIUM.get(str(kind or ""))
+    if not icon:
+        return plain
+    return f"<tg-emoji emoji-id='{icon}'>{plain}</tg-emoji>"
 
 ITEMS = (
     {
@@ -242,7 +263,7 @@ ITEMS = (
         "match": ("дождевик",),
         "hours": 12,
         "price": PRICES["drycoat"],
-        "bio": "12 часов вас не обливают. Стрелять нельзя. После срока первый выстрел снимет половину.",
+        "bio": "12 часов вас не обливают. Пока надет, стрелять нельзя.",
     },
     {
         "name1": "dryawning",
@@ -284,7 +305,7 @@ screen(
     <i>Обливаете человека и забираете часть его кут.</i>
     """,
     [
-        [b(text="Выстрелить", go="aim", data="wg:aim", color="danger", emoji="5469785308386041323")],
+        [b(text="Выстрелить", go="aim", data="wg:aim", color="success", emoji=SHOOT_EMOJI)],
         [b(text="Защититься", go="shield", data="wg:shield", color="primary", emoji="5895483165182529286")],
         [b(text="Как это работает?", go="rules", data="wg:rules", color="default")],
     ],
@@ -294,10 +315,11 @@ screen(
     "rules",
     """
     <b>Как облить</b>
-    <i>В группе ответьте на человека и напишите «<code>Использовать 🔫</code>». Уйдёт от <u>{low}%</u> до <u>{high}%</u>, не больше <code>{cap}</code> за раз и <code>{day}</code> за сутки.</i>
+    Напишите «<code>Использовать 🔫</code>» в ответ на сообщение другого пользователя и вы получите от <u>{low}%</u> до <u>{high}%</u> от баланса того пользователя, которого вы облили водой.
+    Не больше <code>{cap}</code> за раз и <code>{day}</code> за сутки.
     """,
     [
-        [b(text="Выстрелить", go="aim", data="wg:aim", color="danger", emoji="5469785308386041323")],
+        [b(text="Выстрелить", go="aim", data="wg:aim", color="success", emoji=SHOOT_EMOJI)],
         [b(text="Защититься", go="shield", data="wg:shield", color="primary", emoji="5895483165182529286")],
         [b(text="Назад", go="home", data="wg:home", color="default")],
     ],
@@ -310,7 +332,7 @@ screen(
     <i>Нажмите «Выстрелить».</i>
     """,
     [
-        [b(text="Выстрелить", go="aim", data="wg:aim", color="danger", emoji="5469785308386041323")],
+        [b(text="Выстрелить", go="aim", data="wg:aim", color="success", emoji=SHOOT_EMOJI)],
         [b(text="Защититься", go="shield", data="wg:shield", color="primary", emoji="5895483165182529286")],
         [b(text="Назад", go="home", data="wg:home", color="default")],
     ],
@@ -342,22 +364,20 @@ screen(
 
 screen(
     "shield",
-    """
+    f"""
     <b>Защита</b>
     <i>Наденьте предмет. Пока он на вас, вас не обливают.</i>
 
-    <b>Зонтик</b> — 3 часа. Под ним можно стрелять.
-    <b>Дождевик</b> — 12 часов. Стрелять нельзя. После срока первый выстрел снимет половину.
-    <b>Навес</b> — 3 дня. Стрелять нельзя.
-    <b>Сухой сейф</b> — навсегда. Стрелять нельзя.
-
-    <i>Уже надета — «Увеличить» продлит за <u>{fee}</u> кут и один предмет.</i>
+    {shield_mark("dryumbrella")} Зонтик — 3 часа. Под ним можно стрелять.
+    {shield_mark("drycoat")} Дождевик — 12 часов. Стрелять нельзя.
+    {shield_mark("dryawning")} Навес — 3 дня. Стрелять нельзя.
+    {shield_mark("drysafe")} Сухой сейф — навсегда. Стрелять нельзя.
     """,
     [
-        [b(text="☂️ Найти зонтик", go="find-umbrella", data="wg:find:dryumbrella", color="success")],
-        [b(text="🧥 Найти дождевик", go="find-coat", data="wg:find:drycoat", color="primary")],
-        [b(text="🛖 Найти навес", go="find-awning", data="wg:find:dryawning", color="default")],
-        [b(text="💎 Найти сухой сейф", go="find-safe", data="wg:find:drysafe", color="danger")],
+        [b(text="Найти зонтик", go="find-umbrella", data="wg:find:dryumbrella", color="primary", emoji=SHIELD_PREMIUM["dryumbrella"])],
+        [b(text="Найти дождевик", go="find-coat", data="wg:find:drycoat", color="primary", emoji=SHIELD_PREMIUM["drycoat"])],
+        [b(text="🛖 Найти навес", go="find-awning", data="wg:find:dryawning", color="primary")],
+        [b(text="Найти сухой сейф", go="find-safe", data="wg:find:drysafe", color="primary", emoji=SHIELD_PREMIUM["drysafe"])],
         [b(text="Назад", go="home", data="wg:home", color="default")],
     ],
 )
@@ -477,6 +497,38 @@ screen(
     """
     <b>С него брать нечего</b>
     <i>Вода потрачена. Обливайте того, у кого кут больше. Напишите <code>топ</code>.</i>
+    """,
+)
+
+screen(
+    "shot_ask",
+    """
+    <b>Возьмёте {amount} кут</b>
+    <i>Облить заберёт их. Уйти оставит воду.</i>
+    """,
+)
+
+screen(
+    "shot_guard",
+    """
+    <b>{mark} {name}</b>
+    <i>Под защитой {span}. Облить спишет воду, кут не перейдут.</i>
+    """,
+)
+
+screen(
+    "shot_ask_broke",
+    """
+    <b>С него брать нечего</b>
+    <i>Облить потратит воду. Богаче — <code>топ</code>. Уйти оставит воду.</i>
+    """,
+)
+
+screen(
+    "shot_cancel",
+    """
+    <b>Выстрел отменён</b>
+    <i>Вода при вас.</i>
     """,
 )
 

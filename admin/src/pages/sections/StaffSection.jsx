@@ -2100,17 +2100,15 @@ const OFFICES = [
   { id: 'group', title: 'Администраторы', detail: 'Кабинет официальных групп' },
 ]
 
-export function creatorSeesWater(isProjectCreator, myUserId, projectCreatorId) {
-  if (isProjectCreator !== true) return false
-  if (projectCreatorId == null || myUserId == null) return true
-  return Number(myUserId) === Number(projectCreatorId)
+export function creatorSeesWater(isProjectCreator) {
+  return isProjectCreator === true
 }
 
 export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, projectCreatorId = null, entry = null, onOpenPreview = null, onOpenUser = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
   const canConfigure = isProjectCreator || perms.has('manage_panel_access')
-  const seesWater = creatorSeesWater(isProjectCreator, myUserId, projectCreatorId)
+  const seesWater = creatorSeesWater(isProjectCreator)
 
   const workTabs = useMemo(() => {
     const list = []

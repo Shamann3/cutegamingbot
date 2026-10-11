@@ -26,6 +26,7 @@ from water_games.design import (
     left_phrase,
     public_group_name,
     screen_text,
+    shield_mark,
     shield_profile_line,
     water_buy_kind,
     shields_in_bag,
@@ -44,9 +45,10 @@ def test_pour_button_carries_premium_emoji():
     shoot = button_rows("splash_ready")[0][0]
     assert home["text"] == "Выстрелить"
     assert home["data"] == "wg:aim"
-    assert home["emoji"] == shoot["emoji"] == "5469785308386041323"
+    assert home["emoji"] == shoot["emoji"] == "5317000922096769303"
+    assert home["style"] == shoot["style"] == rules["style"] == "success"
     assert rules["text"] == "Выстрелить"
-    assert rules["emoji"] == "5469785308386041323"
+    assert rules["emoji"] == "5317000922096769303"
     assert emoji_id("5354820836442287981") == "5354820836442287981"
     assert emoji_id("gun") == ""
     assert button_rows("home")[1][0]["emoji"] == "5895483165182529286"
@@ -113,13 +115,22 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert shop_can_take(3, 5, name="Вода") == 3
     assert shop_can_take(3, 5, name="Камень") == 3
     assert shop_can_take(0, 5, name="Зонтик") == 0
-    text = screen_text("shield", fee=EXTEND_FEE)
-    assert "100" in text
+    text = screen_text("shield")
     assert "Дождевик" in text
     assert "Навес" in text
     assert "Сухой сейф" in text
-    assert "только под зонтиком" in text or "Под ним можно стрелять" in text
-    assert "половину" in text
+    assert "Под ним можно стрелять" in text
+    assert "5224681716760715555" in text
+    assert "5388820858414313315" in text
+    assert "5471952986970267163" in text
+    assert "tg-emoji" not in shield_mark("dryawning")
+    assert shield_mark("dryawning") == "🛖"
+    shields = [row[0] for row in button_rows("shield")[:4]]
+    assert [button["style"] for button in shields] == ["primary", "primary", "primary", "primary"]
+    assert shields[0]["emoji"] == "5224681716760715555"
+    assert shields[1]["emoji"] == "5388820858414313315"
+    assert shields[2]["emoji"] == ""
+    assert shields[3]["emoji"] == "5471952986970267163"
     note = wearing_text(emoji="☂️", name="Зонтик", left="2 часа", fee=100)
     assert "Зонтик" in note
     assert "Увеличить" in note
@@ -173,6 +184,12 @@ def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
     assert "Обливайте того, у кого кут больше" in broke
     assert "<code>топ</code>" in broke
     assert "Вода потрачена" in broke
+    ask = screen_text("shot_ask", amount="120")
+    assert "Возьмёте 120 кут" in ask
+    assert "Уйти оставит воду" in ask
+    guard = screen_text("shot_guard", mark="☂️", name="Зонтик", span="ещё 2 часа")
+    assert "Под защитой ещё 2 часа" in guard
+    assert "Вода при вас" in screen_text("shot_cancel")
 
 
 def test_a_water_purchase_advances_only_its_own_message():

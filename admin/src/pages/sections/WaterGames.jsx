@@ -18,7 +18,7 @@ function money(value) {
   return new Intl.NumberFormat('ru-RU').format(Number(value) || 0)
 }
 
-export default function WaterGames({ onOpenUser = null }) {
+export default function WaterGames({ onOpenUser = null, page = false }) {
   const [board, setBoard] = useState(null)
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState({})
@@ -70,7 +70,7 @@ export default function WaterGames({ onOpenUser = null }) {
   return (
     <div className="water-desk">
       <header className="sec-header">
-        <h3 className="sec-title">Водные игры</h3>
+        {page ? <h2 className="sec-title">Водные игры</h2> : <h3 className="sec-title">Водные игры</h3>}
         <p className="sec-subtitle">Кто обливает, кого обливают, и почём защита. Вкладка только у создателя.</p>
       </header>
       {error && <p className="sec-empty">{error}</p>}

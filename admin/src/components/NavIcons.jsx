@@ -329,6 +329,7 @@ export const NAV_ICONS = {
   events: Events,
   settings: Settings,
   staff: Staff,
+  waterGames: Games,
   support: Support,
   security: Security,
   moderation: Moderation,

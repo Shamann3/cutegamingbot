@@ -43,6 +43,7 @@ import SystemSection from './sections/SystemSection'
 import EventsSection from './sections/EventsSection'
 import SecuritySection from './sections/SecuritySection'
 import StaffSection from './sections/StaffSection'
+import WaterGames from './sections/WaterGames'
 import SupportSection from './sections/SupportSection'
 import ModerationSection from './sections/ModerationSection'
 import ChronicleSection from './sections/ChronicleSection'
@@ -435,6 +436,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isNika = section === 'nika'
   const isPrGroups = section === 'prGroups'
   const isGames = section === 'games'
+  const isWaterGames = section === 'waterGames'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
@@ -733,6 +735,15 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isNika && showCreator && <NikaSection />}
           {isPrGroups && showCreator && <PrGroupsSection />}
           {isGames && showCreator && <GamesSection />}
+          {isWaterGames && showCreator && (
+            <WaterGames
+              page
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {

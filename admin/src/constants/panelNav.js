@@ -103,6 +103,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Должности, доступ к панели, заявки, ключи, зарплаты и смены.',
   },
   {
+    id: 'waterGames', label: 'Water', labelRu: 'Водные игры', group: 'team',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Обливания, защита и цены пистолетика. Только создатель.',
+  },
+  {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
     blurb: 'Тикеты поддержки: переписка с игроками и статусы обращений.',
   },
@@ -179,6 +184,7 @@ export const SECTION_HINTS = {
   events: 'Игровые события',
   broadcast: 'Сообщение многим людям',
   staff: 'Доступ, должности, заявки и ключи',
+  waterGames: 'Обливания и цены защиты',
   rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',
