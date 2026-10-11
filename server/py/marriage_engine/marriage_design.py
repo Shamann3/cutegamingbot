@@ -1157,9 +1157,9 @@ SCREENS = {
     # Обряд. Кнопка видна, если колечко уже есть. Ставит статус «сделал предложение».
 
     "rite_wedring": msg(
-        emoji="""💎""",
+        emoji="""💍""",
         text="""
-        💎 <b>Обручальное</b>
+        💍 <b>Обручальное</b>
         <i></i>
         """,
         buttons=[
@@ -1844,7 +1844,7 @@ R1 = (
     {"id": "propose", "name": "Колечко", "name1": "mrgpropose", "emoji": "💠", "effect": "propose", "use": "Колечко", "rite": True},
 )
 R2 = (
-    {"id": "wedring", "name": "Обручальное", "name1": "mrgring", "emoji": "💎", "effect": "family", "use": "Кольцо", "rite": True},
+    {"id": "wedring", "name": "Обручальное", "name1": "mrgring", "emoji": "💍", "effect": "family", "use": "Кольцо", "rite": True},
     {"id": "thread", "name": "Красная нить", "name1": "mrgthread", "emoji": "🧵", "effect": "thread", "use": "Нить", "rite": True},
 )
 

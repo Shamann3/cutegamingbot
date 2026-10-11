@@ -20,8 +20,6 @@ from bot.funcs.water_games_design import (
     EXTEND_FEE,
     ITEMS,
     JOKE_SITE,
-    PAIR_DAY_MAX,
-    PAIR_GAP_SEC,
     PERCENT_HIGH,
     PERCENT_LOW,
     POOR_BALANCE,
@@ -40,6 +38,9 @@ from bot.funcs.water_games_design import (
     kept_kind,
     after_buy_text,
     default_rules,
+    fee_group_name,
+    normalize_fee_chat,
+    pistol_is_blocked,
     extend_empty_text,
     extend_list_text,
     shield_mark,
@@ -57,6 +58,7 @@ from bot.funcs.water_games_design import (
     public_group_name,
     screen_text,
     settle_umbrella,
+    split_take,
     word,
     shields_in_bag,
     stacked_text,
@@ -143,7 +145,8 @@ async def _shot_rules() -> dict:
     try:
         row = await db.pool.fetchrow(
             """
-            SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance
+            SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent,
+                   fee_chat_id, pistol_day_on, pistol_day_max
             FROM water_rules WHERE id = 1
             """
         )
@@ -162,6 +165,10 @@ async def _shot_rules() -> dict:
         "shotCap": max(1, int(row["shot_cap"])),
         "dayCap": max(1, int(row["day_cap"])),
         "poorBalance": max(0, int(row["poor_balance"])),
+        "commissionPercent": max(0, min(100, int(row["commission_percent"]))),
+        "feeChatId": normalize_fee_chat(row["fee_chat_id"]),
+        "pistolDayOn": bool(row["pistol_day_on"]),
+        "pistolDayMax": max(0, int(row["pistol_day_max"] or 0)),
     }
 
 
@@ -245,11 +252,41 @@ async def ensure() -> None:
         )
         """
     )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS commission_percent INT NOT NULL DEFAULT 10
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_splashes
+            ADD COLUMN IF NOT EXISTS fee INT NOT NULL DEFAULT 0
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS fee_chat_id BIGINT NOT NULL DEFAULT -1004324787050
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS pistol_day_on BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS pistol_day_max INT NOT NULL DEFAULT 10
+        """
+    )
     base = default_rules()
     await pool.execute(
         """
-        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance)
-        VALUES (1, $1, $2, $3, $4, $5)
+        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent)
+        VALUES (1, $1, $2, $3, $4, $5, $6)
         ON CONFLICT (id) DO NOTHING
         """,
         base["percentLow"],
@@ -257,6 +294,7 @@ async def ensure() -> None:
         base["shotCap"],
         base["dayCap"],
         base["poorBalance"],
+        base["commissionPercent"],
     )
     await pool.execute(
         """
@@ -579,14 +617,59 @@ async def _joke() -> str:
     return broke_text(local, remote)
 
 
-async def _log(shooter: int, target: int, chat_id: int, amount: int, outcome: str) -> None:
+async def _log(shooter: int, target: int, chat_id: int, amount: int, outcome: str, fee: int = 0) -> None:
     await db.pool.execute(
         """
-        INSERT INTO water_splashes (shooter_id, target_id, chat_id, amount, outcome)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO water_splashes (shooter_id, target_id, chat_id, amount, outcome, fee)
+        VALUES ($1, $2, $3, $4, $5, $6)
         """,
-        int(shooter), int(target), int(chat_id), int(amount), outcome,
+        int(shooter), int(target), int(chat_id), int(amount), outcome, int(fee),
     )
+
+
+async def _keep_project_fee(shooter_id: int, fee: int, chat_id: int) -> int:
+    """Забирает комиссию у облившего и кладёт её на баланс выбранной технической группы.
+
+    Если группа сумму не приняла, куты возвращаются облившему.
+    """
+    fee = int(fee or 0)
+    dest = int(chat_id or 0)
+    if fee < 1 or dest == 0:
+        return 0
+    taken = await db.update_user_balance(int(shooter_id), f"-{fee}")
+    if taken is None:
+        return 0
+    try:
+        ok = await db.add_to_chatbalance(bot1, dest, fee)
+    except Exception:
+        log.exception("water fee")
+        ok = False
+    if not ok:
+        await db.update_user_balance(int(shooter_id), f"+{fee}")
+        return 0
+    try:
+        from bot.funcs.tech_plus import announce_tech_plus
+        await announce_tech_plus(bot1, dest, fee, reason="water")
+    except Exception:
+        log.exception("water fee note")
+    return fee
+
+
+async def _pistol_block_text(user_id: int, rules: dict, now) -> str | None:
+    if not rules.get("pistolDayOn"):
+        return None
+    used = int(await db.pool.fetchval(
+        """
+        SELECT COUNT(*) FROM water_splashes
+        WHERE shooter_id = $1 AND created_at > $2
+          AND outcome IN ('hit', 'broke', 'shield')
+        """,
+        int(user_id), now - timedelta(hours=24),
+    ) or 0)
+    limit = max(1, int(rules.get("pistolDayMax") or 0))
+    if not pistol_is_blocked(used, on=True, limit=limit):
+        return None
+    return screen_text("shot_pistol_day", used=used, limit=limit)
 
 
 async def _spend_water(user_id: int, items: dict) -> None:
@@ -681,24 +764,11 @@ async def splash_from_item(message) -> None:
         return
     now = datetime.now(timezone.utc)
     day_start = now - timedelta(hours=24)
-    pair_hits = await db.pool.fetch(
-        """
-        SELECT created_at FROM water_splashes
-        WHERE shooter_id = $1 AND target_id = $2 AND outcome = 'hit' AND created_at > $3
-        ORDER BY created_at DESC
-        """,
-        int(user_id), int(target_id), day_start,
-    )
-    if len(pair_hits) >= PAIR_DAY_MAX:
-        await message.reply(screen_text("shot_pair_day"), parse_mode="HTML")
+    rules = await _shot_rules()
+    blocked = await _pistol_block_text(user_id, rules, now)
+    if blocked:
+        await message.reply(blocked, parse_mode="HTML")
         return
-    if pair_hits:
-        latest = pair_hits[0]["created_at"]
-        wait = PAIR_GAP_SEC - (now - latest).total_seconds()
-        if wait > 0:
-            await message.reply(screen_text("shot_pair_wait", left=left_phrase(int(wait))), parse_mode="HTML")
-            return
-
     await _preview_shot(message, user_id, target_id, now, day_start)
 
 
@@ -774,7 +844,15 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
     elif kind == "broke":
         text = screen_text("shot_ask_broke")
     else:
+        payout, fee = split_take(amount, rules["commissionPercent"])
         text = screen_text("shot_ask", amount=_money(amount))
+        if fee:
+            text = text + "\n" + screen_text(
+                "shot_fee",
+                payout=_money(payout),
+                fee=_money(fee),
+                group=fee_group_name(rules["feeChatId"]),
+            )
     markup = _ask_markup(offer_id, user_id)
     if edit_call is not None:
         await _edit_call(edit_call, text, markup)
@@ -784,8 +862,12 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
 
 async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, now) -> tuple[str, object]:
     """Перевод через общий путь баланса: база, история и кэш меняются вместе."""
+    rules = await _shot_rules()
+    payout, fee = split_take(int(amount), rules["commissionPercent"])
     await db.transfer_currency(int(target_id), int(user_id), int(amount), word("history_shot"))
-    await _log(user_id, target_id, chat_id, amount, "hit")
+    kept = await _keep_project_fee(user_id, fee, int(rules["feeChatId"]))
+    received = payout if kept else int(amount)
+    await _log(user_id, target_id, chat_id, amount, "hit", fee=kept)
     towel = towel_amount(amount)
     until = now + timedelta(hours=TOWEL_HOURS)
     towel_id = await db.pool.fetchval(
@@ -798,10 +880,17 @@ async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, no
     )
     text = screen_text(
         "shot_hit",
-        amount=_money(amount),
+        amount=_money(received),
         towel=_money(towel),
         hours=hours_phrase(TOWEL_HOURS),
     )
+    if kept:
+        text = text + "\n" + screen_text(
+            "shot_fee",
+            payout=_money(received),
+            fee=_money(kept),
+            group=fee_group_name(rules["feeChatId"]),
+        )
     markup = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text=word("towel_btn", amount=_money(towel)),
@@ -838,6 +927,11 @@ async def _finish_pour(call, offer_id: int) -> None:
         return
     now = datetime.now(timezone.utc)
     rules = await _shot_rules()
+    blocked = await _pistol_block_text(user_id, rules, now)
+    if blocked:
+        await _edit_call(call, blocked)
+        await call.answer()
+        return
     shield = await _shield(target_id)
     if _still(shield):
         await _spend_water(user_id, items)

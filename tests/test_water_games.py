@@ -35,7 +35,11 @@ from water_games.design import (
     shields_in_bag,
     shop_can_take,
     stock_is_open,
+    fee_group_name,
+    normalize_fee_chat,
+    pistol_is_blocked,
     pour_bounds,
+    split_take,
     take_amount,
     take_one_item,
     towel_amount,
@@ -232,6 +236,21 @@ def test_a_water_purchase_advances_only_its_own_message():
     assert stamp_callback("wg:more:42", 99) == "wg:more:42"
     assert button_owner("wg:find:watercraft") is None
     assert button_owner(stamp_callback("wg:towel:3", 9)) == 9
+
+
+def test_project_keeps_a_slice_of_the_take():
+    assert split_take(80, 10) == (72, 8)
+    assert split_take(40, 10) == (36, 4)
+    assert split_take(1500, 10) == (1350, 150)
+    assert split_take(80, 0) == (80, 0)
+    assert split_take(80, 100) == (0, 80)
+    note = screen_text("shot_fee", payout="72", fee="8", group="Игры")
+    assert "Группе" in note and "Игры" in note
+    assert pistol_is_blocked(10, on=False, limit=2) is False
+    assert pistol_is_blocked(2, on=True, limit=2) is True
+    assert pistol_is_blocked(1, on=True, limit=2) is False
+    assert fee_group_name("-1004324787050") == "Игры"
+    assert normalize_fee_chat("нет такой") == "-1004324787050"
 
 
 def test_pour_bounds_follow_the_percent_and_the_ceiling():

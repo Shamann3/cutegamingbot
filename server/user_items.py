@@ -73,6 +73,37 @@ def log_count(items: dict) -> int:
     return count_item_in_storage(items, TREE_ITEM_KEY)
 
 
+def fold_item_onto_name(items: dict, *, name: str, item_id: str, name1: str = "") -> dict:
+    """Складывает id, имя и name1 одного предмета в ключ dex.name.
+
+    Бот списывает предмет по имени из dex. Выдача по числовому id видна
+    в инвентаре, но команда «использовать» её не узнаёт.
+    """
+    title = str(name or "").strip()
+    stored = dict(items or {})
+    if not title:
+        return stored
+    aliases = set()
+    for value in (title, item_id, name1):
+        text = str(value or "").strip()
+        if not text:
+            continue
+        aliases.add(text)
+        aliases.add(text.casefold())
+    total = 0
+    for key in list(stored.keys()):
+        token = str(key).strip()
+        if token not in aliases and token.casefold() not in aliases:
+            continue
+        try:
+            total += int(stored.pop(key) or 0)
+        except (TypeError, ValueError):
+            stored.pop(key, None)
+    if total > 0:
+        stored[title] = total
+    return stored
+
+
 def add_item(items: dict, key: str, amount: int) -> dict:
     items = dict(items)
     items[key] = int(items.get(key, 0)) + amount

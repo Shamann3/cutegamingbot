@@ -2873,38 +2873,22 @@ async def shop_op(message: Message):
         item_emoji = normalize_flag(typed) or typed
         print(f"Команда 'использовать' для предмета с эмодзи: {item_emoji}")
 
-        # Получаем инвентарь пользователя (нужно использовать await)
+        # Инвентарь и все предметы с этим эмодзи, именем или name1.
+        # Один эмодзи бывает у нескольких строк dex. Берём ту, что реально лежит у человека.
         user_inventory = await db.get_user_inventory_use(message.from_user.id)
-        print(f"Инвентарь пользователя: {user_inventory}")
-
-        # Получаем название предмета по эмодзи (нужно использовать await)
-        item_name = await db.get_item_name_by_emoji_use(item_emoji)
-
-        print(f"Название предмета для использования: {item_name}")
-
-        # Проверка, если предмет не найден в базе данных
-        if not item_name:
+        rows = await db.pool.fetch(
+            """
+            SELECT * FROM dex
+            WHERE emoji = $1 OR name = $1 OR name1 = $1
+            """,
+            item_emoji,
+        )
+        from bot.funcs.item_use_match import pick_held_row
+        item_info, item_name = pick_held_row(rows, user_inventory)
+        if item_info is None or not item_name:
             await message.reply(
                 "<tg-emoji emoji-id='4956499161319998529'>🔥</tg-emoji> <b>У вас нет этого предмета</b>" , parse_mode="HTML" ,
                 disable_web_page_preview=True)
-            print("Ошибка: Предмет не найден в базе данных.")
-            return
-
-        # Проверка, есть ли предмет в инвентаре
-        if item_name not in user_inventory:
-            await message.reply(
-                "<tg-emoji emoji-id='4956499161319998529'>🔥</tg-emoji> <b>У вас нет этого предмета</b>" , parse_mode="HTML" ,
-                disable_web_page_preview=True)
-            print("Ошибка: Предмет отсутствует в инвентаре.")
-            return
-
-        # Получаем информацию о предмете (нужно использовать await)
-        item_info = await db.get_item_info_use(item_name)
-        if not item_info:
-            await message.reply(
-                "<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Ошибка при получении данных о предмете.</b>" , parse_mode="HTML" ,
-                disable_web_page_preview=True)
-            print("Ошибка: Данные о предмете отсутствуют.")
             return
 
         print(f"Информация о предмете: {item_info}")

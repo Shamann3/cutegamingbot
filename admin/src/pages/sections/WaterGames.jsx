@@ -18,12 +18,23 @@ function money(value) {
   return new Intl.NumberFormat('ru-RU').format(Number(value) || 0)
 }
 
+const FALLBACK_GROUPS = [
+  { id: '-1004324787050', name: 'Игры' },
+  { id: '-1004318525471', name: 'Фон' },
+  { id: '-1003855337972', name: 'Дом игр' },
+  { id: '-1004238101266', name: 'Копилка' },
+]
+
 const FALLBACK_RULES = {
   percentLow: 4,
   percentHigh: 8,
   shotCap: 1500,
   dayCap: 4000,
   poorBalance: 50,
+  commissionPercent: 10,
+  feeChatId: FALLBACK_GROUPS[0].id,
+  pistolDayOn: false,
+  pistolDayMax: 10,
 }
 
 function pourAmount(balance, percent, cap, dayLeft, poor) {
@@ -39,16 +50,36 @@ function digits(value) {
   return String(value ?? '').replace(/[^\d]/g, '')
 }
 
-function RulesCard({ rules, sample, busy, saved, onChange, onSample, onSave }) {
+function cutOf(amount, rate) {
+  const fee = Math.floor(Number(amount) * Number(rate) / 100)
+  return { shooter: Number(amount) - fee, project: fee }
+}
+
+function rangeLine(label, low, high) {
+  if (low === high) return `${label} ${money(low)} кут`
+  return `${label} от ${money(low)} до ${money(high)} кут`
+}
+
+function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onSave }) {
   const low = Number(rules.percentLow)
   const high = Number(rules.percentHigh)
   const cap = Number(rules.shotCap)
   const day = Number(rules.dayCap)
   const poor = Number(rules.poorBalance)
+  const rate = Number(rules.commissionPercent)
+  const shotsOn = rules.pistolDayOn === true
+  const shots = Number(rules.pistolDayMax)
   const balance = Number(sample || 0)
-  const ready = low >= 1 && high >= low && high <= 100 && cap >= 1 && day >= 1 && poor >= 0 && sample !== ''
+  const wallets = groups && groups.length ? groups : FALLBACK_GROUPS
+  const feeId = String(rules.feeChatId || wallets[0].id)
+  const feeName = (wallets.find((item) => String(item.id) === feeId) || wallets[0]).name
+  const shotsReady = !shotsOn || (rules.pistolDayMax !== '' && shots >= 1 && shots <= 100000)
+  const ready = low >= 1 && high >= low && high <= 100 && cap >= 1 && day >= 1 && poor >= 0
+    && rules.commissionPercent !== '' && rate >= 0 && rate <= 100 && shotsReady && sample !== ''
   const from = ready ? pourAmount(balance, low, cap, day, poor) : 0
   const to = ready ? pourAmount(balance, high, cap, day, poor) : 0
+  const fromCut = cutOf(from, rate)
+  const toCut = cutOf(to, rate)
   const span = Math.max(1, high - low)
   const set = (key) => (event) => onChange({ ...rules, [key]: digits(event.target.value) })
 
@@ -56,11 +87,20 @@ function RulesCard({ rules, sample, busy, saved, onChange, onSample, onSave }) {
   if (ready && balance < poor) verdict = 'С такого баланса брать нечего'
   else if (ready && from === to) verdict = `Заберёт ${money(from)} кут`
   else if (ready) verdict = `Заберёт от ${money(from)} до ${money(to)} кут`
+  const showCut = ready && balance >= poor && (from > 0 || to > 0)
+  const shooterLine = rangeLine('Облившему', fromCut.shooter, toCut.shooter)
+  const projectLine = rangeLine(`В «${feeName}»`, fromCut.project, toCut.project)
+  const pistolLine = shotsOn
+    ? `Пистолетик: не больше ${money(shots || 0)} раз в сутки`
+    : 'Пистолетик без лимита в сутки'
+  const recap = ready
+    ? `${low}–${high}% · за раз до ${money(cap)} · за сутки до ${money(day)} · ниже ${money(poor)} не берём · комиссия ${rate}% · ${feeName}`
+    : ''
 
   return (
     <section className={`water-rules${saved ? ' is-saved' : ''}`}>
       <h4 className="sec-title">Сколько забирает выстрел</h4>
-      <p className="sec-subtitle">Процент от баланса того, кого облили. Число каждый раз случайное, внутри диапазона.</p>
+      <p className="sec-subtitle">Процент, потолки, комиссия и лимит пистолетика. Комиссия — доля уже снятой суммы, она падает на баланс выбранной технической группы.</p>
       <div className="water-rule-grid">
         <label className="water-field">
           <span>От, %</span>
@@ -83,16 +123,52 @@ function RulesCard({ rules, sample, busy, saved, onChange, onSample, onSave }) {
           <span>Не больше за сутки, кут</span>
           <input className="sec-input" inputMode="numeric" aria-label="Потолок за сутки" value={rules.dayCap} onChange={set('dayCap')} />
         </label>
-        <label className="water-field water-rule-span">
+        <label className="water-field">
           <span>Ниже этого баланса брать нечего</span>
           <input className="sec-input" inputMode="numeric" aria-label="Порог бедности" value={rules.poorBalance} onChange={set('poorBalance')} />
         </label>
+        <label className="water-field">
+          <span>Комиссия проекта, %</span>
+          <input className="sec-input" inputMode="numeric" aria-label="Комиссия проекта" value={rules.commissionPercent ?? ''} onChange={set('commissionPercent')} />
+        </label>
+        <label className="water-field water-rule-span">
+          <span>Куда падает комиссия</span>
+          <select className="sec-input" aria-label="Техническая группа" value={feeId} onChange={(event) => onChange({ ...rules, feeChatId: event.target.value })}>
+            {wallets.map((item) => (
+              <option key={item.id} value={String(item.id)}>{item.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="water-note">В «Игры», «Фон» и «Копилку» приходит сообщение «+». «Дом игр» копится без сообщения.</p>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={shotsOn}
+        aria-label="Лимит пистолетика в сутки"
+        className={`water-switch${shotsOn ? ' is-on' : ''}`}
+        onClick={() => onChange({ ...rules, pistolDayOn: !shotsOn })}
+      >
+        <span>Лимит пистолетика в сутки</span>
+        <i />
+      </button>
+      <div className={`water-drawer${shotsOn ? ' is-open' : ''}`}>
+        <div>
+          <label className="water-field">
+            <span>Сколько раз в сутки</span>
+            <input className="sec-input" inputMode="numeric" aria-label="Сколько раз в сутки" value={rules.pistolDayMax ?? ''} onChange={set('pistolDayMax')} />
+          </label>
+        </div>
       </div>
       <label className="water-field">
         <span>Если у человека, кут</span>
         <input className="sec-input" inputMode="numeric" aria-label="Пример баланса" value={sample} onChange={(event) => onSample(digits(event.target.value))} />
       </label>
+      {recap && <p className="water-note">{recap}</p>}
       <p className="water-pour" key={verdict}>{verdict}</p>
+      {showCut && <p className="water-pour water-cut" key={shooterLine}>{shooterLine}</p>}
+      {showCut && <p className="water-pour water-cut" key={projectLine}>{projectLine}</p>}
+      <p className="water-pour water-cut" key={pistolLine}>{pistolLine}</p>
       <button type="button" className="sec-btn" disabled={!ready || busy} onClick={onSave}>
         {busy ? 'Сохраняем…' : saved ? 'Правила сохранены' : 'Сохранить правила'}
       </button>
@@ -195,6 +271,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
         <>
           <RulesCard
             rules={rulesDraft}
+            groups={(board.feeGroups && board.feeGroups.length) ? board.feeGroups : FALLBACK_GROUPS}
             sample={sample}
             busy={rulesBusy}
             saved={rulesSaved}
@@ -214,6 +291,10 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
                   shotCap: Number(rulesDraft.shotCap),
                   dayCap: Number(rulesDraft.dayCap),
                   poorBalance: Number(rulesDraft.poorBalance),
+                  commissionPercent: Number(rulesDraft.commissionPercent),
+                  feeChatId: String(rulesDraft.feeChatId || FALLBACK_GROUPS[0].id),
+                  pistolDayOn: rulesDraft.pistolDayOn === true,
+                  pistolDayMax: Number(rulesDraft.pistolDayMax || 0),
                 })
                 setRulesDraft(saved.rules)
                 setRulesSaved(true)
@@ -279,6 +360,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
             <div className="water-stat" style={{ animationDelay: '40ms' }}><b>{money(totals.moved)}</b><span>кут перешло из рук в руки</span></div>
             <div className="water-stat" style={{ animationDelay: '80ms' }}><b>{money(totals.hitsToday)}</b><span>попаданий за сутки · {money(totals.movedToday)} кут</span></div>
             <div className="water-stat" style={{ animationDelay: '120ms' }}><b>{money(totals.shields)}</b><span>сейчас под защитой · сейфов {money(totals.forever)}</span></div>
+            <div className="water-stat" style={{ animationDelay: '160ms' }}><b>{money(totals.project)}</b><span>кут получил проект</span></div>
           </div>
 
           <section className="water-ledger">
@@ -343,7 +425,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
                     <i>→</i>
                     <OpenUserLink userId={row.target.userId} name={quietName(row.target.name)} onOpenUser={onOpenUser} />
                   </span>
-                  <span className="water-note">{OUTCOME[row.outcome] || row.outcome}{row.amount ? ` · ${money(row.amount)} кут` : ''}</span>
+                  <span className="water-note">{OUTCOME[row.outcome] || row.outcome}{row.amount ? ` · ${money(row.amount)} кут` : ''}{row.fee ? ` · проект ${money(row.fee)}` : ''}</span>
                 </li>
               ))}
             </ul>

@@ -11,7 +11,7 @@ import json
 from typing import Any
 
 from db import db
-from user_items import items_to_db, parse_items
+from user_items import fold_item_onto_name, items_to_db, parse_items
 from admin_db import get_admin_account
 from admin_portrait import staff_search_badge
 
@@ -288,7 +288,6 @@ async def admin_adjust_item(
 
     import item_lots
     from dex_catalog import dex_catalog
-    from user_items import add_shop_item_to_storage, count_item_in_storage, take_item_from_storage
 
     item_id = dex_catalog.canonical_key(item_id)
 
@@ -302,14 +301,39 @@ async def admin_adjust_item(
             if raw is None:
                 raise ValueError("Игрок не найден")
 
-            parsed = parse_items(raw)
-
+            dex_row = await conn.fetchrow(
+                """
+                SELECT id::text AS id, name, name1
+                FROM dex
+                WHERE id::text = $1 OR name = $1 OR name1 = $1
+                ORDER BY (id::text = $1) DESC, id
+                LIMIT 1
+                """,
+                item_id,
+            )
+            if dex_row is None or not str(dex_row["name"] or "").strip():
+                raise ValueError("Предмет не найден")
+            canon_id = str(dex_row["id"])
+            title = str(dex_row["name"]).strip()
+            updated_items = fold_item_onto_name(
+                parse_items(raw),
+                name=title,
+                item_id=canon_id,
+                name1=str(dex_row["name1"] or ""),
+            )
+            have = int(updated_items.get(title, 0) or 0)
             if delta > 0:
-                updated_items = add_shop_item_to_storage(parsed, item_id, delta)
+                updated_items[title] = have + int(delta)
+            elif have < -int(delta):
+                raise ValueError("У игрока нет столько предметов")
             else:
-                updated_items = take_item_from_storage(parsed, item_id, -delta)
+                left = have + int(delta)
+                if left <= 0:
+                    updated_items.pop(title, None)
+                else:
+                    updated_items[title] = left
 
-            count_after = int(count_item_in_storage(updated_items, item_id))
+            count_after = int(updated_items.get(title, 0) or 0)
 
             await conn.execute(
                 "UPDATE users SET items = $2 WHERE user_id = $1",
@@ -322,7 +346,7 @@ async def admin_adjust_item(
                 await item_lots.record_acquire(
                     conn,
                     user_id,
-                    item_id,
+                    canon_id,
                     delta,
                     unit_cost=0,
                     source=item_lots.SOURCE_ADMIN,
@@ -333,7 +357,7 @@ async def admin_adjust_item(
                 await item_lots.record_consume(
                     conn,
                     user_id,
-                    item_id,
+                    canon_id,
                     -delta,
                     reason=item_lots.REASON_ADMIN_TAKE,
                     ref_kind="admin",

@@ -552,6 +552,21 @@ screen(
 )
 
 screen(
+    "shot_fee",
+    """
+    <i>Вам {payout}. Группе «{group}» — {fee}.</i>
+    """,
+)
+
+screen(
+    "shot_pistol_day",
+    """
+    <b>Пистолетик на сегодня закончился</b>
+    <i>{used} из {limit}. Завтра снова можно.</i>
+    """,
+)
+
+screen(
     "shot_guard",
     """
     <b>{mark} {name}</b>
@@ -831,6 +846,44 @@ def take_amount(balance: int, percent: int, *, cap: int, day_left: int, poor: in
     return min(raw, room)
 
 
+# Технические группы, куда можно отправить комиссию обливания.
+# Те же id, что у касс Ники: игры, фон, дом игр, копилка.
+FEE_GROUPS = (
+    {"id": "-1004324787050", "name": "Игры"},
+    {"id": "-1004318525471", "name": "Фон"},
+    {"id": "-1003855337972", "name": "Дом игр"},
+    {"id": "-1004238101266", "name": "Копилка"},
+)
+
+
+def fee_groups() -> list:
+    return [dict(item) for item in FEE_GROUPS]
+
+
+def normalize_fee_chat(raw) -> str:
+    text = str(raw or "").strip()
+    allowed = {item["id"] for item in FEE_GROUPS}
+    if text in allowed:
+        return text
+    return FEE_GROUPS[0]["id"]
+
+
+def fee_group_name(raw) -> str:
+    chosen = normalize_fee_chat(raw)
+    for item in FEE_GROUPS:
+        if item["id"] == chosen:
+            return item["name"]
+    return FEE_GROUPS[0]["name"]
+
+
+def pistol_is_blocked(used: int, *, on: bool, limit: int) -> bool:
+    """Лимит выключен — пистолетик можно брать сколько угодно раз."""
+    if not on:
+        return False
+    cap = max(1, int(limit or 0))
+    return int(used or 0) >= cap
+
+
 def default_rules() -> dict:
     """То, с чего начинается выстрел, пока создатель не задал свои числа."""
     return {
@@ -839,7 +892,22 @@ def default_rules() -> dict:
         "shotCap": SHOT_CAP,
         "dayCap": DAY_CAP,
         "poorBalance": POOR_BALANCE,
+        "commissionPercent": 10,
+        "feeChatId": FEE_GROUPS[0]["id"],
+        "pistolDayOn": False,
+        "pistolDayMax": 10,
     }
+
+
+def split_take(amount: int, commission: int) -> tuple[int, int]:
+    """Сколько из снятой суммы остаётся облившему и сколько забирает проект.
+
+    Комиссия — доля уже снятых кут, не второе списание с жертвы.
+    """
+    gross = max(0, int(amount))
+    rate = max(0, min(100, int(commission)))
+    fee = gross * rate // 100
+    return gross - fee, fee
 
 
 def pour_bounds(balance: int, low: int, high: int, *, cap: int, day_left: int, poor: int) -> tuple[int, int]:

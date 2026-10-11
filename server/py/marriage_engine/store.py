@@ -1357,6 +1357,45 @@ async def _seed_kitchen(conn, cfg=None) -> None:
         )
 
 
+async def _mark_ring(conn) -> None:
+    """Обручальное кольцо носит 💍. Старый 💎 совпадал с сухим сейфом."""
+    import json
+    await conn.execute(
+        """
+        UPDATE dex SET emoji = '💍'
+        WHERE name1 = 'mrgring' AND COALESCE(emoji, '') IN ('', '💎')
+        """
+    )
+    try:
+        raw = await conn.fetchval("SELECT body FROM marriage_settings WHERE id = 1")
+    except Exception:
+        return
+    body = raw
+    if isinstance(raw, str):
+        try:
+            body = json.loads(raw)
+        except Exception:
+            return
+    if not isinstance(body, dict) or not isinstance(body.get("shelf"), list):
+        return
+    changed = False
+    for item in body["shelf"]:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("name1") or "") != "mrgring" and str(item.get("id") or "") != "wedring":
+            continue
+        if str(item.get("emoji") or "") in ("", "💎"):
+            item["emoji"] = "💍"
+            changed = True
+    if not changed:
+        return
+    await conn.execute(
+        "UPDATE marriage_settings SET body = $1::jsonb WHERE id = 1",
+        json.dumps(body, ensure_ascii=False),
+    )
+    drop_settings_cache()
+
+
 async def _seed_gifts(conn) -> None:
     """Создаёт недостающие строки в dex. Уже лежащие строки не переписывает."""
     raw = None
@@ -1398,6 +1437,7 @@ async def _seed_gifts(conn) -> None:
     quiet = quiet_row(cfg)
     if quiet and await conn.fetchval("SELECT id FROM dex WHERE name1 = $1", quiet["name1"]) is None:
         await _insert_dex(conn, quiet["name"], quiet["name1"], quiet["emoji"], quiet["price"], quiet["blurb"])
+    await _mark_ring(conn)
 
 
 async def _write_gifts(conn, cfg: dict) -> None:

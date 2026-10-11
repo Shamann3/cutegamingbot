@@ -5,7 +5,7 @@
 
 .water-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.75rem;
 }
 
@@ -98,6 +98,74 @@
   font-size: 1.15rem;
   letter-spacing: -0.03em;
   animation: water-in 320ms ease;
+}
+
+.water-cut {
+  font-size: 1rem;
+  margin-top: 0.15rem;
+}
+
+.water-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 48px;
+  padding: 0.35rem 0.45rem 0.35rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.water-switch i {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 220ms ease;
+}
+
+.water-switch i::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 220ms ease;
+}
+
+.water-switch.is-on {
+  border-color: rgba(150, 220, 170, 0.45);
+}
+
+.water-switch.is-on i {
+  background: rgba(120, 200, 140, 0.9);
+}
+
+.water-switch.is-on i::after {
+  transform: translateX(18px);
+}
+
+.water-drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 280ms ease;
+}
+
+.water-drawer.is-open {
+  grid-template-rows: 1fr;
+}
+
+.water-drawer > div {
+  overflow: hidden;
 }
 
 .water-shop-list {
@@ -288,6 +356,10 @@
   .water-rules.is-saved,
   .water-meter i,
   .water-pour,
+  .water-switch,
+  .water-switch i,
+  .water-switch i::after,
+  .water-drawer,
   .water-pane,
   .water-rank li,
   .water-recent li,

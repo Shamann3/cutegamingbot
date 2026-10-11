@@ -52,6 +52,10 @@ class RulesBody(BaseModel):
     shotCap: int = Field(ge=1, le=99_999_999)
     dayCap: int = Field(ge=1, le=99_999_999)
     poorBalance: int = Field(ge=0, le=99_999_999)
+    commissionPercent: int = Field(ge=0, le=100)
+    feeChatId: str
+    pistolDayOn: bool = False
+    pistolDayMax: int = Field(default=10, ge=0, le=100_000)
     model_config = {"extra": "forbid"}
 
 
@@ -105,11 +109,41 @@ async def _ensure(pool) -> None:
         )
         """
     )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS commission_percent INT NOT NULL DEFAULT 10
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_splashes
+            ADD COLUMN IF NOT EXISTS fee INT NOT NULL DEFAULT 0
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS fee_chat_id BIGINT NOT NULL DEFAULT -1004324787050
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS pistol_day_on BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS pistol_day_max INT NOT NULL DEFAULT 10
+        """
+    )
     base = default_rules()
     await pool.execute(
         """
-        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance)
-        VALUES (1, $1, $2, $3, $4, $5)
+        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent)
+        VALUES (1, $1, $2, $3, $4, $5, $6)
         ON CONFLICT (id) DO NOTHING
         """,
         base["percentLow"],
@@ -117,12 +151,13 @@ async def _ensure(pool) -> None:
         base["shotCap"],
         base["dayCap"],
         base["poorBalance"],
+        base["commissionPercent"],
     )
     await settle_umbrella(pool)
 
 
 def _rules_view(row) -> dict:
-    from water_games.design import default_rules
+    from water_games.design import default_rules, normalize_fee_chat
     base = default_rules()
     if not row:
         return base
@@ -136,6 +171,10 @@ def _rules_view(row) -> dict:
         "shotCap": int(row["shot_cap"]),
         "dayCap": int(row["day_cap"]),
         "poorBalance": int(row["poor_balance"]),
+        "commissionPercent": int(row["commission_percent"]),
+        "feeChatId": normalize_fee_chat(row["fee_chat_id"]),
+        "pistolDayOn": bool(row["pistol_day_on"]),
+        "pistolDayMax": max(0, int(row["pistol_day_max"] or 0)),
     }
 
 
@@ -161,7 +200,8 @@ async def water_board(_user_id: int = Depends(_creator)):
             COUNT(*) FILTER (WHERE outcome = 'shield')::int AS bounced,
             COALESCE(SUM(amount) FILTER (WHERE outcome = 'hit'), 0)::bigint AS moved,
             COUNT(*) FILTER (WHERE outcome = 'hit' AND created_at > NOW() - INTERVAL '1 day')::int AS hits_today,
-            COALESCE(SUM(amount) FILTER (WHERE outcome = 'hit' AND created_at > NOW() - INTERVAL '1 day'), 0)::bigint AS moved_today
+            COALESCE(SUM(amount) FILTER (WHERE outcome = 'hit' AND created_at > NOW() - INTERVAL '1 day'), 0)::bigint AS moved_today,
+            COALESCE(SUM(fee) FILTER (WHERE outcome = 'hit'), 0)::bigint AS project
         FROM water_splashes
         """
     )
@@ -203,7 +243,7 @@ async def water_board(_user_id: int = Depends(_creator)):
     )
     recent = await pool.fetch(
         """
-        SELECT shooter_id, target_id, amount, outcome, created_at
+        SELECT shooter_id, target_id, amount, outcome, fee, created_at
         FROM water_splashes
         ORDER BY created_at DESC
         LIMIT 12
@@ -239,12 +279,15 @@ async def water_board(_user_id: int = Depends(_creator)):
 
     rules = await pool.fetchrow(
         """
-        SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance
+        SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent,
+               fee_chat_id, pistol_day_on, pistol_day_max
         FROM water_rules WHERE id = 1
         """
     )
+    from water_games.design import fee_groups
     return {
         "rules": _rules_view(rules),
+        "feeGroups": fee_groups(),
         "totals": {
             "hits": int(totals["hits"] or 0) if totals else 0,
             "broke": int(totals["broke"] or 0) if totals else 0,
@@ -252,6 +295,7 @@ async def water_board(_user_id: int = Depends(_creator)):
             "moved": int(totals["moved"] or 0) if totals else 0,
             "hitsToday": int(totals["hits_today"] or 0) if totals else 0,
             "movedToday": int(totals["moved_today"] or 0) if totals else 0,
+            "project": int(totals["project"] or 0) if totals else 0,
             "shields": int(shields["live"] or 0) if shields else 0,
             "forever": int(shields["forever"] or 0) if shields else 0,
         },
@@ -288,6 +332,7 @@ async def water_board(_user_id: int = Depends(_creator)):
                 "shooter": person(row["shooter_id"]),
                 "target": person(row["target_id"]),
                 "amount": int(row["amount"] or 0),
+                "fee": int(row["fee"] or 0),
                 "outcome": row["outcome"],
                 "at": row["created_at"].isoformat() if row["created_at"] else "",
             }
@@ -351,25 +396,40 @@ async def water_stock(body: StockBody, _user_id: int = Depends(_creator)):
 async def water_rules(body: RulesBody, _user_id: int = Depends(_creator)):
     if body.percentLow > body.percentHigh:
         raise HTTPException(status_code=400, detail="Нижний процент больше верхнего")
+    if body.pistolDayOn and int(body.pistolDayMax) < 1:
+        raise HTTPException(status_code=400, detail="Укажите, сколько раз в сутки можно брать пистолетик")
     pool = _pool()
     await _ensure(pool)
+    from water_games.design import normalize_fee_chat
     row = await pool.fetchrow(
         """
-        INSERT INTO water_rules (id, percent_low, percent_high, shot_cap, day_cap, poor_balance, updated_at)
-        VALUES (1, $1, $2, $3, $4, $5, NOW())
+        INSERT INTO water_rules (
+            id, percent_low, percent_high, shot_cap, day_cap, poor_balance,
+            commission_percent, fee_chat_id, pistol_day_on, pistol_day_max, updated_at
+        )
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
         ON CONFLICT (id) DO UPDATE
         SET percent_low = EXCLUDED.percent_low,
             percent_high = EXCLUDED.percent_high,
             shot_cap = EXCLUDED.shot_cap,
             day_cap = EXCLUDED.day_cap,
             poor_balance = EXCLUDED.poor_balance,
+            commission_percent = EXCLUDED.commission_percent,
+            fee_chat_id = EXCLUDED.fee_chat_id,
+            pistol_day_on = EXCLUDED.pistol_day_on,
+            pistol_day_max = EXCLUDED.pistol_day_max,
             updated_at = NOW()
-        RETURNING percent_low, percent_high, shot_cap, day_cap, poor_balance
+        RETURNING percent_low, percent_high, shot_cap, day_cap, poor_balance,
+                  commission_percent, fee_chat_id, pistol_day_on, pistol_day_max
         """,
         int(body.percentLow),
         int(body.percentHigh),
         int(body.shotCap),
         int(body.dayCap),
         int(body.poorBalance),
+        int(body.commissionPercent),
+        int(normalize_fee_chat(body.feeChatId)),
+        bool(body.pistolDayOn),
+        int(body.pistolDayMax),
     )
     return {"ok": True, "rules": _rules_view(row)}
