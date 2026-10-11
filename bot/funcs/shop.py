@@ -700,7 +700,8 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
         name, price, remains, emoji = row[:4]
         bio = str(row[4] if len(row) > 4 else "").strip()
         disc_price = disc_map.get(emoji)
-        remains_fmt = format_price(remains)
+        from bot.funcs.water_games_design import stock_is_open
+        remains_fmt = "без лимита" if stock_is_open(name=name) else f"{format_price(remains)} шт"
         price_fmt = format_price(price)
         safe_name = html.escape(name, quote=False)  # экранируем HTML-символы в названии
         note = ""
@@ -712,13 +713,13 @@ async def generate_catalog_page(items: List[Tuple[str, int, int, str]], page: in
         if disc_price and disc_price > 0:
             disc_fmt = format_price(disc_price)
             catalog += (
-                f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt} шт</i> ] - </b>"
+                f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt}</i> ] - </b>"
                 f"<s>{price_fmt}</s> <b>{disc_fmt}</b> "
                 f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>{note}\n\n"
             )
         else:
             catalog += (
-                f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt} шт</i> ] - "
+                f"<code>{emoji}</code> <b>{safe_name} [ <i>{remains_fmt}</i> ] - "
                 f"{price_fmt}</b> "
                 f"<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>{note}\n\n"
             )
@@ -1296,7 +1297,8 @@ async def shop_op(message: Message):
                     if item_name == "Купон на скидку":
                         is_discount_coupon_in_cart = True
 
-                    bought_quantity = min(quantity , item_remain)
+                    from bot.funcs.water_games_design import shop_can_take
+                    bought_quantity = shop_can_take(item_remain, quantity, name=item_name)
 
                     max_quantity = 501 if item_name == "💠 CuteCoin" else 1001 if item_name == "💖 LoveCoin" else 5
 
@@ -1587,7 +1589,8 @@ async def shop_op(message: Message):
 
                 item_remain = _safe_int(item_remain , 0)
 
-                bought_quantity = min(quantity , item_remain)
+                from bot.funcs.water_games_design import shop_can_take
+                bought_quantity = shop_can_take(item_remain, quantity, name=item_name)
 
                 max_quantity = (
 
@@ -2927,6 +2930,14 @@ async def shop_op(message: Message):
             await _serve_dish(message, user_id, dish_code, item_emoji)
             return
 
+        shield_code = str(item_info.get("name1") or "")
+        if any(key in shield_code for key in ("dryumbrella", "drycoat", "dryawning", "drysafe")):
+            from bot.funcs.water_games import wear_shield
+            key = next(part for part in ("dryumbrella", "drycoat", "dryawning", "drysafe") if part in shield_code)
+            if await wear_shield(message, key):
+                await db.delete_user_inventory1(user_id, item_name)
+            return
+
         item_use = item_info [ 'use' ]
         if item_use != 1:
             await message.reply(
@@ -3812,7 +3823,8 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
             # такого предмета нет - просто пропускаем
             continue
         item_name, item_remain = item_info
-        can_buy = max(0, min(int(quantity), int(item_remain or 0)))
+        from bot.funcs.water_games_design import shop_can_take
+        can_buy = shop_can_take(item_remain, quantity, name=item_name)
         if can_buy <= 0:
             # нет в наличии - пропускаем
             continue
@@ -4086,7 +4098,8 @@ async def process_buy_callback(callback_query: types.CallbackQuery):
                 continue
 
             item_remain = _safe_int(item_remain, 0)
-            bought_quantity = min(quantity, item_remain)
+            from bot.funcs.water_games_design import shop_can_take
+            bought_quantity = shop_can_take(item_remain, quantity, name=item_name)
 
             if bought_quantity <= 0:
                 await callback_query.message.edit_text(

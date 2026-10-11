@@ -39,26 +39,62 @@ _FLAG_JSON = b"\x02"
 _FLAG_NULL = b"\x03"
 
 
+def _can_pickle(value: Any) -> bool:
+    try:
+        pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
+        return True
+    except Exception:
+        return False
+
+
+def _salvage(value: Any, depth: int = 0) -> Any:
+    """Оставляет из доски всё, что можно сохранить. Кнопка и замок не стирают игру."""
+    if depth > 6:
+        return None
+    if _can_pickle(value):
+        return value
+    if isinstance(value, dict):
+        kept = {}
+        for key, item in value.items():
+            piece = _salvage(item, depth + 1)
+            if piece is None and item is not None:
+                continue
+            kept[key] = piece
+        return kept
+    if isinstance(value, (list, tuple)):
+        return [_salvage(item, depth + 1) for item in value]
+    if isinstance(value, (int, float, str, bool)):
+        return value
+    return None
+
+
 def serialize_value(value: Any) -> bytes:
     """
     Pickle a single value with optional zlib compression.
     Falls back to JSON for objects that don't pickle well (Aiogram v3 objects).
+    A board that contains a button is saved without that button, not as empty.
     """
     try:
         raw = pickle.dumps(value, protocol=pickle.HIGHEST_PROTOCOL)
-        if len(raw) > COMPRESS_THRESHOLD:
-            return _FLAG_PICKLE_ZLIB + zlib.compress(raw, level=max(1, min(ZLIB_LEVEL, 9)))
-        return _FLAG_PICKLE + raw
     except (pickle.PicklingError, TypeError, AttributeError):
-        # Aiogram v3 objects (InlineKeyboardMarkup, etc.) fail on pickle, use JSON!
+        salvaged = _salvage(value)
         try:
-            if hasattr(value, "model_dump_json"):  # Aiogram v3 Pydantic models
-                data = value.model_dump_json().encode("utf-8")
+            if salvaged is not None and salvaged is not value:
+                raw = pickle.dumps(salvaged, protocol=pickle.HIGHEST_PROTOCOL)
             else:
-                data = json.dumps(value, ensure_ascii=False).encode("utf-8")
-            return _FLAG_JSON + data
-        except Exception:
-            return _FLAG_NULL  # If JSON fails too, store nothing to avoid crashes
+                raise TypeError("nothing to keep")
+        except (pickle.PicklingError, TypeError, AttributeError):
+            try:
+                if hasattr(value, "model_dump_json"):
+                    data = value.model_dump_json().encode("utf-8")
+                else:
+                    data = json.dumps(value, ensure_ascii=False).encode("utf-8")
+                return _FLAG_JSON + data
+            except Exception:
+                return _FLAG_NULL
+    if len(raw) > COMPRESS_THRESHOLD:
+        return _FLAG_PICKLE_ZLIB + zlib.compress(raw, level=max(1, min(ZLIB_LEVEL, 9)))
+    return _FLAG_PICKLE + raw
 
 
 def deserialize_value(blob: bytes) -> Any:
@@ -108,6 +144,38 @@ def hash_has_data(rc, name: str) -> bool:
         return bool(rc.exists(_key_bytes(data_key)))
     except Exception:
         return False
+
+
+def hash_load_one(store: "GameStore", rc, sk: str) -> bool:
+    """Подтянуть один ключ доски, если после перезапуска его нет в памяти."""
+    data_key, ts_key, _exp_key = redis_keys(store.name)
+    try:
+        blob = rc.hget(_key_bytes(data_key), _key_bytes(sk))
+    except Exception as exc:
+        store._log_err("hash_load_one: Redis HGET failed", exc)
+        return False
+    if not blob:
+        return False
+    try:
+        value = deserialize_value(bytes(blob))
+    except Exception:
+        return False
+    if value is None:
+        return False
+    ts = None
+    try:
+        raw_ts = rc.hget(_key_bytes(ts_key), _key_bytes(sk))
+        if raw_ts:
+            ts = float(raw_ts.decode("utf-8"))
+    except Exception:
+        ts = None
+    with store._lock:
+        if dict.__contains__(store, sk):
+            return True
+        dict.__setitem__(store, sk, value)
+        if ts is not None:
+            store.timestamps[sk] = float(ts)
+    return True
 
 
 def hash_load_all(store: "GameStore", rc) -> bool:

@@ -90,7 +90,7 @@ async def crash(message: Message):
 
 
 
-user_coefficients = {}
+user_coefficients = LazyGameStore("crash_user_coefficients")
 
 @dp.callback_query(lambda c: c.data.startswith('start_btn'))
 async def accept(call: types.CallbackQuery):

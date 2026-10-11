@@ -50,7 +50,7 @@ _ENV_FILE = _resolve_env_file()
 
 import pyotp
 import qrcode
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request, Response
 
 from config import (
     ADMIN_BOT_TOKEN,
@@ -460,6 +460,23 @@ def issue_admin_token(user_id: int) -> tuple[str, int]:
     return f"{body}.{sig}", exp
 
 
+def _slide_session(response: Response, user_id: int, token: str, had_token: bool) -> None:
+    """Пока человек в панели, срок сессии сдвигается. Час простоя по-прежнему закрывает вход."""
+    try:
+        parts = (token or "").split(".")
+        exp = int(parts[2]) if len(parts) == 4 else 0
+    except ValueError:
+        exp = 0
+    remaining = exp - int(time.time()) if exp else 0
+    if had_token and remaining > 20 * 60:
+        return
+    try:
+        fresh, _exp = issue_admin_token(user_id)
+    except HTTPException:
+        return
+    response.headers["X-Panel-Token"] = fresh
+
+
 def verify_admin_token(token: str) -> tuple[int, int] | None:
     """Returns (user_id, iat) or None if invalid/expired."""
     if not token or not ADMIN_JWT_SECRET:
@@ -583,6 +600,7 @@ async def require_proof_viewer(
 
 async def require_admin_session(
     request: Request,
+    response: Response,
     user_id: int = Depends(get_admin_user_id),
 ) -> int:
     auth_header = request.headers.get("Authorization", "")
@@ -628,12 +646,19 @@ async def require_admin_session(
                 )
             bound = str(row["panel_device"] or "")
             current = panel_device(request)
-            if bound and current != bound:
+            # Пустой заголовок — это не чужой браузер: токен уже подтвердил человека.
+            # Тот же Telegram на этом аккаунте тоже остаётся внутри, даже если
+            # браузер забыл сохранённый номер устройства.
+            if bound and current and current != bound and not init_authenticated:
                 raise HTTPException(
                     status_code=401,
                     detail="Это другое устройство. Откройте вход и введите ключ.",
                 )
+            if bound and current and current != bound and init_authenticated:
+                import asyncio
+                asyncio.create_task(_rebind_panel_device(user_id, current))
         _auth_debug(request, f"session OK user_id={user_id}")
+        _slide_session(response, user_id, token, verified is not None)
         # Отпечаток устройства НЕ используем как жёсткий блок: он ломал вход с
         # нового устройства (регистрация на ПК → вход с телефона). Личность уже
         # подтверждена подписанным токеном, поэтому просто обновляем отпечаток на
@@ -651,6 +676,21 @@ async def require_admin_session(
         raise HTTPException(status_code=503, detail="Ошибка сессии. Попробуйте ещё раз")
 
     return user_id
+
+
+async def _rebind_panel_device(user_id: int, device: str) -> None:
+    """Тот же человек открыл панель заново. Номер браузера обновляется, сессия жива."""
+    if not device:
+        return
+    try:
+        from db import db
+        await db.pool.execute(
+            "UPDATE admin_accounts SET panel_device = $2, last_seen_at = NOW() WHERE user_id = $1",
+            int(user_id),
+            device,
+        )
+    except Exception:
+        logger.warning("panel device rebind failed for %s", user_id, exc_info=True)
 
 
 async def _update_last_seen(user_id: int, ip: str, fingerprint: str | None = None) -> None:

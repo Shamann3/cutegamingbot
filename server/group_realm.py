@@ -1172,7 +1172,7 @@ async def _sync_chat_rights(
 ) -> str:
     """Админские флаги ставят должность в Telegram. Без них обычный пользователь остаётся участником."""
     if rights is None:
-        return await _apply_chat_title(int(chat_id), int(user_id), "", rights=None)
+        return await _strip_to_member(int(chat_id), int(user_id))
     if kind == KIND_MEMBER and not _has_admin_flag(rights):
         await _telegram_call(
             "promoteChatMember",
@@ -1250,24 +1250,42 @@ async def _telegram_call(method: str, payload: dict) -> tuple[bool, str, dict]:
     return False, description or "Telegram отказал", data if isinstance(data, dict) else {}
 
 
+async def _strip_to_member(chat_id: int, user_id: int) -> str:
+    """Снимает админку, префикс и тег. Если Telegram молчит, повторяет, пока человек не станет участником."""
+    last_error = ""
+    demoted = False
+    for _attempt in range(3):
+        ok, err, _data = await _telegram_call(
+            "promoteChatMember",
+            _promote_body(int(chat_id), int(user_id), None),
+        )
+        if ok:
+            demoted = True
+            break
+        last_error = err
+    if demoted:
+        restored = await _apply_send_limits(int(chat_id), int(user_id), None)
+        if "не встали" in restored:
+            restored = await _apply_send_limits(int(chat_id), int(user_id), None)
+        if "не встали" in restored:
+            return f"В группе админка снята. {restored}"
+        return "В группе админка, префикс и тег сняты. Человек остаётся обычным участником."
+    return f"Должность в панели снята. В группе админка могла остаться: {last_error}"
+
+
 async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: list[str] | None) -> str:
     """Ставит или снимает админку и префикс в группе. Токен в ответ не попадает.
 
     rights=None снимает админку: человек остаётся в чате обычным участником.
     """
+    if rights is None:
+        return await _strip_to_member(int(chat_id), int(user_id))
     ok, err, _data = await _telegram_call(
         "promoteChatMember",
         _promote_body(chat_id, user_id, rights),
     )
     if not ok:
-        if rights is None:
-            return f"Должность в панели снята. В группе админка могла остаться: {err}"
         return f"Место в панели есть. Префикс в группе не встал: {err}"
-    if rights is None:
-        restored = await _apply_send_limits(int(chat_id), int(user_id), None)
-        if "не встали" in restored:
-            return f"В группе админка снята. {restored}"
-        return "В группе админка и префикс сняты. Человек остаётся обычным участником."
     text = " ".join((title or "").split())[:16]
     if not text:
         return "Админка в группе обновлена."
@@ -2074,6 +2092,7 @@ async def act_refusal(
     """Кого нельзя наказать. Сотрудник с этим правом старше должности в группе."""
     if int(target_id) in punish_rights.PROTECTED_CREATOR_IDS:
         return punish_rights.PROTECTED_BLOCK
+    actor_rank = int(access.get("rank") or -1)
     if staff_grant:
         if int(target_id) == int(actor_id):
             return punish_rights.SELF_LIFT_BLOCK if punish_rights.is_lift(action) else punish_rights.SELF_BLOCK
@@ -2086,7 +2105,7 @@ async def act_refusal(
     wide = punish_rights.is_wide(action)
     target_rank = await (_top_seat_rank(target_id) if wide else _seat_rank(target_id, chat_id))
     blocked = punish_rights.seat_target_block(
-        actor_rank=int(access["rank"]),
+        actor_rank=actor_rank,
         target_rank=target_rank,
         same_person=int(target_id) == int(actor_id),
         target_staff=bool(staff) and punish_rights.is_staff_account(staff["role"], staff["status"]),
@@ -3607,7 +3626,21 @@ async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegr
         int(body.user_id),
         int(body.chat_id),
     )
-    note = await _apply_chat_title(int(body.chat_id), int(body.user_id), "", rights=None)
+    await db.pool.execute(
+        "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+        int(body.user_id),
+        int(body.chat_id),
+    )
+    left = await db.pool.fetchval(
+        "SELECT COUNT(*) FROM epsilon_seats WHERE user_id = $1",
+        int(body.user_id),
+    )
+    if not int(left or 0):
+        await db.pool.execute(
+            "UPDATE epsilon_group_keys SET disabled = TRUE, updated_at = NOW() WHERE user_id = $1",
+            int(body.user_id),
+        )
+    note = await _strip_to_member(int(body.chat_id), int(body.user_id))
     await _realm_log(
         int(body.chat_id),
         int(body.user_id),
@@ -4755,7 +4788,7 @@ async def group_key_check(
     payload = {"ok": True, "needCode": need_code}
     bound_device = str(row["panel_device"] or "")
     current_device = panel_device(request)
-    other_device = bool(bound_device and current_device != bound_device)
+    other_device = bool(bound_device and current_device and current_device != bound_device)
     if body.finish and ready and not other_device:
         need_code = False
         payload["needCode"] = need_code
@@ -4826,10 +4859,17 @@ async def group_key_resume(
         "SELECT panel_device FROM epsilon_group_keys WHERE user_id = $1",
         int(pass_user),
     )
-    if str(bound or "") and panel_device(request) != str(bound):
-        raise HTTPException(
-            status_code=403,
-            detail="Это другое устройство. Напишите ключ на экране входа.",
+    current_device = panel_device(request)
+    if str(bound or "") and current_device and current_device != str(bound):
+        if user_id is None or int(user_id) != int(pass_user):
+            raise HTTPException(
+                status_code=403,
+                detail="Это другое устройство. Напишите ключ на экране входа.",
+            )
+        await db.pool.execute(
+            "UPDATE epsilon_group_keys SET panel_device = $2, updated_at = NOW() WHERE user_id = $1",
+            int(pass_user),
+            current_device,
         )
     key_hash = await _pass_key_hash(pass_user, stamp)
     entry_pass, exp = _issue_group_pass(pass_user, key_hash)

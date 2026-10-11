@@ -1655,87 +1655,8 @@ async def hui(user_id , message):
 
 
 async def pistoletik(db, user_id, message):
-    # Получение данных пользователя
-    user_data = await db.fetch_all("SELECT items, balance FROM users WHERE user_id=$1", (user_id,))
-    if not user_data:
-        await message.reply("<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Пользователь не найден.</b>", parse_mode="HTML")
-        return
-
-    row = user_data[0]
-    user_inventory = decode_items(row["items"])
-
-    key_name = "Вода ( для пистолетика )"
-    case_name = "Пистолетик"
-
-    if user_inventory.get(case_name, 0) > 0:
-        if user_inventory.get(key_name, 0) > 0:
-            # Получение данных цели
-            if not message.reply_to_message:
-                await message.reply("✖️ <b>Вы должны ответить на сообщение цели.</b>", parse_mode="HTML")
-                return
-
-            user_id_enemy = message.reply_to_message.from_user.id
-            enemy_data = await db.fetch_all("SELECT balance FROM users WHERE user_id=$1", (user_id_enemy,))
-            if not enemy_data:
-                await message.reply("✖️ <b>Цель не найдена в базе данных.</b>", parse_mode="HTML")
-                return
-
-            enemy_balance = enemy_data[0]["balance"]
-            random_percentage = random.randint(2 , 10)
-
-            # Рассчитываем amount
-            amount = int(enemy_balance * (random_percentage / 100))
-
-            new_enemy_balance = max(0, enemy_balance - amount)  # Баланс цели не может быть отрицательным
-
-            # Обновляем баланс цели
-            await db.update_user_balance(user_id_enemy, new_enemy_balance)
-            await db.cutehistory_minus(
-                user_id , amount , "пистолетик с водой")
-
-            # Обновляем баланс стрелявшего
-            current_balance = row["balance"]
-            new_balance = current_balance + amount
-            await db.update_user_balance(user_id, new_balance)
-            await db.cutehistory_plus(
-                user_id , amount , "пистолетик с водой")
-
-            # Уведомление о результате
-            win_amount_formatted = "{:,.0f}".format(amount).replace(",", ".")
-            sender_name = await db.get_firstname_by_user_id(user_id_enemy)
-            sender_username = await db.get_username_by_id(user_id_enemy)
-            name_link = await create_user_link(user_id_enemy , sender_name , sender_username)
-            await message.reply(
-                f"🔫 <b>Вы облили {name_link} водой, заработав {win_amount_formatted} кут</b>",
-                parse_mode="HTML" , disable_web_page_preview=True
-            )
-            #item_name = "Пистолетик"
-            #await db.delete_user_inventory1(user_id , item_name)
-
-            # Обновление инвентаря
-            user_inventory[key_name] -= 1
-            if user_inventory[key_name] == 0:
-                del user_inventory[key_name]
-
-            #user_inventory[case_name] -= 1
-            #if user_inventory[case_name] == 0:
-                #del user_inventory[case_name]
-
-            updated_inventory = encode_items(user_inventory)
-            await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
-            await item_cost.record_losses(
-                db.pool, user_id, {key_name: 1},
-                reason=item_cost.REASON_ITEM_USED, ref_kind="item_use",
-            )
-        else:
-            await message.reply(
-                "✖️ <b>У вас нет воды для выстрела из пистолетика.</b>", parse_mode="HTML"
-            )
-    else:
-        await message.reply(
-            "✖️ <b>У вас нет пистолетика для выстрела.</b>", parse_mode="HTML"
-        )
-
+    from bot.funcs.water_games import splash_from_item
+    await splash_from_item(message)
 
 
 async def freebonus(user_id, message):

@@ -16,6 +16,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramAPIError
 from bot.funcs.help import wordhelp, brak, ffunc, other, gamehelp, textstore, textglobhelp, textzabhelp, clanss
 from bot.design.inlinetictactoe import *
 from bot.funcs.tic_tac_toe import TTT_STYLE_PACKS
+from bot.db_create.pklcode import LazyGameStore
 
 from main import (
     inline_add_or_update_user_info,
@@ -35,7 +36,7 @@ from main import (
 # =========================================================
 
 INLINE_TTT_REST = 2
-inline_ttt_cooldowns: Dict[int, float] = {}
+inline_ttt_cooldowns: Dict[int, float] = LazyGameStore("inline_ttt_cooldowns")
 
 # text -> для текста сообщений
 # plain -> для логики игры

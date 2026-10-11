@@ -64,18 +64,25 @@ function guardPreviewWrite(method, path) {
 
 
 const DEVICE_KEY = 'epsilon.panel.device'
+let _deviceMemory = ''
 
 export function panelDeviceId() {
+  if (/^[a-f0-9]{32}$/.test(_deviceMemory)) return _deviceMemory
   try {
     const stored = localStorage.getItem(DEVICE_KEY) || ''
-    if (/^[a-f0-9]{32}$/.test(stored)) return stored
+    if (/^[a-f0-9]{32}$/.test(stored)) {
+      _deviceMemory = stored
+      return stored
+    }
+    if (getAdminToken()) return ''
     const bytes = new Uint8Array(16)
     crypto.getRandomValues(bytes)
     const next = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-    localStorage.setItem(DEVICE_KEY, next)
+    _deviceMemory = next
+    try { localStorage.setItem(DEVICE_KEY, next) } catch { /* память уже держит этот браузер */ }
     return next
   } catch {
-    return ''
+    return _deviceMemory || ''
   }
 }
 
@@ -259,6 +266,9 @@ async function adminRequest(path, { method = 'GET', body, timeoutMs = DEFAULT_TI
     })
 
 
+
+    const renewed = response.headers.get('X-Panel-Token')
+    if (renewed && renewed.split('.').length >= 3) setAdminToken(renewed)
 
     const data = await readJsonResponse(response, path)
 
@@ -534,6 +544,17 @@ export async function saveMemeMode({ chance, excludedIds }) {
   return adminRequest('/meme-mode', {
     method: 'PUT',
     body: { chance, excludedIds },
+  })
+}
+
+export async function fetchWaterBoard() {
+  return adminRequest('/water-games')
+}
+
+export async function saveWaterPrice({ id, price }) {
+  return adminRequest('/water-games/price', {
+    method: 'POST',
+    body: { id, price },
   })
 }
 

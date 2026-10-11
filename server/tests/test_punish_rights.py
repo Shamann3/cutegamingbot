@@ -65,10 +65,12 @@ def test_lower_or_equal_rank_and_self_are_refused():
     assert punish_rights.may_punish_rank(4, 3, same_person=False) is None
     assert punish_rights.may_punish_rank(4, 4, same_person=False)
     assert punish_rights.may_punish_rank(4, -1, same_person=True) == punish_rights.SELF_BLOCK
-    blocked = punish_rights.seat_target_block(
-        actor_rank=4, target_rank=2, same_person=False, target_staff=True,
-    )
-    assert blocked == punish_rights.STAFF_TARGET_BLOCK
+    for actor_rank, target_rank in ((4, 2), (2, 4), (4, -1)):
+        blocked = punish_rights.seat_target_block(
+            actor_rank=actor_rank, target_rank=target_rank,
+            same_person=False, target_staff=True,
+        )
+        assert blocked == punish_rights.STAFF_TARGET_BLOCK
     wide = punish_rights.seat_target_block(
         actor_rank=3, target_rank=3, same_person=False, target_staff=False, wide=True,
     )

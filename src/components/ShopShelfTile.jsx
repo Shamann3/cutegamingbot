@@ -17,7 +17,8 @@ export default function ShopShelfTile({
   const hasSale = item.salePrice != null && item.salePrice > 0
   const price = itemBuyPrice(item)
   const canAfford = kut == null || kut >= price
-  const outOfStock = item.remains < 1
+  const openStock = Boolean(item.openStock)
+  const outOfStock = !openStock && item.remains < 1
   const tileDisabled = disabled || isBuying || outOfStock
   const { performanceMode } = useSettings()
   const emojiPopping = useShopEmojiPop(item.id, performanceMode === PERF_MODES.FULL)
@@ -53,11 +54,11 @@ export default function ShopShelfTile({
           {item.emoji}
         </span>
         <p className="shop-shelf-name" title={item.name}>{item.name}</p>
-        {(item.sorting === '💖' || item.sorting === '💕') && (item.bio || item.description) ? (
+        {(item.sorting === '💖' || item.sorting === '💕' || item.sorting === '🔫') && (item.bio || item.description) ? (
           <p className="shop-shelf-benefit">{item.bio || item.description}</p>
         ) : null}
         <div className="shop-shelf-meta">
-          <span className="shop-shelf-stock">{formatKut(item.remains)}</span>
+          <span className="shop-shelf-stock">{openStock ? 'без лимита' : formatKut(item.remains)}</span>
           <div className="shop-shelf-price">
             {hasSale ? (
               <span className="shop-shelf-price-stack">

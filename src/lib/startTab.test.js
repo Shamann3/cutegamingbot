@@ -26,6 +26,12 @@ describe('readStartParam', () => {
     expect(getStartTab({ hash: '#tgWebAppStartParam=' })).toBeNull()
   })
 
+  it('opens a shop item from a water-games button', () => {
+    expect(pickStartTab('shop-42')).toBe('shop-42')
+    expect(resolveStartTab('shop-42')).toEqual({ tab: 'trade', tradeSegment: 'shop', itemId: '42' })
+    expect(resolveStartTab('market-7')).toEqual({ tab: 'trade', tradeSegment: 'market', itemId: '7' })
+  })
+
   it('keeps craft and farm as their own screens', () => {
     expect(resolveStartTab(pickStartTab('craft'))).toEqual({ tab: 'craft', tradeSegment: 'shop' })
     expect(resolveStartTab(pickStartTab('farm'))).toEqual({ tab: 'farm', tradeSegment: 'shop' })

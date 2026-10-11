@@ -13,7 +13,6 @@ export const FOG_CUE_DELAY_MS = 2600
 const ARM_MS = 12000
 const SEAL_GAP_MS = 480
 
-const ENTER_URL = new URL('../../../public/звук входа.mp3', import.meta.url).href
 const SEAL_URL = new URL('../../../public/звук сохранения чего либо.mp3', import.meta.url).href
 
 const COMMIT_RE = /(сохран|подтверд|запис|примен|одобр|отклон|выда|созда|добав|снять|снят|включ|выключ|отправ|зачисл|начисл|забра|готово|подходит|неправильно|непонятно|удал|забан|разбан|размут|кик|варн|наказ|засчита|зачест|зафиксир|принять|голос|предупрежд)/i
@@ -25,7 +24,7 @@ let installed = false
 let primed = false
 let pending = ''
 let clipToken = 0
-const clips = { enter: null, seal: null }
+const clips = { seal: null }
 
 function storage() {
   try {
@@ -95,20 +94,15 @@ export function writeShouldChime(method, path, now = Date.now()) {
 }
 
 function ensure(kind) {
+  if (kind !== 'seal') return null
   if (typeof Audio !== 'function') return null
-  if (!clips[kind]) {
-    const audio = new Audio(kind === 'enter' ? ENTER_URL : SEAL_URL)
+  if (!clips.seal) {
+    const audio = new Audio(SEAL_URL)
     audio.preload = 'auto'
     audio.loop = false
-    clips[kind] = audio
+    clips.seal = audio
   }
-  return clips[kind]
-}
-
-function duckEnter() {
-  const enter = clips.enter
-  if (!enter || enter.paused) return
-  enter.volume = 0.18
+  return clips.seal
 }
 
 function playClip(kind) {
@@ -119,7 +113,6 @@ function playClip(kind) {
     const now = Date.now()
     if (now - lastSeal < SEAL_GAP_MS) return false
     lastSeal = now
-    duckEnter()
   }
   clipToken += 1
   audio.volume = CUE_VOLUME
@@ -132,7 +125,7 @@ function playClip(kind) {
 }
 
 export function playEnterCue() {
-  return playClip('enter')
+  return false
 }
 
 export function playSealCue() {
@@ -172,12 +165,11 @@ function armFromControl(node) {
 function prime() {
   if (!readCueSoundsEnabled()) return
   if (primed) return
-  const enter = ensure('enter')
   const seal = ensure('seal')
-  if (!enter || !seal) return
+  if (!seal) return
   primed = true
   const token = clipToken
-  for (const audio of [enter, seal]) {
+  for (const audio of [seal]) {
     audio.volume = 0
     const run = audio.play()
     const restore = () => {

@@ -20,6 +20,7 @@ import EntryGuide from '../components/EntryGuide'
 import { SCREENS, WORDS } from '../entry_design'
 import { accentIsPersonal, loadStoredAccent } from '../lib/accentTheme'
 import { portraitFrom, rememberPortrait, rememberedPortrait } from '../lib/gateRecovery'
+import AcceptedPass from '../components/AcceptedPass'
 
 function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
@@ -106,6 +107,31 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
       cancelled = true
     }
   }, [openAsCreator])
+
+  useEffect(() => {
+    if (regStage !== 'waiting') return undefined
+    let stop = false
+    const look = async () => {
+      try {
+        const status = await fetchAdminAuthStatus()
+        if (stop) return
+        if (status.applicationStatus === 'rejected') {
+          setRegStage('refused')
+          return
+        }
+        if (status.staffCanEnter || status.applicationStatus === 'approved' || status.status === 'active') {
+          setRegStage('accepted')
+        }
+      } catch {
+        // следующий круг, экран ожидания остаётся
+      }
+    }
+    const timer = window.setInterval(look, 4000)
+    return () => {
+      stop = true
+      window.clearInterval(timer)
+    }
+  }, [regStage])
 
   const handleLogin = useCallback(
     async ({ loginKey, totp }) => {
@@ -252,6 +278,30 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
       : mode
 
   function renderRegister() {
+    if (regStage === 'accepted') {
+      return (
+        <AcceptedPass
+          kind="staff"
+          onAction={() => {
+            setRegStage('key')
+            switchMode('login')
+            setInfo('Заявка принята. Тот же ключ, затем шесть цифр.')
+          }}
+        />
+      )
+    }
+
+    if (regStage === 'refused') {
+      return (
+        <div className="auth-form">
+          <p className="auth-message auth-message-error" role="alert">Заявку не приняли.</p>
+          <button type="button" className="auth-btn auth-btn-primary" onClick={onBack}>
+            К выбору панели
+          </button>
+        </div>
+      )
+    }
+
     if (regStage === 'waiting') {
       return (
         <div className="auth-form">

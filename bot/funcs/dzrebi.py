@@ -18,7 +18,8 @@ from aiogram.types import CallbackQuery
 
 from bot.funcs.func import *
 
-gamesdzrebi = {}
+from bot.db_create.pklcode import LazyGameStore
+gamesdzrebi = LazyGameStore("gamesdzrebi")
 
 gamenumdzrebi = []# Словарь для хранения информации об играх
 

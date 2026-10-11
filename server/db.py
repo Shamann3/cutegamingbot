@@ -1990,7 +1990,7 @@ class Database:
                 ) from schema_err
             # Предмет проверяем до брони, иначе опечатка в item_id сожгла бы купон.
             preview = await self.pool.fetchrow(
-                "SELECT price, dis, remains FROM dex WHERE id = $1", dex_id
+                "SELECT name, name1, price, dis, remains FROM dex WHERE id = $1", dex_id
             )
             if not preview:
                 raise ValueError("Предмет не найден")
@@ -1999,11 +1999,18 @@ class Database:
             preview_unit_cost = effective_price(preview["price"], preview["dis"])
             if preview_unit_cost < 0:
                 raise ValueError("Этот предмет нельзя купить")
+            from shop_catalog import shop_can_take
+            preview_qty = shop_can_take(
+                preview["remains"],
+                quantity,
+                name1=preview["name1"],
+                name=preview["name"],
+            )
             # Даже при макс. скидке покупка должна быть возможна — иначе бронь
             # процента создастся впустую (купон при этом уже не сгорает).
             best_case_cost, _ = apply_coupon_to_cost(
                 preview_unit_cost,
-                min(quantity, int(preview["remains"] or 0)),
+                preview_qty,
                 discount_bounds()[1],
             )
             preview_balance = await self.pool.fetchval(
@@ -2044,7 +2051,14 @@ class Database:
                 remains = int(dex_row["remains"] or 0)
                 if remains < 1:
                     raise ValueError("К сожалению, товар закончился")
-                buy_qty = min(quantity, remains)
+                from shop_catalog import shop_can_take, stock_is_open
+                open_stock = stock_is_open(dex_row["name1"], dex_row["name"])
+                buy_qty = shop_can_take(
+                    remains,
+                    quantity,
+                    name1=dex_row["name1"],
+                    name=dex_row["name"],
+                )
                 unit_cost = effective_price(dex_row["price"], dex_row["dis"])
                 if unit_cost < 0:
                     raise ValueError("Этот предмет нельзя купить")
@@ -2110,9 +2124,10 @@ class Database:
                     items_to_db(stored),
                     tool_durability_to_db(tool_durability),
                 )
-                await conn.execute(
-                    "UPDATE dex SET remains = remains - $2 WHERE id = $1", dex_id, buy_qty
-                )
+                if not open_stock:
+                    await conn.execute(
+                        "UPDATE dex SET remains = remains - $2 WHERE id = $1", dex_id, buy_qty
+                    )
                 if coupon_percent:
                     # Себестоимость скидочной единицы — иначе продажа вернёт
                     # 25-45% цены за предмет, купленный за 25%, и цикл

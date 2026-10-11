@@ -18633,6 +18633,11 @@ class Database:
                         current_remain = result [ 'remains' ]
                         print(f"Найдено количество: {current_remain} для предмета '{item_name}'.")
 
+                        from bot.funcs.water_games_design import stock_is_open
+                        if stock_is_open(name=item_name) and int(current_remain or 0) >= 1:
+                            print(f"Предмет '{item_name}' без лимита склада. Остаток не уменьшается.")
+                            return item_name , quantity
+
                         # Проверка на достаточность предметов
                         if current_remain >= quantity:
                             new_remain = current_remain - quantity

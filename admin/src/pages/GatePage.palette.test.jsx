@@ -95,7 +95,7 @@ describe('Палитра в меню выбора панели', () => {
     })
     tap(g.staffDoor())
     expect(g.onStaffEnter.mock.calls.length + g.onStaffApply.mock.calls.length).toBe(1)
-    expect(g.container.textContent).toContain('Дальше нужен ключ')
+    expect(g.container.textContent).toContain('Вставьте ключ из сообщения бота')
   })
 
   it('создателю обе двери открываются без ключа, даже если он нажал до сверки', async () => {
@@ -114,7 +114,7 @@ describe('Палитра в меню выбора панели', () => {
     })
 
     expect(g.onStaffEnter).toHaveBeenCalledWith(expect.objectContaining({ isProjectCreator: true }))
-    expect(g.container.textContent).toContain('Кабинет групп. Нажмите — откроется сразу.')
+    expect(g.container.textContent).toContain('Кабинет групп. Нажмите — откроется сразу, без ключа.')
     expect(g.container.textContent).not.toContain('Дальше нужен ключ')
 
     tap(g.groupDoor())

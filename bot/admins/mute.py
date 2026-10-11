@@ -1716,9 +1716,9 @@ def invalidate_seat_cache() -> None:
 async def punish_access(
   user_id: int, action: str, chat_id: Optional[int],
 ) -> Tuple[str, Optional[GroupSeat]]:
-  """('allowed', None) - право сотрудника проекта. Оно старше должности: этим
-  можно наказать и участника, и администратора группы. ('allowed', seat) -
-  только должность, и тогда только того, кто младше.
+  """('allowed', None) - право сотрудника проекта. Оно старше любой должности
+  группы: сотрудник наказывает администратора группы. ('allowed', seat) -
+  только должность, и тогда только того, кто младше, и никогда сотрудника проекта.
 
   Иначе ('denied', seat или None) или ('db_unavailable', None).
   """

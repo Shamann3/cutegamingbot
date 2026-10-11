@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import UserLookupPreview from '../../components/UserLookupPreview'
+import OpenUserLink from '../../components/OpenUserLink'
 import {
   clearStatSeason,
   copyStatSeason,
@@ -9,6 +10,11 @@ import {
   fetchStatPerson,
   saveStatValue,
 } from '../../lib/adminClient'
+
+function quietName(name) {
+  const text = String(name || '').replace(/@/g, '').trim()
+  return text || 'Игрок'
+}
 
 function fmt(value) {
   const number = Number(value)
@@ -158,7 +164,7 @@ function StatEditor({
   )
 }
 
-export default function StatDesk() {
+export default function StatDesk({ onOpenUser = null }) {
   const [catalog, setCatalog] = useState(null)
   const [metricId, setMetricId] = useState('messages')
   const [period, setPeriod] = useState('day')
@@ -779,18 +785,21 @@ export default function StatDesk() {
               const open = Number(userId) === Number(row.userId)
               return (
                 <li key={row.userId} className={`stat-row${open ? ' is-open' : ''}`}>
-                  <button type="button" aria-pressed={open} onClick={() => openPerson(row)}>
+                  <div className="stat-row-line">
                     <b>{row.place}</b>
-                    <span>
-                      <strong>{row.name}</strong>
-                      {row.username ? <i>@{row.username}</i> : null}
-                    </span>
-                    <em>
-                      {fmt(row.seen)} {board.rowUnit || metric.rowUnit}
-                      {row.raw !== row.seen ? <small>в базе {fmt(row.raw)}</small> : null}
-                      {Number(row.held) > 0 ? <small>за копию {fmt(row.held)}</small> : null}
-                    </em>
-                  </button>
+                    <OpenUserLink
+                      userId={row.userId}
+                      name={quietName(row.name)}
+                      onOpenUser={onOpenUser}
+                    />
+                    <button type="button" aria-pressed={open} onClick={() => openPerson(row)}>
+                      <em>
+                        {fmt(row.seen)} {board.rowUnit || metric.rowUnit}
+                        {row.raw !== row.seen ? <small>в базе {fmt(row.raw)}</small> : null}
+                        {Number(row.held) > 0 ? <small>за копию {fmt(row.held)}</small> : null}
+                      </em>
+                    </button>
+                  </div>
                   {open && editor}
                 </li>
               )
@@ -798,7 +807,7 @@ export default function StatDesk() {
           </ol>
           {boardReady && userId && !rows.some((row) => Number(row.userId) === Number(userId)) && (
             <div className="stat-row is-open stat-outside">
-              <p className="realm-copy">{person?.name || 'Человек'}{person?.username ? ` · @${person.username}` : ''}</p>
+              <OpenUserLink userId={userId} name={quietName(person?.name)} onOpenUser={onOpenUser} />
               {editor}
             </div>
           )}

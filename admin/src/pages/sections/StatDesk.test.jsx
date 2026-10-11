@@ -111,12 +111,12 @@ describe('StatDesk', () => {
     expect(screen.queryByRole('button', { name: 'Сохранить в этот топ' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /Альфа/ }))
-    expect(await screen.findByRole('button', { name: /День/ })).toBeTruthy()
+    expect(await screen.findByText('День')).toBeTruthy()
     expect(screen.getByText('5 сообщений')).toBeTruthy()
     expect(screen.queryByText('Год')).toBeNull()
 
     fireEvent.click(screen.getByRole('tab', { name: 'За всё время' }))
-    expect(await screen.findByRole('button', { name: /Год/ })).toBeTruthy()
+    expect(await screen.findByText('Год')).toBeTruthy()
     expect(screen.queryByText('День')).toBeNull()
     expect(screen.getByText('9 сообщений')).toBeTruthy()
     expect(fetchStatBoard).toHaveBeenLastCalledWith(expect.objectContaining({

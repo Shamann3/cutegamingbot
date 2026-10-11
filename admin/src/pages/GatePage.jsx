@@ -8,6 +8,7 @@ import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { usePerfMode } from '../lib/perfMode'
 import { playMeme } from '../lib/memeSounds'
+import AcceptedPass from '../components/AcceptedPass'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
 const GUEST_PORTRAIT = portraitFrom(null)
@@ -49,6 +50,8 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [error, setError] = useState('')
   const [portrait, setPortrait] = useState(GUEST_PORTRAIT)
   const [hold, setHold] = useState('')
+  const [pass, setPass] = useState('')
+  const watched = useRef({ staff: false, group: false })
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [still] = useState(detectStillGate)
@@ -91,6 +94,34 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   }, [])
 
   useEffect(() => load(), [load])
+
+  useEffect(() => {
+    if (portrait.applicationStatus === 'pending') watched.current.staff = true
+    if (portrait.groupApplicationStatus === 'pending') watched.current.group = true
+  }, [portrait.applicationStatus, portrait.groupApplicationStatus])
+
+  useEffect(() => {
+    const live = portrait.applicationStatus === 'pending'
+      || portrait.groupApplicationStatus === 'pending'
+      || Boolean(hold)
+    if (!live || pass) return undefined
+    const timer = window.setInterval(async () => {
+      try {
+        const status = await fetchAdminAuthStatus()
+        const face = portraitFrom(status)
+        setPortrait(face)
+        rememberPortrait(face)
+        setChecking(false)
+        if (watched.current.staff && face.staffCanEnter) setPass('staff')
+        else if (watched.current.group && face.groupCanEnter && !face.isProjectCreator) setPass('group')
+        else if (watched.current.staff && face.applicationStatus === 'rejected') setPass('staff-no')
+        else if (watched.current.group && face.groupApplicationStatus === 'rejected') setPass('group-no')
+      } catch {
+        // дверь остаётся, сверка повторится
+      }
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [portrait.applicationStatus, portrait.groupApplicationStatus, hold, pass])
 
   // Палитра закрывается по тапу мимо неё и по Escape — как в панели Эпсилона.
   // Тап, которым её закрыли, не нажимает дверь под пальцем.
@@ -220,7 +251,24 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <p className="gate-status gate-status-error" role="alert">{note}</p>
         )}
 
-        {hold ? (
+        {pass === 'staff' || pass === 'group' ? (
+          <AcceptedPass
+            kind={pass}
+            onAction={() => (pass === 'group' ? onGroupEnter(portrait) : onStaffEnter(portrait))}
+          />
+        ) : pass === 'staff-no' || pass === 'group-no' ? (
+          <div className="accept-pass" role="status">
+            <h2 className="accept-title">Заявку не приняли</h2>
+            <p className="gate-lead">
+              {pass === 'group-no'
+                ? 'В эту группу снова можно через 7 дней.'
+                : 'Панель сотрудника по этой заявке не откроется.'}
+            </p>
+            <button type="button" className="auth-btn auth-btn-primary" onClick={() => setPass('')}>
+              К выбору панели
+            </button>
+          </div>
+        ) : hold ? (
           <div className="gate-hold" role="status">
             <h2 className="gate-title">Заявка уже у создателя</h2>
             <p className="gate-lead">

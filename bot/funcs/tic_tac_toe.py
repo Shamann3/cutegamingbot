@@ -24,6 +24,7 @@ from bot.funcs.func import *
 
 from bot.games.group_only import reject_if_private_game
 from bot.games.invoke import TTT_PHRASES, format_line, parse_optional_stake, parse_phrase_stake
+from bot.db_create.pklcode import LazyGameStore
 from main import (
     games_tictactoe,
     _format_hms,
@@ -51,7 +52,7 @@ def _live_ttt_rest():
         return param_float("tic_tac_toe", "turnRest", REST)
     except Exception:
         return REST
-tictac_cooldowns: Dict[int, float] = {}
+tictac_cooldowns: Dict[int, float] = LazyGameStore("tictac_cooldowns")
 
 # text -> для текста сообщений
 # plain -> для логики игры

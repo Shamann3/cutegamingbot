@@ -27,12 +27,15 @@ def _int_price(value: float | int | None) -> int | None:
         return None
 
 
-def _shop_payload(remains: int, price: int, discount: int) -> dict:
+def _shop_payload(remains: int, price: int, discount: int, *, name1: str = "", name: str = "") -> dict:
+    from shop_catalog import stock_is_open
+
     remains = max(0, int(remains or 0))
     prices = item_price_row(int(price or 0), int(discount or 0))
     effective = effective_price(prices["price"], prices["salePrice"] or 0)
     return {
         "inShop": remains > 0,
+        "openStock": stock_is_open(name1, name) and remains > 0,
         "remains": remains,
         "price": prices["price"],
         "salePrice": prices["salePrice"],
@@ -130,7 +133,7 @@ async def fetch_inventory_item_economy(
 
     dex_rows = await pool.fetch(
         """
-        SELECT id::text AS item_id, remains, price, dis
+        SELECT id::text AS item_id, name, name1, remains, price, dis
         FROM dex
         WHERE id::text = ANY($1::text[])
         """,
@@ -142,6 +145,8 @@ async def fetch_inventory_item_economy(
             int(row["remains"] or 0),
             int(row["price"] or 0),
             int(row["dis"] or 0),
+            name1=row["name1"] or "",
+            name=row["name"] or "",
         )
 
     market_rows = await pool.fetch(

@@ -38272,6 +38272,15 @@ async def add_firstname_to_usercheck_balance(message: Message):
             task1 = asyncio.create_task(measure_time(ping(message) , "пинг"))
             await task1
 
+        from bot.funcs.water_games import is_water_ask, open_guide
+        if is_water_ask(text_lower):
+            try:
+                await update(bot1 , chat_id , db)
+            except GroupBanned:
+                return
+            await open_guide(message)
+            return
+
         shoptext = {"ферма","Биржа","рынок","маркет",".отправить", ".Отправить", ".передать", ".Передать", ".сделка", ".Сделка", ".подарить", ".Подарить","биржа",'.купить','выставить',"шоп" , 'слить' , "магазин" , "shop" , "отправить" , "Отправить" , "передать" ,
                     "Передать" , "трейд" , "Трейд" , "сделка" , "Сделка" , "подарить" , "Подарить" , "купить" , "Купить" ,
                     "инвентарь" , "Инвентарь" , "инвент" , "Инвент" , "рюкзак" , "Рюкзак" , 'хелп крафты' , 'Хелп крафты' ,
@@ -41023,6 +41032,11 @@ async def botmain():
     asyncio.create_task(network_monitor())
 
     print("[🚀] Запускаем основной и платёжный боты...")
+    import bot.funcs.water_games  # кнопки водных игр регистрируются до polling
+    try:
+        await bot.funcs.water_games.ensure()
+    except Exception as water_boot_error:
+        print(f"[WATER] полка магазина не собралась: {type(water_boot_error).__name__}")
 
     # Очередь, накопившаяся за простой, состоит в основном из просроченных
     # нажатий: ответить на них Telegram уже не даст, а игры они запускают

@@ -235,6 +235,7 @@ export default function App() {
           setApplyPreview(false)
           setScreen('gate')
         }}
+        onEnter={() => setScreen('group-key')}
       />
     )
   }

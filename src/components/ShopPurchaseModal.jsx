@@ -28,7 +28,8 @@ export default function ShopPurchaseModal({
   useEscapeClose(isOpen && Boolean(item), onClose, { enabled: !isBuying })
 
   const price = item ? itemBuyPrice(item) : 0
-  const maxByStock = item ? Math.max(0, item.remains ?? 0) : 0
+  const openStock = Boolean(item?.openStock)
+  const maxByStock = !item ? 0 : openStock ? 99 : Math.max(0, item.remains ?? 0)
   const maxQty = Math.min(maxByStock, 99)
 
   const parsedQuantity = Number.parseInt(quantityText, 10)
@@ -257,7 +258,7 @@ export default function ShopPurchaseModal({
           <div className="shop-modal-stats">
             <div className="shop-modal-stat">
               <span className="shop-modal-stat-label">В наличии</span>
-              <span className="shop-modal-stat-value">{formatKut(item.remains)}</span>
+              <span className="shop-modal-stat-value">{openStock ? 'без лимита' : formatKut(item.remains)}</span>
             </div>
             <div className="shop-modal-stat">
               <span className="shop-modal-stat-label">Цена</span>

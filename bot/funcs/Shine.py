@@ -1,7 +1,8 @@
 from main import *
 
 
-user_shine_requests = {}
+from bot.db_create.pklcode import LazyGameStore
+user_shine_requests = LazyGameStore("user_shine_requests")
 
 
 

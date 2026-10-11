@@ -1,5 +1,6 @@
 from main import *
-gamesblack = []
+from bot.db_create.pklcode import LazyGameStore
+gamesblack = LazyGameStore("gamesblack")
 
 
 
@@ -60,8 +61,7 @@ async def black(message: Message):
 
             random_number = random.randint(0, 18)
             user_data = {'user_id': user_id , 'bet': bet , 'random_number': random_number}
-            gamesblack.append(user_data)
-            print(gamesblack)
+            gamesblack[user_id] = user_data
 
             roulette_keyboard = InlineKeyboardMarkup(row_width=6)
 
@@ -105,7 +105,7 @@ async def black(message: Message):
 
 
 async def check_result(user_id, user_choice, callback_query):
-    game = next((game for game in gamesblack if game['user_id'] == user_id), None)
+    game = gamesblack.get(user_id)
 
     if not game:
         await callback_query.answer("Это не ваша игра", show_alert=True)
@@ -198,7 +198,7 @@ async def check_result(user_id, user_choice, callback_query):
         chat_id=callback_query.message.chat.id, text=result_message, parse_mode="HTML")
 
     # Удаляем пользователя из списка игр
-    gamesblack.remove(game)
+    gamesblack.pop(user_id, None)
 async def update_keyboard(callback_query, user_choice):
     markup = callback_query.message.reply_markup
     for row in markup.inline_keyboard:
@@ -212,7 +212,7 @@ async def update_keyboard(callback_query, user_choice):
 async def number_callback(callback_query: types.CallbackQuery):
 
     user_id = callback_query.from_user.id
-    game = next((game for game in gamesblack if game['user_id'] == user_id), None)
+    game = gamesblack.get(user_id)
 
     if game:
         number = callback_query.data.split('_')[1]
@@ -225,7 +225,7 @@ async def number_callback(callback_query: types.CallbackQuery):
 async def range_callback(callback_query: types.CallbackQuery):
 
     user_id = callback_query.from_user.id
-    game = next((game for game in gamesblack if game['user_id'] == user_id), None)
+    game = gamesblack.get(user_id)
 
     if game:
         choice = callback_query.data

@@ -27,6 +27,8 @@ export function inventoryTileHint(item) {
 
   if (market.quantity > 0) {
     parts.push(`биржа: ${formatKut(market.quantity)} шт`)
+  } else if (shop.inShop && shop.openStock) {
+    parts.push('магазин: без лимита')
   } else if (shop.inShop && shop.remains > 0) {
     parts.push(`магазин: ${formatKut(shop.remains)} шт`)
   }
@@ -53,7 +55,9 @@ export function inventoryEconomyRows(item) {
     rows.push({
       id: 'shop-stock',
       label: 'Магазин',
-      value: `В наличии ${formatKut(shop.remains)} шт · ${priceLine}`,
+      value: shop.openStock
+        ? `Без лимита · ${priceLine}`
+        : `В наличии ${formatKut(shop.remains)} шт · ${priceLine}`,
     })
   } else {
     rows.push({

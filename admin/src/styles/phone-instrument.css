@@ -4857,8 +4857,30 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   flex-direction: column;
   gap: 6px;
 }
+.stat-row-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+}
+.stat-row-line > b {
+  flex: 0 0 28px;
+}
+.stat-row-line > .e-user-link,
+.stat-row-line > .e-user-plain {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-row-line > button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .stat-picks button,
-.stat-row > button {
+.stat-row-line > button {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -4879,10 +4901,13 @@ html[data-viewport="phone"]:not(.tg-webapp) .panel-tg-chrome {
   background: var(--e-plate, var(--e-surface-2));
   overflow: hidden;
 }
-.stat-row > button {
+.stat-row > button,
+.stat-row-line > button {
+  width: auto;
   border: 0;
   border-radius: 0;
   background: transparent;
+  padding: 8px 0;
 }
 .stat-row > button:hover {
   background: transparent;

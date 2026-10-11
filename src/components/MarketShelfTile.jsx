@@ -44,7 +44,7 @@ export default function MarketShelfTile({
           {item.emoji}
         </span>
         <p className="shop-shelf-name" title={item.name}>{item.name}</p>
-        {(item.sorting === '💖' || item.sorting === '💕') && (item.bio || item.description) ? (
+        {(item.sorting === '💖' || item.sorting === '💕' || item.sorting === '🔫') && (item.bio || item.description) ? (
           <p className="shop-shelf-benefit">{item.bio || item.description}</p>
         ) : null}
         <SellerNameButton

@@ -16,9 +16,42 @@ SHOP_SORT_FILTERS: tuple[dict[str, str], ...] = (
     {"id": "sort_keys", "sorting": "\U0001f511", "emoji": "\U0001f511", "label": "Ключи"},
     {"id": "sort_stars", "sorting": "\U0001f31f", "emoji": "\U0001f31f", "label": "Звёзды"},
     {"id": "sort_hearts", "sorting": "\U0001f496", "emoji": "\U0001f496", "label": "Сердца"},
+    {"id": "sort_water", "sorting": "\U0001f52b", "emoji": "\U0001f52b", "label": "Водные"},
 )
 
 SORTING_LABELS: dict[str, str] = {entry["sorting"]: entry["label"] for entry in SHOP_SORT_FILTERS}
+
+# Полка «🔫» в магазине и на бирже. Имена совпадают с предметами водных игр.
+WATER_SHELF = "\U0001f52b"
+WATER_SHELF_KEYS = (
+    "pistoletik",
+    "waterpistol",
+    "dryumbrella",
+    "drycoat",
+    "dryawning",
+    "drysafe",
+)
+WATER_SHELF_NAMES = (
+    "пистолетик",
+    "вода ( для пистолетика )",
+    "зонтик",
+    "дождевик",
+    "навес",
+    "сухой сейф",
+)
+
+
+async def pin_water_shelf(pool) -> None:
+    """Кладёт водные предметы на полку 🔫, не трогая цену и остаток."""
+    await pool.execute(
+        """
+        UPDATE dex SET sorting = $1
+        WHERE name1 = ANY($2::text[]) OR lower(name) = ANY($3::text[])
+        """,
+        WATER_SHELF,
+        list(WATER_SHELF_KEYS),
+        list(WATER_SHELF_NAMES),
+    )
 SORTING_LABELS[OTHER_CATEGORY_ID] = "Разное"
 
 
@@ -131,11 +164,37 @@ def _resolve_item_description(row: dict) -> str:
     return _build_fallback_description(row)
 
 
+def stock_is_open(name1: str = "", name: str = "") -> bool:
+    """Зонтик водных игр не кончается на складе."""
+    import sys
+    from pathlib import Path
+
+    py = str(Path(__file__).resolve().parent / "py")
+    if py not in sys.path:
+        sys.path.insert(0, py)
+    from water_games.design import stock_is_open as opened
+
+    return opened(name1, name)
+
+
+def shop_can_take(remain: int, wanted: int, *, name1: str = "", name: str = "") -> int:
+    import sys
+    from pathlib import Path
+
+    py = str(Path(__file__).resolve().parent / "py")
+    if py not in sys.path:
+        sys.path.insert(0, py)
+    from water_games.design import shop_can_take as take
+
+    return take(remain, wanted, name1=name1, name=name)
+
+
 def item_to_client(row: dict, *, category_id: str | None = None) -> dict:
     sorting = row.get("sorting")
     cat = category_from_sorting(sorting, 0)
     prices = item_price_row(row.get("price"), row.get("dis"))
     composition = _stick_composition(row)
+    remains = max(0, int(row.get("remains") or 0))
     return {
         "id": str(row["id"]),
         "name": (row.get("name") or "").strip() or str(row["id"]),
@@ -144,7 +203,8 @@ def item_to_client(row: dict, *, category_id: str | None = None) -> dict:
         "bio": _resolve_item_description(row),
         "composition": composition,
         "categoryLabel": cat["label"],
-        "remains": max(0, int(row.get("remains") or 0)),
+        "openStock": stock_is_open(row.get("name1"), row.get("name")) and remains > 0,
+        "remains": remains,
         "sorting": sorting,
         "categoryId": category_id or cat["id"],
         **prices,

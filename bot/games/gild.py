@@ -3,9 +3,10 @@ import random
 from main import *
 import uuid
 from bot.games.safe_game_edit import safe_game_edit
-user_coefficients = {}
-user_gild = {}
-gamesgild = {}
+from bot.db_create.pklcode import LazyGameStore
+user_coefficients = LazyGameStore("gild_user_coefficients")
+user_gild = LazyGameStore("user_gild")
+gamesgild = LazyGameStore("gamesgild")
 
 async def check_balance_gild(user_id, bet):
     from bot.funcs.stake_gate import paid_stake_ok

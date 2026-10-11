@@ -202,6 +202,41 @@ STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
     "SEND_REQUEST_ACTIONS": 7 * 24 * 3600.0,
 }
 
+# Живые доски из списка игр. Семь суток, чтобы перезапуск и пауза в лобби
+# не превращали кнопку в «игра не найдена». Законченная игра удаляется сама.
+LIVE_BOARD_TTL = 7 * 24 * 3600.0
+LIVE_BOARD_STORES = {
+    "gamessha", "button_gamessha", "inline_game_scah",
+    "games_memory", "button_memory", "games_memory_inline",
+    "gamesbingo", "button_bingo", "temp_bingo_data",
+    "gameskosti", "button_kosti", "temp_kosti_data",
+    "games_roulett", "button_roulett", "games_roulettinduel",
+    "gamesorel", "button_gamesorel", "gamesorelinline", "button_inlinegamesorel",
+    "gamesknb", "button_gamesknb", "rps_games",
+    "gamesmine", "button_gamesmine", "gamesmine_inmine",
+    "games_tictactoe", "button_games_tictactoe", "tic_tac_toe_games",
+    "tank_active_games", "user_messagetank", "button_tank_active_games",
+    "active_games_risk", "user_message_risk", "button_active_games_risk", "processed_actions_risk",
+    "active_games_plate", "user_message_plate", "button_active_games_plate", "processed_actions_plate",
+    "bombs_user_game_data", "button_bombs_user_game_data", "bombs_positions",
+    "user_message_bombss", "processed_actions_bombs",
+    "active_games_ball", "user_message_ball", "pressed_users_ball",
+    "active_games_wires", "user_message_wires", "wires_msg_index", "pressed_users_wires",
+    "gamesruletka", "button_gamesruletka",
+    "last_trade_time",
+    "wordgames", "user_word",
+    "_roulette_streaks", "last_used_times", "_settled_events", "_processed_messages",
+    "last_slots_time", "slots_streaks",
+    "last_basket_time", "basket_streaks",
+    "last_soccer_time", "soccer_streaks",
+    "last_bowling_time", "bowling_streaks",
+    "last_darts_time", "darts_streaks",
+    "last_kube_time", "kube_streaks",
+    "pressed_users_tank", "pressed_users_plate", "pressed_users_risk",
+}
+for _live_name in LIVE_BOARD_STORES:
+    STORE_EXPIRY_OVERRIDES.setdefault(_live_name, LIVE_BOARD_TTL)
+
 # Сторы, которые пишутся в Redis СРАЗУ (без debounce) — защита кнопок от рестарта.
 STORE_WRITE_THROUGH: Set[str] = {
     "blc_messages",
@@ -222,6 +257,7 @@ STORE_WRITE_THROUGH: Set[str] = {
     "rps_games",
     "inline_game_scah",
 }
+STORE_WRITE_THROUGH.update(LIVE_BOARD_STORES)
 
 
 def register_store_expiry(name: str, seconds: float) -> None:
@@ -1003,7 +1039,8 @@ def _health_watcher_loop():
                     try:
                         if s._need_initial_sync:
                             s._initial_sync_if_needed()
-                        if s._pending_retry_payload is not None or s._dirty_since_boot or s._pending_dirty or s._touch_dirty:
+                        live_board = getattr(s, "name", "") in LIVE_BOARD_STORES and len(s) > 0
+                        if live_board or s._pending_retry_payload is not None or s._dirty_since_boot or s._pending_dirty or s._touch_dirty:
                             s.flush()
                     except Exception:
                         pass
@@ -2190,13 +2227,18 @@ class GameStore(dict):
             if isinstance(key, str) and key.isdigit():
                 k2 = str(int(key))
                 with self._lock:
-                    return dict.__contains__(self, k2)
+                    if dict.__contains__(self, k2):
+                        return True
             if isinstance(key, int):
                 k2 = str(key)
                 with self._lock:
-                    return dict.__contains__(self, k2)
+                    if dict.__contains__(self, k2):
+                        return True
         except Exception:
             pass
+        if self._pull_live_key(sk):
+            with self._lock:
+                return dict.__contains__(self, sk)
         return False
 
     def __getitem__(self, key: Any) -> Any:
@@ -2247,7 +2289,25 @@ class GameStore(dict):
             except Exception:
                 pass
 
+        if self._pull_live_key(sk):
+            with self._lock:
+                if dict.__contains__(self, sk):
+                    _touch(sk)
+                    return dict.__getitem__(self, sk)
+
         raise KeyError(key)
+
+    def _pull_live_key(self, sk: str) -> bool:
+        """Один ключ живой доски дочитывается из Redis, если в памяти его уже нет."""
+        if self.name not in LIVE_BOARD_STORES or not self._is_hash_mode():
+            return False
+        rc = _raw_client()
+        if rc is None:
+            return False
+        try:
+            return bool(hash_backend.hash_load_one(self, rc, sk))
+        except Exception:
+            return False
 
     def get(self, key: Any, default=None) -> Any:
         try:

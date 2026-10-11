@@ -244,6 +244,7 @@ export function readStartParam({ hash = '', search = '', unsafe = '', startParam
 
 export function pickStartTab(raw) {
   const value = String(raw || '').trim().split(/[\s?#&]/)[0]
+  if (/^(shop|market)-\d+$/.test(value)) return value
   return VALID_TABS.has(value) ? value : null
 }
 

@@ -28,6 +28,7 @@ from db import db
 from error_codes import ERROR_CATALOG, error_meaning, error_title
 from error_reporter import schedule_error_report, schedule_http_error, schedule_security_alert, schedule_server_exception
 from admin_routes import router as admin_router
+from water_games_api import router as water_games_router
 from support_routes import router as support_router
 from maintenance import MAINTENANCE_MESSAGE, is_maintenance, maintenance_http_error
 from notification_hub import encode_sse, subscribe, unsubscribe
@@ -187,6 +188,23 @@ async def lifespan(application: FastAPI):
     await db.connect()
 
     try:
+        from shop_catalog import pin_water_shelf
+        await pin_water_shelf(db.pool)
+    except Exception:
+        logger.warning("water shelf pin failed — магазин откроется без полки 🔫")
+
+    try:
+        import sys
+        from pathlib import Path
+        py = str(Path(__file__).resolve().parent / "py")
+        if py not in sys.path:
+            sys.path.insert(0, py)
+        from water_games.design import settle_umbrella
+        await settle_umbrella(db.pool)
+    except Exception:
+        logger.warning("umbrella price settle failed")
+
+    try:
         if hasattr(db, "ensure_group_balance_level_schema"):
             await db.ensure_group_balance_level_schema()
     except Exception:
@@ -290,10 +308,13 @@ app.add_middleware(
         "X-Telegram-Init-Data",
         "X-Dev-User-Id",
         "X-Client-Info",
+        "X-Panel-Device",
     ],
+    expose_headers=["X-Panel-Token"],
 )
 
 app.include_router(admin_router)
+app.include_router(water_games_router)
 app.include_router(support_router)
 
 

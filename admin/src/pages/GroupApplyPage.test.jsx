@@ -16,14 +16,18 @@ const OPEN_GROUPS = {
   mine: [],
 }
 
+async function choose(name) {
+  fireEvent.click(await screen.findByRole('button', { name: 'Открыть список' }))
+  const option = await screen.findByRole('button', { name })
+  await new Promise((resolve) => setTimeout(resolve, 360))
+  fireEvent.click(option)
+  await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
+}
+
 async function fillApplication() {
   fireEvent.click(screen.getByRole('checkbox', { name: 'Я знаю правила' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Открыть список' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'CuteGaming' }))
-  await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
-  fireEvent.click(screen.getByRole('button', { name: 'Открыть список' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Модератор' }))
-  await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
+  await choose('CuteGaming')
+  await choose('Модератор')
   fireEvent.change(screen.getByRole('textbox'), {
     target: { value: 'Слежу за чатом по вечерам и разбираю споры спокойно.' },
   })
@@ -58,15 +62,11 @@ describe('GroupApplyPage', () => {
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть список' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'CuteGaming' }))
-    await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
+    await choose('CuteGaming')
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Открыть список' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Модератор' }))
-    await waitFor(() => expect(document.querySelector('.choice-sheet')).toBeNull())
+    await choose('Модератор')
     expect(screen.queryByRole('button', { name: 'Отправить заявку' })).toBeNull()
     expect(screen.getByText('Кто пишет')).toBeTruthy()
     expect(screen.getByText('Мут')).toBeTruthy()
@@ -113,6 +113,29 @@ describe('GroupApplyPage', () => {
       body: 'Слежу за чатом по вечерам и разбираю споры спокойно.',
       rules_read: true,
     })
+  })
+
+  it('пока человек на экране, принятая заявка сразу открывает вход', async () => {
+    fetchGroupOpen.mockResolvedValueOnce(OPEN_GROUPS)
+    fetchGroupOpen.mockResolvedValue({
+      positions: OPEN_GROUPS.positions,
+      mine: [{
+        id: 42,
+        status: 'approved',
+        group: 'CuteGaming',
+        position: 'Модератор',
+        note: '',
+        entryKey: 'KEY-1',
+      }],
+    })
+    submitGroupApplication.mockResolvedValue({ ok: true, id: 42 })
+    const onEnter = vi.fn()
+    render(<GroupApplyPage onBack={() => {}} onEnter={onEnter} />)
+    fireEvent.click(await fillApplication())
+    expect(await screen.findByText('Заявка принята')).toBeTruthy()
+    expect(screen.getByText('Должность ваша. Ключ ниже и в сообщении бота.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть вход' }))
+    expect(onEnter).toHaveBeenCalledTimes(1)
   })
 
   it('если заявка не ушла, пишет это у кнопки', async () => {

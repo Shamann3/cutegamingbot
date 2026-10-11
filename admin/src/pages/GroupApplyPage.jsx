@@ -8,6 +8,7 @@ import { SCREENS } from '../entry_design'
 import { APPLY_MAX, APPLY_MIN, applyHint, applyLength, applyReady, symbolsWord } from '../lib/applyLimits'
 import { PAGE_RIGHTS, PROJECT_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
 import { playMeme } from '../lib/memeSounds'
+import AcceptedPass from '../components/AcceptedPass'
 
 const RULES_CHANNEL = 'https://t.me/CuteRules'
 
@@ -125,7 +126,7 @@ const STATUS_LABEL = {
   approved: 'Принята',
 }
 
-export default function GroupApplyPage({ onBack, preview = false }) {
+export default function GroupApplyPage({ onBack, onEnter, preview = false }) {
   const personal = accentIsPersonal(loadStoredAccent())
   const [error, setError] = useState('')
   const [listState, setListState] = useState(preview ? 'ready' : 'loading')
@@ -149,6 +150,8 @@ export default function GroupApplyPage({ onBack, preview = false }) {
   const [sending, setSending] = useState(false)
   const [done, setDone] = useState(false)
   const [sent, setSent] = useState(null)
+  const [pass, setPass] = useState(null)
+  const watched = useRef(new Set())
 
   const loadOpen = useCallback((quiet = true) => {
     if (preview) return
@@ -157,7 +160,17 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       .then((data) => {
         if (!aliveRef.current) return
         setPositions(Array.isArray(data?.positions) ? data.positions : [])
-        setMine(Array.isArray(data?.mine) ? data.mine : [])
+        const next = Array.isArray(data?.mine) ? data.mine : []
+        const opened = next.find((item) => watched.current.has(item.id) && item.status === 'approved')
+        next.forEach((item) => {
+          if (item.status === 'pending') watched.current.add(item.id)
+        })
+        if (opened) setPass(opened)
+        setMine((local) => {
+          const seen = new Set(next.map((item) => item.id))
+          const kept = local.filter((item) => !seen.has(item.id) && watched.current.has(item.id) && item.status === 'pending')
+          return [...next, ...kept]
+        })
         setListState('ready')
       })
       .catch(() => {
@@ -175,7 +188,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       return () => { aliveRef.current = false }
     }
     loadOpen()
-    const timer = window.setInterval(() => loadOpen(), 8000)
+    const timer = window.setInterval(() => loadOpen(), 4000)
     return () => {
       aliveRef.current = false
       window.clearInterval(timer)
@@ -271,6 +284,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
       })
       if (!data?.ok || !data?.id) throw new Error('Заявка не ушла. Нажмите ещё раз.')
       setSent(receipt)
+      watched.current.add(data.id)
       setMine((list) => [
         {
           id: data.id,
@@ -283,6 +297,7 @@ export default function GroupApplyPage({ onBack, preview = false }) {
         ...list.filter((item) => item.id !== data.id),
       ])
       setDone(true)
+      loadOpen()
     } catch (err) {
       setError(sendFailure(err))
     } finally {
@@ -304,7 +319,13 @@ export default function GroupApplyPage({ onBack, preview = false }) {
 
         <EntryGuide screen={SCREENS.groupApply} at={guideAt} />
 
-        {done && sent && (
+        {pass && (
+          <AcceptedPass kind="group" onAction={() => onEnter?.()}>
+            {pass.entryKey ? <HiddenKey value={pass.entryKey} /> : null}
+          </AcceptedPass>
+        )}
+
+        {done && sent && !pass && (
           <div className="apply-receipt" ref={resultRef} role="status">
             <strong>{preview ? 'Это показ' : 'Заявка отправлена'}</strong>
             <p>

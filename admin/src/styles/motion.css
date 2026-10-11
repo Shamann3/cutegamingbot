@@ -1057,6 +1057,82 @@ body:not(.perf-light) .apply-receipt {
   to { opacity: 1; transform: none; }
 }
 
+.accept-pass {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 16px 16px;
+  border-radius: 18px;
+  background: rgb(16, 16, 18);
+  border: 1px solid rgba(244, 244, 244, 0.16);
+}
+
+.accept-kicker {
+  margin: 0;
+  color: rgba(244, 244, 244, 0.62);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.accept-title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.accept-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.accept-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+}
+
+.accept-steps li.is-on {
+  opacity: 1;
+  transform: none;
+  transition: opacity 420ms ease, transform 420ms ease;
+}
+
+.accept-index {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 244, 244, 0.28);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+body:not(.perf-light) .accept-pass {
+  animation: apply-receipt-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .accept-steps li {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .accept-pass {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .apply-receipt {
     animation: none;

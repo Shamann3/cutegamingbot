@@ -1,0 +1,173 @@
+.water-desk {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.water-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.water-stat {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  animation: water-in 420ms ease both;
+}
+
+.water-stat b {
+  display: block;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.water-stat span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.water-views {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.water-views button {
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0 1rem;
+}
+
+.water-views button.is-on {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.water-rank {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+}
+
+.water-rank li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.15rem 0.75rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  animation: water-in 420ms ease both;
+}
+
+.water-recent li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.water-rank b {
+  grid-row: span 2;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.water-pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.water-pair i {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.e-user-link,
+.e-user-plain {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  padding: 0;
+  text-align: left;
+}
+
+.e-user-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.28);
+  text-underline-offset: 0.18em;
+}
+
+.water-person,
+.water-price,
+.water-recent li {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: inherit;
+  padding: 0.75rem 0;
+  animation: water-in 420ms ease both;
+}
+
+.water-person {
+  cursor: pointer;
+}
+
+.water-person strong,
+.water-price strong,
+.water-recent strong {
+  display: block;
+}
+
+.water-note,
+.water-price span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.85rem;
+}
+
+.water-price input {
+  display: block;
+  width: 100%;
+  margin-top: 0.55rem;
+}
+
+.water-price button {
+  margin-top: 0.55rem;
+}
+
+.water-recent {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@keyframes water-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 800px) {
+  .water-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .water-stat,
+  .water-person,
+  .water-price,
+  .water-rank li,
+  .water-recent li {
+    animation: none;
+  }
+}

@@ -125,6 +125,9 @@ function AppWithOnboarding() {
       const next = resolveStartTab(raw)
       setTab(next.tab)
       setTradeSegment(next.tradeSegment)
+      if (next.itemId) {
+        window.dispatchEvent(new CustomEvent('farm:open-water-item', { detail: next }))
+      }
     }
     applyStart()
     window.addEventListener('hashchange', applyStart)
@@ -201,6 +204,25 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
     }
     window.addEventListener('farm:go-to-shop', handler)
     return () => window.removeEventListener('farm:go-to-shop', handler)
+  }, [setTab, setTradeSegment])
+
+  useEffect(() => {
+    const openWaterItem = (event) => {
+      const next = event.detail || {}
+      if (!next.itemId) return
+      if (next.tradeSegment === 'market') {
+        setMarketItemId(String(next.itemId))
+        setMarketHighlightOnly(false)
+        setTradeSegment('market')
+      } else {
+        setShopItemId(String(next.itemId))
+        setShopHighlightOnly(false)
+        setTradeSegment('shop')
+      }
+      setTab('trade')
+    }
+    window.addEventListener('farm:open-water-item', openWaterItem)
+    return () => window.removeEventListener('farm:open-water-item', openWaterItem)
   }, [setTab, setTradeSegment])
 
   useEffect(() => {
