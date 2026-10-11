@@ -92,12 +92,13 @@ def _markup(name: str, message, **slots) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _open_button(text: str, startapp: str, private: bool) -> InlineKeyboardButton:
+def _open_button(text: str, startapp: str, private: bool, style: str = "primary") -> InlineKeyboardButton:
     fields = section_button_fields(text, startapp, private=private)
     fields.pop("style", None)
     web_app_url = fields.pop("web_app_url", None)
     if web_app_url:
         fields["web_app"] = WebAppInfo(url=web_app_url)
+    fields["style"] = style or "primary"
     return InlineKeyboardButton(**fields)
 
 
@@ -933,8 +934,8 @@ async def water_click(call):
         )
         private = getattr(call.message.chat, "type", "") == "private"
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [_open_button(word("open_buy"), offer["startapp"], private)],
-            [InlineKeyboardButton(text=BTN_BACK, callback_data="wg:home")],
+            [_open_button(word("open_buy"), offer["startapp"], private, "success")],
+            [InlineKeyboardButton(text=BTN_BACK, callback_data="wg:home", style="default")],
         ])
         try:
             await call.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
