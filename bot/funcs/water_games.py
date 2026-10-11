@@ -47,6 +47,7 @@ from bot.funcs.water_games_design import (
     left_phrase,
     missing_item_text,
     poor_fee_text,
+    public_group_name,
     screen_text,
     settle_umbrella,
     word,
@@ -176,6 +177,17 @@ async def ensure() -> None:
         )
         """
     )
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_buy_prompts (
+            user_id BIGINT PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            message_id BIGINT NOT NULL,
+            name1 TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
     await settle_umbrella(pool)
     # «Вода» — чужой предмет крафта. На полку 🔫 кладём только свои товары.
     shelf = [item for item in ITEMS if "price" in item]
@@ -215,13 +227,23 @@ def _need_rows(*, pistol_missing: bool, water_missing: bool) -> list:
     return rows
 
 
-def _public_group_name(raw: str) -> str:
-    text = str(raw or "").strip()
-    text = text.replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
-    text = text.split("/")[0].split("?")[0]
-    if not re.fullmatch(r"[A-Za-z0-9_]{4,}", text):
-        return ""
-    return text
+async def _remember_buy(user_id: int, chat_id: int, message_id: int, name1: str) -> None:
+    """Запоминает сообщение с кнопкой покупки, чтобы после покупки его сменить."""
+    await db.pool.execute(
+        """
+        INSERT INTO water_buy_prompts (user_id, chat_id, message_id, name1, updated_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET chat_id = EXCLUDED.chat_id,
+            message_id = EXCLUDED.message_id,
+            name1 = EXCLUDED.name1,
+            updated_at = NOW()
+        """,
+        int(user_id),
+        int(chat_id),
+        int(message_id),
+        str(name1 or ""),
+    )
 
 
 async def _group_button_rows() -> list:
@@ -242,7 +264,7 @@ async def _group_button_rows() -> list:
     buttons = []
     seen = set()
     for row in rows:
-        username = _public_group_name(row["username"])
+        username = public_group_name(row["username"])
         if not username or username.lower() in seen:
             continue
         seen.add(username.lower())
@@ -1113,10 +1135,15 @@ async def water_click(call):
             [_open_button(word("open_buy"), offer["startapp"], private, "success")],
             [InlineKeyboardButton(text=BTN_BACK, callback_data="wg:home", style="default")],
         ])
+        shown = call.message
         try:
             await call.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
         except Exception:
-            await call.message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
+            shown = await call.message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
+        try:
+            await _remember_buy(call.from_user.id, shown.chat.id, shown.message_id, key)
+        except Exception:
+            log.exception("water buy prompt")
         await call.answer(word("looking"))
         return
     if data.startswith("wg:towel:"):

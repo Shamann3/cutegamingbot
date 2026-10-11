@@ -19,12 +19,15 @@ from water_games.design import (
     can_shoot,
     kept_kind,
     guide_status,
+    after_buy_text,
     hours_phrase,
     is_water_ask,
     joined_until,
     left_phrase,
+    public_group_name,
     screen_text,
     shield_profile_line,
+    water_buy_kind,
     shields_in_bag,
     shop_can_take,
     stock_is_open,
@@ -170,6 +173,27 @@ def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
     assert "Обливайте того, у кого кут больше" in broke
     assert "<code>топ</code>" in broke
     assert "Вода потрачена" in broke
+
+
+def test_a_water_purchase_advances_only_its_own_message():
+    text, step = after_buy_text(kind="pistoletik", emoji="🔫", name="Пистолетик", pistol=True, water=False)
+    assert step == "water"
+    assert "Отлично" in text
+    assert "Осталась Вода" in text
+    text, step = after_buy_text(kind="watercraft", emoji="💧", name="Вода", pistol=False, water=True)
+    assert step == "pistol"
+    assert "Остался Пистолетик" in text
+    text, step = after_buy_text(kind="watercraft", emoji="💧", name="Вода", pistol=True, water=True)
+    assert step == "shoot"
+    assert "Использовать 🔫" in text
+    text, step = after_buy_text(kind="dryumbrella", emoji="☂️", name="Зонтик", pistol=False, water=False)
+    assert step == "wear"
+    assert "инвентаре" in text
+    assert water_buy_kind(name1="watercraft") == "watercraft"
+    assert water_buy_kind(name="Вода") == "watercraft"
+    assert water_buy_kind(name1="stone", name="Камень") == ""
+    assert public_group_name("https://t.me/CuteChat") == "CuteChat"
+    assert public_group_name("не адрес") == ""
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():

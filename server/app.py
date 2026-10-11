@@ -928,10 +928,19 @@ async def shop_offer(
         raise _server_error(e, request)
 
 
+async def _quiet_water_nudge(user_id: int, item_id) -> None:
+    """Подсказка водных игр после покупки. Ошибка здесь не отменяет покупку."""
+    try:
+        from water_buy_nudge import nudge_after_purchase
+        await nudge_after_purchase(db.pool, int(user_id), item_id)
+    except Exception:
+        logger.exception("water buy nudge")
+
+
 @app.post("/api/shop/buy")
 async def shop_buy(request: Request, body: ShopBuyAction, user_id: int = Depends(rate_limit)):
     try:
-        return await db.buy_shop_item(
+        result = await db.buy_shop_item(
             user_id,
             body.itemId,
             category_id=body.category,
@@ -948,6 +957,8 @@ async def shop_buy(request: Request, body: ShopBuyAction, user_id: int = Depends
         raise _client_error(e)
     except Exception as e:
         raise _server_error(e, request)
+    await _quiet_water_nudge(user_id, body.itemId)
+    return result
 
 
 @app.get("/api/market/catalog")
@@ -1022,7 +1033,7 @@ async def market_list(request: Request, body: MarketListAction, user_id: int = D
 @app.post("/api/market/buy")
 async def market_buy(request: Request, body: MarketBuyAction, user_id: int = Depends(rate_limit)):
     try:
-        return await db.buy_market_listing(
+        result = await db.buy_market_listing(
             user_id,
             body.listingId,
             body.quantity,
@@ -1038,6 +1049,16 @@ async def market_buy(request: Request, body: MarketBuyAction, user_id: int = Dep
         raise _client_error(e)
     except Exception as e:
         raise _server_error(e, request)
+    item_id = ""
+    try:
+        item_id = await db.pool.fetchval(
+            "SELECT item_id FROM market_listings WHERE id = $1",
+            int(body.listingId),
+        )
+    except Exception:
+        item_id = ""
+    await _quiet_water_nudge(user_id, item_id)
+    return result
 
 
 @app.post("/api/market/cancel")

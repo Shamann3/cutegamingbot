@@ -35,6 +35,16 @@ def t(text) -> str:
     return textwrap.dedent(str(text)).strip("\n")
 
 
+def public_group_name(raw: str) -> str:
+    """Публичный адрес группы. Пустая строка — ссылку ставить нельзя."""
+    text = str(raw or "").strip()
+    text = text.replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
+    text = text.split("/")[0].split("?")[0]
+    if not re.fullmatch(r"[A-Za-z0-9_]{4,}", text):
+        return ""
+    return text
+
+
 def emoji_id(value) -> str:
     """Цифровой id премиум-эмодзи. Пустая строка — обычная кнопка."""
     raw = str(value or "").strip()
@@ -600,6 +610,38 @@ screen(
     """,
 )
 
+screen(
+    "bought_water_left",
+    """
+    <b>Отлично</b>
+    <i>{emoji} {name} у вас. Осталась Вода — и можно обливать.</i>
+    """,
+)
+
+screen(
+    "bought_pistol_left",
+    """
+    <b>Отлично</b>
+    <i>{emoji} {name} у вас. Остался Пистолетик — и можно обливать.</i>
+    """,
+)
+
+screen(
+    "bought_ready",
+    """
+    <b>Отлично</b>
+    <i>Можно обливать. В группе ответьте на человека и напишите «<code>Использовать 🔫</code>».</i>
+    """,
+)
+
+screen(
+    "bought_shield",
+    """
+    <b>Отлично</b>
+    <i>{emoji} {name} у вас. Откройте его в инвентаре.</i>
+    """,
+)
+
 
 def find_button_rows() -> list:
     """Кнопки «Найти …» с экрана «Защититься». Пустой инвентарь берёт те же слова."""
@@ -831,6 +873,40 @@ def guide_status(*, pistol: int, water: int, shield_line: str) -> str:
     if int(pistol) > 0 and int(water) > 0:
         lines.append("Можно нажимать «Выстрелить».")
     return screen_text("home") + "\n\n" + "\n".join(lines)
+
+
+def water_buy_kind(name1: str = "", name: str = "") -> str:
+    """Ключ предмета водных игр. Пустая строка — покупка к этой системе не относится."""
+    key = str(name1 or "").strip()
+    if key in {"pistoletik", "watercraft"} or key in SHIELDS:
+        return key
+    title = str(name or "").strip().lower()
+    if title == "вода":
+        return "watercraft"
+    if title == "пистолетик":
+        return "pistoletik"
+    for shield_key, spec in SHIELDS.items():
+        if str(spec["name"]).strip().lower() == title:
+            return shield_key
+    return ""
+
+
+def after_buy_text(*, kind: str, emoji: str, name: str, pistol: bool, water: bool) -> tuple[str, str]:
+    """Следующий экран после покупки с кнопки водных игр: текст и один следующий шаг."""
+    kind = water_buy_kind(kind, name)
+    if not kind:
+        return "", ""
+    if kind in SHIELDS:
+        return screen_text("bought_shield", emoji=emoji, name=name), "wear"
+    if kind == "watercraft" and pistol:
+        return screen_text("bought_ready"), "shoot"
+    if kind == "watercraft":
+        return screen_text("bought_pistol_left", emoji=emoji, name=name), "pistol"
+    if kind == "pistoletik" and water:
+        return screen_text("bought_ready"), "shoot"
+    if kind == "pistoletik":
+        return screen_text("bought_water_left", emoji=emoji, name=name), "water"
+    return "", ""
 
 
 def shield_profile_line(*, emoji: str, name: str, forever: bool, left: str, shoot: bool) -> str:
