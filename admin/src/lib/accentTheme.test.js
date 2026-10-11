@@ -32,6 +32,8 @@ describe('overlayPlateAlpha', () => {
     expect(root.style.getPropertyValue('--e-plate')).toBe('rgba(14, 14, 16, 0.000)')
     expect(root.style.getPropertyValue('--e-overlay')).toBe('rgba(14, 14, 16, 0.820)')
     expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 0.450)')
+    expect(root.dataset.plate).toBe('clear')
+    expect(root.classList.contains('plate-clear')).toBe(true)
   })
 })
 
@@ -53,6 +55,8 @@ describe('coachPlateAlpha', () => {
     expect(root.style.getPropertyValue('--e-plate')).toBe('rgba(14, 14, 16, 1.000)')
     expect(root.style.getPropertyValue('--e-coach')).toBe('rgba(14, 14, 16, 1.000)')
     expect(root.style.getPropertyValue('--e-coach-scrim')).toBe('rgba(0, 0, 0, 0.820)')
+    expect(root.dataset.plate).toBeUndefined()
+    expect(root.classList.contains('plate-clear')).toBe(false)
   })
 
   it('на полной прозрачности гасит штору и оставляет карточку на 55%', () => {

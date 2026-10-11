@@ -55,8 +55,22 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert EXTEND_FEE == 100
     assert btn_join() == "Улучшить за 100 кут"
     assert BTN_EXTEND == "Увеличить"
+    assert PRICES["pistoletik"] == 100
+    water = next(item for item in ITEMS if item["name1"] == "watercraft")
+    assert water["name"] == "Вода"
+    assert "price" not in water
     seeded = [item["name1"] for item in ITEMS if "price" in item]
-    assert seeded == ["dryumbrella", "drycoat", "dryawning", "drysafe"]
+    assert seeded == [
+        "pistoletik",
+        "dryumbrella",
+        "drycoat",
+        "dryawning",
+        "drysafe",
+    ]
+    assert stock_is_open(name1="pistoletik")
+    assert stock_is_open(name="Пистолетик")
+    assert not stock_is_open(name1="watercraft")
+    assert not stock_is_open(name="Вода")
     assert stock_is_open(name1="dryumbrella")
     assert stock_is_open(name="Зонтик")
     assert stock_is_open(name1="drycoat")
@@ -72,9 +86,10 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert kept_kind("drycoat", "dryumbrella") == "drycoat"
     assert kept_kind("dryumbrella", "dryumbrella") == "dryumbrella"
     assert kept_kind("dryumbrella", "drysafe") == "drysafe"
-    assert not stock_is_open(name="Пистолетик")
     assert shop_can_take(1, 5, name="Зонтик") == 5
-    assert shop_can_take(3, 5, name="Пистолетик") == 3
+    assert shop_can_take(1, 5, name="Пистолетик") == 5
+    assert shop_can_take(3, 5, name="Вода") == 3
+    assert shop_can_take(3, 5, name="Камень") == 3
     assert shop_can_take(0, 5, name="Зонтик") == 0
     text = screen_text("shield", fee=EXTEND_FEE)
     assert "100" in text
@@ -103,7 +118,7 @@ def test_a_second_umbrella_adds_its_hours_to_the_time_left():
     assert hours_phrase(3) == "3 часа"
     assert hours_phrase(72) == "3 дня"
     assert left_phrase(2 * 3600 + 14 * 60) == "2 часа 14 минут"
-    bag = shields_in_bag({"Зонтик": 2, "Вода ( для пистолетика )": 4})
+    bag = shields_in_bag({"Зонтик": 2, "Вода": 4})
     assert [row["name1"] for row in bag] == ["dryumbrella"]
     assert bag[0]["count"] == 2
     left, ok = take_one_item({"Зонтик": 1}, "Зонтик")

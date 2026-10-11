@@ -124,6 +124,9 @@ JOKE_SITE = "https://rzhunemogu.ru/RandJSON.aspx?CType=11"
 # предмет не тратит: сроки складываются отдельной платой EXTEND_FEE.
 # Стрелять можно только под зонтиком. Дождевик, навес и сейф закрывают выстрел.
 PRICES = {
+    # Пистолетик уже стоит 100 в dex: это разовая покупка, предмет не тратится.
+    # Патрон — уже существующая «Вода» (watercraft). Её цену и полку код не переписывает.
+    "pistoletik": 100,
     "dryumbrella": 60,
     "drycoat": 180,
     "dryawning": 300,
@@ -164,7 +167,8 @@ WORDS = {
     "place_market": "биржа",
     "place_shop": "магазин",
     "missing_pistol": "Нужен Пистолетик.",
-    "missing_water": "Нужна вода для пистолетика.",
+    "missing_water": "Нужна Вода.",
+    "water_held": "Это Вода. Она не стреляет сама. Ответьте на сообщение в группе и используйте Пистолетик: одна Вода спишется.",
     "history_shot": "водные игры",
     "history_towel": "полотенце водных игр",
     "history_stack": "сложение защиты водных игр",
@@ -188,12 +192,18 @@ ITEMS = (
         "name": "Пистолетик",
         "emoji": "🔫",
         "match": ("пистолетик",),
+        "price": PRICES["pistoletik"],
+        "bio": (
+            "Остаётся у вас навсегда. Один выстрел тратит одну воду. "
+            "В группе ответьте на сообщение человека и используйте пистолетик. "
+            "В личке выстрел не идёт. Можно купить сколько угодно."
+        ),
     },
     {
-        "name1": "waterpistol",
-        "name": "Вода ( для пистолетика )",
+        "name1": "watercraft",
+        "name": "Вода",
         "emoji": "💧",
-        "match": ("вода ( для пистолетика )", "вода для пистолетика"),
+        "match": ("вода",),
     },
     {
         "name1": "dryumbrella",
@@ -267,10 +277,10 @@ screen(
     "home",
     """
     <b>🔫 Водные игры</b>
-    <i>Ответили на сообщение — и часть кут перешла к вам.</i>
+    <i>В группе можно забрать часть кут у человека. Или закрыться, если не хотите быть целью.</i>
 
     <blockquote><b><i>Облить</i></b> — три шага, и вы уже стреляете.
-    <b><i>Закрыться</i></b> — если не хотите быть целью.</blockquote>
+    <b><i>Закрыться</i></b> — если не хотите, чтобы обливали вас.</blockquote>
 
     Выстрел забирает от <u>{low}%</u> до <u>{high}%</u> баланса, но не больше <u>{cap}</u> кут за раз и не больше <u>{day}</u> кут с человека за сутки.
     Баланс ниже <u>{poor}</u> кут не трогается.
@@ -306,10 +316,9 @@ screen(
     "splash_ready",
     """
     <b>Пистолетик заряжен</b>
-    <i>Вода на месте. Остался один шаг.</i>
+    <i>Вода на месте. Это второй шаг.</i>
 
-    Ответьте на сообщение человека в группе и используйте предмет <u>Пистолетик</u>.
-    Кут перейдут к вам. Ему придёт полотенце.
+    Нажмите «Выстрелить». Следующий экран скажет, на чьё сообщение ответить и какой предмет открыть.
     """,
     [
         [b(text="Выстрелить", go="aim", data="wg:aim", color="primary")],
@@ -342,7 +351,7 @@ screen(
     """,
     [
         [b(text="Найти пистолетик", go="find-pistol", data="wg:find:pistoletik", color="primary")],
-        [b(text="Найти воду", go="find-water", data="wg:find:waterpistol")],
+        [b(text="Найти воду", go="find-water", data="wg:find:watercraft")],
         [b(text="Назад", go="home", data="wg:home")],
     ],
 )
@@ -719,8 +728,18 @@ def stock_is_open(name1: str = "", name: str = "") -> bool:
     """Защита водных игр не кончается на складе."""
     key = str(name1 or "").strip().lower()
     title = str(name or "").strip().lower()
-    return key in {"dryumbrella", "drycoat", "dryawning", "drysafe"} or title in {
-        "зонтик", "дождевик", "навес", "сухой сейф",
+    return key in {
+        "pistoletik",
+        "dryumbrella",
+        "drycoat",
+        "dryawning",
+        "drysafe",
+    } or title in {
+        "пистолетик",
+        "зонтик",
+        "дождевик",
+        "навес",
+        "сухой сейф",
     }
 
 
@@ -917,8 +936,32 @@ def choice_label(*, emoji: str, name: str, count: int, plus: str) -> str:
     return " ".join(text.split())
 
 
+async def seed_water_dex(pool) -> None:
+    """Кладёт в dex недостающие предметы водных игр. Уже стоящую цену не трогает."""
+    for item in ITEMS:
+        if "price" not in item:
+            continue
+        await pool.execute(
+            """
+            INSERT INTO dex (id, name, name1, emoji, price, dis, remains, sorting, bio, "use")
+            SELECT
+                (SELECT COALESCE(MAX(id), 0) + 1 FROM dex),
+                $1, $2, $3, $4, 0, 1, '🔫', $5, 1
+            WHERE NOT EXISTS (
+                SELECT 1 FROM dex WHERE name1 = $2 OR lower(name) = lower($1)
+            )
+            """,
+            item["name"],
+            item["name1"],
+            item["emoji"],
+            int(item["price"]),
+            item.get("bio") or "",
+        )
+
+
 async def settle_umbrella(pool) -> None:
     """Ставит выбранные цены вместо старых стартовых. Склад не обнуляется."""
+    await seed_water_dex(pool)
     for item in ITEMS:
         if "price" not in item:
             continue
@@ -940,10 +983,14 @@ async def settle_umbrella(pool) -> None:
             """
             UPDATE dex
             SET bio = $1,
+                emoji = $2,
+                sorting = '🔫',
+                "use" = 1,
                 remains = CASE WHEN COALESCE(remains, 0) < 1 THEN 1 ELSE remains END
-            WHERE name1 = $2 OR lower(name) = lower($3)
+            WHERE name1 = $3 OR lower(name) = lower($4)
             """,
             str(item.get("bio") or ""),
+            item["emoji"],
             item["name1"],
             item["name"],
         )

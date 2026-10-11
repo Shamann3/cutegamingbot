@@ -165,28 +165,11 @@ async def ensure() -> None:
         )
         """
     )
-    for item in ITEMS:
-        if "price" not in item:
-            continue
-        await pool.execute(
-            """
-            INSERT INTO dex (id, name, name1, emoji, price, dis, remains, sorting, bio, "use", bonus, craft)
-            SELECT
-                (SELECT COALESCE(MAX(id), 0) + 1 FROM dex),
-                $1, $2, $3, $4, 0, 100, '🔫', $5, '1', '', ''
-            WHERE NOT EXISTS (
-                SELECT 1 FROM dex WHERE name1 = $2 OR lower(name) = lower($1)
-            )
-            """,
-            item["name"],
-            item["name1"],
-            item["emoji"],
-            int(item["price"]),
-            item.get("bio") or "",
-        )
     await settle_umbrella(pool)
-    names = [item["name"].lower() for item in ITEMS]
-    keys = [item["name1"] for item in ITEMS]
+    # «Вода» — чужой предмет крафта. На полку 🔫 кладём только свои товары.
+    shelf = [item for item in ITEMS if "price" in item]
+    names = [item["name"].lower() for item in shelf]
+    keys = [item["name1"] for item in shelf]
     await pool.execute(
         """
         UPDATE dex SET sorting = '🔫'
@@ -199,7 +182,10 @@ async def ensure() -> None:
 
 
 async def open_guide(message) -> None:
-    await ensure()
+    try:
+        await ensure()
+    except Exception:
+        log.exception("water guide shelf")
     await message.reply(
         _home_text(),
         parse_mode="HTML",
@@ -340,7 +326,7 @@ async def _log(shooter: int, target: int, chat_id: int, amount: int, outcome: st
 
 
 async def _spend_water(user_id: int, items: dict) -> None:
-    key = _item("waterpistol")["name"]
+    key = _item("watercraft")["name"]
     current = _count(items, key)
     if current <= 0:
         for name in list(items):
@@ -382,7 +368,7 @@ async def splash_from_item(message) -> None:
             reply_markup=_markup("splash_need", message),
         )
         return
-    if _count(items, _item("waterpistol")["name"]) < 1:
+    if _count(items, _item("watercraft")["name"]) < 1:
         await message.reply(
             screen_text("splash_need", missing=word("missing_water")),
             parse_mode="HTML",
@@ -890,7 +876,7 @@ async def water_click(call):
     if data in {"wg:splash", "wg:aim"}:
         bag = await _inventory(call.from_user.id)
         pistol = _count(bag["items"], _item("pistoletik")["name"])
-        water = _count(bag["items"], _item("waterpistol")["name"])
+        water = _count(bag["items"], _item("watercraft")["name"])
         if data == "wg:aim":
             if pistol < 1 or water < 1:
                 missing = word("missing_pistol") if pistol < 1 else word("missing_water")

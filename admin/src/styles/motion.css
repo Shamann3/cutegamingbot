@@ -7407,6 +7407,28 @@ body.perf-light .auth-setup-secret.is-veiled .auth-key-glitch::after {
   outline-offset: 2px;
 }
 
+/* Ползунок на 100: пластина пустая. Размытие под ней замыливает дождь и матрицу
+   на входе, в кабинете группы и в панели сотрудника. Стекло ниже сотни остаётся. */
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body:not(.perf-light),
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body:not(.perf-light) *,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body:not(.perf-light) *::before,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body:not(.perf-light) *::after,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body.perf-light,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body.perf-light *,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body.perf-light *::before,
+html.plate-clear[data-plate="clear"][data-viewport="phone"].is-phone body.perf-light *::after,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body:not(.perf-light),
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body:not(.perf-light) *,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body:not(.perf-light) *::before,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body:not(.perf-light) *::after,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body.perf-light,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body.perf-light *,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body.perf-light *::before,
+html.plate-clear[data-plate="clear"][data-viewport="desktop"].is-desktop body.perf-light *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 
 
 

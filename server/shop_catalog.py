@@ -25,7 +25,6 @@ SORTING_LABELS: dict[str, str] = {entry["sorting"]: entry["label"] for entry in 
 WATER_SHELF = "\U0001f52b"
 WATER_SHELF_KEYS = (
     "pistoletik",
-    "waterpistol",
     "dryumbrella",
     "drycoat",
     "dryawning",
@@ -33,7 +32,6 @@ WATER_SHELF_KEYS = (
 )
 WATER_SHELF_NAMES = (
     "пистолетик",
-    "вода ( для пистолетика )",
     "зонтик",
     "дождевик",
     "навес",

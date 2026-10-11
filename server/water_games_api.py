@@ -12,7 +12,7 @@ router = APIRouter(prefix="/admin/api/water-games", tags=["water-games"])
 
 KEYS = (
     "pistoletik",
-    "waterpistol",
+    "watercraft",
     "dryumbrella",
     "drycoat",
     "dryawning",
@@ -20,7 +20,7 @@ KEYS = (
 )
 NAMES = (
     "Пистолетик",
-    "Вода ( для пистолетика )",
+    "Вода",
     "Зонтик",
     "Дождевик",
     "Навес",

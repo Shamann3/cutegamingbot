@@ -2931,6 +2931,14 @@ async def shop_op(message: Message):
             return
 
         shield_code = str(item_info.get("name1") or "")
+        item_title = str(item_info.get("name") or "").strip().lower()
+        if "watercraft" in shield_code or item_title == "вода":
+            from bot.funcs.water_games_design import word
+            await message.reply(word("water_held"), parse_mode="HTML", disable_web_page_preview=True)
+            return
+        if "pistoletik" in shield_code:
+            await pistoletik(db, user_id, message)
+            return
         if any(key in shield_code for key in ("dryumbrella", "drycoat", "dryawning", "drysafe")):
             from bot.funcs.water_games import wear_shield
             key = next(part for part in ("dryumbrella", "drycoat", "dryawning", "drysafe") if part in shield_code)

@@ -295,6 +295,11 @@ export function applyAccentToDocument(accent, { flash = false } = {}) {
   root.style.setProperty('--ent-accent-rgb', `${r}, ${g}, ${b}`)
   root.dataset.accent = a.id
   root.dataset.accentInk = ink === '#111111' ? 'dark' : 'light'
+  // 100% прозрачности: пластина пустая. Размытие фона под ней выглядит замыленным.
+  const plateClear = a.veil >= 100
+  root.classList.toggle('plate-clear', plateClear)
+  if (plateClear) root.dataset.plate = 'clear'
+  else delete root.dataset.plate
   // Flash только при ручной смене палитры — не на первом paint (иначе двери на мгновение «пустые»).
   window.clearTimeout(root._accentFlashTimer)
   if (flash) {
