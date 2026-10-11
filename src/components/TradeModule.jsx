@@ -25,6 +25,7 @@ export default function TradeModule({
   onShopSearchUsed,
   marketSearch = '',
   marketItemId = '',
+  marketOwnLot = false,
   marketHighlightOnly = false,
   onMarketSearchUsed,
 }) {
@@ -69,6 +70,7 @@ export default function TradeModule({
             isActive={isActive}
             initialSearch={marketSearch}
             initialItemId={marketItemId}
+            initialOwnLot={marketOwnLot}
             initialHighlightOnly={marketHighlightOnly}
             onSearchUsed={onMarketSearchUsed}
           />

@@ -157,6 +157,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
   const [shopHighlightOnly, setShopHighlightOnly] = useState(false)
   const [marketSearch, setMarketSearch] = useState('')
   const [marketItemId, setMarketItemId] = useState(() => aimedItemIds(getStartTab() ?? '').marketItemId)
+  const [marketOwnLot, setMarketOwnLot] = useState(() => aimedItemIds(getStartTab() ?? '').ownLot)
   const [marketHighlightOnly, setMarketHighlightOnly] = useState(false)
 
   // Модалка покупки поверх текущей вкладки — не уводим с фермы,
@@ -212,6 +213,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
       if (!next.itemId) return
       if (next.tradeSegment === 'market') {
         setMarketItemId(String(next.itemId))
+        setMarketOwnLot(Boolean(next.ownLot))
         setMarketHighlightOnly(false)
         setTradeSegment('market')
       } else {
@@ -231,6 +233,7 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
       const itemId = e.detail?.itemId ?? ''
       setMarketSearch(search)
       setMarketItemId(itemId ? String(itemId) : '')
+      setMarketOwnLot(Boolean(e.detail?.ownLot))
       setMarketHighlightOnly(Boolean(e.detail?.highlightOnly))
       setTab('trade')
       setTradeSegment('market')
@@ -276,10 +279,12 @@ function AppShell({ tab, setTab, tradeSegment, setTradeSegment, farmSegment, set
             }}
             marketSearch={marketSearch}
             marketItemId={marketItemId}
+            marketOwnLot={marketOwnLot}
             marketHighlightOnly={marketHighlightOnly}
             onMarketSearchUsed={() => {
               setMarketSearch('')
               setMarketItemId('')
+              setMarketOwnLot(false)
               setMarketHighlightOnly(false)
             }}
           />

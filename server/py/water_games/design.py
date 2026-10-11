@@ -53,6 +53,46 @@ def emoji_id(value) -> str:
     return ""
 
 
+# В callback уже сидит хозяин: защита, продление, сложение срока.
+_EMBEDDED_OWNER = {"more", "worn", "pick", "join"}
+# Хозяин дописывается последним куском: выстрел, поиск, полотенце, навигация.
+_SUFFIX_OWNER = {"leave", "pour", "towel", "find"}
+
+
+def button_owner(data: str):
+    """Чей это callback. None — кнопка без хозяина, её нажимать нельзя."""
+    parts = str(data or "").split(":")
+    if len(parts) < 3 or parts[0] != "wg":
+        return None
+    kind = parts[1]
+    if kind in _EMBEDDED_OWNER:
+        return int(parts[2]) if parts[2].isdigit() else None
+    if kind in _SUFFIX_OWNER:
+        if len(parts) >= 4 and parts[-1].isdigit():
+            return int(parts[-1])
+        return None
+    if parts[-1].isdigit():
+        return int(parts[-1])
+    return None
+
+
+def stamp_callback(data: str, user_id: int) -> str:
+    """Помечает кнопку человеком, который её открыл. Чужой клик дальше не идёт."""
+    if button_owner(data) is not None:
+        return str(data)
+    return f"{data}:{int(user_id)}"
+
+
+def strip_callback_owner(data: str) -> str:
+    """Снимает хвост с id, чтобы разбор кнопки остался прежним."""
+    parts = str(data or "").split(":")
+    if len(parts) < 3 or parts[0] != "wg" or parts[1] in _EMBEDDED_OWNER:
+        return str(data or "")
+    if button_owner(data) is None:
+        return str(data or "")
+    return ":".join(parts[:-1])
+
+
 def b(*, text: str, go: str, data: str = "", color: str = "default", emoji: str = "") -> dict:
     button = {
         "text": t(text),
@@ -172,6 +212,8 @@ BTN_BACK = "Назад"
 # В Telegram-тосте теги не рисуются, поэтому здесь их нет.
 WORDS = {
     "not_yours": "Это не ваша защита.",
+    "not_your_button": "Это не ваша кнопка.",
+    "button_old": "Кнопка устарела. Напишите «водные игры».",
     "no_such_item": "Такого предмета нет",
     "need_fee": "Нужно {fee} кут",
     "item_gone": "Предмета уже нет",
@@ -181,6 +223,7 @@ WORDS = {
     "stacked": "Срок увеличился",
     "looking": "Смотрю магазин и биржу",
     "open_buy": "Открыть покупку",
+    "open_unlot": "Снять лот",
     "towel": "Полотенце",
     "towel_lost": "Полотенце уже не найти",
     "towel_not_yours": "Это полотенце не вам.",

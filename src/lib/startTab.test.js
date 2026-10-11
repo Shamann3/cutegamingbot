@@ -30,9 +30,14 @@ describe('readStartParam', () => {
     expect(pickStartTab('shop-42')).toBe('shop-42')
     expect(resolveStartTab('shop-42')).toEqual({ tab: 'trade', tradeSegment: 'shop', itemId: '42' })
     expect(resolveStartTab('market-7')).toEqual({ tab: 'trade', tradeSegment: 'market', itemId: '7' })
-    expect(aimedItemIds('shop-277')).toEqual({ shopItemId: '277', marketItemId: '' })
-    expect(aimedItemIds('market-294')).toEqual({ shopItemId: '', marketItemId: '294' })
-    expect(aimedItemIds('shop')).toEqual({ shopItemId: '', marketItemId: '' })
+    expect(aimedItemIds('shop-277')).toEqual({ shopItemId: '277', marketItemId: '', ownLot: false })
+    expect(aimedItemIds('market-294')).toEqual({ shopItemId: '', marketItemId: '294', ownLot: false })
+    expect(aimedItemIds('shop')).toEqual({ shopItemId: '', marketItemId: '', ownLot: false })
+    expect(pickStartTab('own-294')).toBe('own-294')
+    expect(resolveStartTab('own-294')).toEqual({
+      tab: 'trade', tradeSegment: 'market', itemId: '294', ownLot: true,
+    })
+    expect(aimedItemIds('own-294')).toEqual({ shopItemId: '', marketItemId: '294', ownLot: true })
   })
 
   it('keeps craft and farm as their own screens', () => {

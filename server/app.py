@@ -1000,6 +1000,18 @@ async def market_offer(
         raise _server_error(e, request)
 
 
+@app.get("/api/market/own-offer")
+async def market_own_offer(
+    request: Request,
+    user_id: int = Depends(rate_limit),
+    itemId: str = "",
+):
+    try:
+        return await db.get_market_offer(user_id, itemId, own=True)
+    except Exception as e:
+        raise _server_error(e, request)
+
+
 @app.get("/api/market/sellable")
 async def market_sellable(request: Request, user_id: int = Depends(rate_limit)):
     try:

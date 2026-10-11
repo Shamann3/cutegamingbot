@@ -214,10 +214,12 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
         if step == "water":
             button = _callback(words, "wg:find:watercraft")
             if button:
+                button["callback_data"] = words.stamp_callback(button["callback_data"], int(user_id))
                 rows.append([button])
         elif step == "pistol":
             button = _callback(words, "wg:find:pistoletik")
             if button:
+                button["callback_data"] = words.stamp_callback(button["callback_data"], int(user_id))
                 rows.append([button])
         elif step == "shoot" and int(prompt["chat_id"]) == int(user_id):
             rows = await _group_rows(pool, words)

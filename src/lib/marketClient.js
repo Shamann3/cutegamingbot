@@ -52,9 +52,10 @@ export function fetchMarketCatalog(options = {}) {
   return apiRequest(`/api/market/catalog?${params}`)
 }
 
-export function fetchMarketOffer(itemId) {
+export function fetchMarketOffer(itemId, { own = false } = {}) {
   const params = new URLSearchParams({ itemId: String(itemId ?? '').trim() })
-  return apiRequest(`/api/market/offer?${params}`)
+  const path = own ? '/api/market/own-offer' : '/api/market/offer'
+  return apiRequest(`${path}?${params}`)
 }
 
 export function fetchMarketSellable() {

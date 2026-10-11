@@ -5,6 +5,10 @@ const LEGACY_TRADE_SEGMENT = {
 
 /** Разбирает id таба из deep-link (?startapp=... / start_param) в {tab, tradeSegment}. */
 export function resolveStartTab(rawTab) {
+  const own = String(rawTab || '').match(/^own-(\d+)$/)
+  if (own) {
+    return { tab: 'trade', tradeSegment: 'market', itemId: own[1], ownLot: true }
+  }
   const aimed = String(rawTab || '').match(/^(shop|market)-(\d+)$/)
   if (aimed) {
     return { tab: 'trade', tradeSegment: aimed[1], itemId: aimed[2] }
@@ -26,7 +30,8 @@ export function resolveStartTab(rawTab) {
 export function aimedItemIds(rawTab) {
   const next = resolveStartTab(rawTab)
   const itemId = next.itemId ? String(next.itemId) : ''
-  if (!itemId) return { shopItemId: '', marketItemId: '' }
-  if (next.tradeSegment === 'market') return { shopItemId: '', marketItemId: itemId }
-  return { shopItemId: itemId, marketItemId: '' }
+  const ownLot = Boolean(next.ownLot)
+  if (!itemId) return { shopItemId: '', marketItemId: '', ownLot: false }
+  if (next.tradeSegment === 'market') return { shopItemId: '', marketItemId: itemId, ownLot }
+  return { shopItemId: itemId, marketItemId: '', ownLot: false }
 }

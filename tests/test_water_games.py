@@ -9,7 +9,10 @@ from datetime import datetime, timedelta, timezone
 from water_games.design import (
     BTN_EXTEND,
     EXTEND_FEE,
+    button_owner,
     button_rows,
+    stamp_callback,
+    strip_callback_owner,
     emoji_id,
     ITEMS,
     POOR_BALANCE,
@@ -216,6 +219,17 @@ def test_a_water_purchase_advances_only_its_own_message():
     assert pistol_buy["text"] == "🔫 Найти пистолетик"
     assert pistol_buy["style"] == water_buy["style"] == "success"
     assert "Снимите лот" in screen_text("own_lot", emoji="🔫", name="Пистолетик")
+    home = stamp_callback("wg:home", 42)
+    assert home == "wg:home:42"
+    assert button_owner(home) == 42
+    assert strip_callback_owner(home) == "wg:home"
+    assert button_owner("wg:pour:9:42") == 42
+    assert strip_callback_owner("wg:pour:9:42") == "wg:pour:9"
+    assert button_owner("wg:more:42") == 42
+    assert strip_callback_owner("wg:more:42") == "wg:more:42"
+    assert stamp_callback("wg:more:42", 99) == "wg:more:42"
+    assert button_owner("wg:find:watercraft") is None
+    assert button_owner(stamp_callback("wg:towel:3", 9)) == 9
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():

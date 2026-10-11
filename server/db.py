@@ -3397,8 +3397,8 @@ class Database:
             "items": items,
         }
 
-    async def get_market_offer(self, user_id, item_id):
-        """Самый дешёвый чужой лот предмета. Свой — только если других нет."""
+    async def get_market_offer(self, user_id, item_id, *, own=False):
+        """Самый дешёвый чужой лот. own=True — только лот этого игрока, чтобы снять его."""
         from market_catalog import listing_to_client
         from market_rules import market_commission_meta
 
@@ -3410,7 +3410,13 @@ class Database:
         row = None
         if dex_id > 0:
             item_key = str(dex_id)
-            listing_sql = """
+            seller_filter = "AND l.seller_id = $2" if own else ""
+            order_by = (
+                "l.created_at ASC"
+                if own
+                else "(l.seller_id = $2) ASC, l.price ASC, l.created_at ASC"
+            )
+            listing_sql = f"""
                 SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
                        l.created_at,
                        d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
@@ -3424,10 +3430,11 @@ class Database:
                 JOIN dex d ON CAST(d.id AS TEXT) = l.item_id
                 LEFT JOIN users u ON u.user_id = l.seller_id
                 WHERE l.status = 'active' AND l.quantity > 0 AND l.item_id = $1
-                ORDER BY (l.seller_id = $2) ASC, l.price ASC, l.created_at ASC
+                {seller_filter}
+                ORDER BY {order_by}
                 LIMIT 1
             """
-            listing_sql_legacy = """
+            listing_sql_legacy = f"""
                 SELECT l.id AS listing_id, l.seller_id, l.item_id, l.quantity, l.price,
                        l.created_at,
                        d.name, d.name1, d.emoji, d.sorting, d.stick, d.use, d.bonus,
@@ -3441,7 +3448,8 @@ class Database:
                 JOIN dex d ON CAST(d.id AS TEXT) = l.item_id
                 LEFT JOIN users u ON u.user_id = l.seller_id
                 WHERE l.status = 'active' AND l.quantity > 0 AND l.item_id = $1
-                ORDER BY (l.seller_id = $2) ASC, l.price ASC, l.created_at ASC
+                {seller_filter}
+                ORDER BY {order_by}
                 LIMIT 1
             """
             async with self.pool.acquire() as conn:

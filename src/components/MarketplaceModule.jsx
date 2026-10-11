@@ -36,6 +36,7 @@ export default function MarketplaceModule({
   isActive = true,
   initialSearch = '',
   initialItemId = '',
+  initialOwnLot = false,
   initialHighlightOnly = false,
   onSearchUsed,
   embedded = false,
@@ -99,13 +100,14 @@ export default function MarketplaceModule({
 
   useEffect(() => {
     if (!isActive) return
+    if (initialOwnLot) return
     if (!initialSearch && !initialItemId) return
     if (initialSearch) setSearch(initialSearch)
     setPendingGuide({
       itemId: initialItemId ? String(initialItemId) : '',
       highlightOnly: initialHighlightOnly,
     })
-  }, [initialSearch, initialItemId, initialHighlightOnly, isActive, setSearch])
+  }, [initialSearch, initialItemId, initialOwnLot, initialHighlightOnly, isActive, setSearch])
 
   useEffect(() => {
     if (!pendingGuide || initialLoading) return
@@ -135,13 +137,13 @@ export default function MarketplaceModule({
     const key = String(initialItemId)
     if (aimedRequest.current === key) return undefined
     aimedRequest.current = key
-    fetchMarketOffer(key).then((data) => {
+    fetchMarketOffer(key, { own: initialOwnLot }).then((data) => {
       if (aimedRequest.current !== key || !data?.item) return
       setSelectedItem(data.item)
       if (data.kut != null) setOfferKut(Number(data.kut))
     }).catch(() => {})
     return undefined
-  }, [isActive, initialHighlightOnly, initialItemId])
+  }, [isActive, initialHighlightOnly, initialItemId, initialOwnLot])
 
   useEffect(() => {
     if (!highlightItemId) return undefined
