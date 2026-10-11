@@ -2100,10 +2100,17 @@ const OFFICES = [
   { id: 'group', title: 'Администраторы', detail: 'Кабинет официальных групп' },
 ]
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, entry = null, onOpenPreview = null, onOpenUser = null }) {
+export function creatorSeesWater(isProjectCreator, myUserId, projectCreatorId) {
+  if (isProjectCreator !== true) return false
+  if (projectCreatorId == null || myUserId == null) return true
+  return Number(myUserId) === Number(projectCreatorId)
+}
+
+export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, projectCreatorId = null, entry = null, onOpenPreview = null, onOpenUser = null }) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
   const canConfigure = isProjectCreator || perms.has('manage_panel_access')
+  const seesWater = creatorSeesWater(isProjectCreator, myUserId, projectCreatorId)
 
   const workTabs = useMemo(() => {
     const list = []
@@ -2137,7 +2144,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
     if (isProjectCreator) staff.push({ id: 'pay', label: 'Зарплаты' })
     if (isProjectCreator) staff.push({ id: 'stats', label: 'Статистика' })
-    if (isProjectCreator) staff.push({ id: 'water', label: 'Водные игры' })
+    if (seesWater) staff.push({ id: 'water', label: 'Водные игры' })
     if (workTabs.length) staff.push({ id: 'work', label: 'Команда' })
     if (isProjectCreator) {
       group.push({ id: 'groups', label: 'Группы' })
@@ -2147,7 +2154,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
       group.push({ id: 'keys', label: 'Ключи' })
     }
     return { staff, group }
-  }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator, onOpenPreview])
+  }, [canConfigure, perms, panelTabs, workTabs, isProjectCreator, seesWater, onOpenPreview])
 
   const [office, setOffice] = useState(() => (entry?.office === 'group' ? 'group' : 'staff'))
   const [picked, setPicked] = useState(() => ({
@@ -2230,7 +2237,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
           {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" myUserId={myUserId} />}
           {onStaff && activeId === 'stats' && <StatDesk onOpenUser={onOpenUser} />}
-          {onStaff && activeId === 'water' && <WaterGames onOpenUser={onOpenUser} />}
+          {onStaff && seesWater && activeId === 'water' && <WaterGames onOpenUser={onOpenUser} />}
           {onStaff && activeId === 'work' && (
             <>
               <nav className="sec-tabs staff-work-tabs" aria-label="Команда">

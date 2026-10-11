@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchWaterBoard, saveWaterPrice } from '../../lib/adminClient'
 import OpenUserLink from '../../components/OpenUserLink'
 import '../../styles/water-games.css'
@@ -23,7 +23,9 @@ export default function WaterGames({ onOpenUser = null }) {
   const [error, setError] = useState('')
   const [drafts, setDrafts] = useState({})
   const [busy, setBusy] = useState('')
+  const [savedId, setSavedId] = useState('')
   const [ledger, setLedger] = useState('pours')
+  const savedTimer = useRef(0)
 
   const load = () => {
     setError('')
@@ -38,16 +40,24 @@ export default function WaterGames({ onOpenUser = null }) {
   }
 
   useEffect(() => { load() }, [])
+  useEffect(() => () => window.clearTimeout(savedTimer.current), [])
 
   const save = async (item) => {
+    const draft = String(drafts[item.id] ?? '')
+    if (draft === '' || Number(draft) === Number(item.price)) return
     setBusy(item.id)
     setError('')
     try {
-      const saved = await saveWaterPrice({ id: Number(item.id), price: Number(drafts[item.id] || 0) })
+      const saved = await saveWaterPrice({ id: Number(item.id), price: Number(draft) })
       setBoard((prev) => ({
         ...prev,
         items: prev.items.map((row) => (row.id === item.id ? { ...row, price: saved.price } : row)),
       }))
+      setSavedId(item.id)
+      window.clearTimeout(savedTimer.current)
+      savedTimer.current = window.setTimeout(() => {
+        setSavedId((current) => (current === item.id ? '' : current))
+      }, 1400)
     } catch (err) {
       setError(err.message || 'Цена не сохранилась')
     } finally {
@@ -82,6 +92,7 @@ export default function WaterGames({ onOpenUser = null }) {
               <button type="button" role="tab" aria-selected={ledger === 'soaked'} className={ledger === 'soaked' ? 'is-on' : ''} onClick={() => setLedger('soaked')}>Кого обливали</button>
               <button type="button" role="tab" aria-selected={ledger === 'pairs'} className={ledger === 'pairs' ? 'is-on' : ''} onClick={() => setLedger('pairs')}>Кто кого</button>
             </div>
+            <div key={ledger} className="water-pane">
             {ledger === 'pours' && (
               <ol className="water-rank">
                 {(board.pours || []).map((row, index) => (
@@ -122,6 +133,7 @@ export default function WaterGames({ onOpenUser = null }) {
             {ledger === 'pours' && (board.pours || []).length === 0 && <p className="sec-empty">Ещё никто не обливал.</p>}
             {ledger === 'soaked' && (board.soaked || []).length === 0 && <p className="sec-empty">Ещё никого не обливали.</p>}
             {ledger === 'pairs' && (board.pairs || []).length === 0 && <p className="sec-empty">Пар ещё нет.</p>}
+            </div>
           </section>
 
           <section>
@@ -144,21 +156,26 @@ export default function WaterGames({ onOpenUser = null }) {
           <section>
             <h4 className="sec-title">Цены в магазине</h4>
             <p className="sec-subtitle">Кнопка стоит под полем. Цена сразу становится ценой предмета в dex.</p>
-            {(board.items || []).map((item) => (
-              <div key={item.id} className="water-price">
+            {(board.items || []).map((item) => {
+              const draft = String(drafts[item.id] ?? '')
+              const same = draft !== '' && Number(draft) === Number(item.price)
+              const saved = savedId === item.id
+              return (
+              <div key={item.id} className={`water-price${saved ? ' is-saved' : ''}`}>
                 <strong>{item.emoji} {item.name}</strong>
                 <span>в магазине сейчас {item.remains > 0 ? `${money(item.remains)} шт.` : 'нет остатка'}</span>
                 <input
                   inputMode="numeric"
                   aria-label={`Цена: ${item.name}`}
-                  value={drafts[item.id] ?? ''}
+                  value={draft}
                   onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: event.target.value.replace(/[^\d]/g, '') }))}
                 />
-                <button type="button" className="sec-tab" disabled={busy === item.id} onClick={() => save(item)}>
-                  {busy === item.id ? 'Сохраняем…' : 'Сохранить цену'}
+                <button type="button" className="sec-tab" disabled={busy === item.id || draft === '' || same} onClick={() => save(item)}>
+                  {busy === item.id ? 'Сохраняем…' : saved ? 'Цена сохранена' : same ? 'Это текущая цена' : 'Сохранить цену'}
                 </button>
               </div>
-            ))}
+              )
+            })}
           </section>
         </>
       )}

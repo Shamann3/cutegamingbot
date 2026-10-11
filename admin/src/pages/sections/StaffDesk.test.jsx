@@ -121,6 +121,11 @@ describe('StaffSection', () => {
     expect(await screen.findByText('Глава')).toBeTruthy()
   })
 
+  it('hides water games from an owner who is not the project creator', () => {
+    render(<StaffSection role="owner" isProjectCreator myUserId={7} projectCreatorId={9} permissions={['manage_panel_access']} onOpenPreview={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Водные игры' })).toBeNull()
+  })
+
   it('shows a senior admin only the staff desk and no copies', () => {
     render(<StaffSection role="senior_admin" permissions={['manage_panel_access', 'review_applications']} onOpenPreview={vi.fn()} />)
     expect(screen.queryByRole('tablist')).toBeNull()

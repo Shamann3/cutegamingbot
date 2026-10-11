@@ -36,6 +36,8 @@ from bot.funcs.water_games_design import (
     kept_kind,
     extend_empty_text,
     extend_list_text,
+    guide_status,
+    shield_profile_line,
     extend_pick_text,
     forever_worn_text,
     fresh_instead_text,
@@ -73,6 +75,11 @@ def _item(name1: str) -> dict:
     return found
 
 
+def _emoji_icon(value) -> str:
+    raw = str(value or "").strip()
+    return raw if raw.isdigit() else ""
+
+
 def _markup(name: str, message, **slots) -> InlineKeyboardMarkup:
     private = getattr(getattr(message, "chat", None), "type", "") == "private"
     rows = []
@@ -80,25 +87,25 @@ def _markup(name: str, message, **slots) -> InlineKeyboardMarkup:
         built = []
         for button in row:
             data = button["data"]
+            icon = button.get("emoji") or ""
             if data.startswith("web:"):
-                built.append(_open_button(button["text"], data[4:], private))
+                built.append(_open_button(button["text"], data[4:], private, button.get("style") or "primary", icon))
             else:
-                built.append(InlineKeyboardButton(
-                    text=button["text"][:64],
-                    callback_data=data[:64],
-                    style=button.get("style") or "default",
-                ))
+                built.append(_button(button["text"], data, button.get("style") or "default", icon))
         rows.append(built)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _open_button(text: str, startapp: str, private: bool, style: str = "primary") -> InlineKeyboardButton:
+def _open_button(text: str, startapp: str, private: bool, style: str = "primary", emoji: str = "") -> InlineKeyboardButton:
     fields = section_button_fields(text, startapp, private=private)
     fields.pop("style", None)
     web_app_url = fields.pop("web_app_url", None)
     if web_app_url:
         fields["web_app"] = WebAppInfo(url=web_app_url)
     fields["style"] = style or "primary"
+    icon = _emoji_icon(emoji)
+    if icon:
+        fields["icon_custom_emoji_id"] = icon
     return InlineKeyboardButton(**fields)
 
 
@@ -186,16 +193,136 @@ async def ensure() -> None:
     _ready = True
 
 
+def _from_design(screen_name: str, data: str) -> InlineKeyboardButton:
+    for row in button_rows(screen_name):
+        for button in row:
+            if button.get("data") == data:
+                return _button(
+                    button["text"],
+                    button["data"],
+                    button.get("style") or "default",
+                    button.get("emoji") or "",
+                )
+    return _button("Назад", data)
+
+
+def _need_rows(*, pistol_missing: bool, water_missing: bool) -> list:
+    rows = []
+    if pistol_missing:
+        rows.append([_from_design("splash_need", "wg:find:pistoletik")])
+    if water_missing:
+        rows.append([_from_design("splash_need", "wg:find:watercraft")])
+    rows.append([_from_design("splash_need", "wg:home")])
+    return rows
+
+
+def _public_group_name(raw: str) -> str:
+    text = str(raw or "").strip()
+    text = text.replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
+    text = text.split("/")[0].split("?")[0]
+    if not re.fullmatch(r"[A-Za-z0-9_]{4,}", text):
+        return ""
+    return text
+
+
+async def _group_button_rows() -> list:
+    """Кнопки-ссылки в официальные группы, у которых есть открытый адрес."""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT title, username
+            FROM epsilon_official_groups
+            WHERE is_official AND username <> ''
+            ORDER BY title
+            LIMIT 8
+            """
+        )
+    except Exception:
+        log.exception("water official groups")
+        return []
+    buttons = []
+    seen = set()
+    for row in rows:
+        username = _public_group_name(row["username"])
+        if not username or username.lower() in seen:
+            continue
+        seen.add(username.lower())
+        title = " ".join(str(row["title"] or username).split())[:32] or username
+        buttons.append([InlineKeyboardButton(text=title, url=f"https://t.me/{username}")])
+    return buttons
+
+
+async def _shield_sentence(user_id: int) -> str:
+    row = await _shield(user_id)
+    if not _still(row):
+        return "Защиты нет. Вас можно облить."
+    view = _kind_view(row["kind"])
+    if row["until"] is None:
+        left = "навсегда"
+    else:
+        left = "ещё " + _left_of(row["until"], datetime.now(timezone.utc))
+    return f"{view['emoji']} <b>{view['name']}</b> — вас не обливают {left}."
+
+
+async def _guide_view(user_id: int):
+    bag = await _inventory(user_id)
+    pistol_name = _item("pistoletik")["name"]
+    water_name = _item("watercraft")["name"]
+    pistol = _count(bag["items"], pistol_name)
+    water = _count(bag["items"], water_name)
+    text = guide_status(
+        pistol=pistol,
+        water=water,
+        shield_line=await _shield_sentence(user_id),
+    )
+    rows = []
+    if pistol < 1:
+        rows.append([_from_design("splash_need", "wg:find:pistoletik")])
+    if water < 1:
+        rows.append([_from_design("splash_need", "wg:find:watercraft")])
+    if pistol >= 1 and water >= 1:
+        rows.append([_from_design("home", "wg:splash")])
+    rows.append([_from_design("home", "wg:shield")])
+    rows.append([_from_design("home", "wg:rules")])
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def shield_profile_html(user_id: int) -> str:
+    """Строка профиля под флагом. Пустая, если защиты нет или таблицы ещё нет."""
+    try:
+        row = await _shield(user_id)
+    except Exception:
+        log.exception("water profile shield")
+        return ""
+    if not _still(row):
+        return ""
+    view = _kind_view(row["kind"])
+    forever = row["until"] is None
+    left = "" if forever else _left_of(row["until"], datetime.now(timezone.utc))
+    return shield_profile_line(
+        emoji=view["emoji"],
+        name=view["name"],
+        forever=forever,
+        left=left,
+        shoot=can_shoot(row["kind"]),
+    )
+
+
 async def open_guide(message) -> None:
     try:
         await ensure()
     except Exception:
         log.exception("water guide shelf")
+    try:
+        text, markup = await _guide_view(message.from_user.id)
+    except Exception:
+        log.exception("water guide kit")
+        text, markup = _home_text(), _markup("home", message)
     await message.reply(
-        _home_text(),
+        text,
         parse_mode="HTML",
         disable_web_page_preview=True,
-        reply_markup=_markup("home", message),
+        reply_markup=markup,
     )
 
 
@@ -295,7 +422,12 @@ def _still(row) -> bool:
     if not row:
         return False
     until = row["until"]
-    return until is None or until > datetime.now(timezone.utc)
+    if until is None:
+        return True
+    now = datetime.now(timezone.utc)
+    if getattr(until, "tzinfo", None) is None:
+        until = until.replace(tzinfo=timezone.utc)
+    return until > now
 
 
 async def _joke() -> str:
@@ -353,6 +485,36 @@ async def splash_from_item(message) -> None:
     """Выстрел предметом «Пистолетик». Вода тратится, пистолет остаётся."""
     await ensure()
     user_id = message.from_user.id
+    private = getattr(getattr(message, "chat", None), "type", "") == "private"
+    if private:
+        bag = await _inventory(user_id)
+        items = bag["items"]
+        pistol = _count(items, _item("pistoletik")["name"])
+        water = _count(items, _item("watercraft")["name"])
+        if pistol < 1 or water < 1:
+            missing = word("missing_pistol") if pistol < 1 else word("missing_water")
+            await message.reply(
+                screen_text("splash_need", missing=missing),
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
+                    pistol_missing=pistol < 1,
+                    water_missing=water < 1,
+                )),
+            )
+            return
+        groups = await _group_button_rows()
+        text = screen_text("shot_private")
+        if not groups:
+            text += "\n<i>Открытой ссылки на группу сейчас нет. Зайдите в группу проекта сами.</i>"
+        rows = groups + [[_button(BTN_BACK, "wg:home")]]
+        await message.reply(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
+        return
     reply = message.reply_to_message
     if reply is None or reply.from_user is None:
         await message.reply(screen_text("shot_reply"), parse_mode="HTML")
@@ -361,23 +523,20 @@ async def splash_from_item(message) -> None:
     if int(target_id) == int(user_id):
         await message.reply(screen_text("shot_self"), parse_mode="HTML")
         return
-    if getattr(message.chat, "type", "") == "private":
-        await message.reply(screen_text("shot_private"), parse_mode="HTML")
-        return
     bag = await _inventory(user_id)
     items = bag["items"]
     if _count(items, _item("pistoletik")["name"]) < 1:
         await message.reply(
             screen_text("splash_need", missing=word("missing_pistol")),
             parse_mode="HTML",
-            reply_markup=_markup("splash_need", message),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(pistol_missing=True, water_missing=False)),
         )
         return
     if _count(items, _item("watercraft")["name"]) < 1:
         await message.reply(
             screen_text("splash_need", missing=word("missing_water")),
             parse_mode="HTML",
-            reply_markup=_markup("splash_need", message),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(pistol_missing=False, water_missing=True)),
         )
         return
     own = await _shield(user_id)
@@ -427,7 +586,10 @@ async def splash_from_item(message) -> None:
     if enemy["balance"] < POOR_BALANCE:
         await _spend_water(user_id, items)
         await _log(user_id, target_id, message.chat.id, 0, "broke")
-        await message.reply(await _joke(), parse_mode="HTML", disable_web_page_preview=True)
+        await message.reply(
+            screen_text("shot_broke", poor=POOR_BALANCE),
+            parse_mode="HTML",
+        )
         return
 
     taken_today = int(await db.pool.fetchval(
@@ -509,8 +671,16 @@ def _kind_view(kind: str) -> dict:
     return {"name": word("shield_name"), "emoji": "💧", "hours": 0, "line": word("shield_name")}
 
 
-def _button(text: str, data: str, color: str = "default") -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text[:64], callback_data=data[:64], style=color)
+def _button(text: str, data: str, color: str = "default", emoji: str = "") -> InlineKeyboardButton:
+    fields = {
+        "text": (str(text or "")[:64] or " "),
+        "callback_data": str(data or "")[:64],
+        "style": color or "default",
+    }
+    icon = _emoji_icon(emoji)
+    if icon:
+        fields["icon_custom_emoji_id"] = icon
+    return InlineKeyboardButton(**fields)
 
 
 def _extend_keyboard(user_id: int, choices: list, *, back: str) -> InlineKeyboardMarkup:
@@ -648,7 +818,7 @@ async def _show_extend_list(call, user_id: int) -> None:
     if not choices:
         text = extend_empty_text(emoji=view["emoji"], name=view["name"], left=left)
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [_button(button["text"], button["data"], button.get("style") or "default") for button in row]
+            [_button(button["text"], button["data"], button.get("style") or "default", button.get("emoji") or "") for button in row]
             for row in find_button_rows()
         ] + [[_button(BTN_BACK, f"wg:worn:{user_id}")]])
     else:
@@ -856,8 +1026,9 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
     await call.answer(word("stacked"))
 
 
-async def _show(call, name: str, text: str, **slots) -> None:
-    markup = _markup(name, call.message, **slots)
+async def _show(call, name: str, text: str, markup=None, **slots) -> None:
+    if markup is None:
+        markup = _markup(name, call.message, **slots)
     try:
         await call.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
     except Exception:
@@ -870,7 +1041,12 @@ async def water_click(call):
     await ensure()
     data = call.data
     if data == "wg:home":
-        await _show(call, "home", _home_text())
+        try:
+            text, markup = await _guide_view(call.from_user.id)
+        except Exception:
+            log.exception("water guide kit")
+            text, markup = _home_text(), _markup("home", call.message)
+        await _show(call, "home", text, markup=markup)
         return
     if data == "wg:rules":
         await _show(call, "rules", _rules_text())
@@ -885,13 +1061,39 @@ async def water_click(call):
         if data == "wg:aim":
             if pistol < 1 or water < 1:
                 missing = word("missing_pistol") if pistol < 1 else word("missing_water")
-                await _show(call, "splash_need", screen_text("splash_need", missing=missing))
+                await _show(
+                    call,
+                    "splash_need",
+                    screen_text("splash_need", missing=missing),
+                    markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
+                        pistol_missing=pistol < 1,
+                        water_missing=water < 1,
+                    )),
+                )
                 return
-            await _show(call, "aim", screen_text("aim"))
+            text = screen_text("aim")
+            markup = _markup("aim", call.message)
+            private = getattr(getattr(call.message, "chat", None), "type", "") == "private"
+            if private:
+                groups = await _group_button_rows()
+                if groups:
+                    text += "\n\n<i>Кнопки ниже — официальные группы. Зайдите, ответьте на человека и откройте Пистолетик.</i>"
+                    markup = InlineKeyboardMarkup(inline_keyboard=list(markup.inline_keyboard) + groups)
+                else:
+                    text += "\n\n<i>Открытой ссылки на группу сейчас нет. Зайдите в группу проекта сами.</i>"
+            await _show(call, "aim", text, markup=markup)
             return
         if pistol < 1 or water < 1:
             missing = word("missing_pistol") if pistol < 1 else word("missing_water")
-            await _show(call, "splash_need", screen_text("splash_need", missing=missing))
+            await _show(
+                call,
+                "splash_need",
+                screen_text("splash_need", missing=missing),
+                markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
+                    pistol_missing=pistol < 1,
+                    water_missing=water < 1,
+                )),
+            )
             return
         await _show(call, "splash_ready", screen_text("splash_ready"))
         return

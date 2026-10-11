@@ -762,6 +762,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               myUserId={viewUserId}
               panelTabs={tabsForView}
               isProjectCreator={showCreator}
+              projectCreatorId={projectCreatorId}
               entry={staffEntry}
               onOpenPreview={openPreview}
               onOpenUser={(userId) => {

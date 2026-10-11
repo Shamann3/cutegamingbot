@@ -31124,6 +31124,12 @@ async def handle_back_to_menu(call: types.CallbackQuery):
         f"{country_emoji} <b>Повешен {country_text}</b> {country_emoji}\n"
         if country_emoji else ""
     )
+    shield_line = ""
+    try:
+        from bot.funcs.water_games import shield_profile_html
+        shield_line = await shield_profile_html(user_id)
+    except Exception:
+        shield_line = ""
 
     win_amount_formatted = "{:,.0f}".format(refferals or 0).replace(",", ".")
     referrals_line = f"{ref_emoji} <b>{referrals_text} : {win_amount_formatted}</b>" if (refferals or 0) > 0 else ""
@@ -31211,6 +31217,7 @@ async def handle_back_to_menu(call: types.CallbackQuery):
     caption_parts = [
         banned_line,
         nationality_line,
+        shield_line,
         f"{name_emoji} <b>{name_link}</b>",
         username_line,
         f"{id_emoji} <code>{user_id}</code>\n",

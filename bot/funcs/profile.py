@@ -1194,6 +1194,12 @@ async def _build_profile_caption_for_target(
         f"{_profile_escape(state['country_emoji'])}\n"
         if state["country_emoji"] else ""
     )
+    shield_line = ""
+    try:
+        from bot.funcs.water_games import shield_profile_html
+        shield_line = await shield_profile_html(user_id)
+    except Exception:
+        shield_line = ""
 
     try:
         name_link = _profile_name_link(user_id, first_name, username)
@@ -1290,6 +1296,7 @@ async def _build_profile_caption_for_target(
     caption_parts = [
         banned_line,
         nationality_line,
+        shield_line,
         f"{state['name_emoji']} <b>{name_link}</b>",
         username_line,
         f"{state['id_emoji']} <code>{user_id}</code>\n",

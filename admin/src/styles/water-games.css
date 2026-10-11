@@ -30,22 +30,31 @@
 
 .water-views {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 0.45rem;
 }
 
 .water-views button {
-  min-height: 44px;
+  min-height: 40px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: transparent;
   color: inherit;
-  text-align: left;
   padding: 0 1rem;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .water-views button.is-on {
-  border-color: rgba(255, 255, 255, 0.45);
+  border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.water-pane {
+  animation: water-in 320ms ease both;
+}
+
+.water-price.is-saved {
+  animation: water-saved 420ms ease;
 }
 
 .water-rank {
@@ -156,6 +165,11 @@
   to { opacity: 1; transform: none; }
 }
 
+@keyframes water-saved {
+  from { background: rgba(255, 255, 255, 0.08); }
+  to { background: transparent; }
+}
+
 @media (max-width: 800px) {
   .water-stats {
     grid-template-columns: 1fr;
@@ -166,8 +180,12 @@
   .water-stat,
   .water-person,
   .water-price,
+  .water-price.is-saved,
+  .water-pane,
   .water-rank li,
-  .water-recent li {
+  .water-recent li,
+  .water-views button {
     animation: none;
+    transition: none;
   }
 }

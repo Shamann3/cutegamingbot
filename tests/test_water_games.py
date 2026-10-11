@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from water_games.design import (
     BTN_EXTEND,
     EXTEND_FEE,
+    button_rows,
+    emoji_id,
     ITEMS,
     POOR_BALANCE,
     PRICES,
@@ -16,11 +18,13 @@ from water_games.design import (
     btn_join,
     can_shoot,
     kept_kind,
+    guide_status,
     hours_phrase,
     is_water_ask,
     joined_until,
     left_phrase,
     screen_text,
+    shield_profile_line,
     shields_in_bag,
     shop_can_take,
     stock_is_open,
@@ -29,6 +33,18 @@ from water_games.design import (
     towel_amount,
     wearing_text,
 )
+
+
+def test_pour_button_carries_premium_emoji():
+    home = button_rows("home")[0][0]
+    rules = button_rows("rules")[0][0]
+    assert home["text"] == "Облить"
+    assert rules["text"] == "Облить"
+    assert home["emoji"] == rules["emoji"] == "5354820836442287981"
+    assert emoji_id("5354820836442287981") == "5354820836442287981"
+    assert emoji_id("gun") == ""
+    assert button_rows("home")[1][0]["emoji"] == "5895483165182529286"
+    assert button_rows("home")[2][0]["emoji"] == ""
 
 
 def test_any_short_question_opens_water_games():
@@ -103,7 +119,7 @@ def test_umbrella_costs_sixty_and_is_not_a_limited_shelf():
     assert "Увеличить" in note
     assert "100" in note
     from water_games.design import choice_label, word
-    assert choice_label(emoji="☂️", name="Зонтик", count=2, plus="+3 часа") == "☂️ Зонтик · 2 шт · +3 часа"
+    assert choice_label(emoji="☂️", name="Зонтик", count=2, plus="+3 часа") == "☂️ Зонтик: 2 шт, +3 часа"
     assert "Ответьте" in screen_text("shot_reply")
     assert word("towel") == "Полотенце"
     assert "Вода при вас" in screen_text("shot_day")
@@ -123,6 +139,31 @@ def test_a_second_umbrella_adds_its_hours_to_the_time_left():
     assert bag[0]["count"] == 2
     left, ok = take_one_item({"Зонтик": 1}, "Зонтик")
     assert ok and "Зонтик" not in left
+
+
+def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
+    empty = guide_status(pistol=0, water=0, shield_line="Защиты нет. Вас можно облить.")
+    assert "нет. Кнопка ниже откроет покупку" in empty
+    assert "Можно нажимать" not in empty
+    ready = guide_status(pistol=1, water=2, shield_line="Защиты нет. Вас можно облить.")
+    assert "есть, 1 шт." in ready
+    assert "есть, 2 шт." in ready
+    assert "Можно нажимать" in ready
+    timed = shield_profile_line(emoji="☂️", name="Зонтик", forever=False, left="2 часа", shoot=True)
+    assert "Под защитой от ограблений" in timed
+    assert "ещё 2 часа" in timed
+    assert "Стрелять можно." in timed
+    forever = shield_profile_line(emoji="💎", name="Сухой сейф", forever=True, left="", shoot=False)
+    assert "навсегда" in forever
+    assert "ещё" not in forever
+    assert "Стрелять нельзя." in forever
+    private = screen_text("shot_private")
+    assert "Пистолетик и вода уже есть" in private
+    assert "по кнопке" in private
+    broke = screen_text("shot_broke", poor=POOR_BALANCE)
+    assert "Обливайте того, у кого кут больше." in broke
+    assert "<code>топ</code>" in broke
+    assert "Вода потрачена" in broke
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():
