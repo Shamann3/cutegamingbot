@@ -36,7 +36,6 @@ from bot.funcs.water_games_design import (
     kept_kind,
     extend_empty_text,
     extend_list_text,
-    guide_status,
     shield_profile_line,
     extend_pick_text,
     forever_worn_text,
@@ -252,39 +251,10 @@ async def _group_button_rows() -> list:
     return buttons
 
 
-async def _shield_sentence(user_id: int) -> str:
-    row = await _shield(user_id)
-    if not _still(row):
-        return "Защиты нет. Вас можно облить."
-    view = _kind_view(row["kind"])
-    if row["until"] is None:
-        left = "навсегда"
-    else:
-        left = "ещё " + _left_of(row["until"], datetime.now(timezone.utc))
-    return f"{view['emoji']} <b>{view['name']}</b> — вас не обливают {left}."
-
-
-async def _guide_view(user_id: int):
-    bag = await _inventory(user_id)
-    pistol_name = _item("pistoletik")["name"]
-    water_name = _item("watercraft")["name"]
-    pistol = _count(bag["items"], pistol_name)
-    water = _count(bag["items"], water_name)
-    text = guide_status(
-        pistol=pistol,
-        water=water,
-        shield_line=await _shield_sentence(user_id),
-    )
-    rows = []
-    if pistol < 1:
-        rows.append([_from_design("splash_need", "wg:find:pistoletik")])
-    if water < 1:
-        rows.append([_from_design("splash_need", "wg:find:watercraft")])
-    if pistol >= 1 and water >= 1:
-        rows.append([_from_design("home", "wg:splash")])
-    rows.append([_from_design("home", "wg:shield")])
-    rows.append([_from_design("home", "wg:rules")])
-    return text, InlineKeyboardMarkup(inline_keyboard=rows)
+async def _guide_view(user_id: int, message):
+    """Главный экран: короткая суть и кнопка «Выстрелить». Проверка предметов — уже на ней."""
+    del user_id
+    return screen_text("home"), _markup("home", message)
 
 
 async def shield_profile_html(user_id: int) -> str:
@@ -314,7 +284,7 @@ async def open_guide(message) -> None:
     except Exception:
         log.exception("water guide shelf")
     try:
-        text, markup = await _guide_view(message.from_user.id)
+        text, markup = await _guide_view(message.from_user.id, message)
     except Exception:
         log.exception("water guide kit")
         text, markup = _home_text(), _markup("home", message)
@@ -506,7 +476,7 @@ async def splash_from_item(message) -> None:
         groups = await _group_button_rows()
         text = screen_text("shot_private")
         if not groups:
-            text += "\n<i>Открытой ссылки на группу сейчас нет. Зайдите в группу проекта сами.</i>"
+            text += "\n<i>Ссылки на группу нет. Зайдите в группу сами.</i>"
         rows = groups + [[_button(BTN_BACK, "wg:home")]]
         await message.reply(
             text,
@@ -1042,7 +1012,7 @@ async def water_click(call):
     data = call.data
     if data == "wg:home":
         try:
-            text, markup = await _guide_view(call.from_user.id)
+            text, markup = await _guide_view(call.from_user.id, call.message)
         except Exception:
             log.exception("water guide kit")
             text, markup = _home_text(), _markup("home", call.message)
@@ -1077,10 +1047,10 @@ async def water_click(call):
             if private:
                 groups = await _group_button_rows()
                 if groups:
-                    text += "\n\n<i>Кнопки ниже — официальные группы. Зайдите, ответьте на человека и откройте Пистолетик.</i>"
+                    text += "\n<i>Группы — кнопками ниже.</i>"
                     markup = InlineKeyboardMarkup(inline_keyboard=list(markup.inline_keyboard) + groups)
                 else:
-                    text += "\n\n<i>Открытой ссылки на группу сейчас нет. Зайдите в группу проекта сами.</i>"
+                    text += "\n<i>Ссылки на группу нет. Зайдите в группу сами.</i>"
             await _show(call, "aim", text, markup=markup)
             return
         if pistol < 1 or water < 1:

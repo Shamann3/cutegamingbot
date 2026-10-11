@@ -38,9 +38,12 @@ from water_games.design import (
 def test_pour_button_carries_premium_emoji():
     home = button_rows("home")[0][0]
     rules = button_rows("rules")[0][0]
-    assert home["text"] == "Облить"
-    assert rules["text"] == "Облить"
-    assert home["emoji"] == rules["emoji"] == "5354820836442287981"
+    shoot = button_rows("splash_ready")[0][0]
+    assert home["text"] == "Выстрелить"
+    assert home["data"] == "wg:aim"
+    assert home["emoji"] == shoot["emoji"] == "5469785308386041323"
+    assert rules["text"] == "Выстрелить"
+    assert rules["emoji"] == "5469785308386041323"
     assert emoji_id("5354820836442287981") == "5354820836442287981"
     assert emoji_id("gun") == ""
     assert button_rows("home")[1][0]["emoji"] == "5895483165182529286"
@@ -149,6 +152,9 @@ def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
     assert "есть, 1 шт." in ready
     assert "есть, 2 шт." in ready
     assert "Можно нажимать" in ready
+    aim = screen_text("aim")
+    assert "Дальше только Пистолетик" in aim
+    assert "Использовать 🔫" in aim
     timed = shield_profile_line(emoji="☂️", name="Зонтик", forever=False, left="2 часа", shoot=True)
     assert "Под защитой от ограблений" in timed
     assert "ещё 2 часа" in timed
@@ -161,7 +167,7 @@ def test_guide_names_what_is_missing_and_profile_keeps_the_time_left():
     assert "Пистолетик и вода уже есть" in private
     assert "по кнопке" in private
     broke = screen_text("shot_broke", poor=POOR_BALANCE)
-    assert "Обливайте того, у кого кут больше." in broke
+    assert "Обливайте того, у кого кут больше" in broke
     assert "<code>топ</code>" in broke
     assert "Вода потрачена" in broke
 
