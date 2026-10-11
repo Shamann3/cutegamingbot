@@ -334,7 +334,7 @@ screen(
     <i>{missing} Кнопка ниже откроет покупку.</i>
     """,
     [
-        [b(text="🔫 Найти пистолетик", go="find-pistol", data="wg:find:pistoletik", color="primary")],
+        [b(text="🔫 Найти пистолетик", go="find-pistol", data="wg:find:pistoletik", color="success")],
         [b(text="💧 Найти воду", go="find-water", data="wg:find:watercraft", color="success")],
         [b(text="Назад", go="home", data="wg:home", color="default")],
     ],
@@ -369,6 +369,14 @@ screen(
     <i>Кнопка откроет {place}.</i>
     """,
     [],
+)
+
+screen(
+    "own_lot",
+    """
+    <b>{emoji} {name} уже на вашей бирже</b>
+    <i>Снимите лот — предмет вернётся, и можно идти дальше.</i>
+    """,
 )
 
 screen(

@@ -194,6 +194,11 @@ def test_a_water_purchase_advances_only_its_own_message():
     assert water_buy_kind(name1="stone", name="Камень") == ""
     assert public_group_name("https://t.me/CuteChat") == "CuteChat"
     assert public_group_name("не адрес") == ""
+    pistol_buy = button_rows("splash_need")[0][0]
+    water_buy = button_rows("splash_need")[1][0]
+    assert pistol_buy["text"] == "🔫 Найти пистолетик"
+    assert pistol_buy["style"] == water_buy["style"] == "success"
+    assert "Снимите лот" in screen_text("own_lot", emoji="🔫", name="Пистолетик")
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():

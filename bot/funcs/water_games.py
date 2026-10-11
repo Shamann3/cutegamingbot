@@ -34,6 +34,7 @@ from bot.funcs.water_games_design import (
     choice_label,
     find_button_rows,
     kept_kind,
+    after_buy_text,
     extend_empty_text,
     extend_list_text,
     shield_profile_line,
@@ -336,6 +337,57 @@ async def _inventory(user_id: int) -> dict:
     }
 
 
+async def _holds(user_id: int, name1: str, items: dict | None = None) -> bool:
+    """Предмет уже в инвентаре: по имени из dex и по числовому id."""
+    if items is None:
+        items = (await _inventory(user_id))["items"]
+    face = _face(name1)
+    names = [face["name"]] if face else []
+    if names and _count(items, *names) > 0:
+        return True
+    row = await _dex_row(name1)
+    return bool(row and _count(items, str(row["id"])) > 0)
+
+
+async def _own_lot(user_id: int, name1: str) -> bool:
+    row = await _dex_row(name1)
+    if not row:
+        return False
+    found = await db.pool.fetchrow(
+        """
+        SELECT id FROM market_listings
+        WHERE seller_id = $1 AND item_id = $2 AND status = 'active' AND quantity > 0
+        LIMIT 1
+        """,
+        int(user_id),
+        str(row["id"]),
+    )
+    return found is not None
+
+
+def _step_rows(step: str) -> list:
+    if step == "water":
+        return [[_from_design("splash_need", "wg:find:watercraft")]]
+    if step == "pistol":
+        return [[_from_design("splash_need", "wg:find:pistoletik")]]
+    if step == "shoot":
+        return [[_from_design("home", "wg:aim")]]
+    return []
+
+
+async def _advance_text(user_id: int, kind: str) -> tuple[str, str]:
+    item = _face(kind) or {}
+    pistol = await _holds(user_id, "pistoletik") or kind == "pistoletik"
+    water = await _holds(user_id, "watercraft") or kind == "watercraft"
+    return after_buy_text(
+        kind=kind,
+        emoji=item.get("emoji") or "💧",
+        name=item.get("name") or "Предмет",
+        pistol=pistol,
+        water=water,
+    )
+
+
 def _count(items: dict, *names: str) -> int:
     for name in names:
         if int(items.get(name, 0) or 0) > 0:
@@ -481,17 +533,17 @@ async def splash_from_item(message) -> None:
     if private:
         bag = await _inventory(user_id)
         items = bag["items"]
-        pistol = _count(items, _item("pistoletik")["name"])
-        water = _count(items, _item("watercraft")["name"])
-        if pistol < 1 or water < 1:
-            missing = word("missing_pistol") if pistol < 1 else word("missing_water")
+        pistol = await _holds(user_id, "pistoletik", items)
+        water = await _holds(user_id, "watercraft", items)
+        if not pistol or not water:
+            missing = word("missing_pistol") if not pistol else word("missing_water")
             await message.reply(
                 screen_text("splash_need", missing=missing),
                 parse_mode="HTML",
                 disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
-                    pistol_missing=pistol < 1,
-                    water_missing=water < 1,
+                    pistol_missing=not pistol,
+                    water_missing=not water,
                 )),
             )
             return
@@ -517,14 +569,14 @@ async def splash_from_item(message) -> None:
         return
     bag = await _inventory(user_id)
     items = bag["items"]
-    if _count(items, _item("pistoletik")["name"]) < 1:
+    if not await _holds(user_id, "pistoletik", items):
         await message.reply(
             screen_text("splash_need", missing=word("missing_pistol")),
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(pistol_missing=True, water_missing=False)),
         )
         return
-    if _count(items, _item("watercraft")["name"]) < 1:
+    if not await _holds(user_id, "watercraft", items):
         await message.reply(
             screen_text("splash_need", missing=word("missing_water")),
             parse_mode="HTML",
@@ -1044,22 +1096,43 @@ async def water_click(call):
         await _show(call, "rules", _rules_text())
         return
     if data == "wg:shield":
-        await _show(call, "shield", screen_text("shield", fee=EXTEND_FEE))
+        rows = []
+        for row in button_rows("shield"):
+            built = []
+            for button in row:
+                button_data = str(button.get("data") or "")
+                if button_data.startswith("wg:find:"):
+                    if await _holds(call.from_user.id, button_data.split(":", 2)[2]):
+                        continue
+                built.append(_button(
+                    button["text"],
+                    button_data,
+                    button.get("style") or "default",
+                    button.get("emoji") or "",
+                ))
+            if built:
+                rows.append(built)
+        await _show(
+            call,
+            "shield",
+            screen_text("shield", fee=EXTEND_FEE),
+            markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
         return
     if data in {"wg:splash", "wg:aim"}:
         bag = await _inventory(call.from_user.id)
-        pistol = _count(bag["items"], _item("pistoletik")["name"])
-        water = _count(bag["items"], _item("watercraft")["name"])
+        pistol = await _holds(call.from_user.id, "pistoletik", bag["items"])
+        water = await _holds(call.from_user.id, "watercraft", bag["items"])
         if data == "wg:aim":
-            if pistol < 1 or water < 1:
-                missing = word("missing_pistol") if pistol < 1 else word("missing_water")
+            if not pistol or not water:
+                missing = word("missing_pistol") if not pistol else word("missing_water")
                 await _show(
                     call,
                     "splash_need",
                     screen_text("splash_need", missing=missing),
                     markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
-                        pistol_missing=pistol < 1,
-                        water_missing=water < 1,
+                        pistol_missing=not pistol,
+                        water_missing=not water,
                     )),
                 )
                 return
@@ -1075,15 +1148,15 @@ async def water_click(call):
                     text += "\n<i>Ссылки на группу нет. Зайдите в группу сами.</i>"
             await _show(call, "aim", text, markup=markup)
             return
-        if pistol < 1 or water < 1:
-            missing = word("missing_pistol") if pistol < 1 else word("missing_water")
+        if not pistol or not water:
+            missing = word("missing_pistol") if not pistol else word("missing_water")
             await _show(
                 call,
                 "splash_need",
                 screen_text("splash_need", missing=missing),
                 markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
-                    pistol_missing=pistol < 1,
-                    water_missing=water < 1,
+                    pistol_missing=not pistol,
+                    water_missing=not water,
                 )),
             )
             return
@@ -1113,6 +1186,36 @@ async def water_click(call):
         item = _face(key)
         if item is None:
             await call.answer(word("no_such_item"), show_alert=True)
+            return
+        if await _holds(call.from_user.id, key):
+            text, step = await _advance_text(call.from_user.id, key)
+            rows = _step_rows(step)
+            private = getattr(getattr(call.message, "chat", None), "type", "") == "private"
+            if step == "shoot" and private:
+                groups = await _group_button_rows()
+                rows = groups
+                if not groups:
+                    text += "\n<i>Ссылки на группу нет.</i>"
+            await _show(
+                call,
+                "bought",
+                text,
+                markup=InlineKeyboardMarkup(inline_keyboard=rows),
+            )
+            return
+        if await _own_lot(call.from_user.id, key):
+            text = screen_text("own_lot", emoji=item["emoji"], name=item["name"])
+            markup = InlineKeyboardMarkup(inline_keyboard=[[_from_design("splash_need", "wg:home")]])
+            shown = call.message
+            try:
+                await call.message.edit_text(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
+            except Exception:
+                shown = await call.message.answer(text, parse_mode="HTML", disable_web_page_preview=True, reply_markup=markup)
+            try:
+                await _remember_buy(call.from_user.id, shown.chat.id, shown.message_id, key)
+            except Exception:
+                log.exception("water buy prompt")
+            await call.answer()
             return
         offer = await _offer(key)
         if not offer:

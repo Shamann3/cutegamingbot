@@ -1064,7 +1064,7 @@ async def market_buy(request: Request, body: MarketBuyAction, user_id: int = Dep
 @app.post("/api/market/cancel")
 async def market_cancel(request: Request, body: MarketCancelAction, user_id: int = Depends(rate_limit)):
     try:
-        return await db.cancel_market_listing(
+        result = await db.cancel_market_listing(
             user_id,
             body.listingId,
             category_id=body.category,
@@ -1079,6 +1079,16 @@ async def market_cancel(request: Request, body: MarketCancelAction, user_id: int
         raise _client_error(e)
     except Exception as e:
         raise _server_error(e, request)
+    item_id = ""
+    try:
+        item_id = await db.pool.fetchval(
+            "SELECT item_id FROM market_listings WHERE id = $1",
+            int(body.listingId),
+        )
+    except Exception:
+        item_id = ""
+    await _quiet_water_nudge(user_id, item_id)
+    return result
 
 
 @app.get("/api/me")
