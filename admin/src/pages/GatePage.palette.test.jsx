@@ -111,6 +111,7 @@ describe('Палитра в меню выбора панели', () => {
         groupCanEnter: true,
       })
       await statusFlight.current
+      await vi.advanceTimersByTimeAsync(700)
     })
 
     expect(g.onStaffEnter).toHaveBeenCalledWith(expect.objectContaining({ isProjectCreator: true }))
@@ -118,6 +119,9 @@ describe('Палитра в меню выбора панели', () => {
     expect(g.container.textContent).not.toContain('Дальше нужен ключ')
 
     tap(g.groupDoor())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700)
+    })
     expect(g.onGroupEnter).toHaveBeenCalledWith(expect.objectContaining({ isProjectCreator: true }))
   })
 

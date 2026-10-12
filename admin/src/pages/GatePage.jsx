@@ -8,6 +8,7 @@ import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { usePerfMode } from '../lib/perfMode'
 import { playMeme } from '../lib/memeSounds'
+import { gateFlowMs } from './sections/GroupEnter'
 import AcceptedPass from '../components/AcceptedPass'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
@@ -20,11 +21,11 @@ function detectStillGate() {
   return (navigator.hardwareConcurrency || 4) <= 2
 }
 
-function Door({ title, detail, mark, open, onClick, order = 0, busy = false }) {
+function Door({ title, detail, mark, open, onClick, order = 0, busy = false, chosen = false }) {
   return (
     <button
       type="button"
-      className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}`}
+      className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}${chosen ? ' is-chosen' : ''}`}
       style={{ '--rise': order }}
       onClick={onClick}
       disabled={busy}
@@ -54,6 +55,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const watched = useRef({ staff: false, group: false })
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [flow, setFlow] = useState('')
   const [still] = useState(detectStillGate)
   const { lightMode, setLightMode } = usePerfMode()
   const sparse = lightMode && !still
@@ -148,6 +150,13 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             ? 'Должность уже есть. Сначала отправьте заявку — ключ придёт в бота.'
             : <>Для администратора группы. Нажмите — заявка. Ключ придёт в бота <CuteBrand />.</>
 
+  const sail = async (kind) => {
+    const ms = gateFlowMs()
+    if (!ms) return
+    setFlow(kind)
+    await new Promise((resolve) => window.setTimeout(resolve, ms))
+  }
+
   const pressStaff = async () => {
     if (busy) return
     setNote('')
@@ -174,6 +183,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         return
       }
       try {
+        await sail('staff')
         await onStaffEnter(face)
       } catch (err) {
         setNote(err?.message || 'Панель не открылась. Нажмите ещё раз.')
@@ -201,6 +211,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         }
       }
       if (face?.isProjectCreator) {
+        await sail('group')
         onGroupEnter(face)
         return
       }
@@ -212,6 +223,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         onGroupApply()
         return
       }
+      await sail('group')
       onGroupEnter(face)
     } finally {
       setBusy(false)
@@ -219,7 +231,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   }
 
   return (
-    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
+    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}${flow ? ' is-flow' : ''}`}>
       <MatrixRain
         className="gate-matrix"
         paused={still}
@@ -287,6 +299,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               open={staffKnown || Boolean(error)}
               onClick={error ? onStaffEnter : pressStaff}
               busy={busy}
+              chosen={flow === 'staff'}
               order={4}
             />
             <Door
@@ -296,6 +309,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               open
               onClick={pressGroup}
               busy={busy}
+              chosen={flow === 'group'}
               order={5}
             />
           </div>

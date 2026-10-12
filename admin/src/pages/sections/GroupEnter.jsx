@@ -16,8 +16,9 @@ export function prefersReducedMotion() {
 }
 
 /** После выбора группы: список собирается, затем печать, затем кабинет. */
-export const ENTRANCE_LEAVE_MS = 700
-export const ENTRANCE_SEAL_MS = 1040
+export const ENTRANCE_LEAVE_MS = 860
+export const ENTRANCE_SEAL_MS = 1240
+export const GATE_FLOW_MS = 640
 
 export function entrancePace() {
   if (prefersReducedMotion()) return { leave: 0, seal: 0 }
@@ -25,6 +26,12 @@ export function entrancePace() {
     return { leave: 360, seal: 520 }
   }
   return { leave: ENTRANCE_LEAVE_MS, seal: ENTRANCE_SEAL_MS }
+}
+
+export function gateFlowMs() {
+  if (prefersReducedMotion()) return 0
+  if (typeof document !== 'undefined' && document.body.classList.contains('perf-light')) return 0
+  return GATE_FLOW_MS
 }
 
 export function GroupSeal({ title, position, onEnter }) {

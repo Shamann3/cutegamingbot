@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import PersonPunish from '../../components/PersonPunish'
+import AdminPulse from './AdminPulse'
 import {
   actChatAdmin,
   adviseChatApplication,
@@ -219,6 +220,7 @@ export default function ChatAdmins({
 
       {tab === 'people' && (
         <div className="chat-admins-pane">
+          <AdminPulse chatId={chatId} onOpenUser={onOpenUser} />
           <h2 className="realm-h">Администраторы группы</h2>
           <p className="realm-copy">
             Здесь только администраторы с должностью в этой группе. Сотрудники проекта не показаны.

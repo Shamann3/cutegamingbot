@@ -160,12 +160,33 @@ body.perf-light .gate-matrix {
   to   { opacity: 0; transform: translate3d(120%, 0, 0); }
 }
 
+.gate-root.is-flow .gate-head,
+.gate-root.is-flow .gate-palette-slot,
+.gate-root.is-flow .gate-recover,
+.gate-root.is-flow .gate-door:not(.is-chosen) {
+  animation: gate-flow-away 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.gate-root.is-flow .gate-door.is-chosen {
+  animation: gate-flow-forward 0.64s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes gate-flow-away {
+  to { opacity: 0; transform: translate3d(0, -16px, 0); }
+}
+
+@keyframes gate-flow-forward {
+  to { opacity: 1; transform: translate3d(0, -6px, 0) scale(1.02); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gate-matrix,
   .gate-veil,
   .gate-anim .gate-rise,
   .gate-palette-pop,
-  .gate-door-sheen {
+  .gate-door-sheen,
+  .gate-root.is-flow .gate-head,
+  .gate-root.is-flow .gate-door {
     animation: none !important;
   }
 
@@ -587,22 +608,22 @@ body.perf-light .gate-matrix {
 }
 
 .grp-door.is-leaving .grp-door-glow {
-  animation: grp-glow-settle 0.62s ease both;
+  animation: grp-glow-settle 0.78s ease both;
 }
 
 .grp-door.is-leaving .grp-enter-kicker,
 .grp-door.is-leaving .grp-enter-card h1,
 .grp-door.is-leaving .grp-enter-card > p {
-  animation: grp-copy-away 0.38s cubic-bezier(0.4, 0, 1, 1) both;
+  animation: grp-copy-away 0.48s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 .grp-door.is-leaving li:not(.is-chosen) {
-  animation: grp-row-away 0.48s cubic-bezier(0.4, 0, 1, 1) both;
+  animation: grp-row-away 0.62s cubic-bezier(0.4, 0, 1, 1) both;
   pointer-events: none;
 }
 
 .grp-door.is-leaving li.is-chosen {
-  animation: grp-row-hold 0.64s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-row-hold 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
   z-index: 1;
 }
 
@@ -643,11 +664,11 @@ body.perf-light .gate-matrix {
 
 .grp-door.grp-seal {
   position: relative;
-  animation: grp-door-open 0.96s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-door-open 1.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-kicker {
-  animation: grp-enter-in 0.42s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-enter-in 0.48s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal strong {
@@ -655,7 +676,7 @@ body.perf-light .gate-matrix {
   font-weight: 560;
   letter-spacing: -0.045em;
   line-height: 1.05;
-  animation: grp-seal-title 0.72s 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-seal-title 0.84s 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-line {
@@ -663,7 +684,7 @@ body.perf-light .gate-matrix {
   height: 1px;
   background: rgba(255, 255, 255, 0.45);
   transform-origin: center;
-  animation: grp-seal-line 0.58s 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-seal-line 0.62s 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .grp-seal-role {
@@ -671,13 +692,13 @@ body.perf-light .gate-matrix {
   color: rgba(255, 255, 255, 0.7);
   font-size: 14px;
   letter-spacing: 0.04em;
-  animation: grp-enter-in 0.46s 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-enter-in 0.5s 0.66s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-go {
   color: rgba(255, 255, 255, 0.62);
   font-size: 14px;
-  animation: grp-enter-in 0.46s 0.64s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-enter-in 0.5s 0.82s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .grp-seal-track {
@@ -695,15 +716,17 @@ body.perf-light .gate-matrix {
   height: 100%;
   background: rgba(255, 255, 255, 0.78);
   transform-origin: left center;
-  animation: grp-track-fill 0.98s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-track-fill 1.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.panel-shell.is-arriving .panel-shell-main {
-  animation: cabinet-arrive 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+.panel-shell.is-arriving .panel-shell-main,
+.panel-shell.is-fresh .panel-shell-main {
+  animation: cabinet-arrive 0.98s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.panel-shell.is-arriving .phone-dock {
-  animation: cabinet-dock-in 0.56s 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+.panel-shell.is-arriving .phone-dock,
+.panel-shell.is-fresh .phone-dock {
+  animation: cabinet-dock-in 0.62s 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes grp-enter-in {
@@ -806,7 +829,9 @@ body.perf-light .gate-matrix {
   .grp-seal-go,
   .grp-seal-track i,
   .panel-shell.is-arriving .panel-shell-main,
-  .panel-shell.is-arriving .phone-dock {
+  .panel-shell.is-arriving .phone-dock,
+  .panel-shell.is-fresh .panel-shell-main,
+  .panel-shell.is-fresh .phone-dock {
     animation: none;
   }
 }
@@ -881,7 +906,9 @@ html[data-viewport="phone"] .grp-door .grp-enter-card ul {
 }
 
 html.is-phone .panel-shell.is-arriving .panel-shell-main,
-html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main {
+html.is-phone .panel-shell.is-fresh .panel-shell-main,
+html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main,
+html[data-viewport="phone"] .panel-shell.is-fresh .panel-shell-main {
   animation-name: cabinet-arrive-phone;
   transform-origin: center top;
 }
@@ -913,14 +940,20 @@ body.perf-light .grp-seal-line,
 body.perf-light .grp-seal-role,
 body.perf-light .grp-seal-go,
 body.perf-light .panel-shell.is-arriving .panel-shell-main,
-body.perf-light .panel-shell.is-arriving .phone-dock {
+body.perf-light .panel-shell.is-arriving .phone-dock,
+body.perf-light .panel-shell.is-fresh .panel-shell-main,
+body.perf-light .panel-shell.is-fresh .phone-dock,
+body.perf-light .adm-pulse-hero,
+body.perf-light .adm-pulse-list li {
   animation-duration: 0.32s;
   animation-delay: 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   html.is-phone .panel-shell.is-arriving .panel-shell-main,
+  html.is-phone .panel-shell.is-fresh .panel-shell-main,
   html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main,
+  html[data-viewport="phone"] .panel-shell.is-fresh .panel-shell-main,
   .grp-seal-kicker,
   .grp-seal-role,
   .grp-seal-track i,

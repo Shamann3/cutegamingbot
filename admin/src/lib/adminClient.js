@@ -2618,6 +2618,13 @@ export async function fetchChatAdmins(chatId) {
   return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}`)
 }
 
+export async function fetchAdminPulse(chatId, { period = 'month', start = '', end = '' } = {}) {
+  const query = new URLSearchParams({ period })
+  if (start) query.set('start', start)
+  if (end) query.set('end', end)
+  return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}/pulse?${query}`)
+}
+
 export async function actChatAdmin(chatId, userId, action) {
   return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}`, {
     method: 'POST',

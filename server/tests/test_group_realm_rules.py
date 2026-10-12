@@ -166,6 +166,46 @@ def test_staff_post_key_stays_on_the_same_title():
     assert role_key("А") != role_key("Б")
 
 
+def test_admin_pulse_window_and_rank():
+    from datetime import date
+
+    from group_realm import admin_pulse_window, rank_admin_pulse
+
+    today = date(2026, 10, 12)
+    assert admin_pulse_window("day", today) == ("day", today, today)
+    assert admin_pulse_window("week", today)[1:] == (date(2026, 10, 6), today)
+    assert admin_pulse_window("year", today)[1] == date(2026, 1, 1)
+    assert admin_pulse_window("all", today) == ("all", None, None)
+    assert admin_pulse_window("custom", today, date(2026, 1, 2), date(2026, 1, 5))[1:] == (
+        date(2026, 1, 2),
+        date(2026, 1, 5),
+    )
+    try:
+        admin_pulse_window("custom", today, date(2026, 2, 1), date(2026, 1, 1))
+        raise AssertionError("reversed dates")
+    except ValueError:
+        pass
+    ranked = rank_admin_pulse([
+        {"userId": 1, "name": "Ann", "messages": 2},
+        {"userId": 2, "name": "Bob", "messages": 9},
+        {"userId": 3, "name": "Cia", "messages": 0},
+    ])
+    assert ranked["busiest"]["userId"] == 2
+    assert ranked["quietest"]["userId"] == 3
+    assert ranked["total"] == 11
+    assert [row["userId"] for row in ranked["people"]] == [2, 1, 3]
+    flat = rank_admin_pulse([
+        {"userId": 1, "name": "Ann", "messages": 4},
+        {"userId": 2, "name": "Bob", "messages": 4},
+    ])
+    assert flat["busiest"]["userId"] == 1
+    assert flat["quietest"] is None
+    silent = rank_admin_pulse([{"userId": 1, "name": "Ann", "messages": 0}])
+    assert silent["busiest"] is None
+    assert silent["quietest"] is None
+    assert silent["total"] == 0
+
+
 def test_chat_admin_list_hides_staff_and_strips_strangers():
     from group_realm import classify_chat_admin, _member_can_punish, _member_still_admin
 

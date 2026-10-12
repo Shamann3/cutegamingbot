@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatAdmins from './ChatAdmins'
-import { actChatAdmin, adviseChatApplication, fetchChatAdmins, fetchChatApplications, fetchPersonHistory } from '../../lib/adminClient'
+import { actChatAdmin, adviseChatApplication, fetchAdminPulse, fetchChatAdmins, fetchChatApplications, fetchPersonHistory } from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', () => ({
   fetchChatAdmins: vi.fn(),
+  fetchAdminPulse: vi.fn(),
   actChatAdmin: vi.fn(),
   fetchChatApplications: vi.fn(),
   adviseChatApplication: vi.fn(),
@@ -46,6 +47,17 @@ const BOARD = {
 
 describe('chat admins', () => {
   afterEach(() => cleanup())
+
+  beforeEach(() => {
+    vi.mocked(fetchAdminPulse).mockResolvedValue({
+      available: true,
+      period: 'month',
+      total: 0,
+      people: [],
+      busiest: null,
+      quietest: null,
+    })
+  })
 
   it('lists the group admins and asks before removing one', async () => {
     vi.mocked(fetchChatAdmins).mockResolvedValue(BOARD)

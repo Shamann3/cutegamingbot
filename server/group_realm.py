@@ -367,6 +367,42 @@ def seat_sees(groups: list[dict], page: str) -> bool:
     return False
 
 
+_PULSE_PERIODS = {"day", "week", "month", "year", "all", "custom"}
+_PULSE_MAX_DAYS = 800
+
+
+def admin_pulse_window(period: str, today, start=None, end=None):
+    """Срок сводки администраторов: готовый отрезок, всё время или свои даты."""
+    name = period if period in _PULSE_PERIODS else "month"
+    if name == "all":
+        return name, None, None
+    if name == "custom":
+        if start is None or end is None or end < start:
+            raise ValueError("order")
+        if (end - start).days > _PULSE_MAX_DAYS:
+            raise ValueError("span")
+        return name, start, end
+    begin, finish, _grain = activity_window(name, today)
+    return name, begin, finish
+
+
+def rank_admin_pulse(people: list) -> dict:
+    """Кто писал больше и кто меньше. Ровная активность не назначает «тихого»."""
+    ordered = sorted(
+        list(people or []),
+        key=lambda row: (-int(row.get("messages") or 0), str(row.get("name") or "").casefold()),
+    )
+    total = sum(int(row.get("messages") or 0) for row in ordered)
+    busiest = None
+    quietest = None
+    if ordered and total > 0:
+        busiest = ordered[0]
+        tail = ordered[-1]
+        if int(tail.get("messages") or 0) < int(busiest.get("messages") or 0):
+            quietest = tail
+    return {"people": ordered, "total": total, "busiest": busiest, "quietest": quietest}
+
+
 def activity_window(period: str, today):
     """Начало, конец и шаг графика: день, неделя, календарный месяц или год."""
     from datetime import timedelta
@@ -3334,6 +3370,137 @@ async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> di
         "selfId": int(actor_id),
         "error": explain_demote_fault(error) if error else "",
     }
+
+
+def _pulse_person_name(row) -> str:
+    display = " ".join(str(row["display_name"] or "").split())
+    if display:
+        return display
+    first = " ".join(str(row["first_name"] or "").split())
+    if first:
+        return first
+    username = str(row["username"] or "").strip().lstrip("@")
+    if username:
+        return f"@{username}"
+    return f"ID {row['user_id']}"
+
+
+async def load_admin_pulse(chat_id: int, period: str, begin, finish, today) -> dict:
+    """Сообщения администраторов этой группы за срок. Сбой базы не подменяет нули."""
+    try:
+        seats = await db.pool.fetch(
+            """
+            SELECT s.user_id, p.title AS position,
+                   u.username, u.display_name, u.first_name
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            LEFT JOIN users u ON u.user_id = s.user_id
+            WHERE s.chat_id = $1
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+            """,
+            int(chat_id),
+        )
+    except Exception:
+        _log.exception("сводка администраторов %s", chat_id)
+        return {"available": False, "period": period, "people": None, "total": None}
+    ids = [int(row["user_id"]) for row in seats]
+    staff = await _project_staff_ids(ids)
+    held = [row for row in seats if int(row["user_id"]) not in staff]
+    counts: dict[int, int] = {}
+    lasts: dict[int, object] = {}
+    if held:
+        try:
+            if begin is None or finish is None:
+                rows = await db.pool.fetch(
+                    """
+                    SELECT user_id, COALESCE(SUM(text), 0)::bigint AS n, MAX(date) AS last_day
+                    FROM chatchange
+                    WHERE chat_id = $1 AND user_id = ANY($2::bigint[]) AND text IS NOT NULL
+                    GROUP BY user_id
+                    """,
+                    int(chat_id),
+                    [int(row["user_id"]) for row in held],
+                )
+            else:
+                rows = await db.pool.fetch(
+                    """
+                    SELECT user_id, COALESCE(SUM(text), 0)::bigint AS n, MAX(date) AS last_day
+                    FROM chatchange
+                    WHERE chat_id = $1 AND user_id = ANY($2::bigint[])
+                      AND text IS NOT NULL AND date >= $3 AND date <= $4
+                    GROUP BY user_id
+                    """,
+                    int(chat_id),
+                    [int(row["user_id"]) for row in held],
+                    begin,
+                    finish,
+                )
+        except Exception:
+            _log.exception("сообщения администраторов %s", chat_id)
+            return {"available": False, "period": period, "people": None, "total": None}
+        for row in rows:
+            counts[int(row["user_id"])] = int(row["n"] or 0)
+            lasts[int(row["user_id"])] = row["last_day"]
+    draft = []
+    for row in held:
+        uid = int(row["user_id"])
+        draft.append({
+            "userId": uid,
+            "name": _pulse_person_name(row),
+            "username": str(row["username"] or "").strip().lstrip("@"),
+            "position": str(row["position"] or ""),
+            "messages": counts.get(uid, 0),
+            "last": activity_last_label(lasts.get(uid), today) if uid in lasts else "ещё не было",
+        })
+    ranked = rank_admin_pulse(draft)
+    total = int(ranked["total"])
+    people = []
+    for row in ranked["people"]:
+        messages = int(row["messages"])
+        people.append({
+            **row,
+            "share": round(100 * messages / total) if total else 0,
+        })
+    def card(row):
+        if not row:
+            return None
+        return next((item for item in people if item["userId"] == row["userId"]), None)
+    return {
+        "available": True,
+        "period": period,
+        "from": begin.isoformat() if begin else None,
+        "to": finish.isoformat() if finish else None,
+        "total": total,
+        "people": people,
+        "busiest": card(ranked["busiest"]),
+        "quietest": card(ranked["quietest"]),
+    }
+
+
+@router.get("/chat-admins/{chat_id}/pulse")
+async def group_chat_admin_pulse(
+    chat_id: int,
+    period: str = "month",
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    if not await _can_manage_chat_admins(user_id, chat_id):
+        raise HTTPException(status_code=403, detail="Сводка администраторов этой группы вам не открыта")
+    from datetime import date as date_cls
+
+    today = datetime.now(timezone(timedelta(hours=3))).date()
+    try:
+        begin = date_cls.fromisoformat(start[:10]) if start else None
+        finish = date_cls.fromisoformat(end[:10]) if end else None
+        name, window_start, window_end = admin_pulse_window(period, today, begin, finish)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Укажите даты от начала к концу, не длиннее 800 дней",
+        )
+    await ensure_tables()
+    return await load_admin_pulse(int(chat_id), name, window_start, window_end, today)
 
 
 @router.get("/chat-admins/{chat_id}")

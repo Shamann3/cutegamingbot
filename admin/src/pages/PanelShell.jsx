@@ -85,6 +85,7 @@ import {
 import PhoneDock from '../components/PhoneDock'
 import AccentPalette from '../components/AccentPalette'
 import ExtrasHub, { PanelPocketTools } from '../components/ExtrasHub'
+import { prefersReducedMotion } from './sections/GroupEnter'
 
 export default function PanelShell({ onLogout, onChangeDoor }) {
   const { lightMode, setLightMode } = usePerfMode()
@@ -92,6 +93,13 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const viewport = useViewportMode()
   const phone = useIsPhone()
   const [accent, setAccent] = useState(() => loadStoredAccent())
+  const [fresh, setFresh] = useState(() => !prefersReducedMotion())
+
+  useEffect(() => {
+    if (!fresh) return undefined
+    const timer = window.setTimeout(() => setFresh(false), 980)
+    return () => window.clearTimeout(timer)
+  }, [fresh])
 
   useEffect(() => {
     applyAccentToDocument(accent)
@@ -486,7 +494,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     <>
     <PanelBackgroundMusic volume={musicVolume} />
     <MetricSheetProvider>
-    <div className={`panel-shell panel-shell-${viewport}`} data-viewport={viewport}>
+    <div className={`panel-shell panel-shell-${viewport}${fresh ? ' is-fresh' : ''}`} data-viewport={viewport}>
       <AccentAura />
       {coach && (
         <FirstRun
