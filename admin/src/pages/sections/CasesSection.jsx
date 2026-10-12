@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchCaseBoard, saveCaseRules } from '../../lib/adminClient'
+import { fetchCaseBoard, saveCasePrice, saveCaseRules, saveCaseStock } from '../../lib/adminClient'
 import '../../styles/cases.css'
 
 function money(value) {
@@ -138,6 +138,74 @@ function CaseCard({ card, onSave }) {
   )
 }
 
+function ShelfCard({ item, delay = '0ms', onPrice, onStock }) {
+  const [price, setPrice] = useState(String(item.price ?? 0))
+  const [stock, setStock] = useState(String(item.remains ?? 0))
+  const [busy, setBusy] = useState('')
+  const [saved, setSaved] = useState('')
+  const [error, setError] = useState('')
+  const priceSame = price !== '' && Number(price) === Number(item.price)
+  const stockSame = stock !== '' && Number(stock) === Number(item.remains)
+
+  useEffect(() => {
+    setPrice(String(item.price ?? 0))
+    setStock(String(item.remains ?? 0))
+  }, [item.price, item.remains])
+
+  const run = async (kind) => {
+    setBusy(kind)
+    setError('')
+    setSaved('')
+    try {
+      if (kind === 'price') await onPrice(Number(price))
+      else await onStock(Number(stock))
+      setSaved(kind)
+    } catch (err) {
+      setError(err?.message || 'Не сохранилось')
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <article className={`case-shelf${saved ? ' is-saved' : ''}${item.missing ? ' is-missing' : ''}`} style={{ animationDelay: delay }}>
+      <header>
+        <h3>{item.emoji} {item.name}</h3>
+        <p>{item.missing ? 'В магазине ещё нет' : `Сейчас ${Number(item.remains) > 0 ? `${money(item.remains)} шт.` : 'нет в продаже'}`}</p>
+      </header>
+      <label>
+        Количество, шт.
+        <input
+          inputMode="numeric"
+          aria-label={`Количество ${item.name}`}
+          value={stock}
+          disabled={item.missing}
+          onChange={(event) => { setStock(digits(event.target.value)); setSaved('') }}
+        />
+      </label>
+      <label>
+        Цена, кут
+        <input
+          inputMode="numeric"
+          aria-label={`Цена ${item.name}`}
+          value={price}
+          disabled={item.missing}
+          onChange={(event) => { setPrice(digits(event.target.value)); setSaved('') }}
+        />
+      </label>
+      {error && <p className="case-fault">{error}</p>}
+      <div className="case-actions">
+        <button type="button" disabled={item.missing || busy === 'stock' || stock === '' || stockSame} onClick={() => run('stock')}>
+          {busy === 'stock' ? 'Пишем…' : saved === 'stock' ? 'Количество записано' : 'Количество'}
+        </button>
+        <button type="button" disabled={item.missing || busy === 'price' || price === '' || priceSame} onClick={() => run('price')}>
+          {busy === 'price' ? 'Пишем…' : saved === 'price' ? 'Цена записана' : 'Цена'}
+        </button>
+      </div>
+    </article>
+  )
+}
+
 export default function CasesSection() {
   const [board, setBoard] = useState(null)
   const [error, setError] = useState('')
@@ -154,10 +222,36 @@ export default function CasesSection() {
     <section className="case-desk">
       <header className="case-head">
         <h2>Кейсы</h2>
-        <p>Потолок игрок видит как приз. Чаще выпадает меньшая сумма. Комиссии нет: открытие отдаёт ровно выпавшее число.</p>
+        <p>Цена и количество — в магазине. Ниже — потолок, который игрок может выиграть. Комиссии нет: открытие отдаёт ровно выпавшее число.</p>
       </header>
       {error && <p className="case-fault">{error}</p>}
       {!board && !error && <p>Считаем кейсы…</p>}
+      {board && (
+        <div className="case-grid case-shop">
+          {(board.items || []).map((item, index) => (
+            <div key={item.name1 || item.name}>
+              <ShelfCard
+                item={item}
+                delay={`${index * 60}ms`}
+                onPrice={async (price) => {
+                  const saved = await saveCasePrice({ id: Number(item.id), price })
+                  setBoard((prev) => ({
+                    ...prev,
+                    items: (prev?.items || []).map((row) => (row.id === saved.id ? { ...row, price: saved.price } : row)),
+                  }))
+                }}
+                onStock={async (remains) => {
+                  const saved = await saveCaseStock({ id: Number(item.id), remains })
+                  setBoard((prev) => ({
+                    ...prev,
+                    items: (prev?.items || []).map((row) => (row.id === saved.id ? { ...row, remains: saved.remains } : row)),
+                  }))
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
       <div className="case-grid">
         {(board?.cases || []).map((card, index) => (
           <div key={card.id} style={{ animationDelay: `${index * 70}ms` }}>
@@ -166,6 +260,7 @@ export default function CasesSection() {
               onSave={async (body) => {
                 const saved = await saveCaseRules(body)
                 setBoard((prev) => ({
+                  ...prev,
                   cases: (prev?.cases || []).map((item) => (item.id === saved.id ? saved : item)),
                 }))
                 return saved

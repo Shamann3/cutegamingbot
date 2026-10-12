@@ -32,6 +32,8 @@ _BOT_COMMAND_EXACT = frozenset({
     "задание",
     "челленжи",
     "челленджи",
+    "кейсы",
+    "кейс",
     "хелп",
     "help",
     "помощь",
@@ -233,6 +235,18 @@ def _is_bot_related_or_game_trigger(message: Any) -> bool:
         try:
             from bot.funcs.king_stats import is_king_stats_command
             if is_king_stats_command(normalized):
+                return True
+        except Exception:
+            pass
+
+        try:
+            import sys
+            from pathlib import Path
+            shelf = Path(__file__).resolve().parents[2] / "server" / "py"
+            if str(shelf) not in sys.path:
+                sys.path.insert(0, str(shelf))
+            from cases.design import is_case_ask
+            if is_case_ask(normalized):
                 return True
         except Exception:
             pass

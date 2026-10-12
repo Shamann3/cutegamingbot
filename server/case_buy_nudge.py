@@ -12,7 +12,17 @@ _py = str(Path(__file__).resolve().parent / "py")
 if _py not in sys.path:
     sys.path.insert(0, _py)
 
-from cases.design import face, held_text, match_bought, stamp_callback  # noqa: E402
+from cases.design import (  # noqa: E402
+    KEY,
+    face,
+    key_text,
+    match_bought,
+    need_key_text,
+    owns,
+    ready_open_text,
+    stamp_callback,
+)
+from json_db_codec import decode_json_payload  # noqa: E402
 
 
 def _button(target: str, user_id: int) -> dict:
@@ -20,7 +30,6 @@ def _button(target: str, user_id: int) -> dict:
     fields = {
         "text": item.get("name") or "Предмет",
         "callback_data": stamp_callback(f"cs:find:{target}", int(user_id)),
-        "style": "success",
     }
     premium = str(item.get("premium") or "")
     if premium.isdigit():
@@ -43,8 +52,7 @@ async def _edit(chat_id: int, message_id: int, text: str, rows: list) -> bool:
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
-    if rows:
-        payload["reply_markup"] = {"inline_keyboard": rows}
+    payload["reply_markup"] = {"inline_keyboard": rows or []}
     timeout = aiohttp.ClientTimeout(total=8)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -80,22 +88,51 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
         if not prompt:
             return
         wanted = str(prompt["target"] or "")
+        key_finishes_case = bought == "key" and wanted in ("small", "mid", "large")
         if wanted == "cases":
             if bought == "key":
                 return
-        elif wanted != bought:
+        elif wanted != bought and not key_finishes_case:
             return
         item = face(bought)
         if item is None:
             return
-        text = held_text(item["name"], item["emoji"], item["premium"])
+        bag_row = await pool.fetchrow("SELECT items FROM users WHERE user_id = $1", int(user_id))
+        bag = decode_json_payload(bag_row["items"]) if bag_row else {}
+        catalog = [face(code) for code in ("key", "small", "mid", "large")]
+        dex_rows = await pool.fetch(
+            """
+            SELECT id, name, name1 FROM dex
+            WHERE name1 = ANY($1::text[]) OR lower(name) = ANY($2::text[])
+            """,
+            [row["name1"] for row in catalog if row],
+            [row["name"].lower() for row in catalog if row],
+        )
+        dex_ids = {}
+        for row in dex_rows:
+            for known in catalog:
+                if not known:
+                    continue
+                if str(row["name1"] or "") == known["name1"] or str(row["name"] or "").lower() == known["name"].lower():
+                    dex_ids[known["id"]] = row["id"]
+        held_cases = [
+            case for case in catalog
+            if case and case["id"] != "key" and owns(bag, case, dex_ids.get(case["id"]))
+        ]
+        has_key = owns(bag, KEY, dex_ids.get("key"))
         rows = []
-        if bought == "key":
+        opened = face(wanted) if key_finishes_case else None
+        ready = [opened] if opened and owns(bag, opened, dex_ids.get(opened["id"])) else held_cases
+        if bought == "key" and ready:
+            text = ready_open_text(ready)
+        elif bought != "key" and has_key:
+            text = ready_open_text([item])
+        elif bought == "key":
+            text = key_text()
             rows = [[_button(case_id, user_id)] for case_id in ("small", "mid", "large")]
-            text += "\n<i>Дальше — кейс.</i>"
         else:
+            text = need_key_text(bought)
             rows = [[_button("key", user_id)]]
-            text += "\n<i>Дальше — ключ, если его ещё нет.</i>"
         edited = await _edit(int(prompt["chat_id"]), int(prompt["message_id"]), text, rows)
         if edited:
             await pool.execute("DELETE FROM case_buy_prompts WHERE user_id = $1", int(user_id))

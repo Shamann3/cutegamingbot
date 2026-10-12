@@ -583,6 +583,20 @@ export async function saveCaseRules(rules) {
   })
 }
 
+export async function saveCasePrice({ id, price }) {
+  return adminRequest('/cases/price', {
+    method: 'POST',
+    body: { id, price },
+  })
+}
+
+export async function saveCaseStock({ id, remains }) {
+  return adminRequest('/cases/stock', {
+    method: 'POST',
+    body: { id, remains },
+  })
+}
+
 
 
 export async function fetchAdminMe() {

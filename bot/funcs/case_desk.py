@@ -24,6 +24,9 @@ from cases.design import (  # noqa: E402
     case_by_id,
     face,
     find_target,
+    guide_home,
+    guide_how,
+    is_case_ask,
     key_text,
     miss_text,
     need_key_text,
@@ -31,8 +34,9 @@ from cases.design import (  # noqa: E402
     own_lot_text,
     HISTORY,
     found_text,
-    held_text,
+    owns,
     public_case,
+    ready_open_text,
     roll_amount,
     stamp_callback,
 )
@@ -46,11 +50,10 @@ def _icon(value) -> str:
     return raw if raw.isdigit() else ""
 
 
-def _button(text: str, data: str, style: str, emoji: str) -> InlineKeyboardButton:
+def _button(text: str, data: str, emoji: str) -> InlineKeyboardButton:
     fields = {
         "text": text,
         "callback_data": data,
-        "style": style or "default",
     }
     icon = _icon(emoji)
     if icon:
@@ -64,7 +67,6 @@ def _open_button(text: str, startapp: str, private: bool, emoji: str) -> InlineK
     web_app_url = fields.pop("web_app_url", None)
     if web_app_url:
         fields["web_app"] = WebAppInfo(url=web_app_url)
-    fields["style"] = "success"
     icon = _icon(emoji)
     if icon:
         fields["icon_custom_emoji_id"] = icon
@@ -148,14 +150,29 @@ async def _dex(item: dict):
     )
 
 
+async def _bag(user_id: int) -> dict:
+    row = await db.pool.fetchrow("SELECT items FROM users WHERE user_id = $1", int(user_id))
+    return decode_items(row["items"]) if row else {}
+
+
 async def _holds(user_id: int, item: dict, items: dict | None = None) -> bool:
     if items is None:
-        row = await db.pool.fetchrow("SELECT items FROM users WHERE user_id = $1", int(user_id))
-        items = decode_items(row["items"]) if row else {}
-    if _count(items, item["name"]) > 0:
+        items = await _bag(user_id)
+    if owns(items, item):
         return True
     found = await _dex(item)
-    return bool(found and _count(items, str(found["id"])) > 0)
+    return bool(found and owns(items, item, found["id"]))
+
+
+async def _held_cases(user_id: int, items: dict | None = None) -> list[dict]:
+    if items is None:
+        items = await _bag(user_id)
+    found = []
+    for case_id in ("small", "mid", "large"):
+        item = face(case_id)
+        if item and await _holds(user_id, item, items):
+            found.append(item)
+    return found
 
 
 async def _own_lot(user_id: int, item: dict):
@@ -208,7 +225,7 @@ def _find_button(target: str, user_id: int) -> InlineKeyboardButton:
     item = face(target)
     title = item["name"] if item else "Предмет"
     emoji = item["premium"] if item else ""
-    return _button(title, stamp_callback(f"cs:find:{target}", user_id), "success", emoji)
+    return _button(title, stamp_callback(f"cs:find:{target}", user_id), emoji)
 
 
 def _case_buttons(user_id: int) -> InlineKeyboardMarkup:
@@ -237,7 +254,62 @@ async def _remember(user_id: int, chat_id: int, message_id: int, target: str) ->
     )
 
 
+def _guide_button(text: str, step: str, user_id: int, emoji: str = "") -> InlineKeyboardButton:
+    return _button(text, stamp_callback(f"cs:guide:{step}", user_id), emoji)
+
+
+async def _guide_payload(user_id: int, step: str = "home"):
+    bag = await _bag(user_id)
+    has_key = await _holds(user_id, KEY, bag)
+    held = await _held_cases(user_id, bag)
+    if step == "how":
+        ceilings = []
+        for case_id in ("small", "mid", "large"):
+            ceilings.append(int((await _rules(case_id))["max"]))
+        rows = []
+        if not has_key:
+            rows.append([_find_button("key", user_id)])
+        for case_id in ("small", "mid", "large"):
+            if not any(item["id"] == case_id for item in held):
+                rows.append([_find_button(case_id, user_id)])
+        rows.append([_guide_button("Назад", "home", user_id)])
+        return guide_how(ceilings), InlineKeyboardMarkup(inline_keyboard=rows)
+    rows = []
+    if has_key and not held:
+        rows.extend([[_find_button(case_id, user_id)] for case_id in ("small", "mid", "large")])
+    elif held and not has_key:
+        rows.append([_find_button("key", user_id)])
+    rows.append([_guide_button("Как открыть", "how", user_id, KEY["premium"])])
+    return guide_home(has_key=has_key, held=held), InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def open_guide(message) -> None:
+    user_id = int(message.from_user.id)
+    try:
+        text, markup = await _guide_payload(user_id, "home")
+    except Exception:
+        log.exception("case guide")
+        text = guide_home(has_key=False, held=[])
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [_guide_button("Как открыть", "how", user_id, KEY["premium"])],
+        ])
+    await message.reply(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=markup,
+    )
+
+
 async def explain_key(user_id: int, message) -> None:
+    held = await _held_cases(user_id)
+    if held:
+        await message.reply(
+            ready_open_text(held),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
     shown = await message.reply(
         key_text(),
         parse_mode="HTML",
@@ -353,6 +425,16 @@ async def case_click(call):
     if owner != clicker:
         await call.answer("Эта кнопка не ваша", show_alert=True)
         return
+    if data.split(":")[1:2] == ["guide"]:
+        step = data.split(":")[2] if len(data.split(":")) >= 3 else "home"
+        try:
+            text, markup = await _guide_payload(clicker, "how" if step == "how" else "home")
+            await _show(call, text, markup, "")
+            await call.answer()
+        except Exception:
+            log.exception("case guide")
+            await call.answer("Справка сейчас не открылась", show_alert=True)
+        return
     target = find_target(data)
     item = face(target)
     if item is None:
@@ -361,7 +443,22 @@ async def case_click(call):
     try:
         await ensure()
         if await _holds(clicker, item):
-            await _show(call, held_text(item["name"], item["emoji"], item["premium"]), InlineKeyboardMarkup(inline_keyboard=[]), "")
+            bag = await _bag(clicker)
+            if target == "key":
+                held = await _held_cases(clicker, bag)
+                if held:
+                    await _show(call, ready_open_text(held), InlineKeyboardMarkup(inline_keyboard=[]), "")
+                else:
+                    await _show(call, key_text(), _case_buttons(clicker), "cases")
+            elif await _holds(clicker, KEY, bag):
+                await _show(call, ready_open_text([item]), InlineKeyboardMarkup(inline_keyboard=[]), "")
+            else:
+                await _show(
+                    call,
+                    need_key_text(target),
+                    InlineKeyboardMarkup(inline_keyboard=[[_find_button("key", clicker)]]),
+                    target,
+                )
             await call.answer()
             return
         lot = await _own_lot(clicker, item)

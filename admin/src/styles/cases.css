@@ -27,8 +27,56 @@
   animation: case-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.case-card.is-saved {
+.case-card.is-saved,
+.case-shelf.is-saved {
   box-shadow: inset 3px 0 0 rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+}
+
+.case-shelf {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--e-plate, #17171b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: case-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-shelf header p,
+.case-shelf.is-missing header p {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-shelf h3 {
+  margin: 0;
+}
+
+.case-shelf label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-shelf input {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.case-shelf.is-saved {
+  animation: case-saved 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.case-shop {
+  margin-bottom: 4px;
 }
 
 .case-card h3 {
@@ -117,6 +165,11 @@
   to { opacity: 1; transform: none; }
 }
 
+@keyframes case-saved {
+  0% { transform: translateY(4px); }
+  100% { transform: none; }
+}
+
 @keyframes case-bar {
   from { transform: scaleX(0); transform-origin: left center; }
   to { transform: none; }
@@ -124,12 +177,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .case-card,
+  .case-shelf,
   .case-meter i {
     animation: none;
   }
 }
 
 body.perf-light .case-card,
+body.perf-light .case-shelf,
 body.perf-light .case-meter i {
   animation-duration: 0.32s;
 }

@@ -37782,6 +37782,15 @@ async def add_firstname_to_usercheck_balance(message: Message):
         await open_guide(message)
         return
 
+    from bot.funcs.case_desk import is_case_ask, open_guide as open_case_guide
+    if is_case_ask(text_lower):
+        try:
+            await update(bot1, chat_id, db)
+        except GroupBanned:
+            return
+        await open_case_guide(message)
+        return
+
     if _matches_custom_command(message.text or ""):
         _vdbg("--------------------------------------------------------------------------------------------------")
         # Проверка на точное совпадение с ключевыми словами

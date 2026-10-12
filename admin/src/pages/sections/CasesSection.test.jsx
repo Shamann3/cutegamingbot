@@ -1,11 +1,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import CasesSection from './CasesSection'
-import { fetchCaseBoard, saveCaseRules } from '../../lib/adminClient'
+import { fetchCaseBoard, saveCasePrice, saveCaseRules, saveCaseStock } from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', () => ({
   fetchCaseBoard: vi.fn(),
   saveCaseRules: vi.fn(),
+  saveCasePrice: vi.fn(),
+  saveCaseStock: vi.fn(),
 }))
 
 const BOARD = {
@@ -55,5 +57,23 @@ describe('cases desk', () => {
         { chance: 20, amount: 40 },
       ],
     }))
+  })
+
+  it('saves the shop price and the pieces on sale', async () => {
+    vi.mocked(fetchCaseBoard).mockResolvedValue({
+      cases: [],
+      items: [{ id: '4', name: 'Ключ', name1: 'key', emoji: '🔑', price: 30, remains: 52, missing: false }],
+    })
+    vi.mocked(saveCasePrice).mockResolvedValue({ id: '4', name: 'Ключ', price: 40 })
+    vi.mocked(saveCaseStock).mockResolvedValue({ id: '4', name: 'Ключ', remains: 10 })
+    render(<CasesSection />)
+    const price = await screen.findByLabelText('Цена Ключ')
+    fireEvent.change(price, { target: { value: '40' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Цена' }))
+    await vi.waitFor(() => expect(saveCasePrice).toHaveBeenCalledWith({ id: 4, price: 40 }))
+    await vi.waitFor(() => expect(screen.getByLabelText('Цена Ключ').value).toBe('40'))
+    fireEvent.change(screen.getByLabelText('Количество Ключ'), { target: { value: '10' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Количество' }))
+    await vi.waitFor(() => expect(saveCaseStock).toHaveBeenCalledWith({ id: 4, remains: 10 }))
   })
 })

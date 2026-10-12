@@ -80,6 +80,11 @@ def cases() -> list[dict]:
     return [dict(item) for item in _DEFAULTS]
 
 
+def shop_items() -> list[dict]:
+    """Ключ и три кейса в том порядке, в каком их видит создатель."""
+    return [dict(KEY), *cases()]
+
+
 def case_by_id(case_id: str) -> dict | None:
     for item in _DEFAULTS:
         if item["id"] == case_id:
@@ -115,6 +120,34 @@ def held_text(name: str, emoji: str, premium: str) -> str:
     )
 
 
+def ready_open_text(items: list[dict]) -> str:
+    """Ключ и кейс уже есть. Кнопок нет — одна команда на открытие."""
+    blocks = []
+    for item in items:
+        emoji = str(item.get("emoji") or "")
+        blocks.append(
+            f"{mark(emoji, str(item.get('premium') or ''))} <b>Пора открыть ваш кейс</b>\n"
+            f"<code>использовать {emoji}</code>"
+        )
+    return "\n\n".join(blocks)
+
+
+def owns(items: dict, item: dict, dex_id=None) -> bool:
+    wanted = {str(item.get("name") or "").strip().lower()}
+    if dex_id is not None and str(dex_id).strip():
+        wanted.add(str(dex_id).strip().lower())
+    wanted.discard("")
+    for key, value in (items or {}).items():
+        if str(key).strip().lower() not in wanted:
+            continue
+        try:
+            if int(value or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def found_text(name: str, emoji: str, premium: str, where: str, place: str) -> str:
     return (
         f"<b>{mark(emoji, premium)} {name} есть {where}</b>\n"
@@ -147,7 +180,13 @@ def opened_text(case_id: str, amount: int, ceiling: int) -> str:
 
 def button_owner(data: str):
     parts = str(data or "").split(":")
-    if len(parts) < 4 or parts[0] != "cs" or parts[1] != "find":
+    if len(parts) < 3 or parts[0] != "cs":
+        return None
+    if parts[1] == "guide":
+        if len(parts) >= 4 and parts[-1].isdigit():
+            return int(parts[-1])
+        return None
+    if len(parts) < 4 or parts[1] != "find":
         return None
     if parts[-1].isdigit():
         return int(parts[-1])
@@ -243,6 +282,89 @@ def face(target: str) -> dict | None:
         return dict(KEY)
     found = case_by_id(target)
     return dict(found) if found else None
+
+
+def _dots(value: int) -> str:
+    return f"{int(value):,}".replace(",", ".")
+
+
+def guide_home(*, has_key: bool, held: list[dict]) -> str:
+    """Первый экран. Если открывать уже можно — сразу команда, без покупки."""
+    title = f"{mark(KEY['emoji'], KEY['premium'])} <b>Кейсы</b>"
+    if has_key and held:
+        return f"{title}\n\n{ready_open_text(held)}"
+    if has_key:
+        return f"{title}\n<i>Ключ уже есть. Осталось выбрать кейс.</i>"
+    if held:
+        return f"{title}\n<i>Кейс уже есть. Остался ключ.</i>"
+    return f"{title}\n<i>Ключ открывает кейс. Кейс отдаёт кут.</i>"
+
+
+def guide_how(ceilings: list[int]) -> str:
+    """Три команды и три потолка. Шансы здесь не пишем."""
+    order = ("small", "mid", "large")
+    items = [case_by_id(case_id) for case_id in order]
+    caps = list(ceilings or [])
+    while len(caps) < 3:
+        caps.append(int(items[len(caps)]["max"]))
+    lines = [
+        f"{mark(KEY['emoji'], KEY['premium'])} <b>Как открыть</b>",
+        "<i>Нужны ключ и один кейс. Потом команда с эмодзи этого кейса.</i>",
+        "",
+    ]
+    for item in items:
+        lines.append(f"<code>использовать {item['emoji']}</code>")
+    lines.append("")
+    for item, cap in zip(items, caps):
+        lines.append(f"{mark(item['emoji'], item['premium'])} {item['name']} — до <b>{_dots(cap)}</b>")
+    lines.append("")
+    lines.append("<i>Ключ и кейс сгорают. На баланс падает ровно выпавшее число.</i>")
+    return "\n".join(lines)
+
+
+_ASK_EXACT = {
+    "кейсы",
+    "кейс",
+    "как открыть кейс",
+    "как открыть кейсы",
+    "открытие кейсов",
+    "открытие кейса",
+    "открыть кейс",
+    "открыть кейсы",
+    "что такое кейсы",
+    "что такое кейс",
+    "кейсы хелп",
+    "хелп кейсы",
+    "кейс хелп",
+    "хелп кейс",
+    "помощь кейсы",
+    "кейсы помощь",
+    "как пользоваться кейсом",
+    "как пользоваться кейсами",
+    "правила кейсов",
+}
+
+_ASK_PARTS = (
+    ("как", "откры", "кейс"),
+    ("открыт", "кейс"),
+    ("что такое", "кейс"),
+    ("хелп", "кейс"),
+    ("помощь", "кейс"),
+)
+
+
+def is_case_ask(text: str) -> bool:
+    """Короткая фраза про кейсы. Команда «использовать» сюда не попадает."""
+    raw = " ".join(str(text or "").replace("ё", "е").split()).casefold()
+    raw = "".join(ch if ch.isalnum() or ch == " " else " " for ch in raw)
+    raw = " ".join(raw.split())
+    if not raw or len(raw) > 80 or raw.startswith("использовать"):
+        return False
+    if raw in _ASK_EXACT:
+        return True
+    if len(raw.split()) > 8:
+        return False
+    return any(all(part in raw for part in pair) for pair in _ASK_PARTS)
 
 
 def match_bought(name1: str, name: str) -> str:

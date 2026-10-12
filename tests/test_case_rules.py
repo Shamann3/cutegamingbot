@@ -11,9 +11,14 @@ from cases.design import (
     button_owner,
     check_rules,
     find_target,
+    guide_home,
+    guide_how,
+    is_case_ask,
     key_text,
     match_bought,
     need_key_text,
+    owns,
+    ready_open_text,
     opened_text,
     public_case,
     roll_amount,
@@ -70,6 +75,41 @@ def test_jackpot_copy_names_the_ceiling():
     assert "70" in text
     quiet = opened_text("mid", 32, 70)
     assert "+32" in quiet
+
+
+def test_case_words_open_the_guide():
+    assert is_case_ask("кейсы")
+    assert is_case_ask("  открытие кейсов ")
+    assert is_case_ask("как открыть кейс?")
+    assert not is_case_ask("использовать 📦")
+    assert not is_case_ask("привет")
+    home = guide_home(has_key=True, held=[])
+    assert "Ключ уже есть" in home
+    how = guide_how([50, 70, 170])
+    assert "<code>использовать 📦</code>" in how
+    assert "5278573677900752088" in how
+    assert "до <b>170</b>" in how
+    stamped = stamp_callback("cs:guide:how", 7)
+    assert button_owner(stamped) == 7
+
+
+def test_ready_case_is_one_command_and_no_button_copy():
+    from cases.design import case_by_id
+    small = case_by_id("small")
+    text = ready_open_text([small])
+    assert "<code>использовать 📦</code>" in text
+    assert "Пора открыть ваш кейс" in text
+    assert owns({"Маленький кейс": 1}, small)
+    assert owns({"4": 1}, small, 4)
+    assert not owns({"Ключ": 1}, small)
+
+
+def test_shop_lists_the_key_before_the_cases():
+    from cases.design import shop_items
+    names = [item["name1"] for item in shop_items()]
+    assert names == ["key", "case5000_15000", "case20000_40000", "case50000_100000"]
+    text = (Path(__file__).resolve().parents[1] / "server" / "panel_access.py").read_text(encoding="utf-8")
+    assert '"id": "cases"' in text
 
 
 def test_purchase_maps_back_to_the_case():
