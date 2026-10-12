@@ -12,7 +12,7 @@ import json
 import logging
 import secrets
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -2867,18 +2867,46 @@ async def _advice_for(application_ids: list[int]) -> dict[int, list[dict]]:
     return grouped
 
 
+_ACTIVITY_MONTHS = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def _as_activity_day(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def activity_last_label(last_day: Any, today: date) -> str:
+    """Когда человек последний раз писал в этой группе. Без пакета бота."""
+    day = _as_activity_day(last_day)
+    if day is None:
+        return "ещё не было"
+    if day >= today:
+        return "сегодня"
+    delta = (today - day).days
+    if delta == 1:
+        return "вчера"
+    if delta < 7:
+        return f"{delta} дн. назад"
+    if day.year == today.year:
+        return f"{day.day} {_ACTIVITY_MONTHS[day.month - 1]}"
+    return day.strftime("%d.%m.%Y")
+
+
 async def _admin_group_stats(chat_id: int, user_ids: list[int]) -> tuple[dict[int, dict], dict[int, dict]]:
     """Сообщения и наказания человека в этой группе. Сбой базы не подменяет нули."""
     pulse: dict[int, dict] = {}
     deeds: dict[int, dict] = {}
     if not user_ids:
         return pulse, deeds
-    from datetime import datetime, timedelta, timezone
-
-    from bot.funcs.chat_pulse import last_seen_label, windows
-
     today = datetime.now(timezone(timedelta(hours=3))).date()
-    _today, week_start, month_start = windows(today)
+    week_start = today - timedelta(days=6)
+    month_start = today.replace(day=1)
     try:
         rows = await db.pool.fetch(
             """
@@ -2910,12 +2938,7 @@ async def _admin_group_stats(chat_id: int, user_ids: list[int]) -> tuple[dict[in
                 "week": int(row["week_n"] or 0),
                 "month": int(row["month_n"] or 0),
                 "total": int(row["total_n"] or 0),
-                "last": last_seen_label(
-                    seen_unix=None,
-                    last_day=row["last_day"],
-                    now_unix=0,
-                    today=today,
-                ),
+                "last": activity_last_label(row["last_day"], today),
             }
         for uid in user_ids:
             pulse.setdefault(uid, {
@@ -2951,7 +2974,11 @@ async def _admin_group_stats(chat_id: int, user_ids: list[int]) -> tuple[dict[in
 async def _chat_admin_board(chat_id: int, actor_id: int) -> dict:
     admins, error = await _chat_admin_rows(chat_id)
     people = [row["userId"] for row in admins if not row["isBot"]]
-    pulse, deeds = await _admin_group_stats(chat_id, people)
+    try:
+        pulse, deeds = await _admin_group_stats(chat_id, people)
+    except Exception:
+        _log.exception("статистика администраторов группы %s", chat_id)
+        pulse, deeds = {}, {}
     for row in admins:
         row["stats"] = pulse.get(row["userId"])
         row["deeds"] = deeds.get(row["userId"])

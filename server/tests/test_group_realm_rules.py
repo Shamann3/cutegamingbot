@@ -362,3 +362,16 @@ def test_templates_wait_until_asked_and_voice_admin_is_only_the_voice_chat():
     reasons = {item["title"]: item["reason"] for item in skipped}
     assert "не копируется" in reasons["Создатель группы"]
     assert "уже есть" in reasons["Спам блок"]
+
+
+def test_activity_label_does_not_need_the_bot_package():
+    from datetime import date
+
+    from group_realm import activity_last_label
+
+    today = date(2026, 10, 12)
+    assert activity_last_label(None, today) == "ещё не было"
+    assert activity_last_label(date(2026, 10, 12), today) == "сегодня"
+    assert activity_last_label(date(2026, 10, 11), today) == "вчера"
+    assert activity_last_label(date(2026, 10, 9), today) == "3 дн. назад"
+    assert activity_last_label(date(2026, 9, 12), today) == "12 сентября"
