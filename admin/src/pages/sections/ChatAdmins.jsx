@@ -32,6 +32,27 @@ function statusLabel(status) {
   return 'Админ'
 }
 
+function sameText(left, right) {
+  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase()
+}
+
+function personHeading(person) {
+  const id = String(person.userId)
+  const raw = String(person.name || '').trim()
+  const nameIsId = !raw || raw === id || raw === `ID ${id}`
+  const status = statusLabel(person.status)
+  const title = String(person.title || '').trim()
+  const role = title && !sameText(title, status) ? `${status} · ${title}` : status
+  return {
+    name: nameIsId ? (person.username ? `@${person.username}` : id) : raw,
+    meta: [
+      !nameIsId && person.username ? `@${person.username}` : '',
+      nameIsId ? '' : id,
+    ].filter(Boolean).join(' · '),
+    role,
+  }
+}
+
 function powers(person) {
   if (person.status === 'creator') return 'Полные права группы'
   const parts = []
@@ -132,7 +153,7 @@ export default function ChatAdmins({ chatId }) {
 
   const admins = board?.admins || []
   const history = board?.history || []
-  const canAct = Boolean(board?.canAct && board?.botCanPromote)
+  const canAct = Boolean(board?.canAct)
   const selfId = Number(board?.selfId || 0)
   const monthPeak = Math.max(1, ...admins.map((person) => Number(person.stats?.month) || 0))
 
@@ -154,30 +175,28 @@ export default function ChatAdmins({ chatId }) {
         <div className="chat-admins-pane">
           <h2 className="realm-h">Администраторы группы</h2>
           <p className="realm-copy">
-            Цифры — только эта группа, как строка активности в профиле.
-            Снять админку и урезать права можно здесь.
-            Бан на весь проект и создателя группы решает создатель проекта @JerichoCute.
+            Активность и наказания только этой группы. Снять админку и урезать права можно здесь.
+            Бан на весь проект решает создатель @JerichoCute.
           </p>
           {board?.error && <p className="chat-admins-warn">{board.error}</p>}
           {board && !board.botCanPromote && !board.error && (
-            <p className="chat-admins-warn">Боту нужно право назначать администраторов, иначе кнопки не сработают.</p>
+            <p className="chat-admins-warn">
+              Если снятие не пройдёт, включите боту в этой группе «Добавление администраторов».
+            </p>
           )}
 
           <ul className="chat-admins-list">
             {admins.map((person, index) => {
               const locked = person.status === 'creator' || person.isSelfBot || person.userId === selfId
               const stats = person.stats
+              const heading = personHeading(person)
               return (
                 <li key={person.userId} className="chat-admins-card" style={{ animationDelay: `${index * 40}ms` }}>
                   <div className="chat-admins-head">
-                    <strong>{person.name}</strong>
-                    <span className="chat-admins-status">{statusLabel(person.status)}</span>
-                    {person.title ? <span className="chat-admins-title">{person.title}</span> : null}
+                    <strong>{heading.name}</strong>
+                    <span className="chat-admins-status">{heading.role}</span>
                   </div>
-                  <p>
-                    {person.username ? `@${person.username} · ` : ''}
-                    <code>{person.userId}</code>
-                  </p>
+                  {heading.meta ? <p>{heading.meta}</p> : null}
                   <p className="chat-admins-powers">{powers(person)}</p>
                   {!person.isBot && stats ? (
                     <div className="chat-admins-analytics">
@@ -187,9 +206,9 @@ export default function ChatAdmins({ chatId }) {
                           const value = Number(stats[key]) || 0
                           const width = key === 'month' ? Math.round((value / monthPeak) * 100) : null
                           return (
-                            <div key={key}>
-                              <span>{label}</span>
+                            <div className="chat-admins-meter" key={key}>
                               <strong>{count(value)}</strong>
+                              <span>{label}</span>
                               {width !== null && (
                                 <i aria-hidden="true"><b style={{ width: `${width}%` }} /></i>
                               )}

@@ -2790,6 +2790,35 @@ async def _chat_admin_rows(chat_id: int) -> tuple[list[dict], str]:
     return rows, ""
 
 
+async def _bot_can_promote(chat_id: int, admins: list[dict]) -> bool:
+    """Право бота назначать администраторов в этой группе.
+
+    Список getChatAdministrators иногда не отдаёт can_promote_members у самого бота.
+    Тогда спрашиваем getChatMember: это то же право, что «Add new admins» в Telegram.
+    """
+    bot = next((row for row in admins if row["isSelfBot"]), None)
+    if bot and (bot["canPromote"] or bot["status"] == "creator"):
+        return True
+    bot_id = int(bot["userId"]) if bot else await _bot_user_id()
+    if bot_id <= 0:
+        return False
+    ok, _err, data = await _telegram_call(
+        "getChatMember",
+        {"chat_id": int(chat_id), "user_id": bot_id},
+    )
+    member = data.get("result") if ok and isinstance(data, dict) else None
+    if not isinstance(member, dict):
+        return False
+    status = str(member.get("status") or "")
+    if status == "creator":
+        return True
+    if bool(member.get("can_promote_members")):
+        if bot is not None:
+            bot["canPromote"] = True
+        return True
+    return False
+
+
 async def _chat_admin_history(chat_id: int) -> list[dict]:
     rows = await db.pool.fetch(
         """
@@ -2982,12 +3011,11 @@ async def _chat_admin_board(chat_id: int, actor_id: int) -> dict:
     for row in admins:
         row["stats"] = pulse.get(row["userId"])
         row["deeds"] = deeds.get(row["userId"])
-    bot = next((row for row in admins if row["isSelfBot"]), None)
     return {
         "admins": admins,
         "history": await _chat_admin_history(chat_id),
         "canAct": True,
-        "botCanPromote": bool(bot and (bot["canPromote"] or bot["status"] == "creator")),
+        "botCanPromote": await _bot_can_promote(chat_id, admins),
         "selfId": int(actor_id),
         "error": error,
     }
@@ -3027,9 +3055,6 @@ async def group_chat_admin_act(
         raise HTTPException(status_code=400, detail="Создателя группы снять нельзя")
     if target["isSelfBot"]:
         raise HTTPException(status_code=400, detail="Бота группы этой кнопкой снять нельзя")
-    bot = next((row for row in admins if row["isSelfBot"]), None)
-    if not bot or not (bot["canPromote"] or bot["status"] == "creator"):
-        raise HTTPException(status_code=400, detail="Боту нужно право назначать администраторов в этой группе")
     if action == "demote":
         note = await _strip_to_member(int(chat_id), target_id)
         if note.startswith("Должность в панели снята"):
