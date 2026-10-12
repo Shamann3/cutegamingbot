@@ -2747,13 +2747,27 @@ class ChatAdminActBody(BaseModel):
     action: str
 
 
+def explain_demote_fault(err: str) -> str:
+    """Короткий текст вместо сырого ответа Telegram."""
+    text = str(err or "")
+    upper = text.upper()
+    if "CHAT_ADMIN_REQUIRED" in upper:
+        return "бот в этой группе не может менять администраторов"
+    if "NOT ENOUGH RIGHTS" in upper or "RIGHT_FORBIDDEN" in upper:
+        return "у бота нет права «Добавление администраторов»"
+    if "USER_CREATOR" in upper:
+        return "создателя группы снять нельзя"
+    cleaned = text.replace("Bad Request:", "").strip()
+    return cleaned[:140] or "Telegram не снял админку"
+
+
 def classify_chat_admin(row: dict, *, seated: bool, staff: bool) -> str:
     """Кого показать во вкладке «Админы».
 
-    show — должность в этой группе, не сотрудник проекта.
+    show — есть должность в этой группе, это не сотрудник проекта.
     hide — бот, сотрудник проекта, создатель Telegram без должности.
-    strip — администратор Telegram, которого в системе группы нет.
-    Создателя группы Telegram снять нельзя, поэтому без должности он просто скрыт.
+    strip — права администратора в Telegram есть, должности в системе нет.
+    Спам-блок и админ ГЧ — тоже должность: их не снимаем.
     """
     if row.get("isBot") or row.get("isSelfBot") or staff:
         return "hide"
@@ -2774,6 +2788,8 @@ def _tg_person_name(user: dict) -> str:
 
 
 _BOT_USER_ID = 0
+_STRIP_FAIL: dict[tuple[int, int], tuple[float, str]] = {}
+_STRIP_FAIL_TTL = 600.0
 
 
 async def _bot_user_id() -> int:
@@ -3064,6 +3080,24 @@ async def _telegram_member(chat_id: int, user_id: int) -> dict | None:
     return member if isinstance(member, dict) else None
 
 
+async def _demote_outsider(chat_id: int, user_id: int) -> str:
+    """Одна неудача не долбит Telegram при каждом открытии вкладки."""
+    key = (int(chat_id), int(user_id))
+    hit = _STRIP_FAIL.get(key)
+    if hit is not None and time.time() - hit[0] < _STRIP_FAIL_TTL:
+        return hit[1]
+    fault = await _demote_telegram_admin(chat_id, user_id)
+    if fault:
+        _STRIP_FAIL[key] = (time.time(), fault)
+        if len(_STRIP_FAIL) > 4000:
+            now = time.time()
+            for old in [item for item, (at, _) in _STRIP_FAIL.items() if now - at >= _STRIP_FAIL_TTL]:
+                _STRIP_FAIL.pop(old, None)
+    else:
+        _STRIP_FAIL.pop(key, None)
+    return fault
+
+
 async def _demote_telegram_admin(chat_id: int, user_id: int) -> str:
     """Снимает админку Telegram. Пустая строка — человек уже обычный участник."""
     ok, err, _data = await _telegram_call(
@@ -3093,19 +3127,16 @@ async def _restrict_telegram_admin(chat_id: int, user_id: int) -> str:
 
 
 async def _registered_admin_ids(chat_id: int) -> set[int]:
-    """Кто держит должность в этой группе. Спам-блок должностью администратора не считается."""
+    """Кто держит любую должность в этой группе, включая спам-блок и админа ГЧ."""
     try:
         rows = await db.pool.fetch(
             """
-            SELECT s.user_id
-            FROM epsilon_seats s
-            JOIN epsilon_positions p ON p.id = s.position_id
-            WHERE s.chat_id = $1
-              AND (s.term_end IS NULL OR s.term_end > NOW())
-              AND COALESCE(p.kind, 'post') <> $2
+            SELECT user_id
+            FROM epsilon_seats
+            WHERE chat_id = $1
+              AND (term_end IS NULL OR term_end > NOW())
             """,
             int(chat_id),
-            KIND_SPAMBLOCK,
         )
     except Exception:
         _log.exception("должности администраторов группы %s", chat_id)
@@ -3176,10 +3207,10 @@ async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> di
         if kind == "hide":
             continue
         if kind == "strip":
-            fault = await _demote_telegram_admin(chat_id, row["userId"])
+            fault = await _demote_outsider(chat_id, row["userId"])
             card = _short_admin(row)
             if fault:
-                stuck.append({**card, "error": fault})
+                stuck.append({**card, "error": explain_demote_fault(fault)})
             else:
                 dropped.append(card)
                 detail = f"Снял незарегистрированного: {row['name']}"

@@ -239,6 +239,14 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
         return
 
 
+async def _keep_writer(message: Message) -> None:
+    """Капча удалит сообщение, человек в базе всё равно остаётся."""
+    from bot.funcs.seen_people import remember_account, remember_message
+
+    await remember_message(message)
+    await remember_account(getattr(message, "from_user", None))
+
+
 async def _announce_passed(bot, chat_id: int, thread_id: Optional[int] = None) -> None:
     """В чат — ровно то сообщение, которое должно увидеть человек после успеха."""
     send_kwargs: Dict[str, Any] = {
@@ -758,6 +766,10 @@ class CaptchaGateMiddleware(BaseMiddleware):
             log.warning("captcha prompt timeout chat=%s user=%s", chat.id, user.id)
         except Exception:
             log.exception("captcha prompt chat=%s user=%s", chat.id, user.id)
+        try:
+            await asyncio.wait_for(_keep_writer(message), timeout=1.5)
+        except Exception:
+            log.exception("captcha keep writer chat=%s user=%s", chat.id, user.id)
         await _delete_message(bot, int(chat.id), message.message_id)
         return None
 

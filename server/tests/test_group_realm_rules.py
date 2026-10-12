@@ -180,6 +180,9 @@ def test_chat_admin_list_hides_staff_and_strips_strangers():
     assert classify_chat_admin(owner, seated=False, staff=False) == "hide"
     assert classify_chat_admin(owner, seated=True, staff=False) == "show"
     assert classify_chat_admin(bot, seated=False, staff=False) == "hide"
+    from group_realm import explain_demote_fault
+    assert "не может менять" in explain_demote_fault("Bad Request: CHAT_ADMIN_REQUIRED")
+    assert "Добавление администраторов" in explain_demote_fault("not enough rights")
     assert _member_still_admin({"status": "administrator"}) is True
     assert _member_still_admin({"status": "member"}) is False
     assert _member_can_punish({"status": "administrator", "can_restrict_members": True}) is True

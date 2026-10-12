@@ -3735,6 +3735,22 @@ def _staff_tg_identity_backoff(uid: int) -> None:
         _staff_tg_identity_retry_at.pop(k, None)
 
 
+async def _person_via_bot_chat(username: str):
+  """Id человека по @username через bot.get_chat. Канал и бот — не цель наказания."""
+  clean = str(username or "").strip().lstrip("@")
+  if not clean:
+    return None
+  try:
+    chat = await _bot().get_chat(f"@{clean}")
+  except Exception:
+    return None
+  from bot.funcs.who_lookup import TgPerson, from_bot_chat
+  found = from_bot_chat(chat)
+  if isinstance(found, TgPerson) and not found.is_bot and int(found.user_id) > 0:
+    return found
+  return None
+
+
 async def _safe_fetch_user_chat(uid: int):
   uid = int(uid)
   if uid <= 0:
@@ -3776,6 +3792,20 @@ async def _lookup_target_by_token(
 
   async def _known_or_from_telegram(username: str, ask: bool = True):
     username = _identity_rules().normalize_username(username) or username
+    if ask:
+      opened = await _person_via_bot_chat(username)
+      if opened is not None:
+        found = await ensure_punishment_profile(
+          int(opened.user_id),
+          first_name=opened.first_name,
+          last_name=opened.last_name,
+          username=opened.username or username,
+          source_chat_id=source_chat_id,
+          from_telegram=True,
+        )
+        if found:
+          MuteDebug.log("PARSE", "bot get_chat resolved username", uid=found[0], username=username)
+          return found
     uid = await db.get_user_id_by_username(username)
     if uid:
       name = await db.get_firstname_by_user_id(uid)

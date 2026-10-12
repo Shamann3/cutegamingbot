@@ -187,7 +187,8 @@ export default function ChatAdmins({ chatId }) {
           <h2 className="realm-h">Администраторы группы</h2>
           <p className="realm-copy">
             Здесь только администраторы с должностью в этой группе. Сотрудники проекта не показаны.
-            Кто администратор в Telegram, но не в системе, снимается сам.
+            Кто администратор в Telegram без должности в системе, снимается сам.
+            Спам-блок и админ ГЧ — должность, их код не трогает.
             Ограничить права можно сразу. Снятие должности уходит создателю @JerichoCute, если это делаете не вы.
           </p>
           {board?.error && <p className="chat-admins-warn">{board.error}</p>}
@@ -198,7 +199,9 @@ export default function ChatAdmins({ chatId }) {
           )}
           {stuck.length > 0 && (
             <p className="chat-admins-warn">
-              Не удалось снять тех, кого нет в системе: {stuck.map((person) => `${personLine(person)} — ${person.error}`).join('; ')}.
+              Не снялись администраторы без должности
+              {stuck[0].error ? ` — ${stuck[0].error}` : ''}: {stuck.map(personLine).join(', ')}.
+              Включите боту в этой группе «Добавление администраторов».
             </p>
           )}
           {board && !board.botCanPromote && !board.error && (
@@ -267,7 +270,11 @@ export default function ChatAdmins({ chatId }) {
             })}
           </ul>
           {board && admins.length === 0 && !board.error && (
-            <p className="realm-copy">В этой группе администраторов не видно.</p>
+            <p className="realm-copy">
+              {stuck.length > 0
+                ? 'Администраторов с должностью в системе нет. Выше те, кого бот пока не смог снять.'
+                : 'Администраторов с должностью в этой группе не видно.'}
+            </p>
           )}
 
           {pending && (

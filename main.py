@@ -41190,6 +41190,8 @@ if __name__ == "__main__":
 
     try:
         from bot.handlers.group_captcha import attach_group_captcha
+        from bot.funcs.id_cmd import attach_id_command
+        attach_id_command(dp)
         attach_group_captcha(dp)
     except Exception as _cap_err:
         print(f"[CAPTCHA][WIRE][ERROR] {type(_cap_err).__name__}: {_cap_err}")

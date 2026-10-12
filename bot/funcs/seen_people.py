@@ -87,6 +87,82 @@ async def remember_user(chat_id: int, user) -> None:
         log.exception("remember seen user")
 
 
+async def remember_account(user) -> None:
+    """Строка users без баланса и пригласителя. Капча вызывает это до удаления сообщения."""
+    pool = await _pool()
+    if pool is None or user is None or getattr(user, "is_bot", False):
+        return
+    try:
+        uid = int(getattr(user, "id", 0) or 0)
+    except (TypeError, ValueError):
+        return
+    if uid <= 0:
+        return
+    first = str(getattr(user, "first_name", "") or "")[:128]
+    last = str(getattr(user, "last_name", "") or "")[:128]
+    name = display_name(first, last)[:128]
+    username = str(getattr(user, "username", "") or "")[:64]
+    try:
+        await pool.execute(
+            """
+            INSERT INTO users (user_id, first_name, username)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO UPDATE
+            SET first_name = CASE
+                  WHEN users.first_name IS NULL OR btrim(users.first_name) = '' THEN EXCLUDED.first_name
+                  ELSE users.first_name
+                END,
+                username = CASE
+                  WHEN EXCLUDED.username <> '' THEN EXCLUDED.username
+                  ELSE users.username
+                END
+            """,
+            uid,
+            name,
+            username,
+        )
+    except Exception:
+        log.exception("remember account")
+
+
+async def find_names(pool, chat_id: int, query: str, limit: int = 8) -> list[dict]:
+    """Люди этого чата, которых бот уже видел, по имени."""
+    text = " ".join(str(query or "").split())
+    if pool is None or int(chat_id) >= 0 or not text or len(text) > 64:
+        return []
+    pattern = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    try:
+        await ensure(pool)
+        rows = await pool.fetch(
+            """
+            SELECT user_id, username, first_name, last_name
+            FROM chat_seen_people
+            WHERE chat_id = $1
+              AND (
+                first_name ILIKE $2 ESCAPE '\\'
+                OR last_name ILIKE $2 ESCAPE '\\'
+                OR btrim(first_name || ' ' || last_name) ILIKE $2 ESCAPE '\\'
+              )
+            ORDER BY seen_at DESC
+            LIMIT $3
+            """,
+            int(chat_id),
+            f"%{pattern}%",
+            int(limit),
+        )
+    except Exception:
+        log.exception("seen names")
+        return []
+    people = []
+    for row in rows:
+        people.append({
+            "user_id": int(row["user_id"]),
+            "username": str(row["username"] or ""),
+            "name": display_name(row["first_name"], row["last_name"]),
+        })
+    return people
+
+
 async def remember_message(message) -> None:
     chat = getattr(message, "chat", None)
     try:
