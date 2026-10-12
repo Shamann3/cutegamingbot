@@ -2916,10 +2916,10 @@ async def shop_op(message: Message):
         if "pistoletik" in shield_code:
             await pistoletik(db, user_id, message)
             return
-        if any(key in shield_code for key in ("dryumbrella", "drycoat", "dryawning", "drysafe")):
+        if any(part in shield_code for part in ("dryumbrella", "drycoat", "dryawning", "drysafe")):
             from bot.funcs.water_games import wear_shield
-            key = next(part for part in ("dryumbrella", "drycoat", "dryawning", "drysafe") if part in shield_code)
-            if await wear_shield(message, key):
+            shield_kind = next(part for part in ("dryumbrella", "drycoat", "dryawning", "drysafe") if part in shield_code)
+            if await wear_shield(message, shield_kind):
                 await db.delete_user_inventory1(user_id, item_name)
             return
 

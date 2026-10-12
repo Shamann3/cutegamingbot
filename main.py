@@ -18787,14 +18787,14 @@ async def _show_tasks_menu(callback_query: types.CallbackQuery, markup=None) -> 
     """Показать меню заданий. Сначала новое сообщение, старое удаляем только после успеха."""
     rich = markup or _tasks_menu_keyboard()
     plain = _tasks_menu_keyboard(icons=False)
-    text = "<b>Задания</b>\n\n<i>Выберите.</i>"
+    text = "<b><tg-emoji emoji-id='5354843814517319083'>⚫️</tg-emoji> Выберите тип задания который вам больше всего нравится</b>"
     msg = getattr(callback_query, "message", None)
     chat_id = msg.chat.id if msg and getattr(msg, "chat", None) else callback_query.from_user.id
     old_id = msg.message_id if msg else None
     variants = [
         (text, rich, "HTML"),
         (text, plain, "HTML"),
-        ("Задания\n\nВыберите.", plain, None),
+        ("<tg-emoji emoji-id='5354843814517319083'>⚫️</tg-emoji> <b>Выберите тип задания который вам больше всего нравится</b>", plain, None),
     ]
 
     async def _try_edit() -> bool:

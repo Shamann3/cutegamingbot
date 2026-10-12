@@ -31,7 +31,7 @@ def is_tasks_ask(text: str) -> bool:
 
 def tasks_prompt_text() -> str:
     return (
-        f"<tg-emoji emoji-id='{TASKS_ICON}'>💎</tg-emoji> "
+        f"<tg-emoji emoji-id='5303138782004924588'>💬</tg-emoji> "
         "<b>Для начала, нажмите на кнопку снизу</b>"
     )
 
