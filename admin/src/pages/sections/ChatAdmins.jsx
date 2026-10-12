@@ -220,7 +220,7 @@ export default function ChatAdmins({
 
       {tab === 'people' && (
         <div className="chat-admins-pane">
-          <AdminPulse chatId={chatId} onOpenUser={onOpenUser} />
+          <AdminPulse chatId={chatId} onOpenUser={onOpenUser} watch={watch} />
           <h2 className="realm-h">Администраторы группы</h2>
           <p className="realm-copy">
             Здесь только администраторы с должностью в этой группе. Сотрудники проекта не показаны.
