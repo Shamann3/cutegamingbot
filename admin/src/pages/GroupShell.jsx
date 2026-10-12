@@ -41,7 +41,7 @@ import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import ChatAdmins from './sections/ChatAdmins'
 import ChronicleSection from './sections/ChronicleSection'
-import GroupEnter, { GroupSeal, cabinetArrival, prefersReducedMotion } from './sections/GroupEnter'
+import GroupEnter, { GroupSeal, cabinetArrival, entrancePace } from './sections/GroupEnter'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
@@ -171,14 +171,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
   useEffect(() => {
     if (phase !== 'seal') return undefined
-    const ms = prefersReducedMotion() ? 0 : 720
+    const ms = entrancePace().seal
     const timer = window.setTimeout(enterCabinet, ms)
     return () => window.clearTimeout(timer)
   }, [phase, enterCabinet])
 
   useEffect(() => {
     if (leavingId == null) return undefined
-    const ms = prefersReducedMotion() ? 0 : 460
+    const ms = entrancePace().leave
     const timer = window.setTimeout(() => {
       setLeavingId(null)
       setPhase('seal')
@@ -945,10 +945,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }
 
   if (phase === 'seal') {
-    const sealTitle = (groups.find((group) => group.chatId === chatId) || groups[0])?.title
+    const sealGroup = groups.find((group) => group.chatId === chatId) || groups[0]
     return (
       <div className={shellClass} data-viewport={viewport}>
-        <GroupSeal title={sealTitle} onEnter={enterCabinet} />
+        <GroupSeal title={sealGroup?.title} position={sealGroup?.position} onEnter={enterCabinet} />
       </div>
     )
   }
@@ -1329,7 +1329,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
               <p className="realm-copy">
                 Наказания этого чата.
                 {current?.position ? ` Ваша должность: ${current.position}.` : ''}
-                {' '}Снять бан или мут — кнопка на карточке. Новое наказание — форма ниже: без причины оно не уйдёт.
+                {' '}Снять бан или мут — кнопка на карточке. Новое наказание — форма ниже: срок любой, от 35 секунд до 366 дней, и только из ваших наказаний. Без причины оно не уйдёт.
               </p>
               {mods && (
               <p className="realm-copy">
@@ -1438,6 +1438,8 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
               chatId={chatId}
               onOpenUser={openPunish}
               actions={allowedActions}
+              wide={seatWide}
+              watch={mods?.watch || []}
               onPunish={archiveAct}
             />
           )}

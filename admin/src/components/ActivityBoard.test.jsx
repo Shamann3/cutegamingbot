@@ -107,6 +107,28 @@ describe('GroupArchive', () => {
     expect(screen.queryByRole('button', { name: 'Разбанить' })).toBeTruthy()
   })
 
+  it('sends any span for a punishment the seat can issue', () => {
+    const onAct = vi.fn().mockResolvedValue({})
+    render(
+      <GroupArchive
+        actions={[{ id: 'ban', label: 'Бан', needsUntil: true }, { id: 'kick', label: 'Кикнуть', needsUntil: false }]}
+        onAct={onAct}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'До секунды' }))
+    fireEvent.change(screen.getByLabelText('Часы'), { target: { value: '0' } })
+    fireEvent.change(screen.getByLabelText('Дни'), { target: { value: '3' } })
+    fireEvent.change(screen.getByPlaceholderText('что человек сделал'), { target: { value: 'спам' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Выдать: Бан · 3 дня' }))
+    expect(onAct).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ban',
+      untilSec: 3 * 86400,
+      reason: 'спам',
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Кикнуть' }))
+    expect(screen.queryByRole('button', { name: 'До секунды' })).toBeNull()
+  })
+
   it('shows a new punishment in the open list and names one the filter hides', () => {
     const { rerender } = render(
       <GroupArchive

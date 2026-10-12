@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import PersonPunish from '../../components/PersonPunish'
 import {
   actChatAdmin,
   adviseChatApplication,
@@ -87,12 +88,6 @@ function verdictLabel(verdict) {
 }
 
 const DISCIPLINE_ORDER = ['mute', 'warn', 'kick', 'ban', 'voice']
-const SPANS = [
-  [3600, '1 час'],
-  [6 * 3600, '6 часов'],
-  [86400, '1 день'],
-  [7 * 86400, '7 дней'],
-]
 
 function humanFault(message) {
   const text = String(message || '')
@@ -112,7 +107,14 @@ function needsChatRestriction(id) {
   return id === 'mute' || id === 'ban' || id === 'kick' || id === 'voice'
 }
 
-export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], onPunish = null }) {
+export default function ChatAdmins({
+  chatId,
+  onOpenUser = null,
+  actions = [],
+  wide = [],
+  watch = [],
+  onPunish = null,
+}) {
   const [tab, setTab] = useState('people')
   const [board, setBoard] = useState(null)
   const [apps, setApps] = useState(null)
@@ -122,8 +124,7 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
   const [note, setNote] = useState('')
   const [draft, setDraft] = useState(null)
   const [explain, setExplain] = useState('')
-  const [reason, setReason] = useState('')
-  const [spanSec, setSpanSec] = useState(3600)
+  const [sheet, setSheet] = useState(null)
 
   const loadPeople = useCallback(async () => {
     if (!chatId) return
@@ -156,27 +157,6 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
     setBusy(true)
     setError('')
     try {
-      if (pending.action === 'punish') {
-        const why = reason.trim()
-        if (why.length < 2) {
-          setError('Напишите причину')
-          return
-        }
-        if (!onPunish) {
-          setError('Наказание из этой вкладки сейчас недоступно')
-          return
-        }
-        await onPunish({
-          userId: String(pending.userId),
-          action: pending.discipline.id,
-          untilSec: pending.discipline.needsUntil ? spanSec : null,
-          reason: why,
-        })
-        setNote(`${pending.discipline.label} записан`)
-        setReason('')
-        setPending(null)
-        return
-      }
       const next = await actChatAdmin(chatId, pending.userId, pending.action)
       setBoard(next)
       setNote(next.note || '')
@@ -244,7 +224,8 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
             Здесь только администраторы с должностью в этой группе. Сотрудники проекта не показаны.
             Кто администратор в Telegram без должности в системе, снимается сам.
             Спам-блок и админ ГЧ — должность, их код не трогает.
-            Ограничить права можно сразу. Снятие должности уходит создателю @JerichoCute, если это делаете не вы.
+            Снятие должности уходит создателю @JerichoCute, если это делаете не вы.
+            Наказать младшего можно только теми наказаниями, которые есть у вашей должности, на любой срок.
           </p>
           {board?.error && <p className="chat-admins-warn">{humanFault(board.error)}</p>}
           {dropped.length > 0 && (
@@ -266,7 +247,7 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
           )}
           {board && board.botIsAdmin !== false && !board.botCanPromote && !board.error && (
             <p className="chat-admins-warn">
-              Снять и ограничить админку нельзя: у бота нет права «Добавление администраторов».
+              Снять админку нельзя: у бота нет права «Добавление администраторов».
             </p>
           )}
           {board && board.botCanPromote && board.botCanRestrict === false && !board.error && (
@@ -325,13 +306,6 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
                     <div className="chat-admins-actions">
                       <button
                         type="button"
-                        disabled={!botCanPromote}
-                        onClick={() => setPending({ ...person, action: 'restrict' })}
-                      >
-                        Ограничить
-                      </button>
-                      <button
-                        type="button"
                         className="is-danger"
                         disabled={!botCanPromote || (Boolean(person.dropPending) && !creator)}
                         onClick={() => setPending({ ...person, action: 'demote' })}
@@ -342,19 +316,14 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
                   )}
                   {person.junior && disciplines.length > 0 && onPunish && (
                     <div className="chat-admins-disciplines">
-                      <p>Младше вашей должности. Наказание — теми правами, которые есть у вас.</p>
+                      <p>Младше вашей должности. Наказание — теми правами, которые есть у вас, на любой срок.</p>
                       <div>
                         {disciplines.map((item) => (
                           <button
                             key={item.id}
                             type="button"
                             disabled={needsChatRestriction(item.id) && !botCanRestrict}
-                            onClick={() => {
-                              setReason('')
-                              setSpanSec(3600)
-                              setError('')
-                              setPending({ ...person, action: 'punish', discipline: item })
-                            }}
+                            onClick={() => setSheet({ userId: person.userId, action: item.id })}
                           >
                             {item.label}
                           </button>
@@ -387,44 +356,11 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
                 aria-label="Подтверждение"
                 onClick={(event) => event.stopPropagation()}
               >
-                {pending.action === 'punish' ? (
-                  <>
-                    <p>
-                      {pending.discipline.label}: {pending.name}. Напишите, за что.
-                    </p>
-                    {pending.discipline.needsUntil && (
-                      <div className="chat-admins-spans" role="group" aria-label="Срок">
-                        {SPANS.map(([sec, label]) => (
-                          <button
-                            key={sec}
-                            type="button"
-                            className={spanSec === sec ? 'is-on' : ''}
-                            onClick={() => setSpanSec(sec)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <label className="chat-admins-reason">
-                      Причина
-                      <textarea
-                        value={reason}
-                        rows={3}
-                        maxLength={200}
-                        onChange={(event) => setReason(event.target.value)}
-                      />
-                    </label>
-                  </>
-                ) : (
-                  <p>
-                    {pending.action === 'demote'
-                      ? (creator
-                        ? `Снять админку: ${pending.name} станет обычным участником.`
-                        : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
-                      : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
-                  </p>
-                )}
+                <p>
+                  {creator
+                    ? `Снять админку: ${pending.name} станет обычным участником.`
+                    : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`}
+                </p>
                 <div>
                   <button type="button" disabled={busy} onClick={() => setPending(null)}>Назад</button>
                   <button type="button" className="is-danger" disabled={busy} onClick={commit}>
@@ -436,9 +372,22 @@ export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], on
             document.body,
           )}
 
+          {sheet && onPunish && (
+            <PersonPunish
+              chatId={chatId}
+              userId={sheet.userId}
+              actions={actions}
+              wide={wide}
+              watch={watch}
+              initialAction={sheet.action}
+              onAct={onPunish}
+              onClose={() => setSheet(null)}
+            />
+          )}
+
           <h3 className="realm-h">Журнал</h3>
           {history.length === 0 ? (
-            <p className="realm-copy">Пока никто отсюда администраторов не снимал и не ограничивал.</p>
+            <p className="realm-copy">Пока никто отсюда администраторов не снимал.</p>
           ) : (
             <ol className="chat-admins-log">
               {history.map((row) => (

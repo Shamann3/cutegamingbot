@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import GroupEnter, { cabinetArrival, cabinetNeedsGroupPick } from './GroupEnter'
+import GroupEnter, { GroupSeal, cabinetArrival, cabinetNeedsGroupPick, entrancePace, ENTRANCE_LEAVE_MS, ENTRANCE_SEAL_MS } from './GroupEnter'
 
 describe('group enter', () => {
   afterEach(() => cleanup())
@@ -24,5 +24,19 @@ describe('group enter', () => {
     expect(screen.getByRole('heading', { name: 'Ваши группы' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Новости/ }))
     expect(onPick).toHaveBeenCalledWith(-200)
+  })
+
+  it('holds the seal a little longer and shows the role', () => {
+    expect(ENTRANCE_LEAVE_MS).toBeGreaterThan(460)
+    expect(ENTRANCE_SEAL_MS).toBeGreaterThan(720)
+    expect(ENTRANCE_SEAL_MS).toBeLessThan(1400)
+    const prev = window.matchMedia
+    window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} })
+    expect(entrancePace()).toEqual({ leave: 0, seal: 0 })
+    window.matchMedia = prev
+    render(<GroupSeal title="Игры" position="Модератор" onEnter={() => {}} />)
+    expect(screen.getByText('Игры')).toBeTruthy()
+    expect(screen.getByText('Модератор')).toBeTruthy()
+    expect(screen.getByText('Открываем кабинет')).toBeTruthy()
   })
 })

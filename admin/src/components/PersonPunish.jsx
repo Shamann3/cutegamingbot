@@ -114,13 +114,18 @@ export default function PersonPunish({
   onAct,
   watch = [],
   onClose,
+  initialAction = '',
 }) {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [freshId, setFreshId] = useState(null)
   const offered = issueList(actions, wide)
-  const [action, setAction] = useState(offered.all[0]?.id || '')
+  const [action, setAction] = useState(() => {
+    const first = issueList(actions, wide).all
+    if (initialAction && first.some((item) => item.id === initialAction)) return initialAction
+    return first[0]?.id || ''
+  })
   const spanRef = useRef(3600)
   const [spanSec, setSpanSec] = useState(3600)
   const [reason, setReason] = useState('')
@@ -134,8 +139,10 @@ export default function PersonPunish({
 
   useEffect(() => {
     const next = issueList(actions, wide).all
-    if (next.length && !next.some((item) => item.id === action)) setAction(next[0].id)
-  }, [actions, wide, action])
+    if (!next.length || next.some((item) => item.id === action)) return
+    const preferred = next.find((item) => item.id === initialAction)
+    setAction((preferred || next[0]).id)
+  }, [actions, wide, action, initialAction])
 
   useEffect(() => {
     if (!chatId || !userId) return undefined

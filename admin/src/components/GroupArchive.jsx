@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import FocusWindow from './FocusWindow'
 import PhotoLook from './PhotoLook'
+import SpanClock from './SpanClock'
 import { payLabel, sortLabel } from '../lib/deedSort'
 import { arrivalLine, hiddenLine } from '../lib/liveMerge'
+import { spanToSend } from '../lib/spanClock'
+import { punishVerb } from '../lib/staffPunish'
 import UserLookupPreview from './UserLookupPreview'
 import OpenUserLink from './OpenUserLink'
 import { playMeme } from '../lib/memeSounds'
@@ -46,20 +49,6 @@ const FILTER_HINT = {
   near: 'Два или три предупреждения. На третьем чат банит сам.',
   far: 'Ноль или одно предупреждение.',
   repeat: 'Кого в этом списке наказывали больше одного раза.',
-}
-
-function actVerb(id, label) {
-  const named = {
-    mute: 'Выдать мут',
-    unmute: 'Снять мут',
-    ban: 'Выдать бан',
-    unban: 'Снять бан',
-    kick: 'Кикнуть из чата',
-    warn: 'Выдать предупреждение',
-    voice: 'Забрать голос',
-    unvoice: 'Вернуть голос',
-  }
-  return named[id] || label || 'Выполнить'
 }
 
 function stuckNote(action) {
@@ -115,7 +104,8 @@ export default function GroupArchive({
   const [userId, setUserId] = useState(seedQuery || '')
   const [resolvedId, setResolvedId] = useState(null)
   const [action, setAction] = useState(actions[0]?.id || 'mute')
-  const [hours, setHours] = useState('1')
+  const spanRef = useRef(3600)
+  const [spanSec, setSpanSec] = useState(3600)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -158,13 +148,17 @@ export default function GroupArchive({
   const submit = async (event) => {
     event.preventDefault()
     if (!onAct || !selected) return
+    if (selected.needsUntil && spanToSend(spanRef.current) == null) {
+      setError('Укажите срок больше нуля и не дольше 366 дней')
+      return
+    }
     setBusy(true)
     setError('')
     try {
       await onAct({
         userId: resolvedId || userId.trim(),
         action: selected.id,
-        hours: selected.needsUntil ? hours : null,
+        untilSec: selected.needsUntil ? spanToSend(spanRef.current) : null,
         reason: reason.trim(),
       })
       setReason('')
@@ -247,17 +241,20 @@ export default function GroupArchive({
             ))}
           </div>
           {selected?.needsUntil && (
-            <label>
-              Сколько часов держать
-              <input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="например, 1" />
-            </label>
+            <SpanClock
+              seconds={spanSec}
+              onChange={(next) => {
+                spanRef.current = next
+                setSpanSec(next)
+              }}
+            />
           )}
           <label>
             Причина
             <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="что человек сделал" required />
           </label>
           <button type="submit" className="realm-back" disabled={busy || !selected}>
-            {busy ? 'Запись…' : actVerb(selected?.id, selected?.label)}
+            {busy ? 'Запись…' : punishVerb(selected, spanSec)}
           </button>
         </form>
       )}

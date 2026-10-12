@@ -586,27 +586,43 @@ body.perf-light .gate-matrix {
   color: #fff;
 }
 
+.grp-door.is-leaving .grp-door-glow {
+  animation: grp-glow-settle 0.62s ease both;
+}
+
 .grp-door.is-leaving .grp-enter-kicker,
 .grp-door.is-leaving .grp-enter-card h1,
 .grp-door.is-leaving .grp-enter-card > p {
-  animation: grp-copy-away 0.28s cubic-bezier(0.4, 0, 1, 1) both;
+  animation: grp-copy-away 0.38s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 .grp-door.is-leaving li:not(.is-chosen) {
-  animation: grp-row-away 0.36s cubic-bezier(0.4, 0, 1, 1) both;
+  animation: grp-row-away 0.48s cubic-bezier(0.4, 0, 1, 1) both;
   pointer-events: none;
 }
 
 .grp-door.is-leaving li.is-chosen {
-  animation: grp-row-hold 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-row-hold 0.64s cubic-bezier(0.16, 1, 0.3, 1) both;
   z-index: 1;
 }
 
 .grp-door.is-leaving li.is-chosen button {
+  position: relative;
   border-bottom-color: transparent;
   border-radius: 16px;
-  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.18);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.16);
+  transition: none;
+}
+
+.grp-pick-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  height: 1px;
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+  transform-origin: left center;
+  animation: grp-track-fill 0.5s 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .grp-seal {
@@ -627,7 +643,11 @@ body.perf-light .gate-matrix {
 
 .grp-door.grp-seal {
   position: relative;
-  animation: grp-door-open 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-door-open 0.96s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-seal-kicker {
+  animation: grp-enter-in 0.42s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal strong {
@@ -635,7 +655,7 @@ body.perf-light .gate-matrix {
   font-weight: 560;
   letter-spacing: -0.045em;
   line-height: 1.05;
-  animation: grp-seal-title 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: grp-seal-title 0.72s 0.14s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-line {
@@ -643,21 +663,47 @@ body.perf-light .gate-matrix {
   height: 1px;
   background: rgba(255, 255, 255, 0.45);
   transform-origin: center;
-  animation: grp-seal-line 0.55s 0.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-seal-line 0.58s 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.grp-seal-role {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  animation: grp-enter-in 0.46s 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-go {
   color: rgba(255, 255, 255, 0.62);
   font-size: 14px;
-  animation: grp-enter-in 0.5s 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-enter-in 0.46s 0.64s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.grp-seal-track {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: max(24px, env(safe-area-inset-bottom, 0px));
+  height: 1px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.grp-seal-track i {
+  display: block;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.78);
+  transform-origin: left center;
+  animation: grp-track-fill 0.98s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .panel-shell.is-arriving .panel-shell-main {
-  animation: cabinet-arrive 0.74s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cabinet-arrive 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .panel-shell.is-arriving .phone-dock {
-  animation: cabinet-dock-in 0.48s 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cabinet-dock-in 0.56s 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes grp-enter-in {
@@ -684,17 +730,21 @@ body.perf-light .gate-matrix {
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
+@keyframes grp-glow-settle {
+  to { opacity: 0.2; }
+}
+
 @keyframes grp-copy-away {
-  to { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 0; transform: translateY(-10px); }
 }
 
 @keyframes grp-row-away {
-  to { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 0; transform: translateY(16px); }
 }
 
 @keyframes grp-row-hold {
-  from { transform: translateY(0) scale(1); }
-  to { transform: translateY(-10px) scale(1.03); }
+  from { transform: translateY(0); }
+  to { transform: translateY(-12px); }
 }
 
 @keyframes grp-door-open {
@@ -703,13 +753,18 @@ body.perf-light .gate-matrix {
 }
 
 @keyframes grp-seal-title {
-  from { opacity: 0; transform: translateY(18px) scale(0.94); filter: blur(6px); }
-  to { opacity: 1; transform: none; filter: none; }
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes grp-seal-line {
   from { opacity: 0; transform: scaleX(0.2); }
   to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes grp-track-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
 }
 
 @keyframes cabinet-dock-in {
@@ -737,15 +792,19 @@ body.perf-light .gate-matrix {
   .grp-door.grp-enter,
   .grp-door-glow,
   .grp-enter-card li,
+  .grp-pick-line,
   .grp-door.is-leaving .grp-enter-kicker,
   .grp-door.is-leaving .grp-enter-card h1,
   .grp-door.is-leaving .grp-enter-card > p,
   .grp-door.is-leaving li:not(.is-chosen),
   .grp-door.is-leaving li.is-chosen,
   .grp-door.grp-seal,
+  .grp-seal-kicker,
   .grp-seal strong,
   .grp-seal-line,
+  .grp-seal-role,
   .grp-seal-go,
+  .grp-seal-track i,
   .panel-shell.is-arriving .panel-shell-main,
   .panel-shell.is-arriving .phone-dock {
     animation: none;
@@ -761,6 +820,11 @@ html[data-viewport="phone"] .panel-shell:has(> .grp-door) {
   overflow: hidden !important;
   height: var(--tg-viewport-stable-height, 100dvh) !important;
   max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+}
+
+html.is-phone .grp-door.grp-seal,
+html[data-viewport="phone"] .grp-door.grp-seal {
+  animation-name: grp-door-open-lite;
 }
 
 html.is-phone .grp-door.grp-enter,
@@ -822,23 +886,45 @@ html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main {
   transform-origin: center top;
 }
 
+@keyframes grp-door-open-lite {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes cabinet-arrive-phone {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-    clip-path: inset(4% 3% 6% 3% round 20px);
-  }
-  60% { opacity: 1; }
-  to {
-    opacity: 1;
-    transform: none;
-    clip-path: none;
-  }
+  from { opacity: 0; transform: translateY(16px); }
+  58% { opacity: 1; }
+  to { opacity: 1; transform: none; }
+}
+
+body.perf-light .grp-door-glow,
+body.perf-light .grp-seal-track,
+body.perf-light .grp-pick-line {
+  animation: none;
+}
+
+body.perf-light .grp-door.grp-seal,
+body.perf-light .grp-door.is-leaving .grp-enter-kicker,
+body.perf-light .grp-door.is-leaving .grp-enter-card h1,
+body.perf-light .grp-door.is-leaving .grp-enter-card > p,
+body.perf-light .grp-door.is-leaving li,
+body.perf-light .grp-seal strong,
+body.perf-light .grp-seal-line,
+body.perf-light .grp-seal-role,
+body.perf-light .grp-seal-go,
+body.perf-light .panel-shell.is-arriving .panel-shell-main,
+body.perf-light .panel-shell.is-arriving .phone-dock {
+  animation-duration: 0.32s;
+  animation-delay: 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
   html.is-phone .panel-shell.is-arriving .panel-shell-main,
-  html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main {
+  html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main,
+  .grp-seal-kicker,
+  .grp-seal-role,
+  .grp-seal-track i,
+  .grp-pick-line {
     animation: none;
   }
 }

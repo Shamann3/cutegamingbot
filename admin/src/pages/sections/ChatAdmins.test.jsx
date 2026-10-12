@@ -1,13 +1,14 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatAdmins from './ChatAdmins'
-import { actChatAdmin, adviseChatApplication, fetchChatAdmins, fetchChatApplications } from '../../lib/adminClient'
+import { actChatAdmin, adviseChatApplication, fetchChatAdmins, fetchChatApplications, fetchPersonHistory } from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', () => ({
   fetchChatAdmins: vi.fn(),
   actChatAdmin: vi.fn(),
   fetchChatApplications: vi.fn(),
   adviseChatApplication: vi.fn(),
+  fetchPersonHistory: vi.fn(),
 }))
 
 const BOARD = {
@@ -58,6 +59,7 @@ describe('chat admins', () => {
     expect(screen.getByText('@anya · 5')).toBeTruthy()
     expect(screen.queryByText('Создатель Создатель')).toBeNull()
     expect(screen.getByText('Босс')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Ограничить' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Снять' }))
     expect(screen.getByText(/Снять админку: Аня станет обычным участником/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
@@ -67,42 +69,52 @@ describe('chat admins', () => {
     expect(await screen.findByText('Админка снята')).toBeTruthy()
   })
 
-  it('punishes a junior admin with a reason and a term', async () => {
+  it('punishes a junior admin with any span the seat allows', async () => {
     vi.mocked(fetchChatAdmins).mockResolvedValue({
       ...BOARD,
       admins: [{ ...BOARD.admins[0], junior: true, rank: 1 }],
       botCanRestrict: true,
     })
+    vi.mocked(fetchPersonHistory).mockResolvedValue({
+      name: 'Аня',
+      username: 'anya',
+      items: [],
+      available: true,
+    })
     const punish = vi.fn().mockResolvedValue({})
     render(<ChatAdmins chatId={-100} actions={[
-      { id: 'mute', label: 'Мут', needsUntil: true },
+      { id: 'mute', label: 'Мут', needsUntil: true, hint: 'В этой группе можете закрыть человеку сообщения и потом открыть.' },
       { id: 'warn', label: 'Предупредить', needsUntil: true },
+      { id: 'kick', label: 'Кикнуть', needsUntil: false },
     ]} onPunish={punish} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Мут' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Причина' }), { target: { value: 'флуд' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByText('Раньше наказаний не было. Первое можно выдать снизу.')).toBeTruthy()
+    expect(within(sheet).getByRole('button', { name: 'До секунды' })).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Предупредить' }))
+    expect(within(sheet).getByRole('button', { name: 'Выдать: Предупредить · 1 час' })).toBeTruthy()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'До секунды' }))
+    fireEvent.change(within(sheet).getByLabelText('Часы'), { target: { value: '0' } })
+    fireEvent.change(within(sheet).getByLabelText('Минуты'), { target: { value: '12' } })
+    fireEvent.change(within(sheet).getByPlaceholderText('что человек сделал'), { target: { value: 'флуд' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Выдать: Предупредить · 12 минут' }))
     await waitFor(() => {
       expect(punish).toHaveBeenCalledWith({
         userId: '5',
-        action: 'mute',
-        untilSec: 3600,
+        action: 'warn',
+        untilSec: 12 * 60,
         reason: 'флуд',
       })
     })
   })
 
-  it('opens a person from the name and confirms a restriction', async () => {
+  it('opens a person from the name and does not offer a rights cut', async () => {
     vi.mocked(fetchChatAdmins).mockResolvedValue(BOARD)
-    vi.mocked(actChatAdmin).mockResolvedValue({ ...BOARD, note: 'Права ограничены' })
     const open = vi.fn()
     render(<ChatAdmins chatId={-100} onOpenUser={open} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Аня' }))
     expect(open).toHaveBeenCalledWith(5)
-    fireEvent.click(screen.getByRole('button', { name: 'Ограничить' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
-    await waitFor(() => {
-      expect(actChatAdmin).toHaveBeenCalledWith(-100, 5, 'restrict')
-    })
+    expect(screen.queryByRole('button', { name: 'Ограничить' })).toBeNull()
   })
 
   it('asks the creator before a group admin removes someone', async () => {
