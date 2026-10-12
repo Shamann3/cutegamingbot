@@ -64,7 +64,11 @@ function useReveal(ref) {
   const [visible, setVisible] = useState(false)
   useEffect(() => {
     const el = ref.current
-    if (!el) return
+    if (!el) return undefined
+    if (typeof IntersectionObserver !== 'function') {
+      setVisible(true)
+      return undefined
+    }
     const obs = new IntersectionObserver(
       ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect() } },
       { threshold: 0.12 },
@@ -110,13 +114,14 @@ function Chapter({ ch, index }) {
   )
 }
 
-export default function ChronicleSection() {
+export default function ChronicleSection({ embedded = false }) {
   const [active, setActive] = useState('i')
   const scrollRef = useRef(null)
 
   useEffect(() => {
     const el = scrollRef.current
-    if (!el) return
+    if (!el) return undefined
+    const scroller = embedded ? (el.closest('.realm-main') || el) : el
     const onScroll = () => {
       for (const ch of [...CHAPTERS].reverse()) {
         const node = document.getElementById(`ch-${ch.id}`)
@@ -127,9 +132,9 @@ export default function ChronicleSection() {
       }
       setActive('i')
     }
-    el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
-  }, [])
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [embedded])
 
   const scrollTo = (id) => {
     const el = document.getElementById(`ch-${id}`)
@@ -137,7 +142,7 @@ export default function ChronicleSection() {
   }
 
   return (
-    <div className="chs-root">
+    <div className={embedded ? 'chs-root is-cabinet' : 'chs-root'}>
 
       {/* Левая навигация по главам */}
       <aside className="chs-nav">

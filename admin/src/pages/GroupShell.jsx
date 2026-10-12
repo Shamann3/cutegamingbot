@@ -40,6 +40,7 @@ import CaptchaArchiveNote from '../components/CaptchaArchiveNote'
 import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import ChatAdmins from './sections/ChatAdmins'
+import ChronicleSection from './sections/ChronicleSection'
 import GroupEnter, { GroupSeal, cabinetArrival, prefersReducedMotion } from './sections/GroupEnter'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
@@ -155,6 +156,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     if (!tabs.some((item) => item.id === tab)) setTab('overview')
   }, [tabs, tab])
   const [chapter, setChapter] = useState(false)
+  const [morePiece, setMorePiece] = useState('')
   const [lockOpen, setLockOpen] = useState(false)
   const [coach, setCoach] = useState(() => (
     !preview && cabinetArrival(groups.length, preview) === 'in' && !coachClosed('epsilon.onboard.group.v4')
@@ -826,6 +828,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
   const pickTab = (id) => {
     setChapter(false)
+    setMorePiece('')
     setRailOpen(false)
     setTab(id)
   }
@@ -1477,10 +1480,23 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
             </section>
           )}
 
-          {!chapter && activeTab === 'more' && (
+          {!chapter && activeTab === 'more' && morePiece === 'chronicle' && (
+            <section>
+              <button type="button" className="realm-back" onClick={() => setMorePiece('')}>Назад</button>
+              <ChronicleSection embedded />
+            </section>
+          )}
+
+          {!chapter && activeTab === 'more' && morePiece !== 'chronicle' && (
             <section>
               <h2 className="realm-h">Ещё</h2>
               <ul className="realm-list">
+                <li>
+                  <button type="button" className="realm-row" onClick={() => setMorePiece('chronicle')}>
+                    <strong>Хронология</strong>
+                    <span>история проекта</span>
+                  </button>
+                </li>
                 <li><a className="realm-row" href="https://t.me/CuteRules" target="_blank" rel="noreferrer" onClick={() => window.alert("Внимание: переход может закрыть панель — потом снова войдите в админку.")}><strong>Правила</strong><span>t.me/CuteRules · панель может закрыться</span></a></li>
                 {isCreator && (
                   <li><button type="button" className="realm-row" onClick={openCreator}><strong>Администраторы</strong><span>назначить</span></button></li>
