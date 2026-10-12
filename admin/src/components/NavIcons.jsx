@@ -330,6 +330,7 @@ export const NAV_ICONS = {
   settings: Settings,
   staff: Staff,
   waterGames: Games,
+  cases: Giveaways,
   support: Support,
   security: Security,
   moderation: Moderation,

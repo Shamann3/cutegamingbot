@@ -108,6 +108,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Обливания, защита и цены пистолетика. Только создатель.',
   },
   {
+    id: 'cases', label: 'Cases', labelRu: 'Кейсы', group: 'team',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Шансы и потолок кут в кейсах. Только создатель. Комиссии нет.',
+  },
+  {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
     blurb: 'Тикеты поддержки: переписка с игроками и статусы обращений.',
   },
@@ -185,6 +190,7 @@ export const SECTION_HINTS = {
   broadcast: 'Сообщение многим людям',
   staff: 'Доступ, должности, заявки и ключи',
   waterGames: 'Обливания и цены защиты',
+  cases: 'Шансы и потолок кейсов',
   rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',

@@ -44,6 +44,7 @@ import EventsSection from './sections/EventsSection'
 import SecuritySection from './sections/SecuritySection'
 import StaffSection from './sections/StaffSection'
 import WaterGames from './sections/WaterGames'
+import CasesSection from './sections/CasesSection'
 import SupportSection from './sections/SupportSection'
 import ModerationSection from './sections/ModerationSection'
 import ChronicleSection from './sections/ChronicleSection'
@@ -445,6 +446,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isPrGroups = section === 'prGroups'
   const isGames = section === 'games'
   const isWaterGames = section === 'waterGames'
+  const isCases = section === 'cases'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
   const isLogs = section === 'logs'
@@ -752,6 +754,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               }}
             />
           )}
+          {isCases && showCreator && <CasesSection />}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {
@@ -828,7 +831,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isGroupGuard && showCreator && <GroupGuardDesk />}
           {isSoftRestart && showCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
+          {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isWaterGames && !isCases && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>

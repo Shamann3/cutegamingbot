@@ -29,6 +29,7 @@ from error_codes import ERROR_CATALOG, error_meaning, error_title
 from error_reporter import schedule_error_report, schedule_http_error, schedule_security_alert, schedule_server_exception
 from admin_routes import router as admin_router
 from water_games_api import router as water_games_router
+from cases_api import router as cases_router
 from support_routes import router as support_router
 from maintenance import MAINTENANCE_MESSAGE, is_maintenance, maintenance_http_error
 from notification_hub import encode_sse, subscribe, unsubscribe
@@ -315,6 +316,7 @@ app.add_middleware(
 
 app.include_router(admin_router)
 app.include_router(water_games_router)
+app.include_router(cases_router)
 app.include_router(support_router)
 
 
@@ -935,6 +937,11 @@ async def _quiet_water_nudge(user_id: int, item_id) -> None:
         await nudge_after_purchase(db.pool, int(user_id), item_id)
     except Exception:
         logger.exception("water buy nudge")
+    try:
+        from case_buy_nudge import nudge_after_purchase as nudge_case
+        await nudge_case(db.pool, int(user_id), item_id)
+    except Exception:
+        logger.exception("case buy nudge")
 
 
 @app.post("/api/shop/buy")

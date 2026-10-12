@@ -546,187 +546,20 @@ async def marix(db , user_id , message):
 
 
 async def case5000_15000(db, user_id, message):
-    # Проверка наличия ключа и кейса в инвентаре пользователя
-    user_data = await db.fetch_all("SELECT items, balance FROM users WHERE user_id=$1", (user_id,))
-    if not user_data:
-        await message.reply("<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Пользователь не найден.</b>", parse_mode="HTML")
-        return
-
-    row = user_data[0]
-    user_inventory = decode_items(row["items"])
-    print(f"Инвентарь пользователя: {user_inventory}")
-
-    key_name = "Ключ"
-    case_name = "Маленький кейс"
-
-    if user_inventory.get(case_name, 0) > 0:
-        if user_inventory.get(key_name, 0) > 0:
-            # Генерируем случайное число от 1 до 125
-            amount = random.randint(1, 50)
-
-            # Обновляем баланс пользователя
-            current_balance = row["balance"]
-            new_balance = current_balance + amount
-            await db.update_user_balance(user_id, new_balance)
-            await db.cutehistory_plus(
-                user_id , amount , "открытие маленького кейса")
-
-            win_amount_formatted = "{:,.0f}".format(amount).replace(",", ".")
-
-            button = InlineKeyboardButton(text=" " , callback_data="9close_bonus", style="default" ,
-                icon_custom_emoji_id="5226660202035554522")
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[ [ button ] ])
-            await message.answer(text='✨')
-            await message.reply(
-                f"📦 <b>Вы открыли маленький кейс с {win_amount_formatted} кут</b>",
-                parse_mode="HTML"
-            )
-
-            # Удаляем 1 шт ключа и кейса из инвентаря пользователя после успешного открытия кейса
-            user_inventory[key_name] -= 1
-            if user_inventory[key_name] == 0:
-                del user_inventory[key_name]
-
-            user_inventory[case_name] -= 1
-            if user_inventory[case_name] == 0:
-                del user_inventory[case_name]
-
-            updated_inventory = encode_items(user_inventory)
-            await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
-            await item_cost.record_losses(
-                db.pool, user_id, {case_name: 1, key_name: 1},
-                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
-            )
-        else:
-            # Если у пользователя нет ключа, отправляем сообщение об ошибке
-            await message.reply(
-                "✖️ <b>У вас нет ключа для открытия кейса.</b>", parse_mode="HTML"
-            )
-    else:
-        # Если у пользователя нет кейса, отправляем сообщение об ошибке
-        await message.reply(
-            "✖️ <b>У вас нет маленького кейса для открытия.</b>", parse_mode="HTML"
-        )
+    from bot.funcs.case_desk import open_case
+    await open_case(db, user_id, message, "small")
 
 
 async def case20000_40000(db, user_id, message):
-    # Проверка наличия данных пользователя
-    user_data = await db.fetch_all("SELECT items, balance FROM users WHERE user_id=$1", (user_id,))
-    if not user_data:
-        await message.reply("<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Пользователь не найден.</b>", parse_mode="HTML")
-        return
-
-    row = user_data[0]
-    user_inventory = decode_items(row["items"])
-    print(f"Инвентарь пользователя: {user_inventory}")
-
-    key_name = "Ключ"
-    case_name = "Средний кейс"
-
-    if user_inventory.get(case_name, 0) > 0:
-        if user_inventory.get(key_name, 0) > 0:
-            # Генерируем случайное число от 70 до 160
-            amount = random.randint(30, 70)
-
-            # Обновляем баланс пользователя
-            current_balance = row["balance"]
-            new_balance = current_balance + amount
-            await db.update_user_balance(user_id, new_balance)
-            await db.cutehistory_plus(
-                user_id , amount , "открытие среднего кейса")
-
-            win_amount_formatted = "{:,.0f}".format(amount).replace(",", ".")
-            await message.answer(text='⚡️')
-            await message.reply(
-                f"🎒 <b>Вы открыли средний кейс с {win_amount_formatted} кут</b>",
-                parse_mode="HTML"
-            )
-
-            # Удаляем 1 шт ключа и кейса из инвентаря пользователя после успешного открытия кейса
-            user_inventory[key_name] -= 1
-            if user_inventory[key_name] == 0:
-                del user_inventory[key_name]
-
-            user_inventory[case_name] -= 1
-            if user_inventory[case_name] == 0:
-                del user_inventory[case_name]
-
-            updated_inventory = encode_items(user_inventory)
-            await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
-            await item_cost.record_losses(
-                db.pool, user_id, {case_name: 1, key_name: 1},
-                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
-            )
-        else:
-            # Если у пользователя нет ключа, отправляем сообщение об ошибке
-            await message.reply(
-                "✖️ <b>У вас нет ключа для открытия кейса.</b>", parse_mode="HTML"
-            )
-    else:
-        # Если у пользователя нет кейса, отправляем сообщение об ошибке
-        await message.reply(
-            "✖️ <b>У вас нет среднего кейса для открытия.</b>", parse_mode="HTML"
-        )
+    from bot.funcs.case_desk import open_case
+    await open_case(db, user_id, message, "mid")
 
 
 async def case50000_100000(db, user_id, message):
-    # Проверка наличия данных пользователя
-    user_data = await db.fetch_all("SELECT items, balance FROM users WHERE user_id=$1", (user_id,))
-    if not user_data:
-        await message.reply("<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Пользователь не найден.</b>", parse_mode="HTML")
-        return
+    from bot.funcs.case_desk import open_case
+    await open_case(db, user_id, message, "large")
 
-    row = user_data[0]
-    user_inventory = decode_items(row["items"])
-    print(f"Инвентарь пользователя: {user_inventory}")
 
-    key_name = "Ключ"
-    case_name = "Большой кейс"
-
-    if user_inventory.get(case_name, 0) > 0:
-        if user_inventory.get(key_name, 0) > 0:
-            # Генерируем случайное число от 80 до 220
-            amount = random.randint(50, 170)
-
-            # Обновляем баланс пользователя
-            current_balance = row["balance"]
-            new_balance = current_balance + amount
-            await db.update_user_balance(user_id, new_balance)
-            await db.cutehistory_plus(
-                user_id , amount , "открытие большого кейса")
-
-            win_amount_formatted = "{:,.0f}".format(amount).replace(",", ".")
-            await message.answer(text='🧳')
-            await message.reply(
-                f"🧳 <b>Вы открыли большой кейс с {win_amount_formatted} кут</b>",
-                parse_mode="HTML"
-            )
-
-            # Удаляем 1 шт ключа и кейса из инвентаря пользователя после успешного открытия кейса
-            user_inventory[key_name] -= 1
-            if user_inventory[key_name] == 0:
-                del user_inventory[key_name]
-
-            user_inventory[case_name] -= 1
-            if user_inventory[case_name] == 0:
-                del user_inventory[case_name]
-
-            updated_inventory = encode_items(user_inventory)
-            await db.fetch_all("UPDATE users SET items=$1 WHERE user_id=$2", (updated_inventory, user_id))
-            await item_cost.record_losses(
-                db.pool, user_id, {case_name: 1, key_name: 1},
-                reason=item_cost.REASON_CASE_OPEN, ref_kind="case",
-            )
-        else:
-            # Если у пользователя нет ключа, отправляем сообщение об ошибке
-            await message.reply(
-                "✖️ <b>У вас нет ключа для открытия кейса.</b>", parse_mode="HTML"
-            )
-    else:
-        # Если у пользователя нет кейса, отправляем сообщение об ошибке
-        await message.reply(
-            "✖️ <b>У вас нет большого кейса для открытия.</b>", parse_mode="HTML"
-        )
 async def meh_vor(self , user_id , message):
     target_id = self.get_random_user_id()
 
@@ -1388,8 +1221,8 @@ async def gator(user_id , message):
     await message.reply_sticker(sticker_id)
 
 async def key(user_id , message):
-    # Отправляем стикер
-    await message.reply('🔑 Ключ можно использовать только для открытия кейсов')
+    from bot.funcs.case_desk import explain_key
+    await explain_key(user_id, message)
 
 async def taxi(user_id , message):
     # Отправляем стикер

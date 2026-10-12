@@ -572,6 +572,17 @@ export async function saveWaterRules(rules) {
   })
 }
 
+export async function fetchCaseBoard() {
+  return adminRequest('/cases')
+}
+
+export async function saveCaseRules(rules) {
+  return adminRequest('/cases/rules', {
+    method: 'POST',
+    body: rules,
+  })
+}
+
 
 
 export async function fetchAdminMe() {

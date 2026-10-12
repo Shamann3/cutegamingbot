@@ -1,0 +1,135 @@
+.case-desk {
+  display: grid;
+  gap: 18px;
+}
+
+.case-head h2 {
+  margin: 0 0 6px;
+}
+
+.case-head p,
+.case-card header p,
+.case-sum {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.case-card {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--e-plate, #17171b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: case-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-card.is-saved {
+  box-shadow: inset 3px 0 0 rgba(var(--e-accent-rgb, 200, 175, 255), 0.9);
+}
+
+.case-card h3 {
+  margin: 0;
+}
+
+.case-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-card input {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.case-meter {
+  display: flex;
+  height: 6px;
+  margin-top: 14px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.case-meter i {
+  display: block;
+  height: 100%;
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  animation: case-bar 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-meter i:nth-child(2) { background: rgba(255, 255, 255, 0.55); }
+.case-meter i:nth-child(3) { background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.45); }
+.case-meter i:nth-child(4),
+.case-meter i:nth-child(5),
+.case-meter i:nth-child(6) { background: rgba(255, 255, 255, 0.28); }
+
+.case-card ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.case-card li {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.case-card li button,
+.case-actions button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.case-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.case-fault {
+  color: #ffb4b4;
+}
+
+@keyframes case-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes case-bar {
+  from { transform: scaleX(0); transform-origin: left center; }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .case-card,
+  .case-meter i {
+    animation: none;
+  }
+}
+
+body.perf-light .case-card,
+body.perf-light .case-meter i {
+  animation-duration: 0.32s;
+}
