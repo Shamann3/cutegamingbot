@@ -356,6 +356,40 @@ screen(
 )
 
 screen(
+    "home_worn",
+    """
+    <b><tg-emoji emoji-id='5222486447306602688'>🔫</tg-emoji> Водные игры</b>
+    <i>Обливаете человека и забираете часть его кут.</i>
+
+    {mark} <b>{name}</b> · ещё {left}
+    """,
+)
+
+screen(
+    "shield_removed",
+    """
+    <b>{mark} {name} снят</b>
+    <i>Снова в инвентаре. Осталось {left}. В следующий раз будет столько же — и после продажи тоже.</i>
+    """,
+)
+
+screen(
+    "shield_removed_forever",
+    """
+    <b>{mark} {name} снят</b>
+    <i>Снова в инвентаре. По-прежнему навсегда, даже если его передадут.</i>
+    """,
+)
+
+screen(
+    "shield_off_none",
+    """
+    <b>Защиты нет</b>
+    <i>Снимать нечего.</i>
+    """,
+)
+
+screen(
     "rules",
     """
     <b>Как облить</b>
@@ -815,6 +849,31 @@ _ASK_PARTS = (
     ("как", "пистолет"),
     ("водн", "защит"),
 )
+
+
+_OFF_EXACT = {
+    "снять защиту",
+    "снятьзащиту",
+    "сними защиту",
+    "снять щит",
+    "снять зонтик",
+    "снять дождевик",
+    "снять навес",
+    "снять сейф",
+    "снять сухой сейф",
+}
+
+
+def is_shield_off(text: str) -> bool:
+    """Снять надетую защиту. Остаток срока вернётся в инвентарь."""
+    raw = " ".join(str(text or "").lower().replace("ё", "е").split())
+    raw = re.sub(r"[^a-zа-я0-9 ]", " ", raw)
+    raw = " ".join(raw.split())
+    if not raw or len(raw) > 40:
+        return False
+    if raw in _OFF_EXACT:
+        return True
+    return raw.startswith("снять защит") or raw.startswith("сними защит")
 
 
 def is_water_ask(text: str) -> bool:

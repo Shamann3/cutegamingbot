@@ -86,6 +86,21 @@ class Candidate:
     username: str = ""
 
 
+def join_people(members) -> List[TgPerson]:
+    """Люди из служебного «вступил в группу». Боты не считаются."""
+    found: List[TgPerson] = []
+    seen = set()
+    for user in members or []:
+        if getattr(user, "is_bot", False):
+            continue
+        person = TgPerson.from_user(user)
+        if person is None or person.user_id in seen or person.is_bot:
+            continue
+        seen.add(person.user_id)
+        found.append(person)
+    return found
+
+
 def clean_username(value: Any) -> str:
     text = str(value or "").strip().lstrip("@").strip(" ,.;:!?\"'`()[]{}<>")
     return text if _USERNAME.match(text) else ""
@@ -516,6 +531,80 @@ async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
     if isinstance(found, TgPlace):
         return "place", found
     return "unknown", None
+
+
+def pick_group_person(people: Iterable[TgPerson], query: str) -> Optional[TgPerson]:
+    """Один человек из поиска по группе. Двое с одним именем — никого не выбираем."""
+    want_user = str(query or "").strip().lstrip("@").casefold()
+    want_name = fold_name(query)
+    humans = [
+        person for person in people
+        if isinstance(person, TgPerson) and not person.is_bot and int(person.user_id) > 0
+    ]
+    if want_user:
+        exact = [person for person in humans if (person.username or "").casefold() == want_user]
+        if len(exact) == 1:
+            return exact[0]
+    if want_name:
+        named = [person for person in humans if fold_name(person.full_name) == want_name]
+        if len(named) == 1:
+            return named[0]
+    if len(humans) == 1:
+        only = humans[0]
+        if want_user and want_user in (only.username or "").casefold():
+            return only
+        if want_name and want_name in fold_name(only.full_name):
+            return only
+    return None
+
+
+async def find_in_group(chat_id: int, query: str) -> Optional[TgPerson]:
+    """Участник этой группы через юзербот, даже если в базе Кута его нет."""
+    text = " ".join(str(query or "").split())
+    if not text or len(text) > 64:
+        return None
+    try:
+        cid = int(chat_id)
+    except (TypeError, ValueError):
+        return None
+    if cid >= 0:
+        return None
+    client = find_userbot()
+    if client is None:
+        return None
+    try:
+        import asyncio
+
+        rows = await asyncio.wait_for(
+            client.get_participants(cid, search=text.lstrip("@"), limit=8),
+            timeout=4.0,
+        )
+    except Exception:
+        return None
+    people = []
+    for item in rows or []:
+        person = _person_from_mtproto(item)
+        if person is not None:
+            people.append(person)
+    found = pick_group_person(people, text)
+    if found is None:
+        return None
+    try:
+        from bot.funcs.seen_people import remember_user
+
+        await remember_user(cid, _memory_user(found))
+    except Exception:
+        pass
+    return found
+
+
+class _memory_user:
+    def __init__(self, person: TgPerson):
+        self.id = person.user_id
+        self.username = person.username
+        self.first_name = person.first_name
+        self.last_name = person.last_name
+        self.is_bot = False
 
 
 def find_userbot() -> Any:

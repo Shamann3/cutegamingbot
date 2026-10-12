@@ -24,6 +24,18 @@ import item_lots  # noqa: E402
 
 log = logging.getLogger("item_cost")
 
+
+def _shield_charges():
+    import water_shield_charges
+    return water_shield_charges
+
+
+async def _shift_shield(conn, fn) -> None:
+    try:
+        await _shield_charges().guard(conn, fn)
+    except Exception:
+        log.exception("shield charge")
+
 SOURCE_SHOP = item_lots.SOURCE_SHOP
 SOURCE_GIFT = item_lots.SOURCE_GIFT
 SOURCE_REWARD = item_lots.SOURCE_REWARD
@@ -243,6 +255,12 @@ async def record_gift(
                     ref_kind=ref_kind,
                     ref_id=ref_id or str(to_user_id),
                 )
+                await _shift_shield(
+                    conn,
+                    lambda: _shield_charges().move_free(
+                        conn, from_user_id, to_user_id, item_ref, quantity,
+                    ),
+                )
     except Exception:
         log.exception("record_gift failed %s → %s item=%s", from_user_id, to_user_id, item_ref)
 
@@ -287,6 +305,12 @@ async def record_transfer(
                             ref_kind=ref_kind,
                             ref_id=ref_id or str(to_user_id),
                         )
+                        await _shift_shield(
+                            conn,
+                            lambda item_ref=item_ref, qty=qty: _shield_charges().move_free(
+                                conn, from_user_id, to_user_id, item_ref, qty,
+                            ),
+                        )
                         continue
                     await item_lots.record_consume(
                         conn,
@@ -307,6 +331,12 @@ async def record_transfer(
                         source=item_lots.SOURCE_TRADE,
                         ref_kind=ref_kind,
                         ref_id=ref_id or str(from_user_id),
+                    )
+                    await _shift_shield(
+                        conn,
+                        lambda item_ref=item_ref, qty=qty: _shield_charges().move_free(
+                            conn, from_user_id, to_user_id, item_ref, qty,
+                        ),
                     )
     except Exception:
         log.exception("record_transfer failed %s → %s", from_user_id, to_user_id)

@@ -2614,6 +2614,17 @@ export async function fetchGroupPositions(chatId) {
   return adminFetch(`/group-realm/positions/${encodeURIComponent(chatId)}`)
 }
 
+export async function fetchChatAdmins(chatId) {
+  return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}`)
+}
+
+export async function actChatAdmin(chatId, userId, action) {
+  return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}`, {
+    method: 'POST',
+    body: { user_id: userId, action },
+  })
+}
+
 export async function appointGroupAdmin(body) {
   return adminFetch('/group-realm/appoint', { method: 'POST', body })
 }

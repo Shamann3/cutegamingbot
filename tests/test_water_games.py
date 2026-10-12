@@ -24,6 +24,7 @@ from water_games.design import (
     guide_status,
     after_buy_text,
     hours_phrase,
+    is_shield_off,
     is_water_ask,
     joined_until,
     left_phrase,
@@ -69,6 +70,13 @@ def test_any_short_question_opens_water_games():
     assert is_water_ask("как облить человека")
     assert is_water_ask("водный пистолет")
     assert not is_water_ask("облить водой")
+    assert not is_water_ask("снять защиту")
+    assert is_shield_off("снять защиту")
+    assert is_shield_off("Сними защиту пожалуйста")
+    assert not is_shield_off("водные игры")
+    stamped = stamp_callback("wg:off", 5)
+    assert button_owner(stamped) == 5
+    assert strip_callback_owner(stamped) == "wg:off"
     assert not is_water_ask("привет как дела на ферме сегодня вечером и завтра тоже")
 
 

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Срок и нарушитель читаются в любом порядке. Без базы и без Telegram."""
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bot.admins.punish_clause import (
@@ -161,6 +162,39 @@ def test_telegram_errors_split_a_fake_id_from_an_unseen_one():
     assert not is_invalid_telegram_user_error(TelegramError("Bad Request: chat not found"))
 
 
+def test_a_person_the_bot_already_saw_is_found_before_telegram():
+    asyncio.run(_a_person_the_bot_already_saw_is_found_before_telegram())
+
+
+async def _a_person_the_bot_already_saw_is_found_before_telegram():
+    from bot.admins.punish_validate import find_telegram_username
+
+    async def seen(username, chat_id=None):
+        return {"user_id": 8858841901, "first_name": "New", "username": username}
+
+    async def silent(_clean, _budget, _who):
+        return "unknown", None
+
+    with patch("bot.admins.punish_validate._person_from_seen", seen), patch(
+        "bot.admins.punish_validate._username_from_telegram", silent,
+    ), patch("bot.admins.punish_validate._person_from_group", AsyncMock(return_value=None)):
+        kind, person = await find_telegram_username("newone", source_chat_id=-100)
+    assert kind == "person"
+    assert person["user_id"] == 8858841901
+
+    api = SimpleNamespace(user_id=111111111, first_name="Api", last_name="", username="newone", is_bot=False)
+
+    async def answered(_clean, _budget, _who):
+        return "person", api
+
+    with patch("bot.admins.punish_validate._person_from_seen", seen), patch(
+        "bot.admins.punish_validate._username_from_telegram", answered,
+    ):
+        kind, person = await find_telegram_username("newone", source_chat_id=-100)
+    assert kind == "person"
+    assert person["user_id"] == 111111111
+
+
 def test_unseen_account_is_created_and_a_fake_id_is_not():
     asyncio.run(_unseen_account_is_created_and_a_fake_id_is_not())
 
@@ -230,3 +264,9 @@ async def _unseen_account_is_created_and_a_fake_id_is_not():
         named = await describe_telegram_user(8827084733, source_chat_id=-100)
     assert named["first_name"] == "Ира"
     assert named["username"] == "ira_k"
+
+    with patch("bot.admins.punish_validate._bot", return_value=Bot("Bad Request: chat not found")), patch(
+        "bot.admins.punish_validate._ask_userbot",
+        AsyncMock(return_value=("missing", None)),
+    ), patch("bot.admins.punish_validate.inspect_chat_member", member):
+        assert await verify_telegram_user_exists(8827084733, probe_chat_ids=(-100,)) is True

@@ -193,6 +193,32 @@ def test_flood_wait_pauses_the_next_question(fresh_budget):
     assert "подождать 2 мин" in pv.username_miss_html("floodcheck1", "fallback")
 
 
+def test_bare_username_not_in_kut_is_resolved_through_telegram(fresh_budget):
+    asyncio.run(_bare_username_not_in_kut_is_resolved_through_telegram())
+
+
+async def _bare_username_not_in_kut_is_resolved_through_telegram():
+    from bot.admins.mute import read_punish_clause
+    from bot.funcs.who_lookup import TgPerson
+
+    person = TgPerson(user_id=8827084733, first_name="Prayz", username="Prayz00")
+    found, resolve, mock = _userbot(("person", person))
+
+    class Db:
+        pool = None
+
+        async def get_user_id_by_username(self, _username):
+            return None
+
+    with found, resolve, patch("bot.admins.mute._db", return_value=Db()):
+        clause = await read_punish_clause(["Prayz00", "спам"], source_chat_id=-100)
+    assert clause.error is None
+    assert clause.target_id == 8827084733
+    assert clause.target_username == "Prayz00"
+    assert clause.reason == "спам"
+    assert mock.await_count == 1
+
+
 def test_username_person_gets_a_kut_row_before_the_punishment(fresh_budget):
     from bot.admins import punish_validate as pv
     from bot.funcs.who_lookup import TgPerson

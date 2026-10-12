@@ -1,0 +1,131 @@
+.chat-admins-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.chat-admins-card {
+  border: 1px solid color-mix(in srgb, var(--line, #d7d2c8) 80%, transparent);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--paper, #fff) 92%, transparent);
+  animation: chat-admins-in 0.38s ease both;
+}
+
+.chat-admins-card strong {
+  font-size: 16px;
+}
+
+.chat-admins-status,
+.chat-admins-title {
+  margin-left: 8px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #6d675f);
+}
+
+.chat-admins-card p {
+  margin: 6px 0 0;
+}
+
+.chat-admins-powers {
+  color: var(--ink-soft, #6d675f);
+}
+
+.chat-admins-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chat-admins-actions button,
+.chat-admins-confirm button {
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: 1px solid var(--line, #d7d2c8);
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-admins-actions .is-danger,
+.chat-admins-confirm .is-danger {
+  background: #9d3b32;
+  color: #fff;
+  border-color: transparent;
+}
+
+.chat-admins-confirm {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, #9d3b32 8%, var(--paper, #fff));
+  animation: chat-admins-in 0.24s ease both;
+}
+
+.chat-admins-confirm p {
+  margin: 0 0 10px;
+}
+
+.chat-admins-confirm div {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-admins-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.chat-admins-log li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  padding: 10px 0;
+  border-top: 1px solid color-mix(in srgb, var(--line, #d7d2c8) 70%, transparent);
+  animation: chat-admins-in 0.4s ease both;
+}
+
+.chat-admins-log span,
+.chat-admins-log em {
+  color: var(--ink-soft, #6d675f);
+  font-style: normal;
+  font-size: 13px;
+}
+
+.chat-admins-log p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.chat-admins-warn,
+.chat-admins-note {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.chat-admins-warn {
+  background: color-mix(in srgb, #9d3b32 10%, transparent);
+}
+
+.chat-admins-note {
+  background: color-mix(in srgb, #2f6f4e 12%, transparent);
+}
+
+@keyframes chat-admins-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-admins-card,
+  .chat-admins-confirm,
+  .chat-admins-log li {
+    animation: none;
+  }
+}

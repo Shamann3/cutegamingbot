@@ -5588,6 +5588,11 @@ async def on_user_join_message(message: Message):
             pass
 
         print(f"✅ [USER][JOIN][MSG] uid={uid} chat_id={chat_id}")
+        try:
+            from bot.funcs.seen_people import remember_user
+            await remember_user(chat_id, u)
+        except Exception as seen_err:
+            print(f"[SEEN] uid={uid} chat_id={chat_id} err={seen_err!r}")
 
         # 3) приветствие (только если включено)
         if greet_enabled:
@@ -39827,6 +39832,16 @@ class BalanceEngineMiddleware(BaseMiddleware):
 
             if uid:
                 asyncio.create_task(self._run_tick(int(uid)))
+            message = event if isinstance(event, Message) else getattr(event, "message", None)
+            if isinstance(message, Message):
+                from bot.funcs.seen_people import remember_message
+                asyncio.create_task(remember_message(message))
+            member = getattr(event, "chat_member", None)
+            user = getattr(getattr(member, "new_chat_member", None), "user", None)
+            chat = getattr(member, "chat", None)
+            if user is not None and chat is not None:
+                from bot.funcs.seen_people import remember_user
+                asyncio.create_task(remember_user(int(chat.id), user))
         except Exception as e:
             print(f"❌ [BALANCE][MW] err: {e!r}")
 

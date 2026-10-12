@@ -76,6 +76,7 @@ from bot.admins.mute import (
   _get_command_text,
   _get_proof_file_id,
   _get_reply_target_message,
+  _reply_person,
   _has_command_text,
   _has_proof_media,
   _is_staff_chat,
@@ -800,7 +801,7 @@ async def parse_ban_command(message: Message) -> ParsedBan | ParseError:
   reply_msg = _get_reply_target_message(message)
   body = parts[1:] if len(parts) > 1 else []
   source_chat_id = message.chat.id
-  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  reply_user = _reply_person(reply_msg)
   clause = await read_punish_clause(body, reply_user=reply_user, source_chat_id=source_chat_id)
   if clause.error == "no_target":
     if not body:
@@ -2332,8 +2333,8 @@ async def _handle_ban_command(message: Message) -> bool:
 
 async def _resolve_cancel_ban_target(message: Message) -> ParsedBan | ParseError:
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return ParsedBan(
       target_id=u.id,
       target_name=u.full_name or u.first_name or str(u.id),
@@ -2440,8 +2441,8 @@ async def _resolve_unban_target(
 ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
   """Цель разбана: ответ на сообщение либо токен после команды (@user, id, имя)."""
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return u.id, u.full_name or u.first_name or str(u.id), u.username
   body = _strip_unban_prefix(_get_command_text(message))
   return await _resolve_target_from_body(message, body)

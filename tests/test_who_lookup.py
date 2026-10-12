@@ -356,6 +356,14 @@ def test_find_userbot_uses_only_a_connected_main_client(monkeypatch):
 
 # --- бюджет юзербота -------------------------------------------------------------
 
+def test_one_person_in_the_group_is_chosen_and_two_names_are_not():
+    ira = who.TgPerson(8858841901, "Ира", username="ira_k")
+    other = who.TgPerson(8858841902, "Ира", username="other")
+    assert who.pick_group_person([ira, other], "ira_k").user_id == 8858841901
+    assert who.pick_group_person([ira, other], "Ира") is None
+    assert who.pick_group_person([ira], "Ира").user_id == 8858841901
+
+
 def test_budget_spaces_out_one_viewer():
     budget = who.UsernameBudget(per_viewer=5)
     assert budget.allow(1, 0)
@@ -395,3 +403,12 @@ def test_budget_remembers_answers_for_a_while():
     for i in range(5):
         budget.remember(f"user{i}", "missing", None, 200)
     assert len(budget._cache) <= 2
+
+
+def test_join_service_message_keeps_the_person_who_just_entered():
+    people = who.join_people([
+        SimpleNamespace(id=77, first_name="Новый", last_name="", username="justjoined", is_bot=False),
+        SimpleNamespace(id=3, first_name="Бот", last_name="", username="helper", is_bot=True),
+    ])
+    assert [person.user_id for person in people] == [77]
+    assert people[0].username == "justjoined"

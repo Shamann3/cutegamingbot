@@ -311,6 +311,13 @@ async def admin_cancel_listing(
             await item_lots.escrow_return(
                 conn, seller_id, str(row["item_id"]), qty, holder_id=listing_id
             )
+            import water_shield_charges as shield_charges
+            await shield_charges.guard(
+                conn,
+                lambda: shield_charges.unpark(
+                    conn, seller_id, str(row["item_id"]), qty, listing_id,
+                ),
+            )
 
     entry = dex_catalog.get(str(row["item_id"]))
     item_name = entry.name if entry else str(row["item_id"])

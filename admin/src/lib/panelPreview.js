@@ -145,6 +145,7 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
       { id: 'archive', label: 'Архив' },
       { id: 'activity', label: 'Активность' },
       { id: 'rights', label: 'Должности' },
+      { id: 'admins', label: 'Админы' },
       { id: 'switches', label: 'Переключатели' },
       { id: 'more', label: 'Ещё' },
     ])
@@ -156,12 +157,13 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
       if (chosen.has(item.id)) items.push({ id: item.id, label: item.label })
     }
     items.push({ id: 'more', label: 'Ещё' })
-    return placePay(items)
+    return placePay(spliceAdmins(items, rights))
   }
   if (Number(rank) >= 5) {
     return placePay([
       { id: 'overview', label: 'Главная' },
       ...CABINET_PAGE_DEFS.filter((item) => item.id !== 'pay').map((item) => ({ id: item.id, label: item.label })),
+      { id: 'admins', label: 'Админы' },
       { id: 'more', label: 'Ещё' },
     ])
   }
@@ -174,7 +176,18 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
   }
   if (has('manage_positions')) items.push({ id: 'rights', label: 'Должности' })
   items.push({ id: 'more', label: 'Ещё' })
-  return placePay(items)
+  return placePay(spliceAdmins(items, set))
+}
+
+function spliceAdmins(items, rights) {
+  const set = rights instanceof Set ? rights : new Set(rights || [])
+  if (!set.has('manage_chat_admins') || items.some((item) => item.id === 'admins')) return items
+  const row = { id: 'admins', label: 'Админы' }
+  const more = items.findIndex((item) => item.id === 'more')
+  if (more < 0) return [...items, row]
+  const next = items.slice()
+  next.splice(more, 0, row)
+  return next
 }
 
 export function derivedCabinetPageIds(rights) {

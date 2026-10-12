@@ -65,6 +65,7 @@ from bot.admins.mute import (
   _get_command_text,
   _get_proof_file_id,
   _get_reply_target_message,
+  _reply_person,
   _has_command_text,
   _has_proof_media,
   _is_staff_chat,
@@ -467,7 +468,7 @@ async def parse_kick_command(message: Message) -> ParsedKick | ParseError:
   reply_msg = _get_reply_target_message(message)
   body_after_cmd = parts[1:] if len(parts) > 1 else []
   source_chat_id = message.chat.id
-  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  reply_user = _reply_person(reply_msg)
   clause = await read_punish_clause(
     body_after_cmd, reply_user=reply_user, source_chat_id=source_chat_id,
   )
@@ -1219,8 +1220,8 @@ async def _handle_kick_command(message: Message) -> bool:
 
 async def _resolve_cancel_kick_target(message: Message) -> ParsedKick | ParseError:
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return ParsedKick(
       target_id=u.id,
       target_name=u.full_name or u.first_name or str(u.id),

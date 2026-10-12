@@ -3691,6 +3691,16 @@ def _get_reply_target_message(message: Message) -> Optional[Message]:
   return None
 
 
+def _reply_person(reply_msg):
+  """Автор сообщения, если это человек.
+
+  Ответ на карточку бота берёт нарушителя из неё. Статистика и списки
+  никого не подставляют, чтобы команда не наказала самого бота.
+  """
+  from bot.admins.card_target import reply_target_user
+  return reply_target_user(reply_msg)
+
+
 async def _confirm_lookup_user_id(
   uid: Optional[int],
   name: Optional[str],
@@ -3847,6 +3857,20 @@ async def _lookup_target_by_token(
     if not found_id:
       MuteDebug.log("PARSE", "username not in db", username=username)
     return found_id, found_name, found_username
+
+  from bot.admins.punish_validate import person_from_chat_query
+  local = await person_from_chat_query(token, source_chat_id)
+  if local:
+    found = await ensure_punishment_profile(
+      int(local["user_id"]),
+      first_name=local.get("first_name"),
+      last_name=None,
+      username=local.get("username"),
+      source_chat_id=source_chat_id,
+      from_telegram=True,
+    )
+    if found:
+      return found
 
   users_map = await db.get_user_id_by_first_name(token)
   if users_map and len(users_map) == 1:
@@ -4167,8 +4191,8 @@ async def _resolve_unmute_target(
 ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
   """Цель для размута: ответ на сообщение или токен после команды."""
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return (
       u.id,
       u.full_name or u.first_name or str(u.id),
@@ -4200,8 +4224,8 @@ def _target_lookup_error_message(
 async def _resolve_cancel_mute_target(message: Message) -> ParsedMute | ParseError:
   """Определяет игрока для отмены мута: ответ на сообщение или токен после команды."""
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return ParsedMute(
       target_id=u.id,
       target_name=u.full_name or u.first_name or str(u.id),
@@ -4249,7 +4273,7 @@ async def parse_mute_command(message: Message) -> ParsedMute | ParseError:
   reply_msg = _get_reply_target_message(message)
   body = parts[1:]
   source_chat_id = message.chat.id
-  reply_user = reply_msg.from_user if reply_msg and reply_msg.from_user else None
+  reply_user = _reply_person(reply_msg)
   clause = await read_punish_clause(body, reply_user=reply_user, source_chat_id=source_chat_id)
   if clause.error == "no_target":
     if not body:
@@ -6531,8 +6555,8 @@ async def _resolve_punishments_target(
 ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
   """Цель сводки: ответ на сообщение → его автор; «мои наказания» → себя; иначе токен."""
   reply_msg = _get_reply_target_message(message)
-  if reply_msg and reply_msg.from_user:
-    u = reply_msg.from_user
+  u = _reply_person(reply_msg)
+  if u:
     return u.id, u.full_name or u.first_name or str(u.id), u.username
 
   text = _get_command_text(message)

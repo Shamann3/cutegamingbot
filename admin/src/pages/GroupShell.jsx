@@ -38,6 +38,7 @@ import ApproveSeat from '../components/ApproveSeat'
 import CaptchaArchiveNote from '../components/CaptchaArchiveNote'
 import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
+import ChatAdmins from './sections/ChatAdmins'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
@@ -1343,6 +1344,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 onConfirm={confirmHolderAccess}
               />
             </section>
+          )}
+
+          {!chapter && activeTab === 'admins' && (
+            <ChatAdmins chatId={chatId} />
           )}
 
           {!chapter && activeTab === 'switches' && isCreator && (

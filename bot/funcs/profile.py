@@ -864,10 +864,21 @@ async def _who_chat_people(db, chat_id: int) -> List[who.Candidate]:
     except Exception as e:
         _who_dbg(f"Не удалось прочитать людей чата {chat_id}: {e}")
         return []
-    return [
+    people = [
         who.Candidate(int(r["user_id"]), str(r["first_name"] or ""), str(r["username"] or ""))
         for r in rows
     ]
+    try:
+        from bot.funcs.seen_people import chat_candidates
+        seen = await chat_candidates(pool, int(chat_id))
+    except Exception as e:
+        _who_dbg(f"Память группы {chat_id} не прочиталась: {e}")
+        seen = []
+    ahead = [
+        who.Candidate(int(person["user_id"]), person["name"], person["username"])
+        for person in seen
+    ]
+    return ahead + people
 
 
 async def _who_global_people(db, name: str) -> List[who.Candidate]:
@@ -2038,6 +2049,18 @@ async def get_user_who_are_you(message: Message, db):
         return
 
     reply = message.reply_to_message
+    joined = who.join_people(getattr(reply, "new_chat_members", None) if reply is not None else None)
+    if len(joined) == 1:
+        await get_user_information_in_who_are_you(message, db, joined[0].user_id, person=joined[0])
+        return
+    if len(joined) > 1:
+        lines = []
+        for person in joined:
+            label = html.escape(person.full_name or person.username or "человек")
+            lines.append(f"{label} — <code>{person.user_id}</code>")
+        await _who_reply(message, "<b>Зашли сейчас</b>\n" + "\n".join(lines))
+        return
+
     sender_chat = getattr(reply, "sender_chat", None) if reply is not None else None
     if sender_chat is not None:
         await _who_reply(
@@ -2180,8 +2203,59 @@ async def _who_username_in_telegram(message: Message, username: str) -> Tuple[st
     return "unknown", None
 
 
+def _who_person_from_seen(row: dict) -> who.TgPerson:
+    return who.TgPerson(
+        user_id=int(row["user_id"]),
+        first_name=str(row.get("first_name") or ""),
+        last_name=str(row.get("last_name") or ""),
+        username=str(row.get("username") or ""),
+    )
+
+
+async def _who_seen_username(message: Message, db, username: str) -> Optional[who.TgPerson]:
+    """Человек, которого бот уже видел в этой группе, даже если строки users ещё нет."""
+    try:
+        from bot.funcs.seen_people import find_username
+        found = await find_username(
+            getattr(db, "pool", None),
+            username,
+            chat_id=int(message.chat.id),
+        )
+    except Exception as e:
+        _who_dbg(f"Память username {username}: {e}")
+        return None
+    if not found:
+        return None
+    return _who_person_from_seen(found)
+
+
+async def _who_admin_username(message: Message, username: str) -> Optional[who.TgPerson]:
+    """Админ этой группы по username, если Bot API не открыл личный getChat."""
+    try:
+        chat_id = int(message.chat.id)
+    except Exception:
+        return None
+    if chat_id >= 0:
+        return None
+    data = await _who_tg_call(lambda: _who_bot(message).get_chat_administrators(chat_id))
+    if isinstance(data, Exception) or not data:
+        return None
+    want = str(username or "").strip().lstrip("@").casefold()
+    for member in data:
+        user = getattr(member, "user", None)
+        if user is None or getattr(user, "is_bot", False):
+            continue
+        if str(getattr(user, "username", "") or "").casefold() == want:
+            return who.TgPerson.from_user(user)
+    return None
+
+
 async def _who_show_telegram_username(message: Message, db, username: str) -> Optional[str]:
     """Показывает того, кто носит username. Если показать некого — "missing" или "unknown"."""
+    seen = await _who_seen_username(message, db, username)
+    if seen is not None:
+        await get_user_information_in_who_are_you(message, db, seen.user_id, person=seen)
+        return None
     kind, value = await _who_username_in_telegram(message, username)
     if kind == "person":
         await get_user_information_in_who_are_you(message, db, value.user_id, person=value)
@@ -2189,6 +2263,19 @@ async def _who_show_telegram_username(message: Message, db, username: str) -> Op
     if kind == "place":
         await _who_reply(message, who.place_html(username, value))
         return None
+    admin = await _who_admin_username(message, username)
+    if admin is not None:
+        await get_user_information_in_who_are_you(message, db, admin.user_id, person=admin)
+        return None
+    try:
+        cid = int(message.chat.id)
+    except Exception:
+        cid = 0
+    if cid < 0 and kind in ("missing", "unknown", ""):
+        person = await who.find_in_group(cid, username)
+        if person is not None:
+            await get_user_information_in_who_are_you(message, db, person.user_id, person=person)
+            return None
     return kind
 
 
@@ -2215,6 +2302,15 @@ async def _who_show_name(message: Message, db, name: str, *, maybe_username: str
 
     if maybe_username and await _who_show_telegram_username(message, db, maybe_username) is None:
         return
+    try:
+        cid = int(message.chat.id)
+    except Exception:
+        cid = 0
+    if cid < 0:
+        person = await who.find_in_group(cid, name)
+        if person is not None:
+            await get_user_information_in_who_are_you(message, db, person.user_id, person=person)
+            return
     await _who_reply(message, who.name_missing_html(name))
 
 

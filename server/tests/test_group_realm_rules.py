@@ -175,10 +175,11 @@ def test_cabinet_pages_follow_the_two_lists():
     assert "rights" not in people
     assert "analytics" not in people
     assert "activity" in cabinet_pages(["view_analytics"])
-    full = ["overview", "work", "activity", "archive", "rights", "more"]
+    full = ["overview", "work", "activity", "archive", "rights", "admins", "more"]
     assert cabinet_pages([], creator=True) == full
     assert cabinet_pages(ALL_RIGHTS) == full
     assert cabinet_pages(["view_archive"], pages=["pay"]) == ["overview", "pay", "more"]
+    assert cabinet_pages(["manage_chat_admins"], pages=["pay"]) == ["overview", "pay", "admins", "more"]
     assert cabinet_pages(["view_archive"], pages=[]) == ["overview", "more"]
     assert "work" in cabinet_pages([], rank=5)
     assert cabinet_pages([], pages=["archive"], rank=5) == ["overview", "archive", "more"]

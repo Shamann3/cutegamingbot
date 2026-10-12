@@ -49,6 +49,7 @@ from bot.funcs.water_games_design import (
     forever_worn_text,
     fresh_instead_text,
     hours_phrase,
+    is_shield_off,
     is_water_ask,
     item_by_key,
     joined_until,
@@ -320,7 +321,43 @@ async def ensure() -> None:
         keys,
         names,
     )
+    try:
+        await _charges().ensure(pool)
+    except Exception:
+        log.exception("water shield charges")
     _ready = True
+
+
+def _charges():
+    import sys
+    from pathlib import Path
+
+    root = str(Path(__file__).resolve().parents[2] / "server")
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    import water_shield_charges
+    return water_shield_charges
+
+
+def _until_from_charge(found: bool, seconds, spec: dict, now, base=None):
+    """Заряд задаёт срок. Нет заряда — срок из каталога. base складывает его с уже надетым."""
+    if found and seconds is None:
+        return None
+    if found and seconds:
+        start = now if base is None else base
+        if getattr(start, "tzinfo", None) is None:
+            start = start.replace(tzinfo=timezone.utc)
+        return start + timedelta(seconds=int(seconds))
+    if spec.get("hours") is None:
+        return None
+    if base is None:
+        return now + timedelta(hours=int(spec["hours"]))
+    return joined_until(base, spec["hours"], now)
+
+
+async def _apply_charge_until(conn, user_id: int, name1: str, spec: dict, now, base=None):
+    found, seconds = await _charges().take(conn, user_id, name1)
+    return _until_from_charge(found, seconds, spec, now, base)
 
 
 def _from_design(screen_name: str, data: str, owner_id: int) -> InlineKeyboardButton:
@@ -392,9 +429,32 @@ async def _group_button_rows() -> list:
     return buttons
 
 
+def _off_button(user_id: int) -> InlineKeyboardButton:
+    return _button("Снять защиту", stamp_callback("wg:off", int(user_id)), "danger")
+
+
 async def _guide_view(user_id: int, message):
-    """Главный экран: короткая суть и кнопка «Выстрелить». Проверка предметов — уже на ней."""
-    return screen_text("home"), _markup("home", message, owner_id=user_id)
+    """Главный экран. Если защита надета, здесь же видно срок и кнопка, чтобы снять."""
+    text = screen_text("home")
+    markup = _markup("home", message, owner_id=user_id)
+    try:
+        shield = await _shield(user_id)
+    except Exception:
+        log.exception("water home shield")
+        shield = None
+    if not _still(shield):
+        return text, markup
+    view = _kind_view(shield["kind"])
+    left = "навсегда" if shield["until"] is None else _left_of(shield["until"], datetime.now(timezone.utc))
+    text = screen_text(
+        "home_worn",
+        mark=shield_mark(shield["kind"]),
+        name=view["name"],
+        left=left,
+    )
+    rows = list(markup.inline_keyboard)
+    rows.append([_off_button(user_id)])
+    return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 async def shield_profile_html(user_id: int) -> str:
@@ -437,7 +497,11 @@ async def open_guide(message) -> None:
 
 
 async def maybe_water_text(message) -> bool:
-    if not is_water_ask(getattr(message, "text", "") or ""):
+    text = getattr(message, "text", "") or ""
+    if is_shield_off(text):
+        await unequip_shield(message)
+        return True
+    if not is_water_ask(text):
         return False
     await open_guide(message)
     return True
@@ -1103,35 +1167,87 @@ async def wear_shield(message, name1: str) -> bool:
         )
         return False
     now = datetime.now(timezone.utc)
-    if spec["hours"] is None:
-        until = None
-        half = False
-    else:
-        until = now + timedelta(hours=int(spec["hours"]))
-        half = False
-    await db.pool.execute(
-        """
-        INSERT INTO water_shields (user_id, kind, until, drip_until, half_next, updated_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        ON CONFLICT (user_id) DO UPDATE
-        SET kind = EXCLUDED.kind,
-            until = EXCLUDED.until,
-            drip_until = EXCLUDED.drip_until,
-            half_next = EXCLUDED.half_next,
-            updated_at = NOW()
-        """,
-        user_id, name1, until, _drip_for(name1, until), half,
-    )
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            until = await _apply_charge_until(conn, user_id, name1, spec, now)
+            await conn.execute(
+                """
+                INSERT INTO water_shields (user_id, kind, until, drip_until, half_next, updated_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (user_id) DO UPDATE
+                SET kind = EXCLUDED.kind,
+                    until = EXCLUDED.until,
+                    drip_until = EXCLUDED.drip_until,
+                    half_next = EXCLUDED.half_next,
+                    updated_at = NOW()
+                """,
+                user_id, name1, until, _drip_for(name1, until), False,
+            )
+    term = hours_phrase(None) if until is None else _left_of(until, datetime.now(timezone.utc))
     await message.reply(
         worn_text(
             emoji=spec["emoji"],
             name=spec["name"],
-            term=_term(spec),
+            term=term,
             shoot=can_shoot(name1),
         ),
         parse_mode="HTML",
     )
     return True
+
+
+async def _unequip(user_id: int) -> str:
+    """Снимает защиту и кладёт предмет обратно. Срок замирает и едет с предметом."""
+    await ensure()
+    user_id = int(user_id)
+    now = datetime.now(timezone.utc)
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", user_id)
+            row = await conn.fetchrow(
+                "SELECT kind, until FROM water_shields WHERE user_id = $1 FOR UPDATE",
+                user_id,
+            )
+            if not _still(row):
+                if row:
+                    await conn.execute("DELETE FROM water_shields WHERE user_id = $1", user_id)
+                return screen_text("shield_off_none") if not row else screen_text("shield_ended")
+            spec = SHIELDS.get(str(row["kind"]))
+            if not spec:
+                return screen_text("shield_off_none")
+            user = await conn.fetchrow(
+                "SELECT items FROM users WHERE user_id = $1 FOR UPDATE",
+                user_id,
+            )
+            if not user:
+                return screen_text("shield_off_none")
+            left = _charges().leftover_seconds(row["until"], now)
+            if left == 0:
+                await conn.execute("DELETE FROM water_shields WHERE user_id = $1", user_id)
+                return screen_text("shield_ended")
+            await _charges().give(conn, user_id, row["kind"], left)
+            items = decode_items(user["items"])
+            name = spec["name"]
+            items[name] = int(items.get(name, 0) or 0) + 1
+            await conn.execute(
+                "UPDATE users SET items = $2 WHERE user_id = $1",
+                user_id,
+                encode_items(items),
+            )
+            await conn.execute("DELETE FROM water_shields WHERE user_id = $1", user_id)
+    mark = shield_mark(row["kind"])
+    if left is None:
+        return screen_text("shield_removed_forever", mark=mark, name=spec["name"])
+    return screen_text("shield_removed", mark=mark, name=spec["name"], left=left_phrase(left))
+
+
+async def unequip_shield(message) -> None:
+    try:
+        text = await _unequip(message.from_user.id)
+    except Exception:
+        log.exception("water unequip")
+        text = screen_text("shield_off_none")
+    await message.reply(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def _edit_call(call, text: str, markup=None) -> None:
@@ -1284,12 +1400,8 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
                     if not ok:
                         result = "missing"
                     else:
-                        if spec["hours"] is None:
-                            new_until = None
-                            half = False
-                        else:
-                            new_until = now + timedelta(hours=int(spec["hours"]))
-                            half = False
+                        new_until = await _apply_charge_until(conn, user_id, name1, spec, now)
+                        half = False
                         await conn.execute(
                             "UPDATE users SET items = $2 WHERE user_id = $1",
                             int(user_id), encode_items(taken),
@@ -1306,12 +1418,6 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
                     if not ok:
                         result = "missing"
                     else:
-                        if spec["hours"] is None:
-                            new_until = None
-                            half = False
-                        else:
-                            new_until = joined_until(shield["until"], spec["hours"], now)
-                            half = False
                         status = await conn.execute(
                             """
                             UPDATE users
@@ -1323,6 +1429,10 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
                         if not str(status).endswith("1"):
                             result = "poor"
                         else:
+                            new_until = await _apply_charge_until(
+                                conn, user_id, name1, spec, now, shield["until"],
+                            )
+                            half = False
                             result_kind = kept_kind(str(shield["kind"]), name1)
                             await _save_shield(
                                 conn, user_id, result_kind, new_until, half, _drip_for(result_kind, new_until),
@@ -1353,10 +1463,11 @@ async def _join_shield(call, user_id: int, name1: str) -> None:
         await call.answer(word("nothing_to_stack"), show_alert=True)
         return
     if result == "fresh":
+        term = hours_phrase(None) if new_until is None else _left_of(new_until, datetime.now(timezone.utc))
         await _edit_call(call, fresh_instead_text(
             emoji=spec["emoji"],
             name=spec["name"],
-            term=_term(spec),
+            term=term,
             shoot=can_shoot(name1),
         ))
         await call.answer(word("worn_no_fee"))
@@ -1415,6 +1526,14 @@ async def water_click(call):
         await call.answer(word("not_your_button"), show_alert=True)
         return
     data = strip_callback_owner(data)
+    if data == "wg:off":
+        try:
+            text = await _unequip(clicker)
+        except Exception:
+            log.exception("water unequip button")
+            text = screen_text("shield_off_none")
+        await _show(call, "home", text, markup=_markup("home", call.message, owner_id=clicker))
+        return
     if data.startswith("wg:leave:"):
         try:
             offer_id = int(data.split(":")[2])
@@ -1459,6 +1578,12 @@ async def water_click(call):
                 ))
             if built:
                 rows.append(built)
+        try:
+            worn = await _shield(call.from_user.id)
+        except Exception:
+            worn = None
+        if _still(worn):
+            rows.append([_off_button(clicker)])
         await _show(
             call,
             "shield",

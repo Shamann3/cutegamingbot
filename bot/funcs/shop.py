@@ -3702,7 +3702,42 @@ async def confirm_action(call: types.CallbackQuery):
         await call.message.edit_text("<tg-emoji emoji-id='5988023995125993550'>🛠</tg-emoji> <b>Предмет не найден в базе данных.</b>", parse_mode="HTML" ,disable_web_page_preview=True)
 
 
+_coupon_busy = set()
+
+
+def _coupon_once(fn):
+    """Один клик по карточке покупки. Повтор, пока первый ещё считается, не запускает второй."""
+    async def wrapper(call):
+        try:
+            key = (int(call.from_user.id), int(call.message.message_id))
+        except Exception:
+            return await fn(call)
+        if key in _coupon_busy:
+            try:
+                await call.answer("Уже считаем")
+            except Exception:
+                pass
+            return
+        _coupon_busy.add(key)
+        try:
+            return await fn(call)
+        except Exception as exc:
+            print(f"[COUPON] {exc!r}")
+            try:
+                await call.message.edit_text(
+                    "<b>Не получилось завершить покупку. Нажмите купон ещё раз.</b>",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+            except Exception:
+                pass
+        finally:
+            _coupon_busy.discard(key)
+    return wrapper
+
+
 @dp.callback_query(lambda call: call.data.startswith('apply_coupon'))
+@_coupon_once
 async def handle_apply_coupon(call):
     user_id = call.from_user.id
     message_id = call.message.message_id
@@ -3711,6 +3746,14 @@ async def handle_apply_coupon(call):
         await call.answer(randommessagehelp1)
         return
     await call.answer()
+    try:
+        await call.message.edit_text(
+            "<b>Применяем купон…</b>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        print(f"[COUPON] waiting edit failed: {e!r}")
     coupon_name = "Купон на скидку"
     # Получаем информацию о покупке
     purchase_data = current_purchase_data.get(user_id)
@@ -3765,6 +3808,7 @@ async def handle_apply_coupon(call):
     else:
         await call.message.edit_text("<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>У вас нет купонов для применения.</b>", parse_mode="HTML" ,disable_web_page_preview=True)
 @dp.callback_query(lambda call: call.data.startswith('buy_with_coupon'))
+@_coupon_once
 async def handle_confirm_purchase(call: types.CallbackQuery):
     user_id = call.from_user.id
     message_id = call.message.message_id
@@ -3790,18 +3834,30 @@ async def handle_confirm_purchase(call: types.CallbackQuery):
         discount_percent = int(offer_discount_percent)
         discount_total = max(0.0 , float(offer_discount_total))
     else:
-        await call.message.edit_text(
-            "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Купон недействителен. Примените купон заново.</b>",
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+        await call.answer("Купон недействителен")
+        try:
+            await call.message.edit_text(
+                "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> <b>Купон недействителен. Примените купон заново.</b>",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+        except Exception as e:
+            print(f"[COUPON] invalid edit failed: {e!r}")
         return
     emojis = purchase_data.get('emojis')
     quantity = purchase_data.get('quantity')
     if not emojis or quantity is None:
         await call.answer("⚠️ Ошибка: недостающие данные для обработки покупки")
         return
-    await call.answer()  # снимаем «часики»
+    await call.answer()
+    try:
+        await call.message.edit_text(
+            "<b>Считаем покупку…</b>",
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        print(f"[BUY][WARN] coupon waiting edit failed: {e!r}")
     # --- 1) Подготовка корзины: читаем остатки и цены, считаем "полную" стоимость без скидки
     prepared_items = []  # элементы: dict(emoji, name, can_buy, price)
     total_price = 0.0

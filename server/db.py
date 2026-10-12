@@ -3623,6 +3623,11 @@ class Database:
                 await item_lots.escrow_hold(
                     conn, user_id, item_key, quantity, holder_id=listing_id
                 )
+                import water_shield_charges as shield_charges
+                await shield_charges.guard(
+                    conn,
+                    lambda: shield_charges.park(conn, user_id, item_key, quantity, listing_id),
+                )
         try:
             schedule_balance_event(
                 self.pool,
@@ -3796,6 +3801,13 @@ class Database:
                     str(row["item_id"]),
                     buy_qty,
                     holder_id=listing_id,
+                )
+                import water_shield_charges as shield_charges
+                await shield_charges.guard(
+                    conn,
+                    lambda: shield_charges.deliver(
+                        conn, user_id, str(row["item_id"]), buy_qty, listing_id,
+                    ),
                 )
                 remaining = available - buy_qty
                 if remaining <= 0:
@@ -4206,6 +4218,13 @@ class Database:
                 # Снятие лота — себестоимость возвращается владельцу как была.
                 await item_lots.escrow_return(
                     conn, user_id, str(row["item_id"]), qty, holder_id=listing_id
+                )
+                import water_shield_charges as shield_charges
+                await shield_charges.guard(
+                    conn,
+                    lambda: shield_charges.unpark(
+                        conn, user_id, str(row["item_id"]), qty, listing_id,
+                    ),
                 )
         try:
             catalog = await self.get_market_catalog(

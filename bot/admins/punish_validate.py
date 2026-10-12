@@ -145,6 +145,18 @@ async def verify_telegram_user_exists(
     if is_invalid_telegram_user_error(e):
       return False
 
+  for cid in probe_chat_ids or ():
+    try:
+      chat_id = int(cid)
+    except (TypeError, ValueError):
+      continue
+    member, err = await inspect_chat_member(chat_id, user_id)
+    if err == "invalid_user":
+      return False
+    member_user = getattr(member, "user", None) if member is not None else None
+    if member_user is not None and not bool(getattr(member_user, "is_bot", False)):
+      return True
+
   return await _unseen_account_is_real(user_id)
 
 
@@ -470,7 +482,7 @@ async def _username_from_telegram(clean: str, budget: Any, who: Any) -> tuple[st
       kind, value = "unknown", None
     if kind == "flood":
       budget.pause(float(value or 60), time.monotonic())
-    elif kind in ("person", "place", "missing"):
+    elif kind in ("person", "place"):
       budget.remember(clean, kind, value, time.monotonic())
       return kind, value
 
@@ -488,13 +500,17 @@ async def _username_from_telegram(clean: str, budget: Any, who: Any) -> tuple[st
   return kind, value
 
 
-async def find_telegram_username(username: str) -> tuple[str, Optional[dict]]:
+async def find_telegram_username(
+  username: str,
+  source_chat_id: Optional[int] = None,
+) -> tuple[str, Optional[dict]]:
   """Человек по username прямо из Telegram, даже если в Куте его ещё нет.
 
   ("person", словарь для users) — нашёлся человек.
   ("missing" | "place" | "bot" | "flood" | "unknown", None) — человека нет
   или Telegram не ответил. Причину потом отдаёт username_miss().
-  Ответы помнятся в том же кэше, что у «кто ты»: Telegram спрашивается редко.
+  Сначала Telegram: юзербот, затем Bot API. Уже найденный человек берётся из кэша.
+  Если Telegram молчит — память группы и поиск по её участникам.
   """
   clean = _identity_rules().normalize_username(username)
   if not clean:
@@ -502,11 +518,23 @@ async def find_telegram_username(username: str) -> tuple[str, Optional[dict]]:
   from bot.funcs import who_lookup as who
   budget = who.USERNAME_BUDGET
   hit = budget.cached(clean, time.monotonic())
-  kind, value = hit if hit is not None else await _username_from_telegram(clean, budget, who)
+  if hit is not None and hit[0] in ("person", "place"):
+    kind, value = hit
+  else:
+    kind, value = await _username_from_telegram(clean, budget, who)
   if kind == "person":
     return _userbot_person(value, clean)
   if kind == "place":
     return _miss(clean, "place", str(getattr(value, "kind", "") or ""))
+  if kind != "missing":
+    seen = await _person_from_seen(clean, source_chat_id)
+    if seen is not None:
+      _username_miss.pop(_username_key(clean), None)
+      return "person", seen
+  found = await _person_from_group(source_chat_id, clean)
+  if found is not None:
+    _username_miss.pop(_username_key(clean), None)
+    return "person", found
   if kind == "flood":
     return _miss(clean, "flood", str(int(value or 0)))
   if kind == "missing":
@@ -514,9 +542,91 @@ async def find_telegram_username(username: str) -> tuple[str, Optional[dict]]:
   return _miss(clean, "unknown")
 
 
-async def describe_telegram_username(username: str) -> Optional[dict]:
-  kind, person = await find_telegram_username(username)
+async def _person_from_seen(username: str, chat_id: Optional[int] = None):
+  """Id человека, которого бот видел в группе, но которого ещё нет в users."""
+  try:
+    from bot.funcs.seen_people import find_username
+    from main import db
+    found = await find_username(getattr(db, "pool", None), username, chat_id)
+  except Exception:
+    return None
+  if not found:
+    return None
+  return _identity_rules().person_from_user_fields(
+    found["user_id"],
+    found.get("first_name"),
+    found.get("last_name"),
+    found.get("username") or username,
+    is_bot=False,
+  )
+
+
+async def describe_telegram_username(
+  username: str,
+  source_chat_id: Optional[int] = None,
+) -> Optional[dict]:
+  kind, person = await find_telegram_username(username, source_chat_id=source_chat_id)
   return person if kind == "person" else None
+
+
+async def person_from_chat_query(query: str, source_chat_id: Optional[int]):
+  """Человек в этой группе по имени или username, даже без строки в users."""
+  text = " ".join(str(query or "").split())
+  if not text or not source_chat_id:
+    return None
+  try:
+    cid = int(source_chat_id)
+  except (TypeError, ValueError):
+    return None
+  if cid >= 0:
+    return None
+  people = []
+  try:
+    from bot.funcs.seen_people import chat_candidates
+    from bot.funcs.who_lookup import TgPerson
+    from main import db
+    rows = await chat_candidates(getattr(db, "pool", None), cid)
+    for row in rows or []:
+      people.append(TgPerson(
+        user_id=int(row["user_id"]),
+        first_name=str(row.get("first_name") or ""),
+        last_name=str(row.get("last_name") or ""),
+        username=str(row.get("username") or ""),
+      ))
+  except Exception:
+    people = []
+  from bot.funcs.who_lookup import find_in_group, pick_group_person
+  picked = pick_group_person(people, text) if people else None
+  if picked is None:
+    picked = await find_in_group(cid, text)
+  if picked is None:
+    return None
+  return _identity_rules().person_from_user_fields(
+    picked.user_id,
+    picked.first_name,
+    picked.last_name,
+    picked.username,
+    is_bot=False,
+  )
+
+
+async def _person_from_group(chat_id: Optional[int], query: str):
+  if not chat_id:
+    return None
+  try:
+    from bot.funcs.who_lookup import find_in_group
+    person = await find_in_group(int(chat_id), query)
+  except Exception:
+    return None
+  if person is None:
+    return None
+  return _identity_rules().person_from_user_fields(
+    person.user_id,
+    person.first_name,
+    person.last_name,
+    person.username,
+    is_bot=False,
+  )
 
 
 _MISS_HEAD = "<b><tg-emoji emoji-id='5256110225848543598'>✖️</tg-emoji> "
@@ -593,7 +703,7 @@ async def ensure_punishment_profile(
   elif uid > 0:
     person = await describe_telegram_user(uid, source_chat_id=source_chat_id)
   elif username:
-    person = await describe_telegram_username(username)
+    person = await describe_telegram_username(username, source_chat_id=source_chat_id)
 
   if person is None and handed is not None:
     person = handed
