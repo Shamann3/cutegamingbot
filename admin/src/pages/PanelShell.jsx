@@ -754,7 +754,14 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               }}
             />
           )}
-          {isCases && showCreator && <CasesSection />}
+          {isCases && showCreator && (
+            <CasesSection
+              onOpenUser={(userId) => {
+                setUsersInitialId(userId)
+                setSection('users')
+              }}
+            />
+          )}
           {isAchievements && (
             <AchievementsSection
               onOpenUser={(userId) => {

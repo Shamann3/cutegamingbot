@@ -29,9 +29,32 @@ def _button(target: str, user_id: int) -> dict:
     item = face(target) or {}
     fields = {
         "text": item.get("name") or "Предмет",
-        "callback_data": stamp_callback(f"cs:find:{target}", int(user_id)),
+        "callback_data": stamp_callback(f"cs:find:{target}:home", int(user_id)),
     }
     premium = str(item.get("premium") or "")
+    if premium.isdigit():
+        fields["icon_custom_emoji_id"] = premium
+    return fields
+
+
+def _open_button(case_id: str, user_id: int) -> dict:
+    item = face(case_id) or {}
+    fields = {
+        "text": "Открыть",
+        "callback_data": stamp_callback(f"cs:open:{case_id}", int(user_id)),
+    }
+    premium = str(item.get("premium") or "")
+    if premium.isdigit():
+        fields["icon_custom_emoji_id"] = premium
+    return fields
+
+
+def _back_button(user_id: int) -> dict:
+    fields = {
+        "text": "Назад",
+        "callback_data": stamp_callback("cs:guide:home", int(user_id)),
+    }
+    premium = str(KEY.get("premium") or "")
     if premium.isdigit():
         fields["icon_custom_emoji_id"] = premium
     return fields
@@ -125,14 +148,17 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
         ready = [opened] if opened and owns(bag, opened, dex_ids.get(opened["id"])) else held_cases
         if bought == "key" and ready:
             text = ready_open_text(ready)
+            rows = [[_open_button(case["id"], user_id)] for case in ready if case]
         elif bought != "key" and has_key:
             text = ready_open_text([item])
+            rows = [[_open_button(item["id"], user_id)]]
         elif bought == "key":
             text = key_text()
             rows = [[_button(case_id, user_id)] for case_id in ("small", "mid", "large")]
         else:
             text = need_key_text(bought)
             rows = [[_button("key", user_id)]]
+        rows.append([_back_button(user_id)])
         edited = await _edit(int(prompt["chat_id"]), int(prompt["message_id"]), text, rows)
         if edited:
             await pool.execute("DELETE FROM case_buy_prompts WHERE user_id = $1", int(user_id))

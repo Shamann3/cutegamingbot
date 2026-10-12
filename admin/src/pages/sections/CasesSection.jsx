@@ -1,9 +1,26 @@
 import { useEffect, useState } from 'react'
 import { fetchCaseBoard, saveCasePrice, saveCaseRules, saveCaseStock } from '../../lib/adminClient'
+import OpenUserLink from '../../components/OpenUserLink'
 import '../../styles/cases.css'
 
 function money(value) {
   return new Intl.NumberFormat('ru-RU').format(Number(value) || 0)
+}
+
+function quietName(name) {
+  const text = String(name || '').replace(/@/g, '').trim()
+  return text || 'Игрок'
+}
+
+function when(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function digits(value) {
@@ -206,7 +223,82 @@ function ShelfCard({ item, delay = '0ms', onPrice, onStock }) {
   )
 }
 
-export default function CasesSection() {
+function FundDesk({ board }) {
+  const funds = board.funds || []
+  const total = Number(board.fund) || 0
+  const stats = board.stats || {}
+  const winners = stats.winners || []
+  const recent = stats.recent || []
+  return (
+    <>
+      <section className="case-fund">
+        <header>
+          <h3>Касса</h3>
+          <p>
+            {total > 0
+              ? `В технических группах ${money(total)} кут. Приз списывается отсюда.`
+              : 'Кейсы временно недоступны. В технических группах нет кут — нужно немного подождать.'}
+          </p>
+        </header>
+        <ul>
+          {funds.length === 0 && <li className="is-empty">Касс пока нет</li>}
+          {funds.map((row, index) => (
+            <li key={row.id} style={{ animationDelay: `${index * 50}ms` }}>
+              <span>{row.name}</span>
+              <b>{money(row.balance)}</b>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="case-ledger">
+        <header>
+          <h3>Кто выиграл</h3>
+          <p>
+            {Number(stats.opens) > 0
+              ? `${money(stats.opens)} открытий · ${money(stats.paid)} кут · лучший ${money(stats.best)}`
+              : 'Пока никто не открывал.'}
+          </p>
+        </header>
+        <div className="case-kinds">
+          {(stats.byCase || []).map((row) => (
+            <p key={row.id}>
+              <span>{row.emoji} {row.name}</span>
+              <b>{money(row.opens)} · {money(row.paid)}</b>
+            </p>
+          ))}
+        </div>
+        {winners.length > 0 && (
+          <ol>
+            {winners.map((row, index) => (
+              <li key={row.userId} style={{ animationDelay: `${index * 35}ms` }}>
+                <OpenUserLink userId={row.userId} name={quietName(row.name)} onOpenUser={board.onOpenUser} />
+                <span>{money(row.opens)} откр.</span>
+                <b>{money(row.won)}</b>
+              </li>
+            ))}
+          </ol>
+        )}
+        {recent.length > 0 && (
+          <div className="case-recent">
+            <h3>Последние</h3>
+            <ul>
+              {recent.map((row) => (
+                <li key={row.id || `${row.userId}-${row.at}-${row.amount}`}>
+                  <OpenUserLink userId={row.userId} name={quietName(row.name)} onOpenUser={board.onOpenUser} />
+                  <span>{row.emoji} {row.caseName}</span>
+                  <b>+{money(row.amount)}</b>
+                  <time>{when(row.at)}</time>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+    </>
+  )
+}
+
+export default function CasesSection({ onOpenUser }) {
   const [board, setBoard] = useState(null)
   const [error, setError] = useState('')
 
@@ -222,10 +314,11 @@ export default function CasesSection() {
     <section className="case-desk">
       <header className="case-head">
         <h2>Кейсы</h2>
-        <p>Цена и количество — в магазине. Ниже — потолок, который игрок может выиграть. Комиссии нет: открытие отдаёт ровно выпавшее число.</p>
+        <p>Цена, количество и потолок. Приз списывается с технических групп. Комиссии нет: игрок получает ровно выпавшее число.</p>
       </header>
       {error && <p className="case-fault">{error}</p>}
       {!board && !error && <p>Считаем кейсы…</p>}
+      {board && <FundDesk board={{ ...board, onOpenUser }} />}
       {board && (
         <div className="case-grid case-shop">
           {(board.items || []).map((item, index) => (

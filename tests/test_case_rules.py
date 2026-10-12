@@ -23,6 +23,8 @@ from cases.design import (
     public_case,
     roll_amount,
     stamp_callback,
+    closed_text,
+    take_plan,
 )
 
 
@@ -78,13 +80,49 @@ def test_jackpot_copy_names_the_ceiling():
 
 
 def test_case_words_open_the_guide():
-    assert is_case_ask("кейсы")
-    assert is_case_ask("  открытие кейсов ")
-    assert is_case_ask("как открыть кейс?")
-    assert not is_case_ask("использовать 📦")
-    assert not is_case_ask("привет")
+    opened = (
+        "кейсы",
+        "кейс",
+        "кейсик",
+        "кейсики",
+        "открыть кейс",
+        "открыть кейсы",
+        "Открой кейс",
+        "откройте, пожалуйста, кейс",
+        "открывай кейсы",
+        "как открыть кейс?",
+        "как мне открыть кейс",
+        "кейс как открыть",
+        "  открытие кейсов ",
+        "хочу открыть кейс",
+        "где кейсы",
+        "как работают кейсы",
+        "что такое кейс",
+        "хелп кейсы",
+        "help cases",
+        "как пользоваться кейсом",
+        "использовать кейс",
+        "инструкция по кейсам",
+        "как купить кейс",
+        "подскажи как открыть кейсик",
+    )
+    for phrase in opened:
+        assert is_case_ask(phrase), phrase
+    closed = (
+        "привет",
+        "использовать 📦",
+        "использовать 🔑",
+        "использовать маленький кейс",
+        "использовать ключ",
+        "баланс",
+        "водные игры",
+        "как открыть магазин",
+        "у меня сегодня был странный день и я видел чемодан далеко от дома вечером",
+    )
+    for phrase in closed:
+        assert not is_case_ask(phrase), phrase
     home = guide_home(has_key=True, held=[])
-    assert "Ключ уже есть" in home
+    assert "Нужен кейс" in home
     how = guide_how([50, 70, 170])
     assert "<code>использовать 📦</code>" in how
     assert "5278573677900752088" in how
@@ -98,7 +136,7 @@ def test_ready_case_is_one_command_and_no_button_copy():
     small = case_by_id("small")
     text = ready_open_text([small])
     assert "<code>использовать 📦</code>" in text
-    assert "Пора открыть ваш кейс" in text
+    assert "Можно открыть" in text
     assert owns({"Маленький кейс": 1}, small)
     assert owns({"4": 1}, small, 4)
     assert not owns({"Ключ": 1}, small)
@@ -110,6 +148,25 @@ def test_shop_lists_the_key_before_the_cases():
     assert names == ["key", "case5000_15000", "case20000_40000", "case50000_100000"]
     text = (Path(__file__).resolve().parents[1] / "server" / "panel_access.py").read_text(encoding="utf-8")
     assert '"id": "cases"' in text
+
+
+def test_prize_is_taken_from_technical_groups():
+    groups = [
+        {"id": 1, "balance": 10},
+        {"id": 2, "balance": 40},
+        {"id": 3, "balance": 0},
+    ]
+    assert take_plan(groups, 45) == [{"id": 2, "take": 40}, {"id": 1, "take": 5}]
+    assert take_plan(groups, 100) is None
+    assert take_plan(groups, 0) == []
+    paused = closed_text()
+    assert "подождать" in paused
+    assert button_owner(stamp_callback("cs:open:small", 7)) == 7
+    home = guide_home(has_key=True, held=[{"emoji": "x"}], open_now=False)
+    assert "подождать" in home
+    back = stamp_callback("cs:find:small:how", 7)
+    assert find_target(back) == "small"
+    assert button_owner(back) == 7
 
 
 def test_purchase_maps_back_to_the_case():

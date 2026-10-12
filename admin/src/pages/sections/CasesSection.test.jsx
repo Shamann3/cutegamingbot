@@ -76,4 +76,29 @@ describe('cases desk', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Количество' }))
     await vi.waitFor(() => expect(saveCaseStock).toHaveBeenCalledWith({ id: 4, remains: 10 }))
   })
+
+  it('shows who won and the technical cash desk', async () => {
+    const onOpenUser = vi.fn()
+    vi.mocked(fetchCaseBoard).mockResolvedValue({
+      cases: [],
+      items: [],
+      fund: 0,
+      funds: [{ id: '-1004324787050', name: 'Игры', balance: 0 }],
+      stats: {
+        opens: 2,
+        paid: 80,
+        best: 50,
+        byCase: [],
+        winners: [{ userId: 42, name: 'Ника', opens: 2, won: 80, best: 50 }],
+        recent: [{ userId: 42, name: 'Ника', caseId: 'small', caseName: 'Маленький кейс', emoji: 'x', amount: 50, at: '2026-10-12T12:00:00Z' }],
+      },
+    })
+    render(<CasesSection onOpenUser={onOpenUser} />)
+    expect(await screen.findByText('Игры')).toBeTruthy()
+    expect(screen.getByText(/временно недоступны/)).toBeTruthy()
+    expect(screen.getAllByText('Ника').length).toBeGreaterThan(0)
+    expect(screen.getByText('+50')).toBeTruthy()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ника' })[0])
+    expect(onOpenUser).toHaveBeenCalledWith(42)
+  })
 })

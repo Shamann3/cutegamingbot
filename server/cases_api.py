@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Вкладка создателя «Кейсы»: шансы и потолок. Комиссии нет."""
+"""Вкладка создателя «Кейсы»: касса, выигрыши, цена и потолок. Комиссии нет."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,15 @@ _py = str(Path(__file__).resolve().parent / "py")
 if _py not in sys.path:
     sys.path.insert(0, _py)
 
-from cases.design import average, cases, check_rules, public_case, shop_items  # noqa: E402
+from cases.design import (  # noqa: E402
+    average,
+    cases,
+    check_rules,
+    fund_ids,
+    fund_label,
+    public_case,
+    shop_items,
+)
 
 router = APIRouter(prefix="/admin/api/cases", tags=["cases"])
 
@@ -65,6 +73,17 @@ async def _ensure(pool) -> None:
             case_id TEXT PRIMARY KEY,
             max_cute INT NOT NULL,
             bands JSONB NOT NULL
+        )
+        """
+    )
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS case_opens (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            case_id TEXT NOT NULL,
+            amount INT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
     )
@@ -138,6 +157,135 @@ async def _touch_shelf(pool, item_id: int, column: str, value: int):
     return row
 
 
+def _known_fund_ids() -> list[int]:
+    return sorted(set(fund_ids()))
+
+
+async def _funds(pool) -> list[dict]:
+    ids = _known_fund_ids()
+    flagged = """
+        SELECT chat_id, COALESCE(namechat, '') AS name, COALESCE(chatbalance, 0)::bigint AS balance
+        FROM chat
+        WHERE COALESCE(is_technical, FALSE) = TRUE
+           OR chat_id = ANY($1::bigint[])
+        ORDER BY chatbalance DESC, chat_id
+    """
+    plain = """
+        SELECT chat_id, COALESCE(namechat, '') AS name, COALESCE(chatbalance, 0)::bigint AS balance
+        FROM chat
+        WHERE chat_id = ANY($1::bigint[])
+        ORDER BY chatbalance DESC, chat_id
+    """
+    try:
+        rows = await pool.fetch(flagged, ids)
+    except Exception:
+        rows = await pool.fetch(plain, ids)
+    return [
+        {
+            "id": str(row["chat_id"]),
+            "name": fund_label(row["chat_id"], row["name"]),
+            "balance": int(row["balance"] or 0),
+        }
+        for row in rows
+    ]
+
+
+async def _people(pool, ids: set[int]) -> dict:
+    names = {}
+    if not ids:
+        return names
+    people = await pool.fetch(
+        "SELECT user_id, first_name FROM users WHERE user_id = ANY($1::bigint[])",
+        list(ids),
+    )
+    for person in people:
+        label = str(person["first_name"] or "").replace("@", "").strip()
+        names[int(person["user_id"])] = label
+    return names
+
+
+def _person(names: dict, user_id: int) -> dict:
+    return {"userId": int(user_id), "name": names.get(int(user_id)) or "Игрок"}
+
+
+async def _ledger(pool) -> dict:
+    totals = await pool.fetchrow(
+        """
+        SELECT COUNT(*)::int AS opens,
+               COALESCE(SUM(amount), 0)::bigint AS paid,
+               COALESCE(MAX(amount), 0)::int AS best
+        FROM case_opens
+        """
+    )
+    by_case = await pool.fetch(
+        """
+        SELECT case_id, COUNT(*)::int AS opens, COALESCE(SUM(amount), 0)::bigint AS paid
+        FROM case_opens
+        GROUP BY case_id
+        """
+    )
+    counted = {str(row["case_id"]): row for row in by_case}
+    winners = await pool.fetch(
+        """
+        SELECT user_id,
+               COUNT(*)::int AS opens,
+               COALESCE(SUM(amount), 0)::bigint AS won,
+               COALESCE(MAX(amount), 0)::int AS best
+        FROM case_opens
+        GROUP BY user_id
+        ORDER BY won DESC, opens DESC, user_id
+        LIMIT 30
+        """
+    )
+    recent = await pool.fetch(
+        """
+        SELECT id, user_id, case_id, amount, created_at
+        FROM case_opens
+        ORDER BY created_at DESC, id DESC
+        LIMIT 12
+        """
+    )
+    ids = {int(row["user_id"]) for row in list(winners) + list(recent)}
+    names = await _people(pool, ids)
+    catalog = {item["id"]: item for item in cases()}
+    return {
+        "opens": int(totals["opens"] or 0) if totals else 0,
+        "paid": int(totals["paid"] or 0) if totals else 0,
+        "best": int(totals["best"] or 0) if totals else 0,
+        "byCase": [
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "emoji": item["emoji"],
+                "opens": int(counted[item["id"]]["opens"]) if item["id"] in counted else 0,
+                "paid": int(counted[item["id"]]["paid"]) if item["id"] in counted else 0,
+            }
+            for item in cases()
+        ],
+        "winners": [
+            {
+                **_person(names, row["user_id"]),
+                "opens": int(row["opens"] or 0),
+                "won": int(row["won"] or 0),
+                "best": int(row["best"] or 0),
+            }
+            for row in winners
+        ],
+        "recent": [
+            {
+                **_person(names, row["user_id"]),
+                "id": int(row["id"]),
+                "caseId": str(row["case_id"]),
+                "caseName": catalog.get(str(row["case_id"]), {}).get("name") or "Кейс",
+                "emoji": catalog.get(str(row["case_id"]), {}).get("emoji") or "",
+                "amount": int(row["amount"] or 0),
+                "at": row["created_at"].isoformat() if row["created_at"] else "",
+            }
+            for row in recent
+        ],
+    }
+
+
 def _card(item: dict) -> dict:
     return {
         "id": item["id"],
@@ -155,9 +303,14 @@ async def case_board(_user_id: int = Depends(_creator)):
     await _ensure(pool)
     rows = await pool.fetch("SELECT case_id, max_cute, bands FROM case_rules")
     saved = {str(row["case_id"]): _stored(row) for row in rows}
+    funds = await _funds(pool)
+    ledger = await _ledger(pool)
     return {
         "cases": [_card(public_case(saved.get(item["id"]), item["id"])) for item in cases()],
         "items": await _shelf(pool),
+        "funds": funds,
+        "fund": sum(max(0, int(row["balance"])) for row in funds),
+        "stats": ledger,
     }
 
 

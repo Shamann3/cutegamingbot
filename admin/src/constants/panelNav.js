@@ -110,7 +110,7 @@ export const PANEL_SECTIONS = [
   {
     id: 'cases', label: 'Cases', labelRu: 'Кейсы', group: 'team',
     ownerOnly: true, creatorOnly: true,
-    blurb: 'Шансы, потолок, цена и количество ключа и кейсов. Только создатель. Комиссии нет.',
+    blurb: 'Касса технических групп, выигрыши, цена и шансы. Только создатель. Комиссии нет.',
   },
   {
     id: 'support', label: 'Support', labelRu: 'Поддержка', group: 'team',
@@ -190,7 +190,7 @@ export const SECTION_HINTS = {
   broadcast: 'Сообщение многим людям',
   staff: 'Доступ, должности, заявки и ключи',
   waterGames: 'Обливания и цены защиты',
-  cases: 'Шансы, цена и количество кейсов',
+  cases: 'Касса, выигрыши, цена и шансы',
   rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
   analytics: 'Сводка по проекту',

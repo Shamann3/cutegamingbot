@@ -79,6 +79,103 @@
   margin-bottom: 4px;
 }
 
+.case-fund,
+.case-ledger {
+  padding: 16px;
+  border-radius: 18px;
+  background: var(--e-plate, #17171b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: case-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-fund h3,
+.case-ledger h3,
+.case-recent h3 {
+  margin: 0;
+}
+
+.case-fund header p,
+.case-ledger header p,
+.case-kinds span,
+.case-recent span,
+.case-recent time {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-fund ul,
+.case-ledger ol,
+.case-recent ul {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.case-fund ul {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.case-fund li,
+.case-ledger li,
+.case-recent li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  animation: case-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.case-fund li.is-empty {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-fund b,
+.case-ledger b,
+.case-kinds b {
+  font-variant-numeric: tabular-nums;
+}
+
+.case-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.case-kinds p {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.case-ledger ol li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+}
+
+.case-recent {
+  margin-top: 16px;
+}
+
+.case-recent li {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr auto auto;
+  align-items: baseline;
+}
+
+.case-recent time {
+  font-size: 12px;
+  text-align: right;
+}
+
 .case-card h3 {
   margin: 0;
 }
@@ -175,9 +272,25 @@
   to { transform: none; }
 }
 
+@media (max-width: 720px) {
+  .case-recent li,
+  .case-ledger ol li {
+    grid-template-columns: 1fr auto;
+  }
+
+  .case-recent time {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .case-card,
   .case-shelf,
+  .case-fund,
+  .case-ledger,
+  .case-fund li,
+  .case-ledger li,
   .case-meter i {
     animation: none;
   }
@@ -185,6 +298,10 @@
 
 body.perf-light .case-card,
 body.perf-light .case-shelf,
+body.perf-light .case-fund,
+body.perf-light .case-ledger,
+body.perf-light .case-fund li,
+body.perf-light .case-ledger li,
 body.perf-light .case-meter i {
   animation-duration: 0.32s;
 }

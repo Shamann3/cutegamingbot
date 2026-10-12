@@ -98,19 +98,13 @@ def mark(emoji: str, premium: str) -> str:
 
 def key_text() -> str:
     icon = mark(KEY["emoji"], KEY["premium"])
-    return (
-        f"{icon} <b>Ключ используется для открытия кейсов</b>\n"
-        "<i>Кнопка откроет покупку кейса.</i>"
-    )
+    return f"{icon} <b>Нужен кейс</b>\n<i>Кнопка откроет покупку.</i>"
 
 
 def need_key_text(case_id: str) -> str:
     item = case_by_id(case_id) or _DEFAULTS[0]
     icon = mark(item["emoji"], item["premium"])
-    return (
-        f"{icon} <b>Чтобы открыть {item['name']}, купите <code>🔑</code> ключ</b>\n"
-        "<i>Кнопка откроет покупку.</i>"
-    )
+    return f"{icon} <b>Нужен ключ</b>\n<i>Купите <code>🔑</code>. Кнопка откроет покупку.</i>"
 
 
 def held_text(name: str, emoji: str, premium: str) -> str:
@@ -121,15 +115,68 @@ def held_text(name: str, emoji: str, premium: str) -> str:
 
 
 def ready_open_text(items: list[dict]) -> str:
-    """Ключ и кейс уже есть. Кнопок нет — одна команда на открытие."""
+    """Ключ и кейс уже есть. Одна команда — и кнопка «Открыть»."""
     blocks = []
     for item in items:
         emoji = str(item.get("emoji") or "")
         blocks.append(
-            f"{mark(emoji, str(item.get('premium') or ''))} <b>Пора открыть ваш кейс</b>\n"
+            f"{mark(emoji, str(item.get('premium') or ''))} <b>Можно открыть</b>\n"
             f"<code>использовать {emoji}</code>"
         )
     return "\n\n".join(blocks)
+
+
+def closed_text() -> str:
+    return (
+        f"{mark(KEY['emoji'], KEY['premium'])} <b>Кейсы временно недоступны</b>\n"
+        "<i>Нужно немного подождать.</i>"
+    )
+
+
+# Те же технические кассы, что платят комиссии игр. Имена короткие, для вкладки.
+FUND_CHATS = (
+    {"id": "-1004324787050", "name": "Игры"},
+    {"id": "-1004318525471", "name": "Фон"},
+    {"id": "-1003855337972", "name": "Дом игр"},
+    {"id": "-1004238101266", "name": "Копилка"},
+)
+
+
+def fund_ids() -> list[int]:
+    return [int(item["id"]) for item in FUND_CHATS]
+
+
+def fund_label(chat_id, namechat: str = "") -> str:
+    key = str(chat_id)
+    for item in FUND_CHATS:
+        if item["id"] == key:
+            return item["name"]
+    text = str(namechat or "").strip()
+    return text or "Техгруппа"
+
+
+def take_plan(groups, amount: int):
+    """С каких технических групп списать приз. None — кассы не хватает."""
+    need = int(amount)
+    if need < 1:
+        return []
+    ordered = sorted(
+        groups or [],
+        key=lambda row: (-int(row.get("balance") or 0), int(row.get("id") or 0)),
+    )
+    plan = []
+    for row in ordered:
+        if need <= 0:
+            break
+        have = int(row.get("balance") or 0)
+        if have <= 0:
+            continue
+        piece = min(have, need)
+        plan.append({"id": int(row["id"]), "take": piece})
+        need -= piece
+    if need > 0:
+        return None
+    return plan
 
 
 def owns(items: dict, item: dict, dex_id=None) -> bool:
@@ -182,7 +229,7 @@ def button_owner(data: str):
     parts = str(data or "").split(":")
     if len(parts) < 3 or parts[0] != "cs":
         return None
-    if parts[1] == "guide":
+    if parts[1] in {"guide", "open"}:
         if len(parts) >= 4 and parts[-1].isdigit():
             return int(parts[-1])
         return None
@@ -288,83 +335,122 @@ def _dots(value: int) -> str:
     return f"{int(value):,}".replace(",", ".")
 
 
-def guide_home(*, has_key: bool, held: list[dict]) -> str:
-    """Первый экран. Если открывать уже можно — сразу команда, без покупки."""
+def guide_home(*, has_key: bool, held: list[dict], open_now: bool = True) -> str:
+    """Первый экран: открыть, купить недостающее или подождать кассу."""
     title = f"{mark(KEY['emoji'], KEY['premium'])} <b>Кейсы</b>"
+    if not open_now:
+        return f"{title}\n<i>Временно недоступны. Нужно немного подождать.</i>"
     if has_key and held:
-        return f"{title}\n\n{ready_open_text(held)}"
+        lines = [title, "<i>Можно открыть.</i>"]
+        for item in held:
+            lines.append(f"<code>использовать {item.get('emoji') or ''}</code>")
+        return "\n".join(lines)
     if has_key:
-        return f"{title}\n<i>Ключ уже есть. Осталось выбрать кейс.</i>"
+        return f"{title}\n<i>Нужен кейс.</i>"
     if held:
-        return f"{title}\n<i>Кейс уже есть. Остался ключ.</i>"
-    return f"{title}\n<i>Ключ открывает кейс. Кейс отдаёт кут.</i>"
+        return f"{title}\n<i>Нужен ключ.</i>"
+    return f"{title}\n<i>Нужны ключ и кейс.</i>"
 
 
 def guide_how(ceilings: list[int]) -> str:
-    """Три команды и три потолка. Шансы здесь не пишем."""
+    """Команды и потолки. Шансы здесь не пишем."""
     order = ("small", "mid", "large")
     items = [case_by_id(case_id) for case_id in order]
     caps = list(ceilings or [])
     while len(caps) < 3:
         caps.append(int(items[len(caps)]["max"]))
+    short = {"small": "Маленький", "mid": "Средний", "large": "Большой"}
     lines = [
         f"{mark(KEY['emoji'], KEY['premium'])} <b>Как открыть</b>",
-        "<i>Нужны ключ и один кейс. Потом команда с эмодзи этого кейса.</i>",
-        "",
+        "<i>Ключ и кейс. Затем «Открыть» или команда.</i>",
     ]
     for item in items:
         lines.append(f"<code>использовать {item['emoji']}</code>")
-    lines.append("")
-    for item, cap in zip(items, caps):
-        lines.append(f"{mark(item['emoji'], item['premium'])} {item['name']} — до <b>{_dots(cap)}</b>")
-    lines.append("")
-    lines.append("<i>Ключ и кейс сгорают. На баланс падает ровно выпавшее число.</i>")
+    lines.append(" · ".join(
+        f"{short[item['id']]} до <b>{_dots(cap)}</b>"
+        for item, cap in zip(items, caps)
+    ))
+    lines.append("<i>Ключ и кейс сгорают. Приходит выпавшее число.</i>")
     return "\n".join(lines)
 
 
-_ASK_EXACT = {
-    "кейсы",
-    "кейс",
-    "как открыть кейс",
-    "как открыть кейсы",
-    "открытие кейсов",
-    "открытие кейса",
-    "открыть кейс",
-    "открыть кейсы",
-    "что такое кейсы",
-    "что такое кейс",
-    "кейсы хелп",
-    "хелп кейсы",
-    "кейс хелп",
-    "хелп кейс",
-    "помощь кейсы",
-    "кейсы помощь",
-    "как пользоваться кейсом",
-    "как пользоваться кейсами",
-    "правила кейсов",
+# Настоящая команда предмета. «использовать кейс» — это вопрос, не расход.
+_USE_NAMES = {
+    "ключ",
+    "key",
+    "маленький кейс",
+    "средний кейс",
+    "большой кейс",
+    "case5000_15000",
+    "case20000_40000",
+    "case50000_100000",
 }
 
-_ASK_PARTS = (
-    ("как", "откры", "кейс"),
-    ("открыт", "кейс"),
-    ("что такое", "кейс"),
-    ("хелп", "кейс"),
-    ("помощь", "кейс"),
+# Слова, которые не меняют смысл короткой фразы.
+_FILLERS = {
+    "а", "и", "ну", "вот", "же", "бы", "ли", "то", "эт", "это", "этот", "эта", "эти",
+    "в", "на", "по", "за", "для", "с", "со", "к", "ко", "о", "об", "про", "из", "от", "до", "у",
+    "не", "ни", "ты", "вы", "мне", "меня", "мной", "нам", "мой", "моя", "мои", "моем", "моём",
+    "свой", "свою", "свои", "тут", "здесь", "уже", "еще", "ещё", "пожалуйста", "пж", "плиз", "плз",
+    "бот", "кут", "куты", "кутик",
+}
+
+# Намерение: открыть, спросить, купить, найти. Короткое сообщение без такого слова
+# и без одного только «кейсы» справку не открывает.
+_INTENT_STEMS = (
+    "откры", "откро", "вскро", "раскро",
+    "как", "че", "что", "чо", "зачем", "почему",
+    "хелп", "help", "помощ", "подскаж", "объясн", "расскаж", "научи", "покаж",
+    "инструк", "правил", "гайд", "guide", "тутор", "мануал",
+    "где", "куда",
+    "хочу", "хотел", "хотим", "можно", "надо",
+    "куп", "покуп",
+    "получ", "взят", "доста",
+    "использ", "польз", "юза", "заюза",
+    "работ", "устро",
+    "open", "how", "what", "where",
 )
 
 
-def is_case_ask(text: str) -> bool:
-    """Короткая фраза про кейсы. Команда «использовать» сюда не попадает."""
+def _words(text: str) -> str:
     raw = " ".join(str(text or "").replace("ё", "е").split()).casefold()
     raw = "".join(ch if ch.isalnum() or ch == " " else " " for ch in raw)
-    raw = " ".join(raw.split())
-    if not raw or len(raw) > 80 or raw.startswith("использовать"):
+    return " ".join(raw.split())
+
+
+def _case_word(token: str) -> bool:
+    return token in {"case", "cases"} or token == "кейс" or token.startswith("кейс")
+
+
+def _intent_word(token: str) -> bool:
+    return any(token.startswith(stem) for stem in _INTENT_STEMS)
+
+
+def _real_item_use(raw: str) -> bool:
+    """«использовать 📦» и «использовать маленький кейс» открывают предмет, не справку."""
+    if not raw.startswith("использовать"):
         return False
-    if raw in _ASK_EXACT:
+    rest = raw[len("использовать"):].strip()
+    return rest == "" or rest in _USE_NAMES
+
+
+def is_case_ask(text: str) -> bool:
+    """Короткая фраза про кейсы: «открыть кейс», «как открыть», «открой», «где кейсы».
+
+    Длинный разговор, где слово просто встретилось, и команда расхода предмета
+    сюда не входят.
+    """
+    raw = _words(text)
+    if not raw or len(raw) > 80 or _real_item_use(raw):
+        return False
+    tokens = raw.split()
+    if len(tokens) > 10:
+        return False
+    if not any(_case_word(token) for token in tokens):
+        return False
+    if all(_case_word(token) or token in _FILLERS for token in tokens):
         return True
-    if len(raw.split()) > 8:
-        return False
-    return any(all(part in raw for part in pair) for pair in _ASK_PARTS)
+    return any(_intent_word(token) for token in tokens)
 
 
 def match_bought(name1: str, name: str) -> str:
