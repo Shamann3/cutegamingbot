@@ -2751,14 +2751,49 @@ def explain_demote_fault(err: str) -> str:
     """Короткий текст вместо сырого ответа Telegram."""
     text = str(err or "")
     upper = text.upper()
+    if "USER_CREATOR" in upper or "CHAT OWNER" in upper:
+        return "создателя группы снять нельзя"
+    if "ADMINISTRATOR" in upper:
+        return "Telegram не даёт наказать администратора, пока у него есть админка"
     if "CHAT_ADMIN_REQUIRED" in upper:
         return "бот в этой группе не может менять администраторов"
     if "NOT ENOUGH RIGHTS" in upper or "RIGHT_FORBIDDEN" in upper:
         return "у бота нет права «Добавление администраторов»"
-    if "USER_CREATOR" in upper:
-        return "создателя группы снять нельзя"
-    cleaned = text.replace("Bad Request:", "").strip()
+    cleaned = text.replace("Bad Request:", "").replace("Bad request:", "").strip()
     return cleaned[:140] or "Telegram не снял админку"
+
+
+def _target_blocks_punishment(result: dict) -> bool:
+    """Telegram отказал, потому что цель всё ещё администратор, а не потому что бот не админ."""
+    parts = [
+        (result or {}).get("telegram"),
+        (result or {}).get("detail"),
+        (result or {}).get("spoken"),
+    ]
+    for item in (result or {}).get("results") or []:
+        if isinstance(item, dict):
+            parts.append(item.get("description"))
+    text = " ".join(str(part or "") for part in parts).upper()
+    if "CHAT_ADMIN_REQUIRED" in text or "NOT ENOUGH RIGHTS" in text:
+        return False
+    return "ADMINISTRATOR" in text or "CHAT OWNER" in text
+
+
+def bot_powers_from_member(member: dict | None) -> dict:
+    """Права самого бота в группе. Источник — getChatMember, не догадка по списку."""
+    empty = {"admin": False, "promote": False, "restrict": False}
+    if not isinstance(member, dict):
+        return empty
+    status = str(member.get("status") or "")
+    if status == "creator":
+        return {"admin": True, "promote": True, "restrict": True}
+    if status != "administrator":
+        return empty
+    return {
+        "admin": True,
+        "promote": bool(member.get("can_promote_members")),
+        "restrict": bool(member.get("can_restrict_members")),
+    }
 
 
 def classify_chat_admin(row: dict, *, seated: bool, staff: bool) -> str:
@@ -2842,33 +2877,36 @@ async def _chat_admin_rows(chat_id: int) -> tuple[list[dict], str]:
     return rows, ""
 
 
-async def _bot_can_promote(chat_id: int, admins: list[dict]) -> bool:
-    """Право бота назначать администраторов в этой группе.
+async def _bot_powers(chat_id: int, admins: list[dict] | None = None) -> dict:
+    """Админ ли бот и есть ли у него «Добавление администраторов» и «Блокировка участников».
 
-    Список getChatAdministrators иногда не отдаёт can_promote_members у самого бота.
-    Тогда спрашиваем getChatMember: это то же право, что «Add new admins» в Telegram.
+    Список администраторов часто молчит про флаги самого бота, поэтому ответ
+    getChatMember важнее. Если Telegram на этот запрос не ответил, остаются флаги списка.
     """
-    bot = next((row for row in admins if row["isSelfBot"]), None)
-    if bot and (bot["canPromote"] or bot["status"] == "creator"):
-        return True
+    rows = admins or []
+    bot = next((row for row in rows if row.get("isSelfBot")), None)
     bot_id = int(bot["userId"]) if bot else await _bot_user_id()
-    if bot_id <= 0:
-        return False
-    ok, _err, data = await _telegram_call(
-        "getChatMember",
-        {"chat_id": int(chat_id), "user_id": bot_id},
-    )
-    member = data.get("result") if ok and isinstance(data, dict) else None
-    if not isinstance(member, dict):
-        return False
-    status = str(member.get("status") or "")
-    if status == "creator":
-        return True
-    if bool(member.get("can_promote_members")):
-        if bot is not None:
-            bot["canPromote"] = True
-        return True
-    return False
+    member = await _telegram_member(chat_id, bot_id) if bot_id > 0 else None
+    if member is not None:
+        powers = bot_powers_from_member(member)
+    elif bot and bot.get("status") == "creator":
+        powers = {"admin": True, "promote": True, "restrict": True}
+    elif bot and bot.get("status") == "administrator":
+        powers = {
+            "admin": True,
+            "promote": bool(bot.get("canPromote")),
+            "restrict": bool(bot.get("canRestrict")),
+        }
+    else:
+        powers = {"admin": False, "promote": False, "restrict": False}
+    if bot is not None:
+        bot["canPromote"] = powers["promote"]
+        bot["canRestrict"] = powers["restrict"]
+    return powers
+
+
+async def _bot_can_promote(chat_id: int, admins: list[dict]) -> bool:
+    return bool((await _bot_powers(chat_id, admins))["promote"])
 
 
 async def _chat_admin_history(chat_id: int) -> list[dict]:
@@ -3105,7 +3143,10 @@ async def _demote_telegram_admin(chat_id: int, user_id: int) -> str:
         _promote_body(int(chat_id), int(user_id), None),
     )
     if not ok:
-        return err or "Telegram не снял админку"
+        member = await _telegram_member(chat_id, user_id)
+        if member is not None and not _member_still_admin(member):
+            return ""
+        return explain_demote_fault(err)
     member = await _telegram_member(chat_id, user_id)
     if _member_still_admin(member):
         return "Telegram оставил админку. Боту нужно право «Добавление администраторов»"
@@ -3119,7 +3160,10 @@ async def _restrict_telegram_admin(chat_id: int, user_id: int) -> str:
         _promote_body(int(chat_id), int(user_id), ["can_manage_chat"]),
     )
     if not ok:
-        return err or "Telegram не ограничил права"
+        member = await _telegram_member(chat_id, user_id)
+        if member is not None and not (_member_still_admin(member) and _member_can_punish(member)):
+            return ""
+        return explain_demote_fault(err)
     member = await _telegram_member(chat_id, user_id)
     if _member_still_admin(member) and _member_can_punish(member):
         return "Telegram оставил прежние права. Боту нужно право «Добавление администраторов»"
@@ -3166,6 +3210,30 @@ async def _project_staff_ids(user_ids: list[int]) -> set[int]:
         return staff
     staff.update(int(row["user_id"]) for row in rows)
     return staff
+
+
+async def _seat_ranks(chat_id: int, user_ids: list[int]) -> dict[int, int]:
+    """Старшая должность человека в этой группе. Нет строки — человека в ранге нет."""
+    if not user_ids:
+        return {}
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT s.user_id, MAX(p.rank)::int AS rank
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.chat_id = $1
+              AND s.user_id = ANY($2::bigint[])
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+            GROUP BY s.user_id
+            """,
+            int(chat_id),
+            [int(uid) for uid in user_ids],
+        )
+    except Exception:
+        _log.exception("ранги администраторов группы %s", chat_id)
+        return {}
+    return {int(row["user_id"]): int(row["rank"] or 0) for row in rows}
 
 
 async def _pending_drop_ids(chat_id: int) -> set[int]:
@@ -3230,9 +3298,28 @@ async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> di
     except Exception:
         _log.exception("статистика администраторов группы %s", chat_id)
         pulse, deeds = {}, {}
+    try:
+        actor_rank, _actor_staff = await _actor_weight(int(actor_id), int(chat_id))
+    except Exception:
+        _log.exception("ранг смотрящего %s в %s", actor_id, chat_id)
+        actor_rank = None
+    ranks = await _seat_ranks(chat_id, people)
+    viewer = int(actor_rank) if actor_rank is not None else -1
     for row in shown:
         row["stats"] = pulse.get(row["userId"])
         row["deeds"] = deeds.get(row["userId"])
+        rank = ranks.get(row["userId"])
+        row["rank"] = int(rank) if rank is not None else None
+        same = int(row["userId"]) == int(actor_id)
+        blocked = may_punish_rank(viewer, int(rank or 0), same_person=same) if rank is not None else "нет должности"
+        row["junior"] = (
+            blocked is None
+            and row["status"] != "creator"
+            and not row["isBot"]
+            and not row["isSelfBot"]
+            and not same
+        )
+    powers = await _bot_powers(chat_id, admins)
     return {
         "admins": shown,
         "dropped": dropped,
@@ -3240,9 +3327,12 @@ async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> di
         "history": await _chat_admin_history(chat_id),
         "canAct": True,
         "creator": bool(creator),
-        "botCanPromote": await _bot_can_promote(chat_id, admins),
+        "botCanPromote": powers["promote"],
+        "botCanRestrict": powers["restrict"],
+        "botIsAdmin": powers["admin"],
+        "actorRank": viewer if viewer >= 0 else None,
         "selfId": int(actor_id),
-        "error": error,
+        "error": explain_demote_fault(error) if error else "",
     }
 
 
@@ -3440,6 +3530,17 @@ async def group_chat_admin_act(
     staff = await _project_staff_ids([target_id])
     if target_id in staff:
         raise HTTPException(status_code=403, detail="Сотрудника проекта эта вкладка не ограничивает и не снимает")
+    powers = await _bot_powers(int(chat_id), admins)
+    if not powers["admin"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Бот в этой группе не администратор. Назначьте его и включите «Добавление администраторов».",
+        )
+    if not powers["promote"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Бот не может менять администраторов. Включите ему «Добавление администраторов».",
+        )
     seated = await _registered_admin_ids(chat_id)
     creator = bool(access.get("creator"))
     if action == "restrict":
@@ -5509,6 +5610,35 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
         reason=body.reason.strip(),
         admin_id=int(user_id),
     )
+    lifted = False
+    if (
+        not result.get("ok")
+        and action in {"mute", "ban", "kick", "voice", "muteall", "banall"}
+        and _target_blocks_punishment(result)
+    ):
+        powers = await _bot_powers(int(body.chat_id))
+        if not powers["promote"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Этот человек администратор. Чтобы наказать его, включите боту «Добавление администраторов».",
+            )
+        if action != "kick" and not powers["restrict"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Боту нужно право «Блокировка участников», иначе наказание администратора не пройдёт.",
+            )
+        fault = await _demote_telegram_admin(int(body.chat_id), int(body.user_id))
+        if fault:
+            raise HTTPException(status_code=400, detail=fault)
+        lifted = True
+        result = await moderate_action(
+            chat_id=int(body.chat_id),
+            user_id=int(body.user_id),
+            action=action,
+            until_sec=body.until_sec,
+            reason=body.reason.strip(),
+            admin_id=int(user_id),
+        )
     if not result.get("ok"):
         from offender_profile import failure_text
 
@@ -5530,6 +5660,11 @@ async def group_act(body: ActBody, user_id: int = Depends(get_any_telegram_user_
             warns = None
     from group_guard_rules import punish_receipt
     receipt = punish_receipt(access.get("position") or "", action, int(warns) if warns is not None else None)
+    if lifted:
+        receipt = (
+            f"{receipt} Админка в Telegram снята, чтобы наказание прошло. "
+            "Должность в панели осталась."
+        )
     return {"ok": True, "result": result, "receipt": receipt}
 
 

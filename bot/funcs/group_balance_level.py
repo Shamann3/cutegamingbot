@@ -783,10 +783,10 @@ def format_package_price_line(pkg: Dict[str, Any]) -> str:
     return f"<b>{pay}⭐</b>"
 
 
-def format_profile_link_html(user_id: int, display_name: str) -> str:
-    """Кликабельное имя → профиль Telegram."""
-    name = _html_escape((display_name or "").strip() or str(user_id))
-    return f'<a href="tg://user?id={int(user_id)}">{name}</a>'
+def format_profile_link_html(user_id: int, display_name: str, username: str = "") -> str:
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(display_name, username, empty=str(user_id))
 
 
 def format_group_link_html(

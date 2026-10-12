@@ -542,6 +542,29 @@ body.perf-light .gate-matrix {
   animation: grp-enter-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.grp-door.grp-enter {
+  position: relative;
+  overflow: hidden;
+  animation: grp-stage-in 0.68s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.grp-door.grp-enter.is-leaving {
+  animation: none;
+}
+
+.grp-door-glow {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: min(560px, 92vw);
+  height: 300px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--e-accent-rgb, 200, 175, 255), 0.34), transparent 68%);
+  pointer-events: none;
+  animation: grp-glow-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .grp-enter.is-leaving {
   animation: grp-enter-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -556,11 +579,34 @@ body.perf-light .gate-matrix {
 }
 
 .grp-enter-card li {
-  animation: grp-row-in 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-row-in 0.56s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-enter-card li.is-chosen button {
   color: #fff;
+}
+
+.grp-door.is-leaving .grp-enter-kicker,
+.grp-door.is-leaving .grp-enter-card h1,
+.grp-door.is-leaving .grp-enter-card > p {
+  animation: grp-copy-away 0.28s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.grp-door.is-leaving li:not(.is-chosen) {
+  animation: grp-row-away 0.36s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+.grp-door.is-leaving li.is-chosen {
+  animation: grp-row-hold 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+  z-index: 1;
+}
+
+.grp-door.is-leaving li.is-chosen button {
+  border-bottom-color: transparent;
+  border-radius: 16px;
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.18);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.32);
 }
 
 .grp-seal {
@@ -579,12 +625,17 @@ body.perf-light .gate-matrix {
   font: inherit;
 }
 
+.grp-door.grp-seal {
+  position: relative;
+  animation: grp-door-open 0.72s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .grp-seal strong {
   font-size: clamp(2rem, 6vw, 3.4rem);
   font-weight: 560;
   letter-spacing: -0.045em;
   line-height: 1.05;
-  animation: grp-seal-title 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grp-seal-title 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .grp-seal-line {
@@ -601,8 +652,12 @@ body.perf-light .gate-matrix {
   animation: grp-enter-in 0.5s 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.panel-shell.is-arriving .panel-layout {
-  animation: cabinet-arrive 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
+.panel-shell.is-arriving .panel-shell-main {
+  animation: cabinet-arrive 0.74s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.panel-shell.is-arriving .phone-dock {
+  animation: cabinet-dock-in 0.48s 0.16s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes grp-enter-in {
@@ -615,13 +670,41 @@ body.perf-light .gate-matrix {
 }
 
 @keyframes grp-row-in {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: none; }
 }
 
-@keyframes grp-seal-title {
-  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+@keyframes grp-stage-in {
+  from { opacity: 0; transform: translateY(22px) scale(0.96); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes grp-glow-in {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.86); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes grp-copy-away {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes grp-row-away {
+  to { opacity: 0; transform: translateY(14px) scale(0.98); }
+}
+
+@keyframes grp-row-hold {
+  from { transform: translateY(0) scale(1); }
+  to { transform: translateY(-10px) scale(1.03); }
+}
+
+@keyframes grp-door-open {
+  from { opacity: 0; clip-path: inset(44% 18% 44% 18% round 28px); }
+  to { opacity: 1; clip-path: none; }
+}
+
+@keyframes grp-seal-title {
+  from { opacity: 0; transform: translateY(18px) scale(0.94); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
 
 @keyframes grp-seal-line {
@@ -629,19 +712,42 @@ body.perf-light .gate-matrix {
   to { opacity: 1; transform: scaleX(1); }
 }
 
-@keyframes cabinet-arrive {
+@keyframes cabinet-dock-in {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes cabinet-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(26px) scale(0.972);
+    clip-path: inset(10% 7% 12% 7% round 28px);
+  }
+  60% { opacity: 1; }
+  to {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .grp-enter,
   .grp-enter.is-leaving,
+  .grp-door.grp-enter,
+  .grp-door-glow,
   .grp-enter-card li,
+  .grp-door.is-leaving .grp-enter-kicker,
+  .grp-door.is-leaving .grp-enter-card h1,
+  .grp-door.is-leaving .grp-enter-card > p,
+  .grp-door.is-leaving li:not(.is-chosen),
+  .grp-door.is-leaving li.is-chosen,
+  .grp-door.grp-seal,
   .grp-seal strong,
   .grp-seal-line,
   .grp-seal-go,
-  .panel-shell.is-arriving .panel-layout {
+  .panel-shell.is-arriving .panel-shell-main,
+  .panel-shell.is-arriving .phone-dock {
     animation: none;
   }
 }
@@ -680,13 +786,29 @@ body.perf-light .gate-matrix {
   justify-content: space-between;
   gap: 12px;
   align-items: baseline;
-  padding: 14px 2px;
+  padding: 14px 8px;
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
   background: transparent;
   color: inherit;
   font: inherit;
   cursor: pointer;
+  transition: background 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+.grp-enter-card button:disabled {
+  cursor: default;
+}
+
+.grp-enter-card button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.grp-enter-card button:focus-visible,
+.grp-seal:focus-visible {
+  outline: 2px solid rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  outline-offset: 3px;
 }
 
 .grp-enter-card button span {

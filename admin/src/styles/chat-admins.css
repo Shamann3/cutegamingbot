@@ -202,9 +202,62 @@
   z-index: 1;
 }
 
-.chat-admins-actions button:disabled {
+.chat-admins-actions button:disabled,
+.chat-admins-disciplines button:disabled,
+.chat-admins-confirm button:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+.chat-admins-disciplines {
+  margin-top: 12px;
+  animation: chat-admins-in 0.36s ease both;
+}
+
+.chat-admins-disciplines p {
+  margin: 0 0 8px;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+  font-size: 13px;
+}
+
+.chat-admins-disciplines div,
+.chat-admins-spans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-admins-disciplines button,
+.chat-admins-spans button,
+.chat-admins-reason textarea {
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--e-text, #f2f2f4) 16%, transparent);
+  background: color-mix(in srgb, var(--e-text, #f2f2f4) 8%, transparent);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-admins-spans button.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+  border-color: transparent;
+}
+
+.chat-admins-reason {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.72));
+}
+
+.chat-admins-reason textarea {
+  width: 100%;
+  border-radius: 14px;
+  padding: 10px 12px;
+  resize: vertical;
+  cursor: text;
 }
 
 .chat-admins-actions .is-danger,
@@ -311,6 +364,7 @@
   .chat-admins-confirm,
   .chat-admins-log li,
   .chat-admins-pane,
+  .chat-admins-disciplines,
   .chat-admins-meters b {
     animation: none;
   }

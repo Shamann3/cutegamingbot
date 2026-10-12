@@ -82,10 +82,8 @@ async def create_user_link(
     first_name: Optional[str],
     username: Optional[str] = None
 ) -> str:
-    first_name = first_name or "Пользователь"
-    if username:
-        return f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    return html.escape(first_name)
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(first_name, username, empty="Пользователь")
 
 
 colors = [

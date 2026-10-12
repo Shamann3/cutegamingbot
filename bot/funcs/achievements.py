@@ -819,11 +819,9 @@ def format_granted_at(ts: float) -> str:
     return dt.strftime("%d.%m.%Y | %H.%M.%S")
 
 
-def granter_link_html(user_id: Optional[int], name: str) -> str:
-    safe = html.escape((name or "Администратор").strip() or "Администратор")
-    if user_id:
-        return f"<a href='tg://user?id={int(user_id)}'>{safe}</a>"
-    return safe
+def granter_link_html(user_id: Optional[int], name: str, username: Optional[str] = None) -> str:
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(name, username, empty="Администратор")
 
 
 def gbl_unique_code(level: int, chat_id: int) -> str:

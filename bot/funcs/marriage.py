@@ -20,18 +20,11 @@ from main import *
 
 
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
-
-    return user_hyperlink
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 
 
 
@@ -117,8 +110,10 @@ async def cmd_start(message: Message):
 
         marriage_info = await db.get_marriage_info(user_id)
         if not marriage_info:
+            from bot.funcs.person_html import person_name_html
+            who = person_name_html("", username, empty="Пользователь")
             await message.answer(
-                f"🔥 Пользователь <a href='https://t.me/{username}'>{username}</a> не состоит в браке." ,
+                f"🔥 Пользователь {who} не состоит в браке." ,
                 parse_mode="HTML")
             return
 
@@ -128,16 +123,18 @@ async def cmd_start(message: Message):
             await message.answer("Данные о партнере не найдены.")
             return
 
-        partner_username = partner_data [ "username" ] if partner_data [ "username" ] else partner_data [ "first_name" ]
+        from bot.funcs.person_html import person_name_html
+        who = person_name_html("", username, empty="Пользователь")
+        partner_html = person_name_html(partner_data.get("first_name"), partner_data.get("username"), empty="партнёр")
         marriage_status = "👰🏻‍♀️🤵 В браке" if marriage_info [ 2 ] == 1 else "⌚️ Ожидание подтверждения брака"
         marriage_datetime = marriage_info [ 3 ]
         marriage_start_time = datetime.strptime(str(marriage_datetime) , "%Y-%m-%d %H:%M:%S")
         marriage_duration = datetime.now() - marriage_start_time
         duration_str = str(marriage_duration).split('.') [ 0 ]
 
-        message_text = (f"👨‍💻 Информация брака <a href='https://t.me/{username}'>{username}</a>:\n"
+        message_text = (f"👨‍💻 Информация брака {who}:\n"
                         f"🗽 Статус: {marriage_status}\n"
-                        f"👤 Партнер: <a href='https://t.me/{partner_username}'>{partner_username}</a>\n"
+                        f"👤 Партнер: {partner_html}\n"
                         f"⌚️ Длительность: {marriage_datetime}\n"
                         f"️⌛ Дата создания: {duration_str}")
 

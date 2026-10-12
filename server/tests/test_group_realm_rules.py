@@ -183,6 +183,19 @@ def test_chat_admin_list_hides_staff_and_strips_strangers():
     from group_realm import explain_demote_fault
     assert "не может менять" in explain_demote_fault("Bad Request: CHAT_ADMIN_REQUIRED")
     assert "Добавление администраторов" in explain_demote_fault("not enough rights")
+    assert "Bad Request" not in explain_demote_fault("Bad Request: CHAT_ADMIN_REQUIRED")
+    from group_realm import bot_powers_from_member, _target_blocks_punishment
+    assert bot_powers_from_member({"status": "creator"}) == {
+        "admin": True, "promote": True, "restrict": True,
+    }
+    assert bot_powers_from_member({
+        "status": "administrator",
+        "can_promote_members": True,
+        "can_restrict_members": False,
+    }) == {"admin": True, "promote": True, "restrict": False}
+    assert bot_powers_from_member({"status": "member"})["admin"] is False
+    assert _target_blocks_punishment({"telegram": "user is an administrator of the chat"}) is True
+    assert _target_blocks_punishment({"telegram": "Bad Request: CHAT_ADMIN_REQUIRED"}) is False
     assert _member_still_admin({"status": "administrator"}) is True
     assert _member_still_admin({"status": "member"}) is False
     assert _member_can_punish({"status": "administrator", "can_restrict_members": True}) is True

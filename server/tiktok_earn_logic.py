@@ -186,8 +186,8 @@ def parse_views_input(raw: Any) -> int:
 
 
 def reviewer_mention_html(user_id: int, name: str = "", username: str = "") -> str:
-    label = escape(str(name or username or user_id).strip() or str(user_id))
-    return f'<a href="tg://user?id={int(user_id)}">{label}</a>'
+    from person_html import person_name_html
+    return person_name_html(name, username, empty=str(user_id))
 
 
 def reviewer_line_html(kind: str, mention: str) -> str:

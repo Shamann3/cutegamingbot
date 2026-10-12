@@ -122,14 +122,8 @@ def _profile_safe_int(value: Any, default: int = 0) -> int:
 
 
 def _profile_name_link(user_id: int, first_name: str, username: Optional[str] = None) -> str:
-    if username:
-        return (
-            f"<a href='https://t.me/{html.escape(username)}'>"
-            f"{html.escape(first_name or '')}</a>"
-        )
-    if first_name:
-        return html.escape(first_name)
-    return f"<a href='tg://user?id={user_id}'>Неизвестный</a>"
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(first_name, username, empty="Неизвестный")
 
 
 def _profile_fmt_int(value: Any) -> str:
@@ -1216,7 +1210,7 @@ async def _build_profile_caption_for_target(
         name_link = _profile_name_link(user_id, first_name, username)
     except Exception as e:
         _p_err("PROFILE", "create_user_link failed", e, uid=user_id, level=2)
-        name_link = f"<a href='tg://user?id={user_id}'>{_profile_escape(first_name or 'Неизвестный')}</a>"
+        name_link = _profile_name_link(user_id, first_name or "Неизвестный", username)
 
     invite_message = (
         f"{state['prlg_emoji']} <b>Приглашен(-а) : {_profile_escape(state['referer_name'])}</b>"
@@ -2500,10 +2494,9 @@ async def handle_profile_command(
         )
     except Exception as e:
         _p_err("PROFILE", "build own profile failed", e, uid=viewer_id, level=1)
-        safe_name = _profile_escape(_profile_build_full_name(message.from_user.first_name, message.from_user.last_name))
         safe_username = f"@{_profile_escape(message.from_user.username)}" if message.from_user.username else "Без username"
         caption = (
-            f"🎩 <b><a href='tg://user?id={viewer_id}'>{safe_name}</a></b>\n"
+            f"🎩 <b>{_profile_name_link(viewer_id, _profile_build_full_name(message.from_user.first_name, message.from_user.last_name), message.from_user.username)}</b>\n"
             f"👤 <code>{safe_username}</code>\n"
             f"🆔 <code>{viewer_id}</code>\n"
             f"<blockquote>Профиль показан в упрощённом режиме.</blockquote>"

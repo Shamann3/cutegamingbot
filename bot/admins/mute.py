@@ -3500,12 +3500,11 @@ def _format_until(dt: datetime) -> str:
 
 
 def _display_name_link(user_id: int, name: str, username: Optional[str] = None) -> str:
-  """Кликабельное имя: t.me/@username если есть, иначе tg://user?id."""
+  """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+  from bot.funcs.person_html import person_name_html
   clean = _sanitize_username(username)
-  display = (name or "").strip() or (f"@{clean}" if clean else str(user_id))
-  if clean:
-    return f'<a href="https://t.me/{escape(clean)}">{escape(display)}</a>'
-  return f'<a href="tg://user?id={user_id}">{escape(display)}</a>'
+  display = (name or "").strip() or (clean or str(user_id))
+  return person_name_html(display, clean, empty=str(user_id))
 
 
 def _user_link(user_id: int, name: str) -> str:

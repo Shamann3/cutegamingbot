@@ -86,7 +86,33 @@ function verdictLabel(verdict) {
   return verdict === 'fit' ? 'Подходит' : 'Не подходит'
 }
 
-export default function ChatAdmins({ chatId, onOpenUser = null }) {
+const DISCIPLINE_ORDER = ['mute', 'warn', 'kick', 'ban', 'voice']
+const SPANS = [
+  [3600, '1 час'],
+  [6 * 3600, '6 часов'],
+  [86400, '1 день'],
+  [7 * 86400, '7 дней'],
+]
+
+function humanFault(message) {
+  const text = String(message || '')
+  if (/CHAT_ADMIN_REQUIRED/i.test(text)) {
+    return 'Бот в этой группе не может менять администраторов. Включите «Добавление администраторов».'
+  }
+  if (/not enough rights|RIGHT_FORBIDDEN/i.test(text)) {
+    return 'У бота нет права «Добавление администраторов».'
+  }
+  if (/administrator/i.test(text)) {
+    return 'Telegram не даёт наказать администратора, пока у него есть админка.'
+  }
+  return text.replace(/^Bad Request:\s*/i, '')
+}
+
+function needsChatRestriction(id) {
+  return id === 'mute' || id === 'ban' || id === 'kick' || id === 'voice'
+}
+
+export default function ChatAdmins({ chatId, onOpenUser = null, actions = [], onPunish = null }) {
   const [tab, setTab] = useState('people')
   const [board, setBoard] = useState(null)
   const [apps, setApps] = useState(null)
@@ -96,6 +122,8 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
   const [note, setNote] = useState('')
   const [draft, setDraft] = useState(null)
   const [explain, setExplain] = useState('')
+  const [reason, setReason] = useState('')
+  const [spanSec, setSpanSec] = useState(3600)
 
   const loadPeople = useCallback(async () => {
     if (!chatId) return
@@ -103,7 +131,7 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
     try {
       setBoard(await fetchChatAdmins(chatId))
     } catch (err) {
-      setError(err?.message || 'Не удалось открыть администраторов')
+      setError(humanFault(err?.message) || 'Не удалось открыть администраторов')
     }
   }, [chatId])
 
@@ -128,12 +156,33 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
     setBusy(true)
     setError('')
     try {
+      if (pending.action === 'punish') {
+        const why = reason.trim()
+        if (why.length < 2) {
+          setError('Напишите причину')
+          return
+        }
+        if (!onPunish) {
+          setError('Наказание из этой вкладки сейчас недоступно')
+          return
+        }
+        await onPunish({
+          userId: String(pending.userId),
+          action: pending.discipline.id,
+          untilSec: pending.discipline.needsUntil ? spanSec : null,
+          reason: why,
+        })
+        setNote(`${pending.discipline.label} записан`)
+        setReason('')
+        setPending(null)
+        return
+      }
       const next = await actChatAdmin(chatId, pending.userId, pending.action)
       setBoard(next)
       setNote(next.note || '')
       setPending(null)
     } catch (err) {
-      setError(err?.message || 'Telegram не выполнил действие')
+      setError(humanFault(err?.message) || 'Telegram не выполнил действие')
     } finally {
       setBusy(false)
     }
@@ -168,6 +217,11 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
   const dropped = board?.dropped || []
   const stuck = board?.stuck || []
   const monthPeak = Math.max(1, ...admins.map((person) => Number(person.stats?.month) || 0))
+  const disciplines = DISCIPLINE_ORDER
+    .map((id) => actions.find((item) => item.id === id))
+    .filter(Boolean)
+  const botCanPromote = board?.botCanPromote !== false
+  const botCanRestrict = board?.botCanRestrict !== false
 
   return (
     <section className="chat-admins">
@@ -192,7 +246,7 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
             Спам-блок и админ ГЧ — должность, их код не трогает.
             Ограничить права можно сразу. Снятие должности уходит создателю @JerichoCute, если это делаете не вы.
           </p>
-          {board?.error && <p className="chat-admins-warn">{board.error}</p>}
+          {board?.error && <p className="chat-admins-warn">{humanFault(board.error)}</p>}
           {dropped.length > 0 && (
             <p className="chat-admins-note">
               Снял админку тем, кого нет в системе: {dropped.map(personLine).join(', ')}.
@@ -201,13 +255,23 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
           {stuck.length > 0 && (
             <p className="chat-admins-warn">
               Не снялись администраторы без должности
-              {stuck[0].error ? ` — ${stuck[0].error}` : ''}: {stuck.map(personLine).join(', ')}.
+              {stuck[0].error ? ` — ${humanFault(stuck[0].error)}` : ''}: {stuck.map(personLine).join(', ')}.
               Включите боту в этой группе «Добавление администраторов».
             </p>
           )}
-          {board && !board.botCanPromote && !board.error && (
+          {board && board.botIsAdmin === false && !board.error && (
             <p className="chat-admins-warn">
-              Если снятие не пройдёт, включите боту в этой группе «Добавление администраторов».
+              Бот в этой группе не администратор. Назначьте его и включите «Добавление администраторов» и «Блокировка участников».
+            </p>
+          )}
+          {board && board.botIsAdmin !== false && !board.botCanPromote && !board.error && (
+            <p className="chat-admins-warn">
+              Снять и ограничить админку нельзя: у бота нет права «Добавление администраторов».
+            </p>
+          )}
+          {board && board.botCanPromote && board.botCanRestrict === false && !board.error && (
+            <p className="chat-admins-warn">
+              Мут, бан и кик не пройдут, пока боту не включена «Блокировка участников». Предупреждение запишется.
             </p>
           )}
 
@@ -259,17 +323,43 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
                   ) : null}
                   {canAct && !locked && (
                     <div className="chat-admins-actions">
-                      <button type="button" onClick={() => setPending({ ...person, action: 'restrict' })}>
+                      <button
+                        type="button"
+                        disabled={!botCanPromote}
+                        onClick={() => setPending({ ...person, action: 'restrict' })}
+                      >
                         Ограничить
                       </button>
                       <button
                         type="button"
                         className="is-danger"
-                        disabled={Boolean(person.dropPending) && !creator}
+                        disabled={!botCanPromote || (Boolean(person.dropPending) && !creator)}
                         onClick={() => setPending({ ...person, action: 'demote' })}
                       >
                         {person.dropPending && !creator ? 'Заявка у создателя' : 'Снять'}
                       </button>
+                    </div>
+                  )}
+                  {person.junior && disciplines.length > 0 && onPunish && (
+                    <div className="chat-admins-disciplines">
+                      <p>Младше вашей должности. Наказание — теми правами, которые есть у вас.</p>
+                      <div>
+                        {disciplines.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            disabled={needsChatRestriction(item.id) && !botCanRestrict}
+                            onClick={() => {
+                              setReason('')
+                              setSpanSec(3600)
+                              setError('')
+                              setPending({ ...person, action: 'punish', discipline: item })
+                            }}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </li>
@@ -297,13 +387,44 @@ export default function ChatAdmins({ chatId, onOpenUser = null }) {
                 aria-label="Подтверждение"
                 onClick={(event) => event.stopPropagation()}
               >
-                <p>
-                  {pending.action === 'demote'
-                    ? (creator
-                      ? `Снять админку: ${pending.name} станет обычным участником.`
-                      : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
-                    : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
-                </p>
+                {pending.action === 'punish' ? (
+                  <>
+                    <p>
+                      {pending.discipline.label}: {pending.name}. Напишите, за что.
+                    </p>
+                    {pending.discipline.needsUntil && (
+                      <div className="chat-admins-spans" role="group" aria-label="Срок">
+                        {SPANS.map(([sec, label]) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            className={spanSec === sec ? 'is-on' : ''}
+                            onClick={() => setSpanSec(sec)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <label className="chat-admins-reason">
+                      Причина
+                      <textarea
+                        value={reason}
+                        rows={3}
+                        maxLength={200}
+                        onChange={(event) => setReason(event.target.value)}
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <p>
+                    {pending.action === 'demote'
+                      ? (creator
+                        ? `Снять админку: ${pending.name} станет обычным участником.`
+                        : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
+                      : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
+                  </p>
+                )}
                 <div>
                   <button type="button" disabled={busy} onClick={() => setPending(null)}>Назад</button>
                   <button type="button" className="is-danger" disabled={busy} onClick={commit}>

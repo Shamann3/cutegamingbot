@@ -949,14 +949,18 @@ def quiet_visible(value) -> str:
 
 
 def person_html(user_id, first="", username=""):
-    """Имя, по которому открывается профиль. Юзернейм — тихая ссылка, без него — по id."""
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя, без пинга и без tg://."""
     handle = str(username or "").strip().lstrip("@")
-    label = str(first or "").strip() or handle or "игрок"
-    label = label.replace("@", "").replace("<", "").replace(">", "").replace("&", "")
+    label = str(first or "").replace("@", "").strip() or handle or "игрок"
     label = " ".join(label.split()) or "игрок"
-    if _HANDLE.match(handle):
-        return '<a href="https://t.me/' + handle + '">' + label + "</a>"
-    return "<a href='tg://user?id=" + str(int(user_id)) + "'>" + label + "</a>"
+    safe = (
+        label.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    if _HANDLE.fullmatch(handle) and handle[:1].isalpha():
+        return '<a href="https://t.me/' + handle + '">' + safe + "</a>"
+    return safe
 def as_aware(value):
     if isinstance(value, datetime) and value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)

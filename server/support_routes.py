@@ -93,14 +93,15 @@ async def _send_claim_greeting_if_needed(ticket: dict, admin_user_id: int) -> No
     except Exception:
         row = None
 
-    display_name = (
-        (row["first_name"] or (f"@{row['username']}" if row and row["username"] else None))
-        if row else None
-    ) or f"ID {admin_user_id}"
     role_label = ROLE_LABELS.get(row["role"], row["role"]) if row and row.get("role") else "Сотрудник"
     closed_count = await support_db.count_closed_tickets_for_admin(admin_user_id)
 
-    name_link = f'<a href="tg://user?id={admin_user_id}">{_html.escape(display_name)}</a>'
+    from person_html import person_name_html
+    name_link = person_name_html(
+        (row["first_name"] if row else "") or "",
+        (row["username"] if row else "") or "",
+        empty=f"ID {admin_user_id}",
+    )
     greeting_text = (
         "<tg-emoji emoji-id='5397679249937155116'>👋</tg-emoji> <b>Виво Эпсилон</b>\n"
         f"<b><tg-emoji emoji-id='5390858914885568318'>👑</tg-emoji> Вам будет помогать "

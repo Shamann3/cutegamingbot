@@ -388,8 +388,8 @@ async def _post_salary_channel(
     username = (row["stars_username"] or "").lstrip("@")
     rid = row.get("request_id") or f"salstar-{row['id']}"
     amount_str = "{:,.0f}".format(amount).replace(",", ".")
-    name = escape(first_name or username or str(user_id))
-    name_link = f'<a href="tg://user?id={user_id}">{name}</a>'
+    from bot.funcs.person_html import person_name_html
+    name_link = person_name_html(first_name, username, empty=str(user_id))
     gift_id, gift_emoji, has_upgrade = await _resolve_salary_gift(db, row)
     uname_txt = f" (@{escape(username)})" if username else ""
 

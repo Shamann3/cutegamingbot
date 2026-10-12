@@ -62,8 +62,10 @@ def numeric_target(query: str) -> Optional[int]:
 
 
 def _card(title: str, user_id: int, username: str = "") -> str:
+    from bot.funcs.person_html import person_name_html
+    shown = person_name_html(title, username, empty="Пользователь")
     extra = f"\n@{_esc(username)}" if username else ""
-    return f"👤 {_esc(title)}{extra}\n🆔 <code>{int(user_id)}</code>"
+    return f"👤 {shown}{extra}\n🆔 <code>{int(user_id)}</code>"
 
 
 @router.message(F.text.regexp(r"(?i)^\.id(?:\s+\S.*)?$"))

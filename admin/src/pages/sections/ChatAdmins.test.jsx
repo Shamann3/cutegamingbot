@@ -67,6 +67,30 @@ describe('chat admins', () => {
     expect(await screen.findByText('Админка снята')).toBeTruthy()
   })
 
+  it('punishes a junior admin with a reason and a term', async () => {
+    vi.mocked(fetchChatAdmins).mockResolvedValue({
+      ...BOARD,
+      admins: [{ ...BOARD.admins[0], junior: true, rank: 1 }],
+      botCanRestrict: true,
+    })
+    const punish = vi.fn().mockResolvedValue({})
+    render(<ChatAdmins chatId={-100} actions={[
+      { id: 'mute', label: 'Мут', needsUntil: true },
+      { id: 'warn', label: 'Предупредить', needsUntil: true },
+    ]} onPunish={punish} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Мут' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Причина' }), { target: { value: 'флуд' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
+    await waitFor(() => {
+      expect(punish).toHaveBeenCalledWith({
+        userId: '5',
+        action: 'mute',
+        untilSec: 3600,
+        reason: 'флуд',
+      })
+    })
+  })
+
   it('opens a person from the name and confirms a restriction', async () => {
     vi.mocked(fetchChatAdmins).mockResolvedValue(BOARD)
     vi.mocked(actChatAdmin).mockResolvedValue({ ...BOARD, note: 'Права ограничены' })

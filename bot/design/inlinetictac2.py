@@ -60,10 +60,8 @@ def _board_size_to_int(board_size: str) -> int:
 
 
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    first_name = _escape(first_name or "Игрок")
-    if username:
-        return f"<a href='https://t.me/{_escape(username)}'>{first_name}</a>"
-    return first_name
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(first_name, username, empty="Игрок")
 
 
 def _get_random_inline_ttt_style() -> Dict[str, Any]:

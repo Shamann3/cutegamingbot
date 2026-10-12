@@ -9,18 +9,11 @@ from main import *
 
 import random
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
-
-    return user_hyperlink
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 
 
 rp_commands = ['прижать за талию','обнять','уебать','выебать','погладить','дать автограф','стукнуть', 'поцеловать', 'поздравить', 'воздушный поцелуй', 'подмигнуть', 'кусь', 'чмок', 'пошалить', 'пожать руку', 'трахнуть', 'убить', 'минет', 'отлизать', 'заняться сексом', 'потрогать грудь', 'задушить', 'утопить', 'расстрелять', 'засосать', 'закусать', 'помурчать', 'накормить', 'покормить', 'отшлепать', 'напоить', 'приласкать', 'насрать', 'пожалеть', 'избить', 'зарезать', 'изнасиловать', 'переехать', 'нассать', 'раздеть', 'флиртовать', 'принести чай', 'вдуть', 'украсть', 'поймать', 'поняшиться',  'обрадовать', 'смешить', 'облить водой', 'сбить машиной', 'похвалить', 'порезать', 'помочь', 'поплакать', 'засудить', 'поставить раком', 'нагнуть', 'похлопать', 'поиграть','пнуть', 'ударить','оттрахать','извиниться','попросить прощения','кастрировать']
@@ -49,11 +42,6 @@ async def perform_action_with_caption(
         first_name = message.from_user.first_name
         username = message.from_user.username
 
-        # Формирование ссылки на отправителя и того, на чье сообщение отвечаем
-        user = f'<a href="tg://user?id={message.from_user.id}">{message.from_user.first_name}</a>'
-        user_mention = f'<a href="tg://user?id={replied_user.id}">{replied_user.first_name}</a>'
-
-        # Создание ссылок с учётом никнеймов
         user = await create_user_link(user_id, first_name, username)
         user_mention = await create_user_link(replied_user_id, replied_user_first_name, replied_user_username)
 

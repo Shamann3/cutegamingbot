@@ -592,9 +592,9 @@ def premium_emoji_ids(html: str | None) -> list[str]:
     return _PREMIUM_ID_RE.findall(str(html or ""))
 
 
-def mention_html(user_id: int, name: str) -> str:
-    label = escape(name_or(name, "player"))
-    return f'<a href="tg://user?id={int(user_id)}">{label}</a>'
+def mention_html(user_id: int, name: str, username: str = "") -> str:
+    from person_html import person_name_html
+    return person_name_html(name_or(name, "player"), username, empty="player")
 
 
 def group_link(username: str | None, chat_id: int | None = None) -> str:

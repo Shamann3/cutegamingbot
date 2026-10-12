@@ -66,8 +66,8 @@ class Cube122:
         user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
         first_name = user_info.get('first_name', '') if user_info else ''
         username = user_info.get('username', '') if user_info else ''
-        user_link = f'<a href="https://t.me/{username}">{first_name}</a>' if first_name else \
-            f'<a href="https://t.me/{username}">@{username}</a>' if username else "Имя не указано"
+        from bot.funcs.person_html import person_name_html
+        user_link = person_name_html(first_name, username, empty="Имя не указано")
 
         # Send message to initiate the game for the user
         style_number = await self.db.get_user_style(user_id)
@@ -204,8 +204,8 @@ class dart122:
         user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
         first_name = user_info.get('first_name', '') if user_info else ''
         username = user_info.get('username', '') if user_info else ''
-        user_link = f'<a href="https://t.me/{username}">{first_name}</a>' if first_name else \
-            f'<a href="https://t.me/{username}">@{username}</a>' if username else "Имя не указано"
+        from bot.funcs.person_html import person_name_html
+        user_link = person_name_html(first_name, username, empty="Имя не указано")
 
         style_number = await self.db.get_user_style(user_id)
         for style in styleset:
@@ -339,8 +339,8 @@ class foot1:
         user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
         first_name = user_info.get('first_name', '') if user_info else ''
         username = user_info.get('username', '') if user_info else ''
-        user_link = f'<a href="https://t.me/{username}">{first_name}</a>' if first_name else \
-            f'<a href="https://t.me/{username}">@{username}</a>' if username else "Имя не указано"
+        from bot.funcs.person_html import person_name_html
+        user_link = person_name_html(first_name, username, empty="Имя не указано")
 
         # Send message to initiate the game for the user
         style_number = await self.db.get_user_style(user_id)
@@ -480,7 +480,8 @@ class Bowling34:
             user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
             first_name = user_info.get('first_name', '') if user_info else ''
             username = user_info.get('username', '') if user_info else ''
-            user_link = f'<a href="https://t.me/{username}">{first_name}</a>' if first_name else f'<a href="https://t.me/{username}">@{username}</a>' if username else "Имя не указано"
+            from bot.funcs.person_html import person_name_html
+            user_link = person_name_html(first_name, username, empty="Имя не указано")
 
             style_number = await self.db.get_user_style(user_id)
             for style in styleset:
@@ -600,7 +601,8 @@ class Basketball34:
         user_info = {'first_name': self.message.from_user.first_name, 'username': self.message.from_user.username}
         first_name = user_info.get('first_name', '') if user_info else ''
         username = user_info.get('username', '') if user_info else ''
-        user_link = f'<a href="https://t.me/{username}">{first_name}</a>' if first_name else f'<a href="https://t.me/{username}">@{username}</a>' if username else "Имя не указано"
+        from bot.funcs.person_html import person_name_html
+        user_link = person_name_html(first_name, username, empty="Имя не указано")
 
         style_number = await self.db.get_user_style(user_id)
         for style in styleset:

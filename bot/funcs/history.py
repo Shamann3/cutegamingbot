@@ -303,7 +303,12 @@ async def process_callback(callback_query: types.CallbackQuery):
 
         other_user_info = await db.get_user_info_by_id(other_user_id)
         if other_user_info:
-            other_user_link = f'<a href="tg://user?id={other_user_id}">{other_user_info [ "first_name" ]}</a>'
+            from bot.funcs.person_html import person_name_html
+            other_user_link = person_name_html(
+                other_user_info["first_name"],
+                other_user_info.get("username"),
+                empty=str(other_user_id),
+            )
         else:
             other_user_link = str(other_user_id)
 
@@ -378,7 +383,12 @@ async def process_callback_button(callback_query: types.CallbackQuery):
 
         other_user_info = await db.get_user_info_by_id(other_user_id)
         if other_user_info:
-            other_user_link = f'<a href="tg://user?id={other_user_id}">{other_user_info [ "first_name" ]}</a>'
+            from bot.funcs.person_html import person_name_html
+            other_user_link = person_name_html(
+                other_user_info["first_name"],
+                other_user_info.get("username"),
+                empty=str(other_user_id),
+            )
         else:
             other_user_link = str(other_user_id)
 

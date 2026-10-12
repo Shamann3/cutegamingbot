@@ -488,8 +488,8 @@ async def deliver_salary_payout_to_channel(
     username = (row["stars_username"] or "").lstrip("@")
     amount = int(row["amount"])
     gift_emoji = row.get("gift_emoji") or "⭐"
-    name = escape(first_name or username or str(user_id))
-    name_html = f'<a href="tg://user?id={user_id}">{name}</a>'
+    from person_html import person_name_html
+    name_html = person_name_html(first_name, username, empty=str(user_id))
 
     approve_token = uuid.uuid4().hex[:24]
     reject_token = uuid.uuid4().hex[:24]

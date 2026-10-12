@@ -166,7 +166,8 @@ def test_gift_has_kut_and_user_wording():
     assert "10 кут в подарок" in _visible(html)
     assert "научится играть" in html
     assert "хелп" in html
-    assert "tg://user?id=1" in html
+    assert "Вася" in html
+    assert "tg://" not in html
 
 
 def test_spendable_keeps_nika_reserve():

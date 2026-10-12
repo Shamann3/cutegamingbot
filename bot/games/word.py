@@ -78,7 +78,9 @@ async def word(message: Message):
         hint_line = f'\n\n🧠 <b>Подсказка :</b> \n🌸 {hint}' if hint else ''
 
         # Итоговое сообщение
-        response = f"⭐️ <b>Игра в слова началась!</b> ⭐️\n💫 <b><a href='tg://user?id={creator_id}'>{creator_name}</a></b>"
+        from bot.funcs.person_html import person_name_html
+        creator_html = person_name_html(creator_name, message.from_user.username, empty="Игрок")
+        response = f"⭐️ <b>Игра в слова началась!</b> ⭐️\n💫 <b>{creator_html}</b>"
         response += f"{bet_line}" if bet_line else ""
         response += f"{hint_line}" if hint_line else ""
 
@@ -118,7 +120,9 @@ async def word(message: Message):
                 win_name = await db.get_firstname_by_user_id(user_id)
 
                 # Формируем сообщение о завершении игры
-                end_response = f"⭐️ <b>Игра в слова закончена!</b> ⭐️\n🏆 <b>Победитель : <a href='tg://user?id={user_id}'>{win_name}</a></b>"
+                from bot.funcs.person_html import person_name_html
+                win_html = person_name_html(win_name, message.from_user.username, empty="Победитель")
+                end_response = f"⭐️ <b>Игра в слова закончена!</b> ⭐️\n🏆 <b>Победитель : {win_html}</b>"
 
                 # Добавляем строку с выигрышем только если сумма выигрыша больше 0
                 if game [ 'bet' ] > 0:

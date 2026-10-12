@@ -309,18 +309,11 @@ def norm_chat_ref(raw: Union[str, int]) -> str:
 # для совместимости, если где-то в коде уже используется _norm_chat_ref
 _norm_chat_ref = norm_chat_ref
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
-
-    return user_hyperlink
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 def _safe_str(v) -> str:
     try:
         return "" if v is None else str(v)
@@ -15001,7 +14994,7 @@ class Database:
 
         # Формируем запрос с использованием $N для параметров
         placeholders = ', '.join([f"${i+1}" for i in range(len(zam_ids))])
-        query = f"SELECT user_id, first_name FROM users WHERE user_id IN ({placeholders})"
+        query = f"SELECT user_id, first_name, username FROM users WHERE user_id IN ({placeholders})"
 
         try:
             async with self.pool.acquire() as connection:
@@ -15015,8 +15008,9 @@ class Database:
                     return "Нет заместителей"
 
                 # Формируем список ссылок
+                from bot.funcs.person_html import person_name_html
                 zam_list_str = [
-                    f"<a href='tg://user?id={row['user_id']}'>{row['first_name']}</a>"
+                    person_name_html(row["first_name"], row["username"], empty=str(row["user_id"]))
                     for row in rows
                 ]
                 return ', '.join(zam_list_str) if zam_list_str else "Нет заместителей"

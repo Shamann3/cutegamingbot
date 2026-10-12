@@ -953,14 +953,8 @@ async def balance(message: Message):
                 first_name = ref.get('first_name') or 'Пользователь'
                 username = ref.get('username')
 
-                # Экранируем спецсимволы HTML
-                safe_name = first_name.replace('&' , '&amp;').replace('<' , '&lt;').replace('>' , '&gt;')
-
-                # Создаём кликабельную ссылку с жирным именем
-                if username:
-                    link = f"<b>@{username}</b>"
-                else:
-                    link = f"<a href='tg://user?id={ref [ 'user_id' ]}'><b>{safe_name}</b></a>"
+                from bot.funcs.person_html import person_name_html
+                link = f"<b>{person_name_html(first_name, username, empty='Пользователь')}</b>"
 
                 # Добавляем номер
                 lines.append(f"{idx}. {link}")

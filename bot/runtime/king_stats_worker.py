@@ -229,15 +229,10 @@ def _reward_short(reward: dict[str, Any]) -> str:
 
 
 def _display_name(user_id: int, names_bulk: dict[int, tuple[Any, Any]]) -> str:
-    """Имя в сводке царя статистики. Без @ и без ссылки: упоминание отвлекало бы человека."""
+    """Имя в сводке: ссылка t.me, если есть юзернейм. Такое имя не пингует человека."""
+    from bot.funcs.person_html import person_name_html
     first_name, username = names_bulk.get(int(user_id), (None, None))
-    if first_name and str(first_name).strip():
-        return html.escape(str(first_name).strip())
-    if username:
-        uname = str(username).strip().lstrip("@")
-        if uname:
-            return html.escape(uname)
-    return f"id{int(user_id)}"
+    return person_name_html(first_name, username, empty=f"id{int(user_id)}")
 
 
 def _chat_link_from_meta(meta: dict[str, Any]) -> str:

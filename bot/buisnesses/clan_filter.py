@@ -13,6 +13,23 @@ import math
 from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 from aiogram.types import CallbackQuery
+
+
+async def _plink(user_id, name=None, username=None):
+    """Имя участника клана: t.me, если юзернейм известен, иначе просто имя."""
+    from bot.funcs.person_html import person_name_html
+    shown = name
+    handle = username
+    if handle is None:
+        try:
+            info = await db.get_user_info_by_id(int(user_id))
+        except Exception:
+            info = None
+        if isinstance(info, dict):
+            handle = info.get("username")
+            if not shown:
+                shown = info.get("first_name")
+    return person_name_html(shown, handle, empty="Игрок")
 from aiogram.types import Message
 
 from bot.db_create.pklcode import LazyGameStore
@@ -306,7 +323,7 @@ async def clan_filter(message: Message):
                     InlineKeyboardButton("Добавить в клан" , callback_data=f"ept_join_{clan_emoji}_{user_id}"))
 
                 join_request_message = (
-                    f"🧩 <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a> хочет присоединиться к вашему клану <code>{clan_emoji}</code> <b>{clan_info [ 'name' ]}</b>.\n"
+                    f"🧩 {await _plink(user_id, message.from_user.first_name, message.from_user.username)} хочет присоединиться к вашему клану <code>{clan_emoji}</code> <b>{clan_info [ 'name' ]}</b>.\n"
                     f"🛠 Пожалуйста, примите или отклоните запрос.")
 
                 # Отправка сообщения только лидеру
@@ -396,7 +413,7 @@ async def clan_filter(message: Message):
 
             # Отправка сообщения с кнопками
             sent_vusenie = await message.answer(
-                f"🚀 Вы уверены в повышении <b><a href='tg://user?id={target_id}'>{target_name}</a></b> до заместителя клана <code>{clan_emoji}</code> <b>{clan_name}</b>" ,
+                f"🚀 Вы уверены в повышении <b>{await _plink(target_id, target_name)}</b> до заместителя клана <code>{clan_emoji}</code> <b>{clan_name}</b>" ,
                 reply_markup=keyboard , parse_mode="HTML")
 
             user_message_vusenie [ user_id ] = sent_vusenie.message_id
@@ -432,7 +449,7 @@ async def clan_filter(message: Message):
 
             # Отправка сообщения с кнопками
             sent_ponizenie = await message.answer(
-                f"🔽 Вы уверены в понижении <b><a href='tg://user?id={target_id}'>{target_name}</a></b> "
+                f"🔽 Вы уверены в понижении <b>{await _plink(target_id, target_name)}</b> "
                 f"до члена клана {clan_emoji} <b>{clan_name}</b>?" , reply_markup=keyboard , parse_mode="HTML")
             user_message_ponizenie [ user_id ] = sent_ponizenie.message_id
 
@@ -671,7 +688,7 @@ async def clan_filter(message: Message):
                 leader_username = await db.get_user_username(clan_leader_id)
                 formatted_clan_coins = f"{clan_coins:,.0f}".replace("," , ".")
                 firstname_leader = await db.get_firstname_by_user_id(clan_leader_id)
-                leader_link = f"<a href='tg://user?id={clan_leader_id}'>{firstname_leader}</a>" if not is_leader else 'Вы'
+                leader_link = await _plink(clan_leader_id, firstname_leader) if not is_leader else 'Вы'
 
                 war_status = await db.get_clan_war_status(clan_emoji)
 
@@ -874,7 +891,7 @@ async def clan_filter(message: Message):
                         return
 
                     user_to_invite_id = user_to_invite [ 0 ]
-                    user_to_invite_name = db.get_firstname_by_user_id(user_to_invite_id)
+                    user_to_invite_name = await db.get_firstname_by_user_id(user_to_invite_id)
                 else:
                     await message.reply("🛠 Недостаточно данных для приглашения в клан.")
                     return
@@ -893,7 +910,7 @@ async def clan_filter(message: Message):
             reply_markup = InlineKeyboardMarkup().add(btn_reject , btn_accept)
 
             # Формируем сообщение для отправки в чат
-            invited_message = f'🧩 <a href="tg://user?id={user_to_invite_id}">{user_to_invite_name}</a>'
+            invited_message = "🧩 " + await _plink(user_to_invite_id, user_to_invite_name)
             invited_message += f' вас пригласили в клан <code>{clan_emoji}</code> <b>{clan_name}</b>'
 
             # Если сообщение не является ответом, отправляем сообщение в тот же чат, иначе в ответ на исходное сообщение
@@ -1026,7 +1043,7 @@ async def clan_filter(message: Message):
         print(f"Имя пользователя для ответа: {firstnameleader}")
 
         await message.reply(
-            f"✅ Пользователь <a href='tg://user?id={user_to_remove_id}'>{firstnameleader}</a> успешно удален из клана." ,
+            f"✅ Пользователь {await _plink(user_to_remove_id, firstnameleader)} успешно удален из клана." ,
             parse_mode="HTML" , disable_web_page_preview=True)
         print("Ответ отправлен пользователю.")
 
@@ -1062,13 +1079,13 @@ async def clan_filter(message: Message):
 
             # Формируем сообщение с информацией о пользователях клана
             message_text = f"<b><code>{clan_emoji}</code> {clan_name} </b>\n\n"
-            message_text += f"👑 <b>Создатель :</b>\n- <a href='tg://user?id={owner_id}'>{owner_name}</a>\n"
+            message_text += f"👑 <b>Создатель :</b>\n- {await _plink(owner_id, owner_name)}\n"
 
             # Добавляем заместителей, если они есть и не содержат `None`
             if zam_names:
                 message_text += "\n🛡️ <b>Заместители :</b>\n"
                 for zam_name , zam_id in zip(zam_names , zam_ids):
-                    message_text += f"- <a href='tg://user?id={zam_id}'>{zam_name}</a>\n"
+                    message_text += f"- {await _plink(zam_id, zam_name)}\n"
 
             # Добавляем участников с указанием количества и кнопками навигации, если участников больше 1
             if member_names:
@@ -1076,9 +1093,10 @@ async def clan_filter(message: Message):
                 total_pages = math.ceil(len(members_ids) / ITEMS_user_PER_PAGE)
                 paginated_members = member_names [ :ITEMS_user_PER_PAGE ]
                 message_text += f"\n👥 <b>Участники [{len(member_names)}] :</b>\n"
-                message_text += "\n".join(
-                    [ f"- <a href='tg://user?id={members_ids [ i ]}'>{name}</a>" for i , name in
-                      enumerate(paginated_members) ])
+                member_bits = []
+                for i, name in enumerate(paginated_members):
+                    member_bits.append("- " + await _plink(members_ids[i], name))
+                message_text += "\n".join(member_bits)
 
                 # Создаем кнопки навигации
                 if total_pages > 1:
@@ -1898,7 +1916,7 @@ async def process_cancel_finish(callback_query: CallbackQuery):
 
     # Получаем дополнительную информацию
     firstname_leader = await db.get_firstname_by_user_id(clan_leader_id)
-    leader_link = f"<a href='tg://user?id={clan_leader_id}'>{firstname_leader}</a>" if not is_leader else 'Вы'
+    leader_link = await _plink(clan_leader_id, firstname_leader) if not is_leader else 'Вы'
 
     war_status = await db.get_clan_war_status(clan_emoji)
     attacking_clan_emoji = await db.get_clan_at(clan_emoji)
@@ -2331,7 +2349,7 @@ async def process_reject_join(callback_query: CallbackQuery):
                 )
                 # Уведомление лидера или заместителей о том, что запрос был отклонен
                 await callback_query.message.edit_text(
-                    f"❌ Запрос на присоединение пользователя <a href='tg://user?id={user_id}'>{user_firstname}</a> к клану <code>{clan_emoji}</code> <b>{clan_info['name']}</b> был отклонен.", parse_mode=ParseMode.HTML
+                    f"❌ Запрос на присоединение пользователя {await _plink(user_id, user_firstname)} к клану <code>{clan_emoji}</code> <b>{clan_info['name']}</b> был отклонен.", parse_mode=ParseMode.HTML
                 )
         else:
             await callback_query.answer("🛠 У вас нет прав для отклонения этого запроса.")
@@ -2370,7 +2388,7 @@ async def process_accept_join(callback_query: CallbackQuery):
                 )
                 # Уведомление лидера или заместителей о том, что запрос принят
                 await callback_query.message.edit_text(
-                    f"✅ Запрос на присоединение пользователя <a href='tg://user?id={user_id}'>{user_firstname}</a> к клану <code>{clan_emoji}</code> <b>{clan_info['name']}</b> был принят.", parse_mode=ParseMode.HTML
+                    f"✅ Запрос на присоединение пользователя {await _plink(user_id, user_firstname)} к клану <code>{clan_emoji}</code> <b>{clan_info['name']}</b> был принят.", parse_mode=ParseMode.HTML
                 )
         else:
             await callback_query.answer("🛠 У вас нет прав для принятия этого запроса.")
@@ -2433,7 +2451,10 @@ async def process_pagination(callback_query: types.CallbackQuery):
     member_names = [await db.get_firstname_by_user_id(member_id) for member_id in paginated_members]
 
     # Формируем текст страницы участников
-    member_list = "\n".join([f"- <a href='tg://user?id={member_id}'>{name}</a>" for member_id, name in zip(paginated_members, member_names)])
+    member_bits = []
+    for member_id, name in zip(paginated_members, member_names):
+        member_bits.append("- " + await _plink(member_id, name))
+    member_list = "\n".join(member_bits)
     text = f"👥 <b>Участники [{len(members_ids)}] :</b>\n{member_list}"
 
     # Создаем кнопки навигации

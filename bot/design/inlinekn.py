@@ -57,18 +57,11 @@ async def parse_amount_async(amount_str: str) -> int:
 
 
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
-
-    return user_hyperlink
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 
 inline_temp_whispers: Dict[int, Dict] = {}
 

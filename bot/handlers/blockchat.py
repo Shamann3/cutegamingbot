@@ -56,7 +56,8 @@ async def blockchat(message: Message):
                     # Форматируем имя группы для ответа
                     group_display = target_group_info
                     if target_group_info.startswith("@"):
-                        group_display = f'<a href="tg://user?id={target_group_id}">{name}</a>'
+                        from bot.funcs.person_html import person_name_html
+                        group_display = person_name_html(name or target_group_info, empty=str(target_group_id))
 
                     if name is None:
                         name = "Неизвестная группа"
@@ -186,7 +187,8 @@ async def blockchat(message: Message):
                     # Форматируем имя пользователя для ответа
                     user_display = target_user_info
                     if target_user_info.startswith("@"):
-                        user_display = f'<a href="tg://user?id={target_user_id}">{name}</a>'
+                        from bot.funcs.person_html import person_name_html
+                        user_display = person_name_html(name, username34, empty=str(target_user_id))
 
                     if name is None:
                         name = "Неизвестный"

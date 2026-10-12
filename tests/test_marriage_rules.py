@@ -144,10 +144,11 @@ def test_dex_row_is_the_face_of_an_item():
 def test_profile_line_sits_as_one_short_sentence():
     now = datetime(2026, 10, 7, 12, tzinfo=timezone(timedelta(hours=3)))
     since = now - timedelta(days=2)
-    line = profile_line({"name_html": "<a href='tg://user?id=1'>Анна</a>", "since": since}, now)
+    line = profile_line({"name_html": '<a href="https://t.me/anna_k">Анна</a>', "since": since}, now)
     assert "В браке с" in line
     assert "Анна" in line
-    assert "tg://user?id=1" in line
+    assert "https://t.me/anna_k" in line
+    assert "tg://" not in line
     shown = person_html(5, "@Лана", "lana")
     assert "Лана" in shown
     assert "https://t.me/lana" in shown
@@ -157,7 +158,8 @@ def test_profile_line_sits_as_one_short_sentence():
     assert "https://t.me/lana" in handle
     assert "@" not in handle
     bare = person_html(5, "Анна", "")
-    assert "tg://user?id=5" in bare
+    assert "tg://" not in bare
+    assert "<a" not in bare
     assert "Анна" in bare
     assert "2 дня" in line
     assert "\n" not in line.strip()

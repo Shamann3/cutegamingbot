@@ -2291,7 +2291,7 @@ def _choice_board_text(user: User, game_key: str, bet: int) -> str:
     hint = game.get("variant_hint") or "Ваш ход"
     title_line = f"{game['title']} · ставка {bet} кут"
     return (
-        f"{game['emoji']} {_mention_html(user.id, user.first_name)}\n\n"
+        f"{game['emoji']} {_mention_html(user.id, user.first_name, getattr(user, "username", None))}\n\n"
         f"{_bold_html_line(title_line)}\n\n"
         f"{_bq(lead, game.get('rules') or '')}\n\n"
         f"{E_DOWN} {_bold_html_line(str(hint))}"
@@ -2396,7 +2396,7 @@ def _confirm_board_text(user: User, game_key: str, bet: int) -> str:
     )
     title_line = f"{game['title']} · ставка {bet} кут"
     return (
-        f"{game['emoji']} {_mention_html(user.id, user.first_name)}\n\n"
+        f"{game['emoji']} {_mention_html(user.id, user.first_name, getattr(user, "username", None))}\n\n"
         f"{_bold_html_line(title_line)}\n\n"
         f"{_bq(lead)}\n\n"
         f"{E_DOWN} {_bold_html_line('Нажмите «Начать игру»')}"
@@ -2674,7 +2674,7 @@ async def _consume_start_board(
 
     game = GAMES.get(game_key) or {}
     opener = (
-        f"{game.get('emoji') or E_GAME} {_mention_html(user.id, user.first_name)}"
+        f"{game.get('emoji') or E_GAME} {_mention_html(user.id, user.first_name, getattr(user, "username", None))}"
         f" <b>· {game.get('title') or 'Игра'} · {bet} кут</b>"
     )
 
@@ -2830,7 +2830,7 @@ async def _launch(
     anchor = None
     try:
         opener = (
-            f"{game['emoji']} {_mention_html(user.id, user.first_name)}"
+            f"{game['emoji']} {_mention_html(user.id, user.first_name, getattr(user, "username", None))}"
             f" <b>· {game['title']} · {bet} кут</b>"
         )
         try:
@@ -2846,7 +2846,7 @@ async def _launch(
                 anchor = await bot1.send_message(
                     chat_id=play_chat_id,
                     text=(
-                        f"{_plain_emoji(game['emoji'])} {_mention_html(user.id, user.first_name)}"
+                        f"{_plain_emoji(game['emoji'])} {_mention_html(user.id, user.first_name, getattr(user, "username", None))}"
                         f" <b>· {game['title']} · {bet} кут</b>"
                     ),
                     parse_mode="HTML",
@@ -3775,13 +3775,11 @@ def _int(value: Any) -> int:
         return 0
 
 
-def _mention_html(user_id: int, first_name: Optional[str] = None) -> str:
-    """Упоминание игрока в HTML — всегда жирным (ссылка внутри <b>)."""
-    raw = (first_name or "Игрок")
-    for ch in "<>&":
-        raw = raw.replace(ch, "")
-    safe = raw[:32] or "Игрок"
-    return f'<b><a href="tg://user?id={int(user_id)}">{safe}</a></b>'
+def _mention_html(user_id: int, first_name: Optional[str] = None, username: Optional[str] = None) -> str:
+    """Имя жирным: ссылка на t.me, если есть юзернейм, иначе просто имя."""
+    from bot.funcs.person_html import person_name_html
+    shown = person_name_html((first_name or "")[:32], username, empty="Игрок")
+    return f"<b>{shown}</b>"
 
 
 def _safe_display_name(first_name: Optional[str] = None) -> str:

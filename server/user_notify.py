@@ -185,14 +185,8 @@ def format_market_purchase_broadcast(
     buyer_username: str | None = None,
 ) -> str:
     """Публичное объявление о покупке на бирже для групповых чатов."""
-    uname = (buyer_username or "").lstrip("@").strip()
-    if uname:
-        label = _escape(buyer_name or f"@{uname}")
-        buyer = f"<a href='https://t.me/{_escape(uname)}'>{label}</a>"
-    elif buyer_name:
-        buyer = _escape(buyer_name)
-    else:
-        buyer = "Игрок"
+    from person_html import person_name_html
+    buyer = person_name_html(buyer_name, buyer_username, empty="Игрок")
     lines = [
         "<b><tg-emoji emoji-id='5406683434124859552'>🛍</tg-emoji> Новая сделка на бирже!</b>",
         "",

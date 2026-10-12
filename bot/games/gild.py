@@ -136,9 +136,11 @@ async def gild(message: Message):
 
     formatted_win_amount = "{:,.0f}".format(bet).replace(',', '.')
     first_name = await db.get_firstname_by_user_id(creator_id)
+    from bot.funcs.person_html import person_name_html
+    creator_html = person_name_html(first_name, message.from_user.username, empty="Игрок")
 
     await message.reply(
-        f"🧨 <b>Играем в гильд</b>\n- <a href='tg://user?id={creator_id}'>{first_name}</a>",
+        f"🧨 <b>Играем в гильд</b>\n- {creator_html}",
         reply_markup=keyboard, parse_mode="HTML")
 
 @dp.callback_query(lambda c: c.data.startswith('gildjoin:'))
@@ -173,8 +175,10 @@ async def join_game_callback(callback_query: types.CallbackQuery):
     participants_names = []
     for uid in game['participants']:
         user = await bot1.get_chat_member(callback_query.message.chat.id, uid)
-        user_name = user.user.full_name if user else 'Unknown User'
-        participant_link = f"- <a href='tg://user?id={uid}'>{user_name}</a>"
+        user_name = user.user.full_name if user else "Игрок"
+        handle = getattr(getattr(user, "user", None), "username", None)
+        from bot.funcs.person_html import person_name_html
+        participant_link = "- " + person_name_html(user_name, handle, empty="Игрок")
         participants_names.append(participant_link)
 
     participants_text = "\n".join(participants_names)
@@ -221,12 +225,14 @@ async def start_game_callback(callback_query: types.CallbackQuery):
     keyboard = create_game_keyboard_gild(game['board'], game_id)
 
     creator_name = await db.get_firstname_by_user_id(game['creator'])
+    from bot.funcs.person_html import person_name_html
+    creator_html = person_name_html(creator_name, callback_query.from_user.username, empty="Игрок")
 
     await safe_game_edit(
         game,
         chat_id=callback_query.message.chat.id,
         message_id=callback_query.message.message_id,
-        text=f"🌟 Первый ход от <a href='tg://user?id={game['creator']}'>{creator_name}</a>.",
+        text=f"🌟 Первый ход от {creator_html}.",
         reply_markup=keyboard,
         parse_mode="HTML")
 
@@ -269,12 +275,15 @@ async def board_click_callback(callback_query: types.CallbackQuery):
     if winner:
         game['game_active'] = False
         winner_name = await bot1.get_chat_member(callback_query.message.chat.id, winner)
-        winner_name_text = winner_name.user.full_name if winner_name else 'Unknown User'
+        winner_name_text = winner_name.user.full_name if winner_name else "Игрок"
+        winner_handle = getattr(getattr(winner_name, "user", None), "username", None)
+        from bot.funcs.person_html import person_name_html
+        winner_html = person_name_html(winner_name_text, winner_handle, empty="Игрок")
         await safe_game_edit(
             game,
             chat_id=callback_query.message.chat.id,
             message_id=callback_query.message.message_id,
-            text=f"🏆 Игра окончена! Победитель: <a href='tg://user?id={winner}'>{winner_name_text}</a>",
+            text=f"🏆 Игра окончена! Победитель: {winner_html}",
             reply_markup=None,
             parse_mode="HTML"
         )
@@ -286,13 +295,16 @@ async def board_click_callback(callback_query: types.CallbackQuery):
     # Update the game board
     keyboard = create_game_keyboard_gild(game['board'], game_id)
     next_turn_name = await bot1.get_chat_member(callback_query.message.chat.id, game['turn'])
-    next_turn_name_text = next_turn_name.user.full_name if next_turn_name else 'Unknown User'
+    next_turn_name_text = next_turn_name.user.full_name if next_turn_name else "Игрок"
+    next_handle = getattr(getattr(next_turn_name, "user", None), "username", None)
+    from bot.funcs.person_html import person_name_html
+    next_html = person_name_html(next_turn_name_text, next_handle, empty="Игрок")
 
     await safe_game_edit(
         game,
         chat_id=callback_query.message.chat.id,
         message_id=callback_query.message.message_id,
-        text=f"🔄 Ход игрока <a href='tg://user?id={game['turn']}'>{next_turn_name_text}</a>",
+        text=f"🔄 Ход игрока {next_html}",
         reply_markup=keyboard,
         parse_mode="HTML"
     )

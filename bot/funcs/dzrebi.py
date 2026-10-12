@@ -83,8 +83,12 @@ async def dzrebi(message: Message):
             InlineKeyboardButton("Начать игру", callback_data=f"startdzrebi:{game_id}")
         )
 
+        from bot.funcs.person_html import person_name_html
+        creator_html = person_name_html(
+            message.from_user.full_name, message.from_user.username, empty="Игрок"
+        )
         await message.reply(
-            f"🪄 Бросаем <b>Жребий</b>\n📡 Участники:\n- <a href='tg://user?id={creator_id}'>{message.from_user.full_name}</a>",
+            f"🪄 Бросаем <b>Жребий</b>\n📡 Участники:\n- {creator_html}",
             reply_markup=keyboard, parse_mode="HTML")
 
 @dp.callback_query(lambda c: c.data.startswith('joindzrebi:'))
@@ -122,8 +126,10 @@ async def join_game_callback(callback_query: types.CallbackQuery):
     participants_names = []
     for uid in game['participants']:
         user = await bot1.get_chat_member(callback_query.message.chat.id, uid)
-        user_name = user.user.full_name if user else 'Unknown User'
-        participant_link = f"- <a href='tg://user?id={uid}'>{user_name}</a>"
+        user_name = user.user.full_name if user else "Игрок"
+        handle = getattr(getattr(user, "user", None), "username", None)
+        from bot.funcs.person_html import person_name_html
+        participant_link = "- " + person_name_html(user_name, handle, empty="Игрок")
         participants_names.append(participant_link)
 
     participants_text = "\n".join(participants_names)

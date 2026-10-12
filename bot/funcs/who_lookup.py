@@ -266,10 +266,8 @@ def _note(person: TgPerson, *, is_self: bool) -> str:
 def tg_card_html(person: TgPerson, *, bio: str = "", member: str = "", is_self: bool = False) -> str:
     """Карточка человека из Telegram — в том же виде, что начало профиля."""
     name = person.full_name or ("Удалённый аккаунт" if person.deleted else "Без имени")
-    if person.username:
-        link = f"<a href='https://t.me/{_esc(person.username)}'>{_esc(name)}</a>"
-    else:
-        link = f"<a href='tg://user?id={int(person.user_id)}'>{_esc(name)}</a>"
+    from bot.funcs.person_html import person_name_html
+    link = person_name_html(name, person.username, empty="Без имени")
     lines = [f"🎩 <b>{link}</b>"]
     if person.username:
         lines.append(f"👤 <code>@{_esc(person.username)}</code>")

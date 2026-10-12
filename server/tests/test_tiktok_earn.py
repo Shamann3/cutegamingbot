@@ -186,10 +186,10 @@ def test_payout_messages_name_the_job():
     assert "15 скринов" in comments
     assert "—" not in comments
     named = format_comment_payout_html(
-        5, 15, reviewer_html='<a href="tg://user?id=7">Анна</a>'
+        5, 15, reviewer_html='<a href="https://t.me/anna_k">Анна</a>'
     )
     assert "проверял" in named
-    assert "tg://user?id=7" in named
+    assert "https://t.me/anna_k" in named
     video = format_video_payout_html(kut=6390, views=213012, kut_per_unit=30)
     assert "+6.390 кут" in video
     assert "213.012" in video
@@ -205,10 +205,10 @@ def test_payout_messages_name_the_job():
     reviewed = format_video_payout_html(
         kut=60,
         views=5000,
-        reviewer_html='<a href="tg://user?id=9">Иван</a>',
+        reviewer_html='<a href="https://t.me/ivan_k">Иван</a>',
     )
     assert "Ваше видео проверял" in reviewed
-    assert "tg://user?id=9" in reviewed
+    assert "https://t.me/ivan_k" in reviewed
 
 
 def test_photo_cache_keys_and_proxy_url_shape():

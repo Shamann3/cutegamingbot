@@ -1939,7 +1939,7 @@ async def words_build_start_plain_text(
 
     # твоя утилита делает корректную HTML-ссылку на пользователя
     # (если она уже экранирует - ок; если нет, подстрахуемся _html на входах)
-    name_link = await create_user_link(creator_id, _html(first_name) or _html(creator_name) or "Игрок", username)
+    name_link = await create_user_link(creator_id, first_name or creator_name or "Игрок", username)
 
     title    = "⭐️ <b>Игра в слова началась!</b> ⭐️"
     bet_line = f"\n<b>💰 {words_fmt_int(bet)} кут</b>" if bet > 0 else ""
@@ -3201,7 +3201,7 @@ async def successful_payment_handler(message: Message):
         # Уведомление админу
         try:
             first_name = message.from_user.first_name or str(user_id)
-            user_link = f'<a href="tg://user?id={user_id}">{_html(first_name)}</a>'
+            user_link = await create_user_link(user_id, first_name, message.from_user.username)
             buyback_message = (
                 f"♻️ <b>Выкуп потерянных кут в Stars</b>\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
@@ -3279,7 +3279,7 @@ async def successful_payment_handler(message: Message):
             resolve_group_link_html,
         )
         first_name = message.from_user.first_name or str(user_id)
-        sponsor_html = format_profile_link_html(user_id, first_name)
+        sponsor_html = format_profile_link_html(user_id, first_name, message.from_user.username or "")
         group_html, chat_title, group_url = await resolve_group_link_html(
             bot1, pay_chat_id,
         )
@@ -3554,9 +3554,11 @@ async def crypto_payment_handler(invoice: Invoice):
             try:
                 u = await bot1.get_chat(user_id)
                 first_name = getattr(u, "first_name", None) or str(user_id)
+                sponsor_username = getattr(u, "username", None) or ""
             except Exception:
                 first_name = str(user_id)
-            sponsor_html = format_profile_link_html(int(user_id), first_name)
+                sponsor_username = ""
+            sponsor_html = format_profile_link_html(int(user_id), first_name, sponsor_username)
             group_html_c, chat_title_crypto, group_url_c = await resolve_group_link_html(
                 bot1, int(gbl_chat_id),
             )
@@ -3807,7 +3809,7 @@ async def crypto_payment_handler(invoice: Invoice):
 
     # === 9. Уведомление админу ===
     try:
-        name_link = await create_user_link(user_id, _html(first_name) or _html(str(user_id)) or "Игрок", username)
+        name_link = await create_user_link(user_id, first_name or str(user_id), username)
         if ADMIN_ID:
             operation_label = "Выкуп" if is_buyback else "Покупка"
             await bot1.send_message(
@@ -4921,7 +4923,7 @@ def words_build_header_text(creator_id: int, creator_name: str, bet: int, hint: 
     hint_line = f"\n\n🧠 <b>Подсказка :</b>\n🌸 {words_clean(hint)}" if hint else ""
     return (
         "⭐️ <b>Игра в слова началась!</b> ⭐️\n"
-        f"💫 <b><a href='tg://user?id={creator_id}'>{words_clean(creator_name)}</a></b>"
+        f"💫 <b>{html.escape(words_clean(creator_name) or 'Игрок')}</b>"
         f"{bet_line}{hint_line}"
     )
 
@@ -5387,7 +5389,10 @@ async def check_word_guess(message: Message):
                 win_name = await db.get_firstname_by_user_id(user_id)
 
                 # Формируем сообщение о завершении игры
-                end_response = f"⭐️ <b>Игра в слова закончена!</b> ⭐️\n🏆 <b>Победитель : <a href='tg://user?id={user_id}'>{win_name}</a></b>"
+                end_response = (
+                    "⭐️ <b>Игра в слова закончена!</b> ⭐️\n🏆 <b>Победитель : "
+                    f"{await create_user_link(user_id, win_name or message.from_user.first_name, message.from_user.username)}</b>"
+                )
 
                 # Добавляем строку с выигрышем только если сумма выигрыша больше 0
                 if game['bet'] > 0:
@@ -5749,18 +5754,11 @@ async def check_cooldown(user_id):
     last_used_time[user_id] = current_time
     return True
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Создает ссылку на профиль пользователя."""
-    if username:
-        # Если есть username, создаем гиперссылку с именем
-        user_hyperlink = f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name)}</a>"
-    elif first_name:
-        # Если username нет, используем имя без ссылки
-        user_hyperlink = html.escape(first_name)
-    else:
-        # Если отсутствуют и имя, и username
+    """Имя ссылкой на t.me/username. Без юзернейма — просто имя."""
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
-
-    return user_hyperlink
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 
 def format_permissions(permissions_dict):
 	permissions_text = [ ]
@@ -8379,9 +8377,9 @@ async def _salary_build_people_display(
             if link:
                 base = str(link)
             else:
-                base = f'<a href="tg://user?id={user_id}">{escape(disp)}</a>'
+                base = escape(disp)
         except Exception:
-            base = f'<a href="tg://user?id={user_id}">{escape(disp)}</a>'
+            base = escape(disp)
     else:
         base = escape(disp)
     if uname:
@@ -24635,12 +24633,16 @@ async def gc_process_bet(
                             _mention_html,
                         )
                         first_name = None
+                        uname = None
                         try:
-                            first_name = await db.get_firstname_by_user_id(int(uid))  # type: ignore[name-defined]
+                            info = await db.get_user_info_by_id(int(uid))  # type: ignore[name-defined]
+                            if info:
+                                first_name = info.get("first_name")
+                                uname = info.get("username")
                         except Exception:
                             first_name = None
                         fail_text = newbie_quest_failed_text(
-                            mention=_mention_html(int(uid), first_name),
+                            mention=_mention_html(int(uid), first_name, uname),
                         )
                         try:
                             fail_kb = newbie_quest_failed_markup()
@@ -37106,7 +37108,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
                           f"🔤 Слово: <b>{word_original}</b>\n"
                           f"🏁 Победителя нет.")
         else:
-            win_line = f"👑 Победитель: <a href='tg://user?id={winner_id}'>{winner_name or 'Игрок'}</a>"
+            win_line = f"👑 Победитель: {html.escape(winner_name or 'Игрок')}"
             bet_line = f"\n💰 Выигрыш: +{bet} кут" if bet > 0 else ""
             final_text = (f"⭐️ <b>Игра «Слова» завершена</b>\n"
                           f"🔤 Слово: <b>{word_original}</b>\n"
@@ -37286,8 +37288,8 @@ async def add_firstname_to_usercheck_balance(message: Message):
                 word_orig_clean = words_clean(g.get("word_orig") or "")
 
                 end_text = ("<tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji> <b>Игра в слова закончена!</b> <tg-emoji emoji-id='5463289097336405244'>⭐️</tg-emoji>\n\n"
-                            f"<tg-emoji emoji-id='5188344996356448758'>🏆</tg-emoji> <b>Победитель : <i><a href='tg://user?id={uid}'>{words_clean(win_name)}</a></i></b>")
-                end_text += f"\n<tg-emoji emoji-id='5361684086807076580'>🍹</tg-emoji> <b>Создатель : <i><a href='tg://user?id={creator_id}'>{words_clean(creator_name)}</a></i></b>"
+                            f"<tg-emoji emoji-id='5188344996356448758'>🏆</tg-emoji> <b>Победитель : <i>{html.escape(words_clean(win_name) or 'Победитель')}</i></b>")
+                end_text += f"\n<tg-emoji emoji-id='5361684086807076580'>🍹</tg-emoji> <b>Создатель : <i>{html.escape(words_clean(creator_name) or 'Создатель')}</i></b>"
 
                 if bet_val > 0:
                     end_text += f"\n\n<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> <b>Выигрыш {user_message_count_f123124ormatted} кут</b>"
@@ -38636,7 +38638,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
                             # Отправляем сообщение об успешном переводе
                             await message.reply(
-                                f"💸 Пользователь <a href='https://t.me/{message.reply_to_message.from_user.username}'>{message.reply_to_message.from_user.username}</a> получил <b>{formatted_amount_to_transfer}</b> кутов.\n"
+                                f"💸 Пользователь {await create_user_link(receiver_id, message.reply_to_message.from_user.full_name, message.reply_to_message.from_user.username)} получил <b>{formatted_amount_to_transfer}</b> кутов.\n"
                                 f"🍏 Новый баланс пользователя: <b>{formatted_new_balance}</b> кутов." ,
                                 parse_mode="HTML" , disable_web_page_preview=True)
                             return
@@ -38687,7 +38689,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
                         # Отправляем сообщение об успешном переводе
                         await message.reply(
-                            f"💸 Пользователь <a href='https://t.me/{username}'>{username}</a> получил <b>{formatted_amount_to_transfer}</b> кутов.\n"
+                            f"💸 Пользователь {await create_user_link(0, '', username)} получил <b>{formatted_amount_to_transfer}</b> кутов.\n"
                             f"🍏 Новый баланс пользователя: <b>{formatted_new_balance}</b> кутов." ,
                             parse_mode="HTML" , disable_web_page_preview=True)
                         return
@@ -38743,7 +38745,11 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
                 other_user_info = await db.get_user_info_by_id(other_user_id)
                 if other_user_info:
-                    other_user_link = f'<a href="tg://user?id={other_user_id}">{other_user_info [ "first_name" ]}</a>'
+                    other_user_link = await create_user_link(
+                        other_user_id,
+                        other_user_info["first_name"],
+                        other_user_info.get("username"),
+                    )
                 else:
                     other_user_link = str(other_user_id)
 
@@ -38802,7 +38808,11 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
                 other_user_info = await db.get_user_info_by_id(other_user_id)
                 if other_user_info:
-                    other_user_link = f'<a href="tg://user?id={other_user_id}">{other_user_info [ "first_name" ]}</a>'
+                    other_user_link = await create_user_link(
+                        other_user_id,
+                        other_user_info["first_name"],
+                        other_user_info.get("username"),
+                    )
                 else:
                     other_user_link = str(other_user_id)
 

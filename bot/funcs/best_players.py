@@ -152,14 +152,10 @@ def format_games(games) -> str:
 
 
 def user_link(user_id: int, first_name: str | None, username: str | None) -> str:
-    nick = str(username or "").strip().lstrip("@")
-    name = str(first_name or "").strip()
-    if nick:
-        label = html.escape(name or nick)
-        return f"<a href='https://t.me/{html.escape(nick)}'>{label}</a>"
-    if name:
-        return html.escape(name)
-    return "У пользователя нет имени."
+    from bot.funcs.person_html import person_name_html
+    if not str(first_name or "").strip() and not str(username or "").strip():
+        return "У пользователя нет имени."
+    return person_name_html(first_name, username, empty="У пользователя нет имени.")
 
 
 def render_best_players_text(

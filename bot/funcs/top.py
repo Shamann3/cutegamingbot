@@ -12,21 +12,14 @@ from bot.funcs.technical_chats import is_public_chat
 emojis = [ "<tg-emoji emoji-id='5472030678633684592'>💸</tg-emoji>" , "<tg-emoji emoji-id='5409048419211682843'>💵</tg-emoji>" , "<tg-emoji emoji-id='5397915559037785261'>🧸</tg-emoji>" , "<tg-emoji emoji-id='5395325195542078574'>🍀</tg-emoji>" , "<tg-emoji emoji-id='5472146462362048818'>💡</tg-emoji>" , "<tg-emoji emoji-id='5458799228719472718'>🌟</tg-emoji>" , "<tg-emoji emoji-id='5445284980978621387'>🚀</tg-emoji>" , "<tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji>" , "<tg-emoji emoji-id='5471952986970267163'>💎</tg-emoji>" , "<tg-emoji emoji-id='5435933711893797296'>🎊</tg-emoji>"  , "<tg-emoji emoji-id='5361837567463399422'>🔮</tg-emoji>" ]
 
 def stat_person_html(first_name, username=None, user_id=None) -> str:
-    """Имя в статистике без упоминания: человек не получает уведомление."""
-    name = str(first_name or "").strip()
-    handle = str(username or "").strip().lstrip("@")
-    if not name:
-        if handle:
-            name = handle
-        elif user_id:
-            name = f"ID {int(user_id)}"
-        else:
-            name = "Без имени"
-    return html.escape(name)
+    """Имя в статистике: тихая ссылка t.me, если есть юзернейм, иначе просто имя."""
+    from bot.funcs.person_html import person_name_html
+    empty = f"ID {int(user_id)}" if user_id else "Без имени"
+    return person_name_html(first_name, username, empty=empty)
 
 
 async def create_user_link(user_id: int, first_name: str, username: str = None) -> str:
-    """Имя в топе и статистике. Без ссылки: упоминание отвлекало бы человека."""
+    """Имя в топе и статистике. Ссылка t.me не присылает человеку уведомление."""
     return stat_person_html(first_name, username, user_id)
 
 async def generate_buttons_marry(page_number, num_pages):
@@ -2100,12 +2093,11 @@ async def calsadqwdqwqdqwcqlback_top(call: types.CallbackQuery):
 
         username = group["username"]
         name = group["name"]
-        if username and username.startswith("http"):
-            name_link = f"<a href='{username}'>{name}</a>"
-        elif username:
-            name_link = f"<a href='https://t.me/{username}'>{name}</a>"
+        from bot.funcs.person_html import person_name_html
+        if username and str(username).startswith("http"):
+            name_link = f'<a href="{html.escape(str(username), quote=True)}">{html.escape(name or "Группа")}</a>'
         else:
-            name_link = name
+            name_link = person_name_html(name, username, empty="Группа")
 
         if rank <= 3:
             text += f"{emoji} <b>{rank}. {name_link} ─ {formatted_balance} кут</b>\n\n"

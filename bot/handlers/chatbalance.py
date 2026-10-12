@@ -1193,10 +1193,12 @@ async def gbl_more_handler(callback_query: CallbackQuery):
     # отклонит с обычной вежливой отговоркой, ничьё состояние не тронется.
     if msg:
         try:
-            clicker_name = html.escape(
-                (callback_query.from_user.full_name or "Игрок").strip() or "Игрок"
+            from bot.funcs.person_html import person_name_html
+            clicker_link = person_name_html(
+                callback_query.from_user.full_name,
+                callback_query.from_user.username,
+                empty="Игрок",
             )
-            clicker_link = f"<a href='tg://user?id={user_id}'>{clicker_name}</a>"
             personal_text = f"{clicker_link}, вот варианты для вас:\n\n{text}"
             sent = await msg.reply(
                 personal_text, reply_markup=kb, parse_mode="HTML",

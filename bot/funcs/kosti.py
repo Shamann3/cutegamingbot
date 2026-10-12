@@ -427,11 +427,8 @@ async def get_bot_username_by_token(token: str) -> str:
     return me.username
 
 async def create_user_link(user_id: int, first_name: Optional[str], username: Optional[str]) -> str:
-    if username:
-        return f"<a href='https://t.me/{html.escape(username)}'>{html.escape(first_name or 'Игрок')}</a>"
-    if first_name:
-        return html.escape(first_name)
-    return f"<a href='tg://user?id={user_id}'>Игрок</a>"
+    from bot.funcs.person_html import person_name_html
+    return person_name_html(first_name, username, empty="Игрок")
 
 async def _rollback_debits(user_ids: List[int], bet: int) -> None:
     for uid in user_ids:

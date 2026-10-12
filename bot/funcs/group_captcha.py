@@ -357,10 +357,13 @@ def mention_html(user: Any) -> str:
         or getattr(user, "first_name", None)
         or "друг"
     )
-    name = html.escape(str(raw_name)[:40])
-    if uid:
-        return f'<a href="tg://user?id={uid}"><b>{name}</b></a>'
-    return f"<b>{name}</b>"
+    from bot.funcs.person_html import person_name_html
+    shown = person_name_html(
+        str(raw_name)[:40],
+        getattr(user, "username", None),
+        empty="друг",
+    )
+    return f"<b>{shown}</b>"
 
 
 def pick_variant(rng: Optional[random.Random] = None) -> int:

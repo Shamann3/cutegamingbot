@@ -169,14 +169,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
   useEffect(() => {
     if (phase !== 'seal') return undefined
-    const ms = prefersReducedMotion() ? 0 : 920
+    const ms = prefersReducedMotion() ? 0 : 720
     const timer = window.setTimeout(enterCabinet, ms)
     return () => window.clearTimeout(timer)
   }, [phase, enterCabinet])
 
   useEffect(() => {
     if (leavingId == null) return undefined
-    const ms = prefersReducedMotion() ? 0 : 360
+    const ms = prefersReducedMotion() ? 0 : 460
     const timer = window.setTimeout(() => {
       setLeavingId(null)
       setPhase('seal')
@@ -1431,7 +1431,12 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           )}
 
           {!chapter && activeTab === 'admins' && (
-            <ChatAdmins chatId={chatId} onOpenUser={openPunish} />
+            <ChatAdmins
+              chatId={chatId}
+              onOpenUser={openPunish}
+              actions={allowedActions}
+              onPunish={archiveAct}
+            />
           )}
 
           {!chapter && activeTab === 'switches' && isCreator && (
