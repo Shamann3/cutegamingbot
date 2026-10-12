@@ -752,6 +752,97 @@ body.perf-light .gate-matrix {
   }
 }
 
+/* Телефон: сцена входа равна видимому окну, а не 100vh.
+   Карточка сидит ниже строки статуса и не обрезается сверху. */
+html.is-phone .panel-shell:has(> .grp-door),
+html[data-viewport="phone"] .panel-shell:has(> .grp-door) {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  height: var(--tg-viewport-stable-height, 100dvh) !important;
+  max-height: var(--tg-viewport-stable-height, 100dvh) !important;
+}
+
+html.is-phone .grp-door.grp-enter,
+html.is-phone .grp-door.grp-seal,
+html[data-viewport="phone"] .grp-door.grp-enter,
+html[data-viewport="phone"] .grp-door.grp-seal {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  max-height: 100%;
+  box-sizing: border-box;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  align-content: safe center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: max(16dvh, calc(var(--tg-content-top, 0px) + env(safe-area-inset-top, 0px) + 28px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(8dvh, calc(env(safe-area-inset-bottom, 0px) + 20px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+}
+
+html.is-phone .grp-door-glow,
+html[data-viewport="phone"] .grp-door-glow {
+  top: 56%;
+}
+
+html.is-phone .grp-door .grp-enter-card,
+html[data-viewport="phone"] .grp-door .grp-enter-card {
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html.is-phone .grp-door .grp-enter-card ul,
+html[data-viewport="phone"] .grp-door .grp-enter-card ul {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-height: 700px) {
+  html.is-phone .grp-door.grp-enter,
+  html.is-phone .grp-door.grp-seal,
+  html[data-viewport="phone"] .grp-door.grp-enter,
+  html[data-viewport="phone"] .grp-door.grp-seal {
+    padding-top: max(72px, calc(var(--tg-content-top, 0px) + env(safe-area-inset-top, 0px) + 16px));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+html.is-phone .panel-shell.is-arriving .panel-shell-main,
+html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main {
+  animation-name: cabinet-arrive-phone;
+  transform-origin: center top;
+}
+
+@keyframes cabinet-arrive-phone {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    clip-path: inset(4% 3% 6% 3% round 20px);
+  }
+  60% { opacity: 1; }
+  to {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.is-phone .panel-shell.is-arriving .panel-shell-main,
+  html[data-viewport="phone"] .panel-shell.is-arriving .panel-shell-main {
+    animation: none;
+  }
+}
+
 .grp-enter-card {
   width: min(440px, 100%);
   padding: 22px 20px 8px;
