@@ -151,6 +151,8 @@ describe('group cabinet copy', () => {
       .toEqual(['overview', 'work', 'pay', 'archive', 'activity', 'rights', 'admins', 'more'])
     expect(groupCabinetTabs(['manage_chat_admins'], false, ['archive'], 2).map((item) => item.id))
       .toEqual(['overview', 'pay', 'archive', 'admins', 'more'])
+    expect(groupCabinetTabs(['punish_ban'], false, ['archive'], 3).map((item) => item.id))
+      .toEqual(['overview', 'pay', 'archive', 'admins', 'more'])
     expect(groupCabinetTabs([], false, ['work'], 0).map((item) => item.id))
       .toEqual(['overview', 'work', 'pay', 'more'])
     expect(groupCabinetTabs([], false, ['archive'], 5).map((item) => item.id))

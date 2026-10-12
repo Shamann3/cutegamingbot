@@ -181,7 +181,8 @@ export function groupCabinetTabs(rights, isCreator = false, pages, rank = 0) {
 
 function spliceAdmins(items, rights) {
   const set = rights instanceof Set ? rights : new Set(rights || [])
-  if (!set.has('manage_chat_admins') || items.some((item) => item.id === 'admins')) return items
+  const opens = set.has('manage_chat_admins') || set.has('punish_ban')
+  if (!opens || items.some((item) => item.id === 'admins')) return items
   const row = { id: 'admins', label: 'Админы' }
   const more = items.findIndex((item) => item.id === 'more')
   if (more < 0) return [...items, row]

@@ -137,6 +137,12 @@ export default function GroupApplicationsPane({ onOpenUser = null }) {
             {item.note && (item.status || 'pending') !== 'pending' && (
               <p className="staff-app-meta">{item.note}</p>
             )}
+            {(item.advice || []).map((advice) => (
+              <p className="staff-app-meta" key={`${item.id}-${advice.actorId}`}>
+                Рекомендация от {advice.name} — {advice.verdict === 'fit' ? 'Подходит' : 'Не подходит'}
+                {advice.note ? `. ${advice.note}` : ''}
+              </p>
+            ))}
             <p className="staff-app-meta"><CopyableId value={item.userId} label="id игрока" /></p>
             <p className="staff-app-body">{item.body}</p>
             <div className="staff-app-actions">

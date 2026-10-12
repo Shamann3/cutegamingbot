@@ -1,11 +1,13 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ChatAdmins from './ChatAdmins'
-import { actChatAdmin, fetchChatAdmins } from '../../lib/adminClient'
+import { actChatAdmin, adviseChatApplication, fetchChatAdmins, fetchChatApplications } from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', () => ({
   fetchChatAdmins: vi.fn(),
   actChatAdmin: vi.fn(),
+  fetchChatApplications: vi.fn(),
+  adviseChatApplication: vi.fn(),
 }))
 
 const BOARD = {
@@ -21,6 +23,8 @@ const BOARD = {
       canDelete: true,
       canRestrict: true,
       canPromote: false,
+      stats: { day: 4, week: 18, month: 40, total: 900, last: 'вчера' },
+      deeds: { mute: 2, ban: 0, kick: 1, warn: 3 },
     },
   ],
   history: [
@@ -46,6 +50,10 @@ describe('chat admins', () => {
     vi.mocked(actChatAdmin).mockResolvedValue({ ...BOARD, note: 'Админка снята', history: BOARD.history })
     render(<ChatAdmins chatId={-100} />)
     expect(await screen.findByText('Аня')).toBeTruthy()
+    expect(screen.getByText(/вчера/)).toBeTruthy()
+    expect(screen.getByText('40')).toBeTruthy()
+    expect(screen.getByText(/Муты 2/)).toBeTruthy()
+    expect(screen.getByText(/@JerichoCute/)).toBeTruthy()
     expect(screen.getByText(/@anya/)).toBeTruthy()
     expect(screen.getByText('5')).toBeTruthy()
     expect(screen.getByText('Босс')).toBeTruthy()
@@ -56,5 +64,32 @@ describe('chat admins', () => {
       expect(actChatAdmin).toHaveBeenCalledWith(-100, 5, 'demote')
     })
     expect(await screen.findByText('Админка снята')).toBeTruthy()
+  })
+
+  it('sends a fit recommendation and does not approve the application', async () => {
+    vi.mocked(fetchChatAdmins).mockResolvedValue(BOARD)
+    vi.mocked(fetchChatApplications).mockResolvedValue({
+      items: [{
+        id: 9,
+        userId: 77,
+        name: 'Лена',
+        username: 'lena',
+        position: 'Модератор',
+        body: 'Хочу помогать в чате',
+        status: 'pending',
+        advice: [],
+      }],
+    })
+    vi.mocked(adviseChatApplication).mockResolvedValue({ ok: true })
+    render(<ChatAdmins chatId={-100} />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Заявки' }))
+    expect(await screen.findByText('Лена')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Одобрить' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Подходит' }))
+    fireEvent.change(screen.getByLabelText('Пояснение, если нужно'), { target: { value: 'Пишет спокойно' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить рекомендацию' }))
+    await waitFor(() => {
+      expect(adviseChatApplication).toHaveBeenCalledWith(-100, 9, 'fit', 'Пишет спокойно')
+    })
   })
 })

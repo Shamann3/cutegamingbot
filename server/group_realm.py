@@ -331,9 +331,15 @@ def cabinet_pages(
     return _with_chat_admins(opened, have)
 
 
+def _opens_chat_admins(rights) -> bool:
+    """Вкладку видит должность с правом «Админы чата» и администратор, у которого есть бан в группе."""
+    have = {str(item) for item in (rights or [])}
+    return "manage_chat_admins" in have or "punish_ban" in have
+
+
 def _with_chat_admins(opened: list[str], rights) -> list[str]:
     """Вкладка админов чата открывается правом, даже если список страниц уже сохранён."""
-    if "manage_chat_admins" not in set(rights or []) or "admins" in opened:
+    if not _opens_chat_admins(rights) or "admins" in opened:
         return opened
     if opened and opened[-1] == "more":
         return opened[:-1] + ["admins", "more"]
@@ -987,6 +993,14 @@ async def ensure_tables() -> None:
             cause TEXT NOT NULL DEFAULT '',
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (user_id, chat_id)
+        );
+        CREATE TABLE IF NOT EXISTS epsilon_application_advice (
+            application_id INT NOT NULL,
+            actor_id BIGINT NOT NULL,
+            verdict TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (application_id, actor_id)
         );
         """
     )
@@ -2463,7 +2477,7 @@ async def _can_manage_chat_admins(user_id: int, chat_id: int) -> dict | None:
     if not access:
         return None
     rights = set(access["rights"])
-    if "manage_chat_admins" in rights or int(access["rank"]) >= 5:
+    if _opens_chat_admins(rights) or int(access["rank"]) >= 5:
         return {"rank": int(access["rank"]), "creator": False}
     return None
 
@@ -2812,8 +2826,135 @@ async def _chat_admin_history(chat_id: int) -> list[dict]:
     return history
 
 
+def _advice_person_name(row) -> str:
+    name = " ".join(str(row["display_name"] or row["first_name"] or "").split())
+    username = str(row["username"] or "").strip()
+    if name:
+        return name
+    if username:
+        return f"@{username}"
+    return f"ID {int(row['actor_id'] or 0)}"
+
+
+async def _advice_for(application_ids: list[int]) -> dict[int, list[dict]]:
+    if not application_ids:
+        return {}
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT ad.application_id, ad.actor_id, ad.verdict, ad.note, ad.created_at,
+                   u.username, u.display_name, u.first_name
+            FROM epsilon_application_advice ad
+            LEFT JOIN users u ON u.user_id = ad.actor_id
+            WHERE ad.application_id = ANY($1::int[])
+            ORDER BY ad.created_at
+            """,
+            application_ids,
+        )
+    except Exception:
+        return {}
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        when = row["created_at"]
+        grouped.setdefault(int(row["application_id"]), []).append({
+            "actorId": int(row["actor_id"] or 0),
+            "name": _advice_person_name(row),
+            "username": str(row["username"] or "").strip(),
+            "verdict": str(row["verdict"] or ""),
+            "note": str(row["note"] or "").strip(),
+            "at": when.isoformat() if when is not None else "",
+        })
+    return grouped
+
+
+async def _admin_group_stats(chat_id: int, user_ids: list[int]) -> tuple[dict[int, dict], dict[int, dict]]:
+    """Сообщения и наказания человека в этой группе. Сбой базы не подменяет нули."""
+    pulse: dict[int, dict] = {}
+    deeds: dict[int, dict] = {}
+    if not user_ids:
+        return pulse, deeds
+    from datetime import datetime, timedelta, timezone
+
+    from bot.funcs.chat_pulse import last_seen_label, windows
+
+    today = datetime.now(timezone(timedelta(hours=3))).date()
+    _today, week_start, month_start = windows(today)
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT user_id,
+                   COALESCE(SUM(text) FILTER (WHERE date = $3), 0)::bigint AS day_n,
+                   COALESCE(SUM(text) FILTER (WHERE date >= $4), 0)::bigint AS week_n,
+                   COALESCE(SUM(text) FILTER (WHERE date >= $5), 0)::bigint AS month_n,
+                   COALESCE(SUM(text), 0)::bigint AS total_n,
+                   MAX(date) AS last_day
+            FROM chatchange
+            WHERE chat_id = $1
+              AND user_id = ANY($2::bigint[])
+              AND text IS NOT NULL
+            GROUP BY user_id
+            """,
+            int(chat_id),
+            user_ids,
+            today,
+            week_start,
+            month_start,
+        )
+    except Exception:
+        rows = None
+    if rows is not None:
+        for row in rows:
+            uid = int(row["user_id"])
+            pulse[uid] = {
+                "day": int(row["day_n"] or 0),
+                "week": int(row["week_n"] or 0),
+                "month": int(row["month_n"] or 0),
+                "total": int(row["total_n"] or 0),
+                "last": last_seen_label(
+                    seen_unix=None,
+                    last_day=row["last_day"],
+                    now_unix=0,
+                    today=today,
+                ),
+            }
+        for uid in user_ids:
+            pulse.setdefault(uid, {
+                "day": 0, "week": 0, "month": 0, "total": 0, "last": "ещё не было",
+            })
+    try:
+        deed_rows = await db.pool.fetch(
+            """
+            SELECT admin_user_id, action_type, COUNT(*)::int AS n
+            FROM staff_actions
+            WHERE chat_id = $1
+              AND admin_user_id = ANY($2::bigint[])
+              AND created_at >= NOW() - INTERVAL '30 days'
+              AND action_type IN ('mute', 'ban', 'kick', 'warn')
+            GROUP BY admin_user_id, action_type
+            """,
+            int(chat_id),
+            user_ids,
+        )
+    except Exception:
+        deed_rows = None
+    if deed_rows is not None:
+        for uid in user_ids:
+            deeds[uid] = {"mute": 0, "ban": 0, "kick": 0, "warn": 0}
+        for row in deed_rows:
+            kind = str(row["action_type"] or "")
+            if kind not in {"mute", "ban", "kick", "warn"}:
+                continue
+            deeds[int(row["admin_user_id"])][kind] = int(row["n"] or 0)
+    return pulse, deeds
+
+
 async def _chat_admin_board(chat_id: int, actor_id: int) -> dict:
     admins, error = await _chat_admin_rows(chat_id)
+    people = [row["userId"] for row in admins if not row["isBot"]]
+    pulse, deeds = await _admin_group_stats(chat_id, people)
+    for row in admins:
+        row["stats"] = pulse.get(row["userId"])
+        row["deeds"] = deeds.get(row["userId"])
     bot = next((row for row in admins if row["isSelfBot"]), None)
     return {
         "admins": admins,
@@ -2886,6 +3027,116 @@ async def group_chat_admin_act(
     board = await _chat_admin_board(chat_id, user_id)
     board["note"] = note
     return board
+
+
+class ApplicationAdviceBody(BaseModel):
+    verdict: str
+    note: str = ""
+
+
+def _application_card(row, advice: list[dict]) -> dict:
+    return {
+        "id": int(row["id"]),
+        "userId": int(row["user_id"]),
+        "chatId": int(row["chat_id"]),
+        "positionId": int(row["position_id"]),
+        "group": row["group_title"] or str(row["chat_id"]),
+        "position": row["position"] or "должность",
+        "rank": int(row["rank"]) if row["rank"] is not None else 0,
+        "name": (row["display_name"] or row["first_name"] or "").strip(),
+        "username": (row["username"] or "").strip(),
+        "body": row["body"] or "",
+        "status": row["status"] or "pending",
+        "alreadySeated": bool(row["already_seated"]),
+        "at": row["created_at"].isoformat() if row["created_at"] else None,
+        "advice": advice,
+    }
+
+
+_APP_LIST_SQL = """
+SELECT a.id, a.user_id, a.chat_id, a.position_id, a.body, a.status, a.created_at,
+       g.title AS group_title, p.title AS position, p.rank,
+       u.username, u.display_name, u.first_name,
+       EXISTS (
+         SELECT 1 FROM epsilon_seats s
+         WHERE s.user_id = a.user_id AND s.chat_id = a.chat_id
+           AND (s.term_end IS NULL OR s.term_end > NOW())
+       ) AS already_seated
+FROM epsilon_group_applications a
+LEFT JOIN epsilon_official_groups g ON g.chat_id = a.chat_id
+LEFT JOIN epsilon_positions p ON p.id = a.position_id
+LEFT JOIN users u ON u.user_id = a.user_id
+"""
+
+
+@router.get("/chat-admins/{chat_id}/applications")
+async def group_chat_applications(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
+    if not await _can_manage_chat_admins(user_id, chat_id):
+        raise HTTPException(status_code=403, detail="Заявки этой группы вам не открыты")
+    await ensure_tables()
+    rows = await db.pool.fetch(
+        _APP_LIST_SQL + """
+        WHERE a.chat_id = $1
+        ORDER BY CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END, a.created_at DESC
+        LIMIT 40
+        """,
+        int(chat_id),
+    )
+    advice = await _advice_for([int(row["id"]) for row in rows])
+    return {
+        "items": [_application_card(row, advice.get(int(row["id"]), [])) for row in rows],
+    }
+
+
+@router.post("/chat-admins/{chat_id}/applications/{application_id}")
+async def group_chat_application_advice(
+    chat_id: int,
+    application_id: int,
+    body: ApplicationAdviceBody,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    if not await _can_manage_chat_admins(user_id, chat_id):
+        raise HTTPException(status_code=403, detail="Заявки этой группы вам не открыты")
+    verdict = str(body.verdict or "").strip().lower()
+    if verdict not in {"fit", "unfit"}:
+        raise HTTPException(status_code=400, detail="Отметьте, подходит человек или нет")
+    note = " ".join(str(body.note or "").split())
+    if len(note) > 400:
+        raise HTTPException(status_code=400, detail="Пояснение не длиннее 400 символов")
+    await ensure_tables()
+    app = await db.pool.fetchrow(
+        """
+        SELECT id, status, chat_id FROM epsilon_group_applications
+        WHERE id = $1 AND chat_id = $2
+        """,
+        int(application_id),
+        int(chat_id),
+    )
+    if not app:
+        raise HTTPException(status_code=404, detail="Этой заявки в группе нет")
+    if app["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Заявку уже решил создатель проекта")
+    await db.pool.execute(
+        """
+        INSERT INTO epsilon_application_advice (application_id, actor_id, verdict, note)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (application_id, actor_id) DO UPDATE
+        SET verdict = EXCLUDED.verdict, note = EXCLUDED.note, created_at = NOW()
+        """,
+        int(application_id),
+        int(user_id),
+        verdict,
+        note,
+    )
+    label = "Подходит" if verdict == "fit" else "Не подходит"
+    await _realm_log(
+        int(chat_id),
+        int(user_id),
+        "application_advice",
+        f"Рекомендация по заявке {int(application_id)}: {label}" + (f". {note}" if note else ""),
+        int(user_id),
+    )
+    return {"ok": True, "verdict": verdict, "note": note}
 
 
 @router.get("/positions/{chat_id}")
@@ -4133,6 +4384,7 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
         LIMIT 80
         """
     )
+    advice = await _advice_for([int(r["id"]) for r in rows])
     return {
         "items": [
             {
@@ -4150,6 +4402,7 @@ async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
                 "note": r["review_note"] or "",
                 "alreadySeated": bool(r["already_seated"]),
                 "at": r["created_at"].isoformat() if r["created_at"] else None,
+                "advice": advice.get(int(r["id"]), []),
             }
             for r in rows
         ]

@@ -1211,6 +1211,8 @@ async def _build_profile_caption_for_target(
         shield_line = await shield_profile_html(user_id)
     except Exception:
         shield_line = ""
+    if shield_line:
+        shield_line = shield_line.rstrip() + "\n"
 
     try:
         name_link = _profile_name_link(user_id, first_name, username)
