@@ -69,6 +69,7 @@ class TgPlace:
     kind: str  # "channel" или "group"
     title: str = ""
     username: str = ""
+    chat_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -412,10 +413,18 @@ def from_telethon(entity: Any) -> Any:
             "group" if group else "channel",
             str(getattr(entity, "title", "") or ""),
             clean_username(getattr(entity, "username", "")),
+            _entity_id(entity),
         )
     if kind in ("Chat", "ChatForbidden"):
-        return TgPlace("group", str(getattr(entity, "title", "") or ""))
+        return TgPlace("group", str(getattr(entity, "title", "") or ""), "", _entity_id(entity))
     return None
+
+
+def _entity_id(entity: Any) -> int:
+    try:
+        return int(getattr(entity, "id", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def from_bot_chat(chat: Any) -> Any:
@@ -425,9 +434,9 @@ def from_bot_chat(chat: Any) -> Any:
     if kind == "private":
         return TgPerson.from_user(chat)
     if kind == "channel":
-        return TgPlace("channel", str(getattr(chat, "title", "") or ""), clean_username(getattr(chat, "username", "")))
+        return TgPlace("channel", str(getattr(chat, "title", "") or ""), clean_username(getattr(chat, "username", "")), _entity_id(chat))
     if kind in ("group", "supergroup"):
-        return TgPlace("group", str(getattr(chat, "title", "") or ""), clean_username(getattr(chat, "username", "")))
+        return TgPlace("group", str(getattr(chat, "title", "") or ""), clean_username(getattr(chat, "username", "")), _entity_id(chat))
     return None
 
 
@@ -522,12 +531,31 @@ def _kind_of_entity(entity: Any) -> Tuple[str, Any]:
     return "unknown", None
 
 
+def answer_from_resolve(result: Any, username: str) -> Optional[Tuple[str, Any]]:
+    """Ответ contacts.resolveUsername: первый человек, иначе канал или группа.
+
+    None — Telegram ничего не прислал, можно спросить кэш сессии.
+    """
+    if result is None:
+        return None
+    entity = _resolved_entity(result)
+    if entity is None:
+        users = list(getattr(result, "users", None) or ())
+        chats = list(getattr(result, "chats", None) or ())
+        entity = users[0] if users else (chats[0] if chats else None)
+    if entity is None or not owns_username(entity, username):
+        return ("missing", None)
+    kind, value = _kind_of_entity(entity)
+    if kind == "unknown":
+        return ("missing", None)
+    return kind, value
+
+
 async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
     """("person", TgPerson) | ("place", TgPlace) | ("missing", None) | ("flood", секунды) | ("unknown", None).
 
-    Сначала кэш сессии. Если username там нет или он остался за прежним
-    владельцем, спрашивается contacts.resolveUsername — только так Telegram
-    отдаёт человека, который ещё не писал боту.
+    Сразу contacts.resolveUsername: так находится человек, который боту не писал.
+    Кэш сессии — только если Telegram на этот запрос не ответил.
     """
     try:
         from telethon import errors, functions
@@ -536,6 +564,18 @@ async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
     clean = str(username or "").strip().lstrip("@")
     if not clean:
         return "missing", None
+
+    try:
+        result = await client(functions.contacts.ResolveUsernameRequest(clean))
+    except errors.FloodWaitError as exc:
+        return "flood", int(getattr(exc, "seconds", 0) or 60)
+    except Exception as exc:
+        if _username_is_free(exc):
+            return "missing", None
+        result = None
+    found = answer_from_resolve(result, clean)
+    if found is not None:
+        return found
 
     entity = None
     try:
@@ -546,25 +586,78 @@ async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
     except Exception as exc:
         if _username_is_free(exc):
             return "missing", None
-        if not isinstance(exc, ValueError):
-            return "unknown", None
-        entity = None
-
+        return "unknown", None
     if entity is not None and owns_username(entity, clean):
         return _kind_of_entity(entity)
+    return "unknown", None
 
+
+async def learn_person(person: Any) -> None:
+    """Найденного человека записать в users. Баланс и пригласитель не трогаются."""
+    if not isinstance(person, TgPerson) or person.is_bot or int(person.user_id) <= 0:
+        return
     try:
-        result = await client(functions.contacts.ResolveUsernameRequest(clean))
-    except errors.FloodWaitError as exc:
-        return "flood", int(getattr(exc, "seconds", 0) or 60)
-    except Exception as exc:
-        if _username_is_free(exc):
-            return "missing", None
-        return "unknown", None
-    entity = _resolved_entity(result)
-    if entity is None or not owns_username(entity, clean):
+        from bot.funcs.seen_people import remember_account
+
+        await remember_account(_memory_user(person))
+    except Exception:
+        return
+
+
+async def identify_username(username: str, *, get_chat=None) -> Tuple[str, Any]:
+    """Username: resolveUsername у юзербота, затем getChat, если юзербот молчит.
+
+    missing — Telegram уже сказал, что такого имени нет. getChat тогда не нужен.
+    """
+    clean = str(username or "").strip().lstrip("@")
+    if not clean:
         return "missing", None
-    return _kind_of_entity(entity)
+    client = await open_userbot()
+    kind, value = "unknown", None
+    if client is not None:
+        import asyncio
+
+        try:
+            kind, value = await asyncio.wait_for(resolve_with_userbot(client, clean), timeout=8.0)
+        except Exception:
+            kind, value = "unknown", None
+        if kind == "person":
+            await learn_person(value)
+            return kind, value
+        if kind in ("place", "missing"):
+            return kind, value
+    if get_chat is None or kind == "missing":
+        return kind, value
+    try:
+        chat = await get_chat(f"@{clean}")
+    except Exception:
+        return kind, value
+    found = from_bot_chat(chat)
+    if isinstance(found, TgPerson):
+        await learn_person(found)
+        return "person", found
+    if isinstance(found, TgPlace):
+        return "place", found
+    return kind, value
+
+
+async def identify_numeric(chat_id: int, *, get_chat) -> Tuple[str, Any]:
+    """Числовой id через Bot API getChat. Человека после этого записываем в users."""
+    try:
+        cid = int(chat_id)
+    except (TypeError, ValueError):
+        return "unknown", None
+    try:
+        chat = await get_chat(cid)
+    except Exception:
+        return "unknown", None
+    found = from_bot_chat(chat)
+    if isinstance(found, TgPerson):
+        await learn_person(found)
+        return "person", found
+    if isinstance(found, TgPlace):
+        return "place", found
+    return "unknown", None
 
 
 def pick_group_person(people: Iterable[TgPerson], query: str) -> Optional[TgPerson]:

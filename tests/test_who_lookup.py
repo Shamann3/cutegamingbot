@@ -279,6 +279,60 @@ def _resolve(client, username="vasya"):
     return asyncio.run(who.resolve_with_userbot(client, username))
 
 
+def test_resolve_reads_the_first_user_before_the_session_cache():
+    fresh = _tg_user(id=77, username="xblerka")
+    client = FakeClient(
+        entity=_tg_user(id=5, username="xblerka"),
+        resolved=SimpleNamespace(peer=SimpleNamespace(user_id=77), users=[fresh], chats=[]),
+    )
+    kind, person = _resolve(client, "xblerka")
+    assert (kind, person.user_id) == ("person", 77)
+    assert type(client.requests[0]).__name__ == "ResolveUsernameRequest"
+
+
+def test_resolve_reads_a_channel_from_the_chat_list():
+    channel = Channel(id=15, title="News", username="news", megagroup=False)
+    client = FakeClient(
+        resolved=SimpleNamespace(peer=SimpleNamespace(channel_id=15), users=[], chats=[channel]),
+    )
+    kind, place = _resolve(client, "news")
+    assert (kind, place.kind, place.chat_id) == ("place", "channel", 15)
+
+
+def test_username_found_by_resolve_is_not_asked_from_the_bot_again():
+    person = _tg_user(id=77, username="xblerka")
+    client = FakeClient(
+        resolved=SimpleNamespace(peer=SimpleNamespace(user_id=77), users=[person], chats=[]),
+    )
+
+    async def open_client():
+        return client
+
+    async def learn(_person):
+        return None
+
+    async def scenario():
+        previous_open = who.open_userbot
+        previous_learn = who.learn_person
+        who.open_userbot = open_client
+        who.learn_person = learn
+        calls = []
+
+        async def get_chat(key):
+            calls.append(key)
+            return None
+
+        try:
+            kind, found = await who.identify_username("xblerka", get_chat=get_chat)
+            return kind, found.user_id, calls
+        finally:
+            who.open_userbot = previous_open
+            who.learn_person = previous_learn
+
+    kind, uid, calls = asyncio.run(scenario())
+    assert (kind, uid, calls) == ("person", 77, [])
+
+
 def test_userbot_finds_the_person():
     kind, person = _resolve(FakeClient(entity=_tg_user(premium=True)))
     assert kind == "person"

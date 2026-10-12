@@ -3792,20 +3792,6 @@ async def _lookup_target_by_token(
 
   async def _known_or_from_telegram(username: str, ask: bool = True):
     username = _identity_rules().normalize_username(username) or username
-    if ask:
-      opened = await _person_via_bot_chat(username)
-      if opened is not None:
-        found = await ensure_punishment_profile(
-          int(opened.user_id),
-          first_name=opened.first_name,
-          last_name=opened.last_name,
-          username=opened.username or username,
-          source_chat_id=source_chat_id,
-          from_telegram=True,
-        )
-        if found:
-          MuteDebug.log("PARSE", "bot get_chat resolved username", uid=found[0], username=username)
-          return found
     uid = await db.get_user_id_by_username(username)
     if uid:
       name = await db.get_firstname_by_user_id(uid)

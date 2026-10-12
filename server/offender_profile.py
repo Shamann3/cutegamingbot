@@ -249,6 +249,35 @@ async def ask_telegram_id(user_id: int, chat_id: Optional[int] = None, *, tg_api
     return _cache_put(key, looked)
 
 
+async def _username_from_running_userbot(username: str) -> Optional[dict]:
+    """Тот же resolveUsername, что у наказаний и «кто ты», если юзербот уже запущен в этом процессе."""
+    try:
+        from bot.funcs.who_lookup import identify_username
+    except Exception:
+        return None
+    try:
+        kind, value = await identify_username(username, get_chat=None)
+    except Exception:
+        return None
+    if kind == "person" and value is not None and not getattr(value, "is_bot", False):
+        return {
+            "kind": "person",
+            "person": {
+                "user_id": int(value.user_id),
+                "first_name": value.full_name or value.first_name or "",
+                "username": value.username or None,
+            },
+            "place": "",
+        }
+    if kind == "person" and value is not None and getattr(value, "is_bot", False):
+        return {"kind": "bot", "person": None, "place": ""}
+    if kind == "place" and value is not None:
+        return {"kind": "place", "person": None, "place": str(getattr(value, "kind", "") or "")}
+    if kind == "missing":
+        return {"kind": "unchecked", "person": None, "place": ""}
+    return None
+
+
 async def ask_telegram_username(username: str, *, tg_api: Optional[TgApi] = None) -> dict:
     clean = normalize_username(username)
     if not clean:
@@ -257,6 +286,10 @@ async def ask_telegram_username(username: str, *, tg_api: Optional[TgApi] = None
     cached = _cache_get(key)
     if cached is not None:
         return cached
+    if tg_api is None:
+        via = await _username_from_running_userbot(clean)
+        if via is not None:
+            return _cache_put(key, {**via, "username": clean})
     tg = tg_api or _default_tg
     chat = await _call(tg, "getChat", chat_id=f"@{clean}", _timeout=6)
     if isinstance(chat, dict) and chat.get("ok"):

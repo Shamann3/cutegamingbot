@@ -47,6 +47,20 @@ def _esc(value) -> str:
     return html.escape(str(value or ""), quote=False)
 
 
+def numeric_target(query: str) -> Optional[int]:
+    """Числовой id, в том числе id группы со знаком минус."""
+    text = str(query or "").strip()
+    if text.startswith("-"):
+        body = text[1:]
+        sign = -1
+    else:
+        body = text
+        sign = 1
+    if not body.isdigit() or len(body) > 16:
+        return None
+    return sign * int(body)
+
+
 def _card(title: str, user_id: int, username: str = "") -> str:
     extra = f"\n@{_esc(username)}" if username else ""
     return f"👤 {_esc(title)}{extra}\n🆔 <code>{int(user_id)}</code>"
@@ -72,26 +86,47 @@ async def on_id(message: Message):
         await message.answer(_card(f"Ваш аккаунт: {me.full_name or me.first_name or 'вы'}", me.id, me.username or ""))
         return
 
+    number = numeric_target(query)
+    if number is not None:
+        from bot.funcs.who_lookup import identify_numeric
+
+        kind, found = await identify_numeric(number, get_chat=message.bot.get_chat)
+        if found is None:
+            await message.answer(
+                f"❌ Не удалось получить данные для ID <code>{number}</code>.\n"
+                "Возможно, бот ещё не видел этот чат."
+            )
+            return
+        if kind == "person":
+            mark = " 🤖" if found.is_bot else ""
+            await message.answer(_card(f"{found.full_name or 'Без имени'}{mark}", int(found.user_id), found.username or ""))
+            return
+        title = found.title or "Без названия"
+        title = f"Канал: {title}" if found.kind == "channel" else f"Группа: {title}"
+        await message.answer(_card(title, int(found.chat_id or number), found.username or ""))
+        return
+
     username = username_of(query)
     if username:
-        bot = message.bot
-        try:
-            chat = await bot.get_chat(f"@{username}")
-        except Exception:
-            chat = None
-        if chat is None:
+        from bot.funcs.who_lookup import identify_username
+
+        kind, found = await identify_username(username, get_chat=message.bot.get_chat)
+        if found is None:
             await message.answer(
                 f"❌ Не удалось найти <code>@{_esc(username)}</code>.\n"
                 "Проверьте написание или ответьте на сообщение этого человека."
             )
             return
-        kind = str(getattr(getattr(chat, "type", ""), "value", getattr(chat, "type", "")) or "")
-        title = getattr(chat, "full_name", None) or getattr(chat, "title", None) or username
-        if kind == "channel":
-            title = f"Канал: {title}"
-        elif kind in {"group", "supergroup"}:
-            title = f"Группа: {title}"
-        await message.answer(_card(title, int(chat.id), getattr(chat, "username", "") or username))
+        if kind == "place":
+            title = found.title or username
+            title = f"Канал: {title}" if found.kind == "channel" else f"Группа: {title}"
+            if not found.chat_id:
+                await message.answer(f"📋 {_esc(title)}\n@{_esc(found.username or username)}")
+                return
+            await message.answer(_card(title, int(found.chat_id), found.username or username))
+            return
+        mark = " 🤖" if getattr(found, "is_bot", False) else ""
+        await message.answer(_card(f"{found.full_name or username}{mark}", int(found.user_id), found.username or username))
         return
 
     from bot.funcs.seen_people import find_names
