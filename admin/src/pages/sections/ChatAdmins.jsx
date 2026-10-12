@@ -10,6 +10,14 @@ import '../../styles/chat-admins.css'
 const ACTION_LABEL = {
   chat_admin_demote: 'Снял админку',
   chat_admin_restrict: 'Ограничил права',
+  chat_admin_drop_ask: 'Попросил снять',
+  chat_admin_drop_no: 'Отклонил снятие',
+  chat_admin_unregistered: 'Снял незарегистрированного',
+}
+
+function personLine(person) {
+  const name = person.name || (person.username ? `@${person.username}` : `ID ${person.userId}`)
+  return person.username && !name.startsWith('@') ? `${name} (@${person.username})` : name
 }
 
 const METERS = [
@@ -154,7 +162,10 @@ export default function ChatAdmins({ chatId }) {
   const admins = board?.admins || []
   const history = board?.history || []
   const canAct = Boolean(board?.canAct)
+  const creator = Boolean(board?.creator)
   const selfId = Number(board?.selfId || 0)
+  const dropped = board?.dropped || []
+  const stuck = board?.stuck || []
   const monthPeak = Math.max(1, ...admins.map((person) => Number(person.stats?.month) || 0))
 
   return (
@@ -175,10 +186,21 @@ export default function ChatAdmins({ chatId }) {
         <div className="chat-admins-pane">
           <h2 className="realm-h">Администраторы группы</h2>
           <p className="realm-copy">
-            Активность и наказания только этой группы. Снять админку и урезать права можно здесь.
-            Бан на весь проект решает создатель @JerichoCute.
+            Здесь только администраторы с должностью в этой группе. Сотрудники проекта не показаны.
+            Кто администратор в Telegram, но не в системе, снимается сам.
+            Ограничить права можно сразу. Снятие должности уходит создателю @JerichoCute, если это делаете не вы.
           </p>
           {board?.error && <p className="chat-admins-warn">{board.error}</p>}
+          {dropped.length > 0 && (
+            <p className="chat-admins-note">
+              Снял админку тем, кого нет в системе: {dropped.map(personLine).join(', ')}.
+            </p>
+          )}
+          {stuck.length > 0 && (
+            <p className="chat-admins-warn">
+              Не удалось снять тех, кого нет в системе: {stuck.map((person) => `${personLine(person)} — ${person.error}`).join('; ')}.
+            </p>
+          )}
           {board && !board.botCanPromote && !board.error && (
             <p className="chat-admins-warn">
               Если снятие не пройдёт, включите боту в этой группе «Добавление администраторов».
@@ -230,8 +252,13 @@ export default function ChatAdmins({ chatId }) {
                       <button type="button" onClick={() => setPending({ ...person, action: 'restrict' })}>
                         Ограничить
                       </button>
-                      <button type="button" className="is-danger" onClick={() => setPending({ ...person, action: 'demote' })}>
-                        Снять
+                      <button
+                        type="button"
+                        className="is-danger"
+                        disabled={Boolean(person.dropPending) && !creator}
+                        onClick={() => setPending({ ...person, action: 'demote' })}
+                      >
+                        {person.dropPending && !creator ? 'Заявка у создателя' : 'Снять'}
                       </button>
                     </div>
                   )}
@@ -247,7 +274,9 @@ export default function ChatAdmins({ chatId }) {
             <div className="chat-admins-confirm" role="dialog" aria-label="Подтверждение">
               <p>
                 {pending.action === 'demote'
-                  ? `Снять админку: ${pending.name} станет обычным участником.`
+                  ? (creator
+                    ? `Снять админку: ${pending.name} станет обычным участником.`
+                    : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
                   : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
               </p>
               <div>

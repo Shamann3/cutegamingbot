@@ -534,6 +534,61 @@ body.perf-light .gate-matrix {
   font-variant-numeric: tabular-nums;
 }
 
+.grp-enter {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px;
+}
+
+.grp-enter-card {
+  width: min(440px, 100%);
+  padding: 22px 20px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: var(--e-plate, #17171b);
+  color: var(--e-text, #f4f4f4);
+  text-align: center;
+}
+
+.grp-enter-card h1 {
+  margin: 0 0 8px;
+  font-size: 1.6rem;
+  font-weight: 560;
+}
+
+.grp-enter-card p {
+  margin: 0;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.68));
+}
+
+.grp-enter-card ul {
+  list-style: none;
+  margin: 18px 0 12px;
+  padding: 0;
+  text-align: left;
+}
+
+.grp-enter-card button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  padding: 14px 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.grp-enter-card button span {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+  font-size: 13px;
+}
+
 .realm-list {
   list-style: none;
   margin: 22px 0 0;

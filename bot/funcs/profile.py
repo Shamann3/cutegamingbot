@@ -837,8 +837,6 @@ WHO_CHAT_SCAN_LIMIT = 3000
 WHO_GLOBAL_LIMIT = 50
 WHO_PICK_LIMIT = 8
 WHO_PICK_PREFIX = "whopick"
-WHO_USERBOT_TIMEOUT = 4.0
-WHO_USERBOT_STALL_PAUSE = 60.0
 
 
 async def _who_chat_people(db, chat_id: int) -> List[who.Candidate]:
@@ -2168,31 +2166,42 @@ async def _who_telegram_card(message: Message, user_id: int, person: Optional[wh
 
 
 async def _who_username_in_telegram(message: Message, username: str) -> Tuple[str, Any]:
-    """Кто носит username в Telegram: юзербот по бюджету, затем Bot API."""
+    """Кто носит username в Telegram: юзербот, затем Bot API.
+
+    Пауза между запросами одного зрителя юзербота не останавливает:
+    без resolveUsername бот не видит человека, который ему не писал.
+    """
     budget = who.USERNAME_BUDGET
-    hit = budget.cached(username, time.monotonic())
-    if hit is not None:
+    now = time.monotonic()
+    hit = budget.cached(username, now)
+    if hit is not None and hit[0] in ("person", "place"):
         return hit
 
-    viewer_id = int(message.from_user.id)
-    client = who.find_userbot()
-    if client is not None and budget.allow(viewer_id, time.monotonic()):
-        budget.spend(viewer_id, time.monotonic())
-        try:
-            kind, value = await asyncio.wait_for(
-                who.resolve_with_userbot(client, username),
-                timeout=WHO_USERBOT_TIMEOUT,
-            )
-        except asyncio.TimeoutError:
-            # Короткий FloodWait Telethon ждёт молча — человека столько не держим.
-            budget.pause(WHO_USERBOT_STALL_PAUSE, time.monotonic())
-            kind, value = "unknown", None
-        if kind == "flood":
-            _who_dbg(f"Юзербот: FloodWait {value} с, username проверяю через Bot API")
-            budget.pause(float(value), time.monotonic())
-        elif kind in ("person", "place", "missing"):
-            budget.remember(username, kind, value, time.monotonic())
-            return kind, value
+    if budget.paused_for(now) > 0:
+        _who_dbg(f"Юзербот на паузе после FloodWait, @{username} спрашиваю у Bot API")
+    else:
+        client = await who.open_userbot()
+        if client is None:
+            _who_dbg(f"Юзербот не на связи, @{username} спрашиваю у Bot API")
+        else:
+            budget.spend(int(message.from_user.id), now)
+            try:
+                kind, value = await asyncio.wait_for(
+                    who.resolve_with_userbot(client, username),
+                    timeout=8.0,
+                )
+            except asyncio.TimeoutError:
+                _who_dbg(f"Юзербот не успел ответить по @{username}")
+                kind, value = "unknown", None
+            if kind == "flood":
+                _who_dbg(f"Юзербот: FloodWait {value} с, username проверяю через Bot API")
+                budget.pause(float(value), now)
+            elif kind in ("person", "place", "missing"):
+                _who_dbg(f"Юзербот ответил по @{username}: {kind}")
+                budget.remember(username, kind, value, now)
+                return kind, value
+            else:
+                _who_dbg(f"Юзербот не разобрал @{username}: {kind}")
 
     chat = await _who_tg_call(lambda: _who_bot(message).get_chat(f"@{username}"))
     found = None if isinstance(chat, Exception) else who.from_bot_chat(chat)
@@ -2254,10 +2263,6 @@ async def _who_admin_username(message: Message, username: str) -> Optional[who.T
 
 async def _who_show_telegram_username(message: Message, db, username: str) -> Optional[str]:
     """Показывает того, кто носит username. Если показать некого — "missing" или "unknown"."""
-    seen = await _who_seen_username(message, db, username)
-    if seen is not None:
-        await get_user_information_in_who_are_you(message, db, seen.user_id, person=seen)
-        return None
     kind, value = await _who_username_in_telegram(message, username)
     if kind == "person":
         await get_user_information_in_who_are_you(message, db, value.user_id, person=value)
@@ -2265,6 +2270,11 @@ async def _who_show_telegram_username(message: Message, db, username: str) -> Op
     if kind == "place":
         await _who_reply(message, who.place_html(username, value))
         return None
+    if kind != "missing":
+        seen = await _who_seen_username(message, db, username)
+        if seen is not None:
+            await get_user_information_in_who_are_you(message, db, seen.user_id, person=seen)
+            return None
     admin = await _who_admin_username(message, username)
     if admin is not None:
         await get_user_information_in_who_are_you(message, db, admin.user_id, person=admin)

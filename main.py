@@ -41172,6 +41172,8 @@ if __name__ == "__main__":
         from bot.admins.mute import attach_mute_system
         from bot.admins.ban import attach_ban_system
         from bot.admins.warn import attach_warn_system
+        from bot.admins.admin_drop import attach_admin_drop
+        attach_admin_drop(dp)
         attach_warn_system(dp)
         attach_ban_system(dp)
         attach_kick_system(dp)

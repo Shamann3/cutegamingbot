@@ -467,11 +467,13 @@ def _userbot_person(value: Any, username: str) -> tuple[str, Optional[dict]]:
 async def _username_from_telegram(clean: str, budget: Any, who: Any) -> tuple[str, Any]:
   """Сначала юзербот: только он видит людей по username. Потом Bot API для каналов и групп."""
   kind, value = "unknown", None
-  client = who.find_userbot()
   wait = budget.paused_for(time.monotonic())
   if wait > 0:
     kind, value = "flood", int(wait)
-  elif client is not None:
+    client = None
+  else:
+    client = await who.open_userbot()
+  if client is not None:
     budget.spend(0, time.monotonic())
     try:
       kind, value = await asyncio.wait_for(

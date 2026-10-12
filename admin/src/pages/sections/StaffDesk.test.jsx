@@ -102,7 +102,7 @@ describe('StaffSection', () => {
     fireEvent.click(admins)
     expect(admins.getAttribute('aria-selected')).toBe('true')
     const groupTabs = screen.getByRole('navigation', { name: 'Администраторы' })
-    expect(buttonLabels(groupTabs)).toEqual(['Группы', 'Должности', 'Копия кабинета', 'Заявки', 'Ключи'])
+    expect(buttonLabels(groupTabs)).toEqual(['Группы', 'Должности', 'Копия кабинета', 'Заявки', 'Снятия', 'Ключи'])
     fireEvent.click(within(groupTabs).getByRole('button', { name: 'Должности' }))
     expect(screen.getByText('Должности групп')).toBeTruthy()
 

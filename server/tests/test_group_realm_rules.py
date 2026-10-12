@@ -166,6 +166,31 @@ def test_staff_post_key_stays_on_the_same_title():
     assert role_key("А") != role_key("Б")
 
 
+def test_chat_admin_list_hides_staff_and_strips_strangers():
+    from group_realm import classify_chat_admin, _member_can_punish, _member_still_admin
+
+    seated = {"userId": 5, "status": "administrator", "isBot": False, "isSelfBot": False}
+    stranger = {"userId": 8, "status": "administrator", "isBot": False, "isSelfBot": False}
+    staff = {"userId": 3, "status": "administrator", "isBot": False, "isSelfBot": False}
+    owner = {"userId": 1, "status": "creator", "isBot": False, "isSelfBot": False}
+    bot = {"userId": 9, "status": "administrator", "isBot": True, "isSelfBot": True}
+    assert classify_chat_admin(seated, seated=True, staff=False) == "show"
+    assert classify_chat_admin(stranger, seated=False, staff=False) == "strip"
+    assert classify_chat_admin(staff, seated=True, staff=True) == "hide"
+    assert classify_chat_admin(owner, seated=False, staff=False) == "hide"
+    assert classify_chat_admin(owner, seated=True, staff=False) == "show"
+    assert classify_chat_admin(bot, seated=False, staff=False) == "hide"
+    assert _member_still_admin({"status": "administrator"}) is True
+    assert _member_still_admin({"status": "member"}) is False
+    assert _member_can_punish({"status": "administrator", "can_restrict_members": True}) is True
+    assert _member_can_punish({
+        "status": "administrator",
+        "can_delete_messages": False,
+        "can_restrict_members": False,
+        "can_promote_members": False,
+    }) is False
+
+
 def test_cabinet_pages_follow_the_two_lists():
     assert cabinet_pages(["view_archive"]) == ["overview", "work", "archive", "more"]
     people = cabinet_pages(["punish_mute"])

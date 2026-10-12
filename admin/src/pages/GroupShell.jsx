@@ -39,6 +39,7 @@ import CaptchaArchiveNote from '../components/CaptchaArchiveNote'
 import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import ChatAdmins from './sections/ChatAdmins'
+import GroupEnter, { cabinetNeedsGroupPick } from './sections/GroupEnter'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
@@ -120,6 +121,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const isCreator = Boolean(portrait?.isOwner)
   const isProjectCreator = Boolean(portrait?.isProjectCreator)
   const groups = portrait?.groups || []
+  const [groupChosen, setGroupChosen] = useState(() => !cabinetNeedsGroupPick(groups.length, preview))
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
   const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
@@ -150,7 +152,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }, [tabs, tab])
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => !preview && !coachClosed('epsilon.onboard.group.v4'))
+  const [coach, setCoach] = useState(() => groupChosen && !preview && !coachClosed('epsilon.onboard.group.v4'))
 
   useEffect(() => {
     if (preview) return
@@ -885,6 +887,23 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     ...seatWide.map((item) => item.label),
   ]
   const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
+  const choosing = cabinetNeedsGroupPick(groups.length, preview) && !groupChosen
+
+  if (choosing) {
+    return (
+      <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+        <GroupEnter
+          groups={groups}
+          onPick={(id) => {
+            setChatId(id)
+            setTab('overview')
+            setGroupChosen(true)
+            setCoach(!coachClosed('epsilon.onboard.group.v4'))
+          }}
+        />
+      </div>
+    )
+  }
 
   return (
     <div ref={shellRef} className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
@@ -1196,10 +1215,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                   </span>
                 </button>
               )}
-              {groups.length > 1 && (
+              {groups.length > 0 && (
                 <>
                   <h3 className="realm-h">Ваши группы</h3>
-                  <p className="realm-copy">Сейчас открыта отмеченная. Нажмите другую — кабинет переключится на неё.</p>
+                  <p className="realm-copy">
+                    {groups.length > 1
+                      ? 'Сейчас открыта отмеченная. Нажмите другую — кабинет переключится на неё.'
+                      : 'Кабинет открыт в этой группе.'}
+                  </p>
                   <ul className="realm-list">
                   {groups.map((group) => (
                     <li key={group.chatId}>

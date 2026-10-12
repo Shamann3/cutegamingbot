@@ -70,6 +70,7 @@ import RightsSection from './RightsSection'
 import StaffAccessPane from './StaffAccessPane'
 import StaffPreviewPane from './StaffPreviewPane'
 import GroupApplicationsPane from './GroupApplicationsPane'
+import AdminDropsPane from './AdminDropsPane'
 import OfficialGroupsPane from './OfficialGroupsPane'
 import GroupPreviewPane from './GroupPreviewPane'
 import AccessKeySheet from '../../components/AccessKeySheet'
@@ -2149,6 +2150,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
       group.push({ id: 'posts', label: 'Должности' })
       if (canPreview) group.push({ id: 'view', label: 'Копия кабинета' })
       group.push({ id: 'apps', label: 'Заявки' })
+      group.push({ id: 'drops', label: 'Снятия' })
       group.push({ id: 'keys', label: 'Ключи' })
     }
     return { staff, group }
@@ -2275,6 +2277,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           )}
           {onGroup && activeId === 'view' && <GroupPreviewPane onOpen={onOpenPreview} />}
           {onGroup && activeId === 'apps' && <GroupApplicationsPane onOpenUser={onOpenUser} />}
+          {onGroup && activeId === 'drops' && <AdminDropsPane />}
           {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" myUserId={myUserId} />}
 
           {!activeId && <p className="sec-empty">Нет доступных разделов</p>}

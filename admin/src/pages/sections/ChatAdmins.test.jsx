@@ -37,6 +37,7 @@ const BOARD = {
     },
   ],
   canAct: true,
+  creator: true,
   botCanPromote: true,
   selfId: 1,
   error: '',
@@ -64,6 +65,13 @@ describe('chat admins', () => {
       expect(actChatAdmin).toHaveBeenCalledWith(-100, 5, 'demote')
     })
     expect(await screen.findByText('Админка снята')).toBeTruthy()
+  })
+
+  it('asks the creator before a group admin removes someone', async () => {
+    vi.mocked(fetchChatAdmins).mockResolvedValue({ ...BOARD, creator: false })
+    render(<ChatAdmins chatId={-100} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Снять' }))
+    expect(screen.getByText(/Заявка создателю @JerichoCute/)).toBeTruthy()
   })
 
   it('sends a fit recommendation and does not approve the application', async () => {

@@ -2625,6 +2625,17 @@ export async function actChatAdmin(chatId, userId, action) {
   })
 }
 
+export async function fetchAdminDrops() {
+  return adminFetch('/group-realm/admin-drops')
+}
+
+export async function decideAdminDrop(dropId, approve) {
+  return adminFetch(`/group-realm/admin-drops/${encodeURIComponent(dropId)}`, {
+    method: 'POST',
+    body: { approve },
+  })
+}
+
 export async function fetchChatApplications(chatId) {
   return adminFetch(`/group-realm/chat-admins/${encodeURIComponent(chatId)}/applications`)
 }

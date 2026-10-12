@@ -30,7 +30,8 @@ def _load(**stubs):
         "_cute_profile_exists", "get_user_who_are_you", "_who_bot", "_who_remember_card",
         "_who_reply", "_who_reply_person", "_who_tg_call", "_who_telegram_card",
         "_who_save_from_telegram", "_who_show_outside_profile",
-        "_who_username_in_telegram", "_who_show_telegram_username", "_who_show_name",
+        "_who_username_in_telegram", "_who_person_from_seen", "_who_seen_username",
+        "_who_admin_username", "_who_show_telegram_username", "_who_show_name",
         "get_user_information_in_who_are_you",
     }
     nodes = []
@@ -205,6 +206,35 @@ def test_stranger_found_by_userbot_opens_the_profile(monkeypatch):
     assert ns["profiles"] == [55]
     assert message.replies[0][0] == "PROFILE 55"
     assert _only_reads(pool)
+
+
+def test_username_missing_from_the_session_cache_is_still_resolved(monkeypatch):
+    stranger = User(id=77, first_name="Икс", last_name=None, username="xblerka", usernames=None,
+                    premium=False, bot=False, deleted=False, scam=False, fake=False, verified=False)
+
+    class Client:
+        def __init__(self):
+            self.requests = []
+
+        async def get_input_entity(self, username):
+            raise ValueError(f'Could not find the input entity for "{username}"')
+
+        async def get_entity(self, peer):
+            raise AssertionError("кэш пуст, сущность не читается")
+
+        async def __call__(self, request):
+            self.requests.append(request)
+            return SimpleNamespace(peer=SimpleNamespace(user_id=77), users=[stranger], chats=[])
+
+    client = Client()
+    monkeypatch.setattr(who, "find_userbot", lambda: client)
+    who.USERNAME_BUDGET.spend(VIEWER, time.monotonic())
+    ns = _load()
+    message = _msg("кто ты @XBlerka", bot=Bot())
+    _run(ns, message, Pool())
+    assert ns["profiles"] == [77]
+    assert message.replies[0][0] == "PROFILE 77"
+    assert client.requests and client.requests[0].username == "XBlerka"
 
 
 def test_unknown_username_without_userbot_says_what_to_do():

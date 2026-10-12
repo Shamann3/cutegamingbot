@@ -505,32 +505,66 @@ async def resolve_user_id(client: Any, user_id: int) -> Tuple[str, Any]:
     return "unknown", None
 
 
-async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
-    """("person", TgPerson) | ("place", TgPlace) | ("missing", None) | ("flood", секунды) | ("unknown", None)."""
-    try:
-        from telethon import errors, functions
-    except Exception:
-        return "unknown", None
-    try:
-        peer = await client.get_input_entity(username)
-        entity = await client.get_entity(peer)
-        if not owns_username(entity, username):
-            # В кэше сессии username мог остаться за прежним владельцем.
-            entity = _resolved_entity(await client(functions.contacts.ResolveUsernameRequest(username)))
-    except errors.FloodWaitError as exc:
-        return "flood", int(getattr(exc, "seconds", 0) or 60)
-    except (errors.UsernameNotOccupiedError, errors.UsernameInvalidError, ValueError):
-        return "missing", None
-    except Exception:
-        return "unknown", None
-    if entity is None or not owns_username(entity, username):
-        return "missing", None
+def _username_is_free(exc: BaseException) -> bool:
+    """Telegram уже ответил, что такого username нет. Это не промах кэша."""
+    if type(exc).__name__ in ("UsernameNotOccupiedError", "UsernameInvalidError"):
+        return True
+    text = str(exc).casefold()
+    return "no user has" in text or "nobody is using" in text or "username is unacceptable" in text
+
+
+def _kind_of_entity(entity: Any) -> Tuple[str, Any]:
     found = from_telethon(entity)
     if isinstance(found, TgPerson):
         return "person", found
     if isinstance(found, TgPlace):
         return "place", found
     return "unknown", None
+
+
+async def resolve_with_userbot(client: Any, username: str) -> Tuple[str, Any]:
+    """("person", TgPerson) | ("place", TgPlace) | ("missing", None) | ("flood", секунды) | ("unknown", None).
+
+    Сначала кэш сессии. Если username там нет или он остался за прежним
+    владельцем, спрашивается contacts.resolveUsername — только так Telegram
+    отдаёт человека, который ещё не писал боту.
+    """
+    try:
+        from telethon import errors, functions
+    except Exception:
+        return "unknown", None
+    clean = str(username or "").strip().lstrip("@")
+    if not clean:
+        return "missing", None
+
+    entity = None
+    try:
+        peer = await client.get_input_entity(clean)
+        entity = await client.get_entity(peer)
+    except errors.FloodWaitError as exc:
+        return "flood", int(getattr(exc, "seconds", 0) or 60)
+    except Exception as exc:
+        if _username_is_free(exc):
+            return "missing", None
+        if not isinstance(exc, ValueError):
+            return "unknown", None
+        entity = None
+
+    if entity is not None and owns_username(entity, clean):
+        return _kind_of_entity(entity)
+
+    try:
+        result = await client(functions.contacts.ResolveUsernameRequest(clean))
+    except errors.FloodWaitError as exc:
+        return "flood", int(getattr(exc, "seconds", 0) or 60)
+    except Exception as exc:
+        if _username_is_free(exc):
+            return "missing", None
+        return "unknown", None
+    entity = _resolved_entity(result)
+    if entity is None or not owns_username(entity, clean):
+        return "missing", None
+    return _kind_of_entity(entity)
 
 
 def pick_group_person(people: Iterable[TgPerson], query: str) -> Optional[TgPerson]:
@@ -569,7 +603,7 @@ async def find_in_group(chat_id: int, query: str) -> Optional[TgPerson]:
         return None
     if cid >= 0:
         return None
-    client = find_userbot()
+    client = await open_userbot()
     if client is None:
         return None
     try:
@@ -607,12 +641,58 @@ class _memory_user:
         self.is_bot = False
 
 
+def _main_client_objects() -> list:
+    """Объекты основного юзербота в этом процессе, даже если связь сейчас оборвана."""
+    found = []
+    seen = set()
+
+    def take(client: Any) -> None:
+        if client is None or id(client) in seen or not hasattr(client, "is_connected"):
+            return
+        seen.add(id(client))
+        found.append(client)
+
+    for name in ("__main__", "main"):
+        mod = sys.modules.get(name)
+        take(getattr(mod, "main_userbot_client", None) if mod is not None else None)
+    for mod in list(sys.modules.values()):
+        if mod is None:
+            continue
+        take(getattr(mod, "main_userbot_client", None))
+    return found
+
+
 def find_userbot() -> Any:
     """Основной юзербот, если он запущен в этом процессе и на связи."""
-    for name in ("__main__", "main"):
-        client = getattr(sys.modules.get(name), "main_userbot_client", None)
-        if client is None:
+    for client in _main_client_objects():
+        try:
+            if client.is_connected():
+                return client
+        except Exception:
             continue
+    return None
+
+
+async def open_userbot() -> Any:
+    """Юзербот для поиска username. Если связь оборвалась — поднимает ту же сессию."""
+    live = find_userbot()
+    if live is not None:
+        return live
+    import asyncio
+
+    for client in _main_client_objects():
+        try:
+            connected = bool(client.is_connected())
+        except Exception:
+            connected = False
+        if not connected:
+            connect = getattr(client, "connect", None)
+            if connect is None:
+                continue
+            try:
+                await asyncio.wait_for(connect(), timeout=3.0)
+            except Exception:
+                continue
         try:
             if client.is_connected():
                 return client

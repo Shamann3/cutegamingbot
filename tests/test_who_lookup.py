@@ -297,6 +297,18 @@ def test_userbot_rechecks_a_username_that_moved_to_someone_else():
     assert client.requests[0].username == "vasya"
 
 
+def test_cache_miss_asks_telegram_for_the_username():
+    person = _tg_user(id=77, username="xblerka")
+    client = FakeClient(
+        error=ValueError('Could not find the input entity for "xblerka"'),
+        resolved=SimpleNamespace(peer=SimpleNamespace(user_id=77), users=[person], chats=[]),
+    )
+    kind, found = _resolve(client, "xblerka")
+    assert (kind, found.user_id, found.username) == ("person", 77, "xblerka")
+    assert type(client.requests[0]).__name__ == "ResolveUsernameRequest"
+    assert client.requests[0].username == "xblerka"
+
+
 def test_userbot_answers_for_missing_flood_channel_and_failure():
     from telethon import errors
 
@@ -336,6 +348,27 @@ def test_numeric_id_asks_telegram_when_the_session_has_no_hash():
     kind, person = asyncio.run(who.resolve_user_id(cached, 8827084733))
     assert kind == "person" and person.first_name == "Ира"
     assert cached.requests == []
+
+
+def test_open_userbot_reconnects_the_dropped_main_client(monkeypatch):
+    class Client:
+        def __init__(self):
+            self.connected = False
+            self.connects = 0
+
+        def is_connected(self):
+            return self.connected
+
+        async def connect(self):
+            self.connects += 1
+            self.connected = True
+
+    client = Client()
+    monkeypatch.setattr(who, "_main_client_objects", lambda: [client])
+    assert who.find_userbot() is None
+    opened = asyncio.run(who.open_userbot())
+    assert opened is client
+    assert client.connects == 1
 
 
 def test_find_userbot_uses_only_a_connected_main_client(monkeypatch):

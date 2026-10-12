@@ -28,7 +28,15 @@ from admin_auth import (
     totp_qr_data_url,
     verify_totp,
 )
-from config import ADMIN_BOT_TOKEN, ADMIN_JWT_SECRET, ADMIN_WEBAPP_URL, BOT_TOKEN, is_plain_user, owner_user_ids
+from config import (
+    ADMIN_BOT_TOKEN,
+    ADMIN_JWT_SECRET,
+    ADMIN_WEBAPP_URL,
+    BOT_TOKEN,
+    is_plain_user,
+    owner_user_ids,
+    public_creator_id,
+)
 from db import db
 from punish_rights import may_punish_rank
 import punish_rights
@@ -1002,6 +1010,19 @@ async def ensure_tables() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (application_id, actor_id)
         );
+        CREATE TABLE IF NOT EXISTS epsilon_admin_drop (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            actor_id BIGINT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            decided_at TIMESTAMPTZ,
+            decider_id BIGINT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS epsilon_admin_drop_pending
+            ON epsilon_admin_drop (chat_id, user_id)
+            WHERE status = 'pending';
         """
     )
     chats = await db.pool.fetch(
@@ -2726,6 +2747,21 @@ class ChatAdminActBody(BaseModel):
     action: str
 
 
+def classify_chat_admin(row: dict, *, seated: bool, staff: bool) -> str:
+    """Кого показать во вкладке «Админы».
+
+    show — должность в этой группе, не сотрудник проекта.
+    hide — бот, сотрудник проекта, создатель Telegram без должности.
+    strip — администратор Telegram, которого в системе группы нет.
+    Создателя группы Telegram снять нельзя, поэтому без должности он просто скрыт.
+    """
+    if row.get("isBot") or row.get("isSelfBot") or staff:
+        return "hide"
+    if str(row.get("status") or "") == "creator":
+        return "show" if seated else "hide"
+    return "show" if seated else "strip"
+
+
 def _tg_person_name(user: dict) -> str:
     parts = [str(user.get("first_name") or "").strip(), str(user.get("last_name") or "").strip()]
     name = " ".join(part for part in parts if part)
@@ -2829,7 +2865,10 @@ async def _chat_admin_history(chat_id: int) -> list[dict]:
         LEFT JOIN users actor ON actor.user_id = l.actor_id
         LEFT JOIN users target ON target.user_id = l.user_id
         WHERE l.chat_id = $1
-          AND l.action IN ('chat_admin_demote', 'chat_admin_restrict')
+          AND l.action IN (
+            'chat_admin_demote', 'chat_admin_restrict',
+            'chat_admin_drop_ask', 'chat_admin_drop_no', 'chat_admin_unregistered'
+          )
         ORDER BY l.created_at DESC
         LIMIT 40
         """,
@@ -3000,21 +3039,176 @@ async def _admin_group_stats(chat_id: int, user_ids: list[int]) -> tuple[dict[in
     return pulse, deeds
 
 
-async def _chat_admin_board(chat_id: int, actor_id: int) -> dict:
+def _member_still_admin(member: dict | None) -> bool:
+    if not isinstance(member, dict):
+        return True
+    return str(member.get("status") or "") in {"administrator", "creator"}
+
+
+def _member_can_punish(member: dict | None) -> bool:
+    if not isinstance(member, dict):
+        return True
+    return any(bool(member.get(flag)) for flag in (
+        "can_delete_messages",
+        "can_restrict_members",
+        "can_promote_members",
+    ))
+
+
+async def _telegram_member(chat_id: int, user_id: int) -> dict | None:
+    ok, _err, data = await _telegram_call(
+        "getChatMember",
+        {"chat_id": int(chat_id), "user_id": int(user_id)},
+    )
+    member = data.get("result") if ok and isinstance(data, dict) else None
+    return member if isinstance(member, dict) else None
+
+
+async def _demote_telegram_admin(chat_id: int, user_id: int) -> str:
+    """Снимает админку Telegram. Пустая строка — человек уже обычный участник."""
+    ok, err, _data = await _telegram_call(
+        "promoteChatMember",
+        _promote_body(int(chat_id), int(user_id), None),
+    )
+    if not ok:
+        return err or "Telegram не снял админку"
+    member = await _telegram_member(chat_id, user_id)
+    if _member_still_admin(member):
+        return "Telegram оставил админку. Боту нужно право «Добавление администраторов»"
+    return ""
+
+
+async def _restrict_telegram_admin(chat_id: int, user_id: int) -> str:
+    """Оставляет администратора без удаления, банов и назначения. Пустая строка — получилось."""
+    ok, err, _data = await _telegram_call(
+        "promoteChatMember",
+        _promote_body(int(chat_id), int(user_id), ["can_manage_chat"]),
+    )
+    if not ok:
+        return err or "Telegram не ограничил права"
+    member = await _telegram_member(chat_id, user_id)
+    if _member_still_admin(member) and _member_can_punish(member):
+        return "Telegram оставил прежние права. Боту нужно право «Добавление администраторов»"
+    return ""
+
+
+async def _registered_admin_ids(chat_id: int) -> set[int]:
+    """Кто держит должность в этой группе. Спам-блок должностью администратора не считается."""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT s.user_id
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE s.chat_id = $1
+              AND (s.term_end IS NULL OR s.term_end > NOW())
+              AND COALESCE(p.kind, 'post') <> $2
+            """,
+            int(chat_id),
+            KIND_SPAMBLOCK,
+        )
+    except Exception:
+        _log.exception("должности администраторов группы %s", chat_id)
+        return set()
+    return {int(row["user_id"]) for row in rows}
+
+
+async def _project_staff_ids(user_ids: list[int]) -> set[int]:
+    """Сотрудники проекта. Их вкладка «Админы» не показывает и не снимает."""
+    staff = {int(uid) for uid in owner_user_ids()}
+    if not user_ids:
+        return staff
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT DISTINCT user_id
+            FROM admin_accounts
+            WHERE user_id = ANY($1::bigint[])
+              AND status = 'active'
+              AND role = ANY($2::text[])
+            """,
+            [int(uid) for uid in user_ids],
+            list(STAFF_PANEL_ROLES),
+        )
+    except Exception:
+        _log.exception("проверка сотрудников среди администраторов")
+        return staff
+    staff.update(int(row["user_id"]) for row in rows)
+    return staff
+
+
+async def _pending_drop_ids(chat_id: int) -> set[int]:
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT user_id FROM epsilon_admin_drop
+            WHERE chat_id = $1 AND status = 'pending'
+            """,
+            int(chat_id),
+        )
+    except Exception:
+        return set()
+    return {int(row["user_id"]) for row in rows}
+
+
+def _short_admin(row: dict) -> dict:
+    return {
+        "userId": int(row["userId"]),
+        "name": row.get("name") or "",
+        "username": row.get("username") or "",
+    }
+
+
+async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> dict:
     admins, error = await _chat_admin_rows(chat_id)
-    people = [row["userId"] for row in admins if not row["isBot"]]
+    seated = await _registered_admin_ids(chat_id)
+    staff = await _project_staff_ids([row["userId"] for row in admins])
+    pending = await _pending_drop_ids(chat_id)
+    shown: list[dict] = []
+    dropped: list[dict] = []
+    stuck: list[dict] = []
+    for row in admins:
+        kind = classify_chat_admin(
+            row,
+            seated=row["userId"] in seated,
+            staff=row["userId"] in staff,
+        )
+        if kind == "hide":
+            continue
+        if kind == "strip":
+            fault = await _demote_telegram_admin(chat_id, row["userId"])
+            card = _short_admin(row)
+            if fault:
+                stuck.append({**card, "error": fault})
+            else:
+                dropped.append(card)
+                detail = f"Снял незарегистрированного: {row['name']}"
+                if row["username"]:
+                    detail += f" @{row['username']}"
+                detail += f" · {row['userId']}"
+                try:
+                    await _realm_log(int(chat_id), row["userId"], "chat_admin_unregistered", detail, int(actor_id))
+                except Exception:
+                    _log.exception("журнал снятия незарегистрированного %s", row["userId"])
+            continue
+        row["dropPending"] = row["userId"] in pending
+        shown.append(row)
+    people = [row["userId"] for row in shown if not row["isBot"]]
     try:
         pulse, deeds = await _admin_group_stats(chat_id, people)
     except Exception:
         _log.exception("статистика администраторов группы %s", chat_id)
         pulse, deeds = {}, {}
-    for row in admins:
+    for row in shown:
         row["stats"] = pulse.get(row["userId"])
         row["deeds"] = deeds.get(row["userId"])
     return {
-        "admins": admins,
+        "admins": shown,
+        "dropped": dropped,
+        "stuck": stuck,
         "history": await _chat_admin_history(chat_id),
         "canAct": True,
+        "creator": bool(creator),
         "botCanPromote": await _bot_can_promote(chat_id, admins),
         "selfId": int(actor_id),
         "error": error,
@@ -3023,10 +3217,167 @@ async def _chat_admin_board(chat_id: int, actor_id: int) -> dict:
 
 @router.get("/chat-admins/{chat_id}")
 async def group_chat_admins(chat_id: int, user_id: int = Depends(get_any_telegram_user_id)):
-    if not await _can_manage_chat_admins(user_id, chat_id):
+    access = await _can_manage_chat_admins(user_id, chat_id)
+    if not access:
         raise HTTPException(status_code=403, detail="Право снимать администраторов этой группы вам не открыто")
     await ensure_tables()
-    return await _chat_admin_board(chat_id, user_id)
+    return await _chat_admin_board(chat_id, user_id, creator=bool(access.get("creator")))
+
+
+def _admin_act_detail(verb: str, target: dict, target_id: int) -> str:
+    detail = f"{verb}: {target['name']}"
+    if target["username"]:
+        detail += f" @{target['username']}"
+    return f"{detail} · {target_id}"
+
+
+async def _release_group_seat(chat_id: int, user_id: int) -> None:
+    await db.pool.execute(
+        "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
+        int(user_id),
+        int(chat_id),
+    )
+
+
+async def _ask_creator_to_drop(chat_id: int, target: dict, actor_id: int) -> str:
+    """Заявка создателю в личку. Повтор по тому же человеку новую заявку не плодит."""
+    target_id = int(target["userId"])
+    existing = await db.pool.fetchrow(
+        """
+        SELECT id FROM epsilon_admin_drop
+        WHERE chat_id = $1 AND user_id = $2 AND status = 'pending'
+        """,
+        int(chat_id),
+        target_id,
+    )
+    if existing:
+        return "Заявка на снятие уже у создателя. Он примет или отклонит её."
+    row = await db.pool.fetchrow(
+        """
+        INSERT INTO epsilon_admin_drop (chat_id, user_id, actor_id)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        """,
+        int(chat_id),
+        target_id,
+        int(actor_id),
+    )
+    request_id = int(row["id"])
+    group = await db.pool.fetchrow(
+        "SELECT title FROM epsilon_official_groups WHERE chat_id = $1",
+        int(chat_id),
+    )
+    actor = await db.pool.fetchrow(
+        "SELECT username, display_name, first_name FROM users WHERE user_id = $1",
+        int(actor_id),
+    )
+    group_title = str((group["title"] if group else "") or chat_id)
+    actor_name = _advice_person_name({
+        "display_name": actor["display_name"] if actor else "",
+        "first_name": actor["first_name"] if actor else "",
+        "username": actor["username"] if actor else "",
+        "actor_id": actor_id,
+    }) if actor else f"ID {actor_id}"
+    who = html.escape(str(target.get("name") or target_id))
+    username = str(target.get("username") or "").strip()
+    user_line = f"@{html.escape(username)} · " if username else ""
+    text = (
+        "<b>Заявка на снятие администратора</b>\n"
+        f"Группа: {html.escape(group_title)}\n"
+        f"Кого снять: {who}\n"
+        f"{user_line}<code>{target_id}</code>\n"
+        f"Просит: {html.escape(actor_name)}"
+    )
+    creator = int(public_creator_id() or 0)
+    sent = False
+    if creator > 0:
+        sent, _err, _data = await _telegram_call("sendMessage", {
+            "chat_id": creator,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "Принять", "callback_data": f"admdrop:1:{request_id}"},
+                    {"text": "Отклонить", "callback_data": f"admdrop:0:{request_id}"},
+                ]],
+            },
+        })
+    await _realm_log(
+        int(chat_id),
+        target_id,
+        "chat_admin_drop_ask",
+        _admin_act_detail("Попросил снять", target, target_id),
+        int(actor_id),
+    )
+    if sent:
+        return "Заявка ушла создателю в личные сообщения. Он примет или отклонит."
+    return "Заявка записана. В личные сообщения она не дошла — создатель увидит её во вкладке «Снятия»."
+
+
+async def decide_admin_drop(request_id: int, decider_id: int, approve: bool) -> dict:
+    """Создатель принимает или отклоняет снятие. Повторное решение не снимает второй раз."""
+    if not _is_creator(int(decider_id)):
+        return {"ok": False, "toast": "Это решает создатель проекта", "text": ""}
+    await ensure_tables()
+    row = await db.pool.fetchrow(
+        """
+        SELECT id, chat_id, user_id, actor_id, status
+        FROM epsilon_admin_drop
+        WHERE id = $1
+        """,
+        int(request_id),
+    )
+    if not row:
+        return {"ok": False, "toast": "Такой заявки нет", "text": ""}
+    if row["status"] != "pending":
+        done = "принята" if row["status"] == "approved" else "отклонена"
+        return {
+            "ok": False,
+            "toast": f"Заявка уже {done}",
+            "text": f"<b>Заявка уже {done}</b>",
+        }
+    chat_id = int(row["chat_id"])
+    target_id = int(row["user_id"])
+    if approve:
+        staff = await _project_staff_ids([target_id])
+        if target_id in staff:
+            return {"ok": False, "toast": "Сотрудника проекта эта заявка не снимает", "text": ""}
+        fault = await _demote_telegram_admin(chat_id, target_id)
+        if fault:
+            return {"ok": False, "toast": fault[:180], "text": ""}
+        try:
+            await _release_group_seat(chat_id, target_id)
+        except Exception:
+            _log.exception("должность после снятия %s в %s", target_id, chat_id)
+            return {
+                "ok": False,
+                "toast": "Админка в Telegram снята. Должность в панели не удалилась, нажмите ещё раз.",
+                "text": "",
+            }
+        status = "approved"
+        toast = "Админка снята"
+        text = "<b>Снятие принято.</b> Человек больше не администратор этой группы."
+        verb = "Принял снятие"
+        log_action = "chat_admin_demote"
+    else:
+        status = "rejected"
+        toast = "Заявка отклонена"
+        text = "<b>Снятие отклонено.</b> Администратор остаётся на должности."
+        verb = "Отклонил снятие"
+        log_action = "chat_admin_drop_no"
+    await db.pool.execute(
+        """
+        UPDATE epsilon_admin_drop
+        SET status = $2, decided_at = NOW(), decider_id = $3
+        WHERE id = $1 AND status = 'pending'
+        """,
+        int(request_id),
+        status,
+        int(decider_id),
+    )
+    await _realm_log(chat_id, target_id, log_action, verb, int(decider_id))
+    return {"ok": True, "toast": toast, "text": text, "status": status}
 
 
 @router.post("/chat-admins/{chat_id}")
@@ -3053,32 +3404,105 @@ async def group_chat_admin_act(
         raise HTTPException(status_code=404, detail="Этого человека нет среди администраторов группы")
     if target["status"] == "creator":
         raise HTTPException(status_code=400, detail="Создателя группы снять нельзя")
-    if target["isSelfBot"]:
+    if target["isSelfBot"] or target["isBot"]:
         raise HTTPException(status_code=400, detail="Бота группы этой кнопкой снять нельзя")
-    if action == "demote":
-        note = await _strip_to_member(int(chat_id), target_id)
-        if note.startswith("Должность в панели снята"):
-            raise HTTPException(status_code=400, detail=note)
-        log_action = "chat_admin_demote"
-        verb = "Снял админку"
-    else:
-        ok, err, _data = await _telegram_call(
-            "promoteChatMember",
-            _promote_body(int(chat_id), target_id, ["can_manage_chat"]),
-        )
-        if not ok:
-            raise HTTPException(status_code=400, detail=err or "Telegram не ограничил права")
+    staff = await _project_staff_ids([target_id])
+    if target_id in staff:
+        raise HTTPException(status_code=403, detail="Сотрудника проекта эта вкладка не ограничивает и не снимает")
+    seated = await _registered_admin_ids(chat_id)
+    creator = bool(access.get("creator"))
+    if action == "restrict":
+        fault = await _restrict_telegram_admin(int(chat_id), target_id)
+        if fault:
+            raise HTTPException(status_code=400, detail=fault)
         log_action = "chat_admin_restrict"
         verb = "Ограничил права"
         note = "Остался администратором без удаления сообщений, банов и назначения админов"
-    detail = f"{verb}: {target['name']}"
-    if target["username"]:
-        detail += f" @{target['username']}"
-    detail += f" · {target_id}"
+    elif target_id not in seated or creator:
+        fault = await _demote_telegram_admin(int(chat_id), target_id)
+        if fault:
+            raise HTTPException(status_code=400, detail=fault)
+        if target_id in seated:
+            await _release_group_seat(int(chat_id), target_id)
+        log_action = "chat_admin_demote"
+        verb = "Снял админку"
+        note = "Админка снята. Человек остаётся обычным участником."
+    else:
+        note = await _ask_creator_to_drop(int(chat_id), target, int(user_id))
+        board = await _chat_admin_board(chat_id, user_id, creator=False)
+        board["note"] = note
+        return board
+    detail = _admin_act_detail(verb, target, target_id)
     await _realm_log(int(chat_id), target_id, log_action, detail, int(user_id))
-    board = await _chat_admin_board(chat_id, user_id)
+    board = await _chat_admin_board(chat_id, user_id, creator=creator)
     board["note"] = note
     return board
+
+
+class AdminDropBody(BaseModel):
+    approve: bool
+
+
+def _drop_card(row) -> dict:
+    return {
+        "id": int(row["id"]),
+        "chatId": int(row["chat_id"]),
+        "userId": int(row["user_id"]),
+        "actorId": int(row["actor_id"]),
+        "status": str(row["status"] or "pending"),
+        "group": str(row["group_title"] or row["chat_id"]),
+        "name": _advice_person_name({
+            "display_name": row["display_name"],
+            "first_name": row["first_name"],
+            "username": row["username"],
+            "actor_id": row["user_id"],
+        }),
+        "username": str(row["username"] or "").strip(),
+        "actorName": _advice_person_name({
+            "display_name": row["actor_display"],
+            "first_name": row["actor_first"],
+            "username": row["actor_username"],
+            "actor_id": row["actor_id"],
+        }),
+        "at": row["created_at"].isoformat() if row["created_at"] else None,
+    }
+
+
+_DROP_LIST_SQL = """
+SELECT d.id, d.chat_id, d.user_id, d.actor_id, d.status, d.created_at,
+       g.title AS group_title,
+       u.username, u.display_name, u.first_name,
+       a.username AS actor_username, a.display_name AS actor_display, a.first_name AS actor_first
+FROM epsilon_admin_drop d
+LEFT JOIN epsilon_official_groups g ON g.chat_id = d.chat_id
+LEFT JOIN users u ON u.user_id = d.user_id
+LEFT JOIN users a ON a.user_id = d.actor_id
+"""
+
+
+@router.get("/admin-drops")
+async def list_admin_drops(user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    await ensure_tables()
+    rows = await db.pool.fetch(
+        _DROP_LIST_SQL + """
+        ORDER BY CASE WHEN d.status = 'pending' THEN 0 ELSE 1 END, d.created_at DESC
+        LIMIT 40
+        """
+    )
+    return {"items": [_drop_card(row) for row in rows]}
+
+
+@router.post("/admin-drops/{drop_id}")
+async def post_admin_drop(
+    drop_id: int,
+    body: AdminDropBody,
+    user_id: int = Depends(get_any_telegram_user_id),
+):
+    result = await decide_admin_drop(int(drop_id), int(user_id), bool(body.approve))
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("toast") or "Заявку решить не удалось")
+    return result
 
 
 class ApplicationAdviceBody(BaseModel):
