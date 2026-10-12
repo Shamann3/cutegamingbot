@@ -241,10 +241,9 @@ async def _delete_message(bot, chat_id: int, message_id: Optional[int]) -> None:
 
 async def _keep_writer(message: Message) -> None:
     """Капча удалит сообщение, человек в базе всё равно остаётся."""
-    from bot.funcs.seen_people import remember_account, remember_message
+    from bot.funcs.seen_people import remember_sight
 
-    await remember_message(message)
-    await remember_account(getattr(message, "from_user", None))
+    await remember_sight(message)
 
 
 async def _announce_passed(bot, chat_id: int, thread_id: Optional[int] = None) -> None:

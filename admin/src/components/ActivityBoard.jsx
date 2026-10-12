@@ -267,7 +267,7 @@ function LineStage({ points, selected, onPick, grain }) {
   )
 }
 
-function ShareRing({ people, total, onLead, onRest }) {
+function ShareRing({ people, total, onLead, onRest, onOpenUser = null }) {
   const lead = Number(people[0]?.messages) || 0
   const next = (Number(people[1]?.messages) || 0) + (Number(people[2]?.messages) || 0)
   const rest = Math.max(Number(total) - lead - next, 0)
@@ -326,10 +326,17 @@ function ShareRing({ people, total, onLead, onRest }) {
             <li key={part.key}>
               <button
                 type="button"
-                onClick={() => (openLead ? onLead?.(people[0], 0) : onRest?.())}
+                onClick={() => {
+                  if (openLead && onOpenUser && people[0]?.userId) {
+                    onOpenUser(people[0].userId)
+                    return
+                  }
+                  if (openLead) onLead?.(people[0], 0)
+                  else onRest?.()
+                }}
               >
                 <i className={part.tone} />
-                <span>{part.label}</span>
+                <span className={openLead ? 'act-person-name' : ''}>{part.label}</span>
                 <b>{fmt(part.value)} · {share} %</b>
               </button>
             </li>
@@ -342,6 +349,7 @@ function ShareRing({ people, total, onLead, onRest }) {
 
 export default function ActivityBoard({
   onOpenArchive,
+  onOpenUser = null,
   canArchive = false,
   chatId,
   repeats = new Map(),
@@ -417,6 +425,14 @@ export default function ActivityBoard({
     const total = Number(slice ? report?.messages : report?.periodMessages) || 0
     const share = total > 0 ? Math.round((Number(personRow.messages) || 0) / total * 100) : 0
     setPerson({ ...personRow, share, place: index + 1, times })
+  }
+
+  function pressPerson(event, personRow, index) {
+    if (event.target.closest('.act-person-name') && onOpenUser && personRow.userId) {
+      onOpenUser(personRow.userId)
+      return
+    }
+    openPerson(personRow, index)
   }
 
   function toggleSlice(date) {
@@ -554,11 +570,11 @@ export default function ActivityBoard({
                 type="button"
                 className="act-person"
                 aria-label={`${personRow.name}, ${fmt(personRow.messages)} сообщений. Открыть карточку`}
-                onClick={() => openPerson(personRow, place >= 0 ? place : index)}
+                onClick={(event) => pressPerson(event, personRow, place >= 0 ? place : index)}
               >
                 <em>{place >= 0 ? place + 1 : index + 1}</em>
                 <span className="act-person-main">
-                  <strong>{personRow.name}</strong>
+                  <strong className="act-person-name">{personRow.name}</strong>
                   {personRow.username ? <span>@{String(personRow.username).replace(/^@/, '')}</span> : null}
                   <i className="act-person-track" aria-hidden="true">
                     <b style={{ width: `${Math.max(share, personRow.messages > 0 ? 4 : 0)}%` }} />
@@ -594,10 +610,10 @@ export default function ActivityBoard({
                     type="button"
                     className="act-person"
                     aria-label={`${personRow.name}, ${fmt(personRow.messages)} сообщений. Открыть карточку`}
-                    onClick={() => openPerson(personRow, index)}
+                    onClick={(event) => pressPerson(event, personRow, index)}
                   >
                     <span className="act-person-main">
-                      <strong>{personRow.name}</strong>
+                      <strong className="act-person-name">{personRow.name}</strong>
                       {personRow.username ? <span>@{String(personRow.username).replace(/^@/, '')}</span> : null}
                       <i className="act-person-track" aria-hidden="true">
                         <b style={{ width: `${Math.max(share, personRow.messages > 0 ? 4 : 0)}%` }} />
@@ -699,6 +715,7 @@ export default function ActivityBoard({
                   people={people}
                   total={spoken}
                   onLead={(row) => openPerson(row, 0)}
+                  onOpenUser={onOpenUser}
                   onRest={() => setLens('people')}
                 />
               </div>

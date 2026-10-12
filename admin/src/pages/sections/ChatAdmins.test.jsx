@@ -67,6 +67,20 @@ describe('chat admins', () => {
     expect(await screen.findByText('Админка снята')).toBeTruthy()
   })
 
+  it('opens a person from the name and confirms a restriction', async () => {
+    vi.mocked(fetchChatAdmins).mockResolvedValue(BOARD)
+    vi.mocked(actChatAdmin).mockResolvedValue({ ...BOARD, note: 'Права ограничены' })
+    const open = vi.fn()
+    render(<ChatAdmins chatId={-100} onOpenUser={open} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Аня' }))
+    expect(open).toHaveBeenCalledWith(5)
+    fireEvent.click(screen.getByRole('button', { name: 'Ограничить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить' }))
+    await waitFor(() => {
+      expect(actChatAdmin).toHaveBeenCalledWith(-100, 5, 'restrict')
+    })
+  })
+
   it('asks the creator before a group admin removes someone', async () => {
     vi.mocked(fetchChatAdmins).mockResolvedValue({ ...BOARD, creator: false })
     render(<ChatAdmins chatId={-100} />)

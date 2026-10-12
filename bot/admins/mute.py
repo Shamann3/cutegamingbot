@@ -4121,7 +4121,6 @@ async def _resolve_target_from_entities(
   if not text or not entities:
     return None, None, None
 
-  db = _db()
   for ent in entities:
     etype = getattr(ent, "type", None)
     type_key = etype.value if hasattr(etype, "value") else str(etype)
@@ -4157,19 +4156,13 @@ async def _resolve_target_from_entities(
         fragment = ent.extract_from(text)
       except Exception:
         fragment = text[ent.offset: ent.offset + ent.length]
-      username = _normalize_username_token(fragment)
-      uid = await db.get_user_id_by_username(username)
-      if uid:
-        name = await db.get_firstname_by_user_id(uid)
-        return await _confirm_lookup_user_id(
-          uid, name or username, username, source_chat_id=source_chat_id,
-        )
-      from bot.admins.punish_validate import ensure_punishment_profile
-      found = await ensure_punishment_profile(
-        0, username=username, source_chat_id=source_chat_id,
+      found = await _lookup_target_by_token(
+        str(fragment or "").strip(),
+        source_chat_id=source_chat_id,
       )
-      if found:
+      if found[0]:
         return found
+      continue
   return None, None, None
 
 

@@ -2,15 +2,44 @@ export function cabinetNeedsGroupPick(groupCount, preview) {
   return !preview && Number(groupCount) > 1
 }
 
-export default function GroupEnter({ groups, onPick }) {
+/** list — несколько групп, seal — вход в выбранную, in — кабинет. */
+export function cabinetArrival(groupCount, preview) {
+  if (preview) return 'in'
+  if (cabinetNeedsGroupPick(groupCount, preview)) return 'list'
+  if (Number(groupCount) === 1) return 'seal'
+  return 'in'
+}
+
+export function prefersReducedMotion() {
+  if (typeof window === 'undefined' || !window.matchMedia) return false
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+export function GroupSeal({ title, onEnter }) {
   return (
-    <div className="grp-enter">
+    <button type="button" className="grp-seal" onClick={onEnter}>
+      <span className="grp-seal-kicker">Панель администратора</span>
+      <strong>{title || 'Группа'}</strong>
+      <span className="grp-seal-line" aria-hidden="true" />
+      <span className="grp-seal-go">Открываем кабинет</span>
+    </button>
+  )
+}
+
+export default function GroupEnter({ groups, onPick, leavingId = null }) {
+  return (
+    <div className={`grp-enter${leavingId != null ? ' is-leaving' : ''}`}>
       <div className="grp-enter-card">
+        <p className="grp-enter-kicker">Панель администратора</p>
         <h1>Ваши группы</h1>
         <p>Выберите группу, в которой у вас должность. Кабинет откроется в ней.</p>
         <ul>
-          {(groups || []).map((group) => (
-            <li key={group.chatId}>
+          {(groups || []).map((group, index) => (
+            <li
+              key={group.chatId}
+              className={leavingId === group.chatId ? 'is-chosen' : ''}
+              style={{ animationDelay: `${90 + index * 55}ms` }}
+            >
               <button type="button" onClick={() => onPick(group.chatId)}>
                 <strong>{group.title || 'Группа'}</strong>
                 <span>{group.position || 'Должность'}</span>

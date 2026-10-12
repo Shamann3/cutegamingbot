@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Люди, которых бот уже видел в группе.
+"""Люди, которых бот уже видел.
 
-Сюда попадают и те, кто только зашёл, и те, кто написал сообщение.
-«Кто ты» и наказание по username читают эту память, если в базе Кута строки ещё нет.
+Каждое сообщение сразу пишет человека в users: id, имя, username.
+Баланс и пригласитель при этом не трогаются.
+В группе то же сообщение запоминает его ещё и в этом чате.
+Дальше «кто ты», наказание и панель читают уже эту строку.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 
 log = logging.getLogger("seen_people")
@@ -87,8 +90,27 @@ async def remember_user(chat_id: int, user) -> None:
         log.exception("remember seen user")
 
 
+_ACCOUNT_SQL = """
+INSERT INTO users (user_id, first_name, username)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id) DO UPDATE
+SET first_name = CASE
+      WHEN EXCLUDED.first_name IS NOT NULL
+        AND btrim(EXCLUDED.first_name) <> ''
+        AND EXCLUDED.first_name <> EXCLUDED.user_id::text
+      THEN EXCLUDED.first_name
+      ELSE users.first_name
+    END,
+    username = CASE
+      WHEN EXCLUDED.username IS NOT NULL AND btrim(EXCLUDED.username) <> ''
+      THEN EXCLUDED.username
+      ELSE users.username
+    END
+"""
+
+
 async def remember_account(user) -> None:
-    """Строка users без баланса и пригласителя. Капча вызывает это до удаления сообщения."""
+    """Строка users. Баланс и пригласитель не пишутся и не затираются."""
     pool = await _pool()
     if pool is None or user is None or getattr(user, "is_bot", False):
         return
@@ -101,26 +123,9 @@ async def remember_account(user) -> None:
     first = str(getattr(user, "first_name", "") or "")[:128]
     last = str(getattr(user, "last_name", "") or "")[:128]
     name = display_name(first, last)[:128]
-    username = str(getattr(user, "username", "") or "")[:64]
+    username = str(getattr(user, "username", "") or "").lstrip("@")[:64]
     try:
-        await pool.execute(
-            """
-            INSERT INTO users (user_id, first_name, username)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id) DO UPDATE
-            SET first_name = CASE
-                  WHEN users.first_name IS NULL OR btrim(users.first_name) = '' THEN EXCLUDED.first_name
-                  ELSE users.first_name
-                END,
-                username = CASE
-                  WHEN EXCLUDED.username <> '' THEN EXCLUDED.username
-                  ELSE users.username
-                END
-            """,
-            uid,
-            name,
-            username,
-        )
+        await pool.execute(_ACCOUNT_SQL, uid, name, username)
     except Exception:
         log.exception("remember account")
 
@@ -163,19 +168,117 @@ async def find_names(pool, chat_id: int, query: str, limit: int = 8) -> list[dic
     return people
 
 
-async def remember_message(message) -> None:
+def _chat_id_of(message) -> int:
     chat = getattr(message, "chat", None)
     try:
-        chat_id = int(getattr(chat, "id", 0) or 0)
+        return int(getattr(chat, "id", 0) or 0)
     except (TypeError, ValueError):
-        return
+        return 0
+
+
+def _people_on(message) -> list:
+    """Автор сообщения, кто вошёл и кто вышел. Без повторов и без ботов."""
+    found = []
+    seen = set()
+    candidates = [getattr(message, "from_user", None), getattr(message, "left_chat_member", None)]
+    candidates.extend(getattr(message, "new_chat_members", None) or [])
+    for user in candidates:
+        if user is None or getattr(user, "is_bot", False):
+            continue
+        try:
+            uid = int(getattr(user, "id", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if uid <= 0 or uid in seen:
+            continue
+        seen.add(uid)
+        found.append(user)
+    return found
+
+
+async def remember_message(message) -> None:
+    chat_id = _chat_id_of(message)
     if chat_id >= 0:
         return
-    user = getattr(message, "from_user", None)
-    if user is not None:
+    for user in _people_on(message):
         await remember_user(chat_id, user)
-    for member in getattr(message, "new_chat_members", None) or []:
-        await remember_user(chat_id, member)
+
+
+_UPDATE_FIELDS = ("message", "edited_message", "channel_post", "edited_channel_post")
+
+
+def sight_targets(event):
+    """Новое сообщение, правка и пост канала. Одно и то же дважды не берём."""
+    if event is None:
+        return []
+    nested = [getattr(event, name, None) for name in _UPDATE_FIELDS]
+    nested = [item for item in nested if item is not None and getattr(item, "chat", None) is not None]
+    if nested:
+        return nested
+    if getattr(event, "chat", None) is not None:
+        return [event]
+    return []
+
+
+async def remember_sight(message) -> None:
+    """Сразу записать людей этого сообщения. Дальше их уже ищут в базе."""
+    if message is None:
+        return
+    chat_id = _chat_id_of(message)
+    for user in _people_on(message):
+        await remember_account(user)
+        if chat_id < 0:
+            await remember_user(chat_id, user)
+
+
+async def remember_membership(chat_id, user) -> None:
+    """Вход и выход без текста: человек всё равно появляется в базе."""
+    await remember_account(user)
+    try:
+        cid = int(chat_id)
+    except (TypeError, ValueError):
+        return
+    if cid < 0:
+        await remember_user(cid, user)
+
+
+# Ждём запись до обработчика, но не держим бота, если база молчит.
+# Сама запись при этом не отменяется и дописывается следом.
+SIGHT_WAIT = 1.5
+
+
+def _memberships(event) -> list:
+    found = []
+    for name in ("chat_member", "my_chat_member"):
+        member = getattr(event, name, None)
+        if member is None:
+            continue
+        user = getattr(getattr(member, "new_chat_member", None), "user", None)
+        chat = getattr(member, "chat", None)
+        if user is None or chat is None:
+            continue
+        found.append((chat, user))
+    return found
+
+
+async def remember_event(event) -> None:
+    for message in sight_targets(event):
+        await remember_sight(message)
+    for chat, user in _memberships(event):
+        try:
+            chat_id = int(getattr(chat, "id", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        await remember_membership(chat_id, user)
+
+
+async def await_sight(event) -> None:
+    """Записать людей апдейта до того, как команда начнёт их искать."""
+    task = asyncio.create_task(remember_event(event))
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=SIGHT_WAIT)
+    except Exception:
+        return
 
 
 async def find_username(pool, username: str, chat_id: int | None = None) -> dict | None:

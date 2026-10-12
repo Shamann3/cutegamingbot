@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import GroupEnter, { cabinetNeedsGroupPick } from './GroupEnter'
+import GroupEnter, { cabinetArrival, cabinetNeedsGroupPick } from './GroupEnter'
 
 describe('group enter', () => {
   afterEach(() => cleanup())
@@ -9,6 +9,10 @@ describe('group enter', () => {
     expect(cabinetNeedsGroupPick(2, false)).toBe(true)
     expect(cabinetNeedsGroupPick(1, false)).toBe(false)
     expect(cabinetNeedsGroupPick(3, true)).toBe(false)
+    expect(cabinetArrival(2, false)).toBe('list')
+    expect(cabinetArrival(1, false)).toBe('seal')
+    expect(cabinetArrival(1, true)).toBe('in')
+    expect(cabinetArrival(0, false)).toBe('in')
   })
 
   it('opens the chosen group from the center list', () => {

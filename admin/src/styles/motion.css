@@ -5152,7 +5152,7 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
   color: inherit;
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   background:
     radial-gradient(90% 80% at 0% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.22), transparent 58%),
     var(--e-plate);
@@ -5206,6 +5206,53 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
   letter-spacing: -0.03em;
 }
 
+.grp-pulse-open,
+.grp-pulse-go,
+.grp-pulse .e-user-link {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.grp-pulse-open,
+.grp-pulse-go {
+  padding: 0;
+}
+
+.grp-pulse .e-user-link {
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+  text-underline-offset: 0.18em;
+}
+
+.grp-pulse-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.grp-pulse-people li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.grp-pulse-people span {
+  color: var(--e-text-2, #aeaeb2);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.86rem;
+}
+
 .grp-pulse-go {
   display: flex;
   align-items: center;
@@ -5214,6 +5261,12 @@ html[data-viewport="desktop"] .realm-main > section.grp-home {
   color: var(--e-text-2, #aeaeb2);
   font-size: 0.86rem;
   line-height: 1.35;
+}
+
+.act-person-name {
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+  text-underline-offset: 0.16em;
 }
 
 .grp-pulse:hover {

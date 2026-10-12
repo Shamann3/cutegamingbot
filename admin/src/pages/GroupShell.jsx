@@ -14,6 +14,7 @@ import {
   fetchGroupPositions,
   fetchGroupPulse,
   fetchGroupSummary,
+  glanceAdminUser,
   groupRealmAct,
   markGroupOfficial,
   createGroupPosition,
@@ -39,7 +40,7 @@ import CaptchaArchiveNote from '../components/CaptchaArchiveNote'
 import PositionSupply from '../components/PositionSupply'
 import MySalary from './sections/payroll/MySalary'
 import ChatAdmins from './sections/ChatAdmins'
-import GroupEnter, { cabinetNeedsGroupPick } from './sections/GroupEnter'
+import GroupEnter, { GroupSeal, cabinetArrival, prefersReducedMotion } from './sections/GroupEnter'
 import KutRate from './sections/payroll/KutRate'
 import { CreatorDeck } from './sections/payroll/CreatorPay'
 import WorkDesk from './sections/payroll/WorkDesk'
@@ -121,7 +122,10 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const isCreator = Boolean(portrait?.isOwner)
   const isProjectCreator = Boolean(portrait?.isProjectCreator)
   const groups = portrait?.groups || []
-  const [groupChosen, setGroupChosen] = useState(() => !cabinetNeedsGroupPick(groups.length, preview))
+  const [phase, setPhase] = useState(() => cabinetArrival(groups.length, preview))
+  const [leavingId, setLeavingId] = useState(null)
+  const [arriving, setArriving] = useState(false)
+  const coachStarted = useRef(cabinetArrival(groups.length, preview) === 'in')
   const [chatId, setChatId] = useState(groups[0]?.chatId ?? null)
   const current = groups.find((group) => group.chatId === chatId) || null
   const rights = useMemo(() => new Set(current?.rights || []), [current])
@@ -152,16 +156,42 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   }, [tabs, tab])
   const [chapter, setChapter] = useState(false)
   const [lockOpen, setLockOpen] = useState(false)
-  const [coach, setCoach] = useState(() => groupChosen && !preview && !coachClosed('epsilon.onboard.group.v4'))
+  const [coach, setCoach] = useState(() => (
+    !preview && cabinetArrival(groups.length, preview) === 'in' && !coachClosed('epsilon.onboard.group.v4')
+  ))
+  const enterCabinet = useCallback(() => {
+    setArriving(true)
+    setPhase('in')
+    if (coachStarted.current) return
+    coachStarted.current = true
+    if (!preview && !coachClosed('epsilon.onboard.group.v4')) setCoach(true)
+  }, [preview])
 
   useEffect(() => {
-    if (preview) return
+    if (phase !== 'seal') return undefined
+    const ms = prefersReducedMotion() ? 0 : 920
+    const timer = window.setTimeout(enterCabinet, ms)
+    return () => window.clearTimeout(timer)
+  }, [phase, enterCabinet])
+
+  useEffect(() => {
+    if (leavingId == null) return undefined
+    const ms = prefersReducedMotion() ? 0 : 360
+    const timer = window.setTimeout(() => {
+      setLeavingId(null)
+      setPhase('seal')
+    }, ms)
+    return () => window.clearTimeout(timer)
+  }, [leavingId])
+
+  useEffect(() => {
+    if (preview || phase !== 'in') return
     if (coach) {
       stopMeme()
       return
     }
     playMeme('entered')
-  }, [preview, coach])
+  }, [preview, coach, phase])
   const [lesson, setLesson] = useState(false)
   const [coachRun, setCoachRun] = useState(0)
   const replayCoach = useCallback(() => {
@@ -811,11 +841,17 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
   const archiveAct = async ({ userId: raw, action: actId, hours: hrs, untilSec, reason: why }) => {
     const queryText = String(raw || '').trim()
-    const asNum = Number(queryText.replace(/^#/, ''))
-    const id = Number.isFinite(asNum) && String(asNum) === queryText.replace(/^#/, '') ? asNum : Number(queryText)
+    const bare = queryText.replace(/^#/, '')
+    const asNum = Number(bare)
+    let id = Number.isFinite(asNum) && String(asNum) === bare ? asNum : null
     if (!chatId) throw new Error('Сначала выберите группу')
-    if (!id || !Number.isFinite(id)) {
-      throw new Error('Нужен ID человека. Если его ещё нет в Куте, дождитесь карточки под полем или вставьте числовой ID.')
+    if (!id) {
+      const glance = await glanceAdminUser(queryText, chatId)
+      const person = glance?.user
+      id = Number(person?.userId || person?.user_id)
+      if (!id || !Number.isFinite(id)) {
+        throw new Error(glance?.message || 'Не понял, кого наказать. Напишите @username, ссылку t.me или числовой ID.')
+      }
     }
     if (!String(why || '').trim()) throw new Error('Нужна причина')
     const act = allowedActions.find((item) => item.id === actId)
@@ -887,26 +923,35 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     ...seatWide.map((item) => item.label),
   ]
   const showPulse = Boolean(chatId && canActivity && (summary || (error && !loading)))
-  const choosing = cabinetNeedsGroupPick(groups.length, preview) && !groupChosen
+  const shellClass = `panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}${arriving ? ' is-arriving' : ''}`
 
-  if (choosing) {
+  if (phase === 'list') {
     return (
-      <div className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+      <div className={shellClass} data-viewport={viewport}>
         <GroupEnter
           groups={groups}
+          leavingId={leavingId}
           onPick={(id) => {
             setChatId(id)
             setTab('overview')
-            setGroupChosen(true)
-            setCoach(!coachClosed('epsilon.onboard.group.v4'))
+            setLeavingId(id)
           }}
         />
       </div>
     )
   }
 
+  if (phase === 'seal') {
+    const sealTitle = (groups.find((group) => group.chatId === chatId) || groups[0])?.title
+    return (
+      <div className={shellClass} data-viewport={viewport}>
+        <GroupSeal title={sealTitle} onEnter={enterCabinet} />
+      </div>
+    )
+  }
+
   return (
-    <div ref={shellRef} className={`panel-shell panel-shell-${viewport}${personal ? ' is-personal' : ''}`} data-viewport={viewport}>
+    <div ref={shellRef} className={shellClass} data-viewport={viewport}>
       <GroupMuteLock rootRef={shellRef} lock={summary?.muteLock} />
       <AccentAura />
       {banner}
@@ -1185,35 +1230,50 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 </div>
               )}
               {showPulse && (
-                <button type="button" className="grp-pulse" onClick={() => pickTab('activity')}>
+                <div className="grp-pulse">
                   {homePulse ? (
                     <>
-                      <span className="grp-pulse-nums">
-                        <span>
-                          <strong>{fmt(homeMessages)}</strong>
-                          <em>сообщений за 30 дней</em>
+                      <button type="button" className="grp-pulse-open" onClick={() => pickTab('activity')}>
+                        <span className="grp-pulse-nums">
+                          <span>
+                            <strong>{fmt(homeMessages)}</strong>
+                            <em>сообщений за 30 дней</em>
+                          </span>
+                          <span>
+                            <strong>{fmt(homeWriters)}</strong>
+                            <em>{writersCaption(homeWriters)}</em>
+                          </span>
                         </span>
-                        <span>
-                          <strong>{fmt(homeWriters)}</strong>
-                          <em>{writersCaption(homeWriters)}</em>
-                        </span>
-                      </span>
-                      {homeLead && (
-                        <span className="grp-pulse-lead">
-                          Чаще всех — {homeLead.name}{leadShare != null ? `, ${leadShare}% за эти 30 дней` : ''}
-                        </span>
-                      )}
+                      </button>
+                      {(summary?.writers || []).filter((row) => row?.name && (row.userId || row.user_id)).length > 0 ? (
+                        <ul className="grp-pulse-people">
+                          {(summary.writers || []).filter((row) => row?.name && (row.userId || row.user_id)).slice(0, 5).map((row) => {
+                            const id = row.userId || row.user_id
+                            const share = homeLead && row === homeLead ? leadShare : null
+                            return (
+                              <li key={id}>
+                                <button type="button" className="e-user-link" onClick={() => openPunish(id)}>
+                                  {row.name}
+                                </button>
+                                <span>{fmt(row.messages)}{share != null ? ` · ${share}%` : ''}</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : homeLead ? (
+                        <p className="grp-pulse-lead">Чаще всех — {homeLead.name}</p>
+                      ) : null}
                     </>
                   ) : (
                     <strong className="grp-pulse-miss">Счётчик за 30 дней сейчас не открылся</strong>
                   )}
-                  <span className="grp-pulse-go">
+                  <button type="button" className="grp-pulse-go" onClick={() => pickTab('activity')}>
                     Подробный разбор — в активности
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M9 6l6 6-6 6" />
                     </svg>
-                  </span>
-                </button>
+                  </button>
+                </div>
               )}
               {groups.length > 0 && (
                 <>
@@ -1256,6 +1316,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
                 watch={mods?.watch || []}
                 canArchive
                 onOpenArchive={openPunish}
+                onOpenUser={openPunish}
               />
             </section>
           )}
@@ -1370,7 +1431,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
           )}
 
           {!chapter && activeTab === 'admins' && (
-            <ChatAdmins chatId={chatId} />
+            <ChatAdmins chatId={chatId} onOpenUser={openPunish} />
           )}
 
           {!chapter && activeTab === 'switches' && isCreator && (

@@ -39832,16 +39832,8 @@ class BalanceEngineMiddleware(BaseMiddleware):
 
             if uid:
                 asyncio.create_task(self._run_tick(int(uid)))
-            message = event if isinstance(event, Message) else getattr(event, "message", None)
-            if isinstance(message, Message):
-                from bot.funcs.seen_people import remember_message
-                asyncio.create_task(remember_message(message))
-            member = getattr(event, "chat_member", None)
-            user = getattr(getattr(member, "new_chat_member", None), "user", None)
-            chat = getattr(member, "chat", None)
-            if user is not None and chat is not None:
-                from bot.funcs.seen_people import remember_user
-                asyncio.create_task(remember_user(int(chat.id), user))
+            from bot.funcs.seen_people import await_sight
+            await await_sight(event)
         except Exception as e:
             print(f"❌ [BALANCE][MW] err: {e!r}")
 

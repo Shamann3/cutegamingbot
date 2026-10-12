@@ -29,7 +29,8 @@ SHORT = "Короткое число человеком не считается.
 DENIED = "Пользователь {user_id} не найден в Telegram. Проверьте ID."
 BOT = "Это бот. Наказания выдаются людям."
 PLACE = "@{name} — это {what}. Укажите человека."
-NAME_ONLY = "По имени панель ищет только игроков Кута. Для человека вне базы укажите ID или @username."
+NAME_ONLY = "По имени панель ищет только игроков Кута и тех, кого бот уже видел в этой группе. Для остальных укажите ID или @username."
+NAME_MANY = "В этой группе несколько людей с таким именем. Укажите @username или ID."
 UNCHECKED = (
     "В Куте нет @{name}. Бот его ещё не видел, поэтому панель не знает ID. "
     "Вставьте числовой ID или напишите команду в группе: бот спросит Telegram сам."
@@ -456,6 +457,98 @@ async def prepare_offender(
     }
 
 
+async def _seen_username(username: str, chat_id: Optional[int]) -> Optional[dict]:
+    """Человек, которого бот уже видел в этой группе, даже без строки в users."""
+    if not chat_id or not username:
+        return None
+    try:
+        from db import db
+
+        pool = getattr(db, "pool", None)
+        if pool is None:
+            return None
+        row = await pool.fetchrow(
+            """
+            SELECT user_id, first_name, username
+            FROM chat_seen_people
+            WHERE chat_id = $1 AND lower(username) = lower($2)
+            ORDER BY seen_at DESC NULLS LAST
+            LIMIT 1
+            """,
+            int(chat_id),
+            username,
+        )
+    except Exception:
+        return None
+    if not row or not row["user_id"]:
+        return None
+    return {
+        "user_id": int(row["user_id"]),
+        "first_name": row["first_name"] or "",
+        "username": row["username"] or username,
+    }
+
+
+async def _seen_name(query: str, chat_id: Optional[int]) -> dict:
+    """Один человек с таким именем в этой группе. Несколько — не выбираем наугад."""
+    text = " ".join(str(query or "").split())
+    if not chat_id or not text:
+        return {}
+    try:
+        from db import db
+
+        pool = getattr(db, "pool", None)
+        if pool is None:
+            return {}
+        rows = await pool.fetch(
+            """
+            SELECT user_id, first_name, last_name, username
+            FROM chat_seen_people
+            WHERE chat_id = $1
+              AND lower(trim(both from concat_ws(' ', first_name, last_name))) = lower($2)
+            ORDER BY seen_at DESC NULLS LAST
+            LIMIT 3
+            """,
+            int(chat_id),
+            text,
+        )
+    except Exception:
+        return {}
+    people = []
+    seen_ids = set()
+    for row in rows or []:
+        uid = int(row["user_id"] or 0)
+        if uid <= 0 or uid in seen_ids:
+            continue
+        seen_ids.add(uid)
+        people.append({
+            "user_id": uid,
+            "first_name": " ".join(str(part or "") for part in (row["first_name"], row["last_name"])).strip(),
+            "username": row["username"],
+        })
+    if len(people) == 1:
+        return {"one": people[0]}
+    if len(people) > 1:
+        return {"many": True}
+    return {}
+
+
+def _glance_seen(person: dict, username: str = "") -> dict:
+    uid = int(person.get("user_id") or 0)
+    silent = name_is_placeholder(person.get("first_name"), uid)
+    return {
+        "status": "silent" if silent else "outside",
+        "user": _preview(
+            uid,
+            person.get("first_name") or "",
+            person.get("username") or username or None,
+            outside=True,
+            silent=silent,
+        ),
+        "message": GLANCE_SILENT if silent else GLANCE_OUTSIDE,
+    }
+
+
 async def glance_person(
     query: str,
     chat_id: Optional[int] = None,
@@ -463,10 +556,22 @@ async def glance_person(
     tg_api: Optional[TgApi] = None,
     load_row: Optional[Callable[[int], Awaitable[Any]]] = None,
     load_username: Optional[Callable[[str], Awaitable[Any]]] = None,
+    load_seen: Optional[Callable[..., Awaitable[Any]]] = None,
+    load_named: Optional[Callable[..., Awaitable[Any]]] = None,
 ) -> dict:
     """Подсказка в поле поиска. В базу ничего не пишет."""
     parsed = parse_offender_query(query)
     kind = parsed.get("kind")
+    if kind == "name" and chat_id:
+        finder = load_named or _seen_name
+        try:
+            named = await finder(query, chat_id)
+        except Exception:
+            named = {}
+        if isinstance(named, dict) and named.get("one"):
+            return _glance_seen(named["one"])
+        if isinstance(named, dict) and named.get("many"):
+            return {"status": "name", "user": None, "message": NAME_MANY}
     if kind in ("empty", "bad", "name"):
         return {"status": kind if kind != "empty" else "empty", "user": None, "message": _refusal_for(kind or "empty")}
     by_id = load_row or _load_row
@@ -504,6 +609,16 @@ async def glance_person(
     looked = await ask_telegram_username(username, tg_api=tg_api)
     person = looked.get("person")
     uid = int(person["user_id"]) if person else 0
+    if looked.get("kind") == "person" and person:
+        return _glance_from_telegram(uid, looked, username=username)
+    if chat_id and looked.get("kind") not in ("place", "bot", "denied"):
+        finder = load_seen or _seen_username
+        try:
+            seen = await finder(username, chat_id)
+        except Exception:
+            seen = None
+        if isinstance(seen, dict) and int(seen.get("user_id") or 0) > 0:
+            return _glance_seen(seen, username)
     return _glance_from_telegram(uid, looked, username=username)
 
 

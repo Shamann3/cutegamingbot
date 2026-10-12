@@ -205,6 +205,44 @@ async def _rejects():
     assert "не знает ID" in str(raised.value)
 
 
+def test_a_username_telegram_missed_still_uses_someone_the_group_has_seen():
+    import asyncio
+    asyncio.run(_seen_username_and_name())
+
+
+async def _seen_username_and_name():
+    async def missing(*_args, **_kwargs):
+        return {"ok": False, "description": "chat not found"}
+
+    async def empty(_value):
+        return None
+
+    async def seen(username, chat_id):
+        assert username == "quietuser1"
+        assert chat_id == -100
+        return {"user_id": 4242424242, "first_name": "Seen", "username": username}
+
+    glance = await glance_person(
+        "@quietuser1", -100, tg_api=missing, load_row=empty, load_username=empty, load_seen=seen,
+    )
+    assert glance["status"] == "outside"
+    assert glance["user"]["userId"] == 4242424242
+
+    async def named(_query, chat_id):
+        assert chat_id == -100
+        return {"one": {"user_id": 77, "first_name": "Seen", "username": None}}
+
+    by_name = await glance_person("Seen Person", -100, tg_api=missing, load_named=named)
+    assert by_name["user"]["userId"] == 77
+
+    async def several(_query, _chat_id):
+        return {"many": True}
+
+    crowded = await glance_person("Seen Person", -100, tg_api=missing, load_named=several)
+    assert crowded["user"] is None
+    assert crowded["status"] == "name"
+
+
 def test_a_spoken_refusal_is_shown_as_written():
     assert failure_text({"spoken": SHORT, "telegram": "USER_ID_INVALID"}) == SHORT
     assert account_missing_text("Bad Request: user not found") is True

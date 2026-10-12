@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   actChatAdmin,
   adviseChatApplication,
@@ -85,7 +86,7 @@ function verdictLabel(verdict) {
   return verdict === 'fit' ? 'Подходит' : 'Не подходит'
 }
 
-export default function ChatAdmins({ chatId }) {
+export default function ChatAdmins({ chatId, onOpenUser = null }) {
   const [tab, setTab] = useState('people')
   const [board, setBoard] = useState(null)
   const [apps, setApps] = useState(null)
@@ -218,7 +219,13 @@ export default function ChatAdmins({ chatId }) {
               return (
                 <li key={person.userId} className="chat-admins-card" style={{ animationDelay: `${index * 40}ms` }}>
                   <div className="chat-admins-head">
-                    <strong>{heading.name}</strong>
+                    {onOpenUser && person.userId ? (
+                      <button type="button" className="e-user-link" onClick={() => onOpenUser(person.userId)}>
+                        {heading.name}
+                      </button>
+                    ) : (
+                      <strong>{heading.name}</strong>
+                    )}
                     <span className="chat-admins-status">{heading.role}</span>
                   </div>
                   {heading.meta ? <p>{heading.meta}</p> : null}
@@ -277,22 +284,35 @@ export default function ChatAdmins({ chatId }) {
             </p>
           )}
 
-          {pending && (
-            <div className="chat-admins-confirm" role="dialog" aria-label="Подтверждение">
-              <p>
-                {pending.action === 'demote'
-                  ? (creator
-                    ? `Снять админку: ${pending.name} станет обычным участником.`
-                    : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
-                  : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
-              </p>
-              <div>
-                <button type="button" disabled={busy} onClick={() => setPending(null)}>Назад</button>
-                <button type="button" className="is-danger" disabled={busy} onClick={commit}>
-                  {busy ? 'Записываем…' : 'Подтвердить'}
-                </button>
+          {pending && createPortal(
+            <div
+              className="chat-admins-confirm-layer"
+              role="presentation"
+              onClick={() => { if (!busy) setPending(null) }}
+            >
+              <div
+                className="chat-admins-confirm"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Подтверждение"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <p>
+                  {pending.action === 'demote'
+                    ? (creator
+                      ? `Снять админку: ${pending.name} станет обычным участником.`
+                      : `Заявка создателю @JerichoCute: снять ${pending.name}. Он примет или отклонит в личных сообщениях.`)
+                    : `Ограничить права: ${pending.name} останется администратором, но без удаления, банов и назначения.`}
+                </p>
+                <div>
+                  <button type="button" disabled={busy} onClick={() => setPending(null)}>Назад</button>
+                  <button type="button" className="is-danger" disabled={busy} onClick={commit}>
+                    {busy ? 'Записываем…' : 'Подтвердить'}
+                  </button>
+                </div>
               </div>
-            </div>
+            </div>,
+            document.body,
           )}
 
           <h3 className="realm-h">Журнал</h3>
@@ -330,7 +350,13 @@ export default function ChatAdmins({ chatId }) {
               return (
                 <li key={item.id} className="chat-admins-card">
                   <div className="chat-admins-head">
-                    <strong>{item.name || `ID ${item.userId}`}</strong>
+                    {onOpenUser && item.userId ? (
+                      <button type="button" className="e-user-link" onClick={() => onOpenUser(item.userId)}>
+                        {item.name || `ID ${item.userId}`}
+                      </button>
+                    ) : (
+                      <strong>{item.name || `ID ${item.userId}`}</strong>
+                    )}
                     <span className="chat-admins-status">{item.position}</span>
                   </div>
                   <p>
