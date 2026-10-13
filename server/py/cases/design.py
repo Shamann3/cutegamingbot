@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import random
 
-KEY_PREMIUM = "5278573677900752088"
+KEY_PREMIUM = "5330115548900501467"
+NEED_KEY_EMOJI = "🙂"
+NEED_KEY_PREMIUM = "5350585998688430541"
+HOW_ICON = "5357371226677359435"
 CASE_PREMIUM = {
     "small": "5379808153011502648",
     "mid": "5375106250449100282",
@@ -96,15 +99,26 @@ def mark(emoji: str, premium: str) -> str:
     return f"<tg-emoji emoji-id=\"{premium}\">{emoji}</tg-emoji>"
 
 
+def buy_label(name: str) -> str:
+    title = " ".join(str(name or "предмет").split()).casefold()
+    return f"Купить {title}"
+
+
+def open_label(name: str) -> str:
+    title = " ".join(str(name or "кейс").split()).casefold()
+    return f"Открыть {title}"
+
+
 def key_text() -> str:
     icon = mark(KEY["emoji"], KEY["premium"])
-    return f"{icon} <b>Нужен кейс</b>\n<i>Кнопка откроет покупку.</i>"
+    return f"{icon} <b>Нужен кейс</b>\n<i>Кнопка купит его.</i>"
 
 
 def need_key_text(case_id: str) -> str:
     item = case_by_id(case_id) or _DEFAULTS[0]
     icon = mark(item["emoji"], item["premium"])
-    return f"{icon} <b>Нужен ключ</b>\n<i>Купите <code>🔑</code>. Кнопка откроет покупку.</i>"
+    key = mark(KEY["emoji"], KEY["premium"])
+    return f"{icon} <b>Нужен ключ</b>\n{key} <i>Кнопка купит его.</i>"
 
 
 def held_text(name: str, emoji: str, premium: str) -> str:
@@ -197,8 +211,8 @@ def owns(items: dict, item: dict, dex_id=None) -> bool:
 
 def found_text(name: str, emoji: str, premium: str, where: str, place: str) -> str:
     return (
-        f"<b>{mark(emoji, premium)} {name} есть {where}</b>\n"
-        f"<i>Кнопка откроет {place}.</i>"
+        f"{mark(emoji, premium)} <b>{name}</b>\n"
+        f"<i>Есть {where}. Кнопка купит его.</i>"
     )
 
 
@@ -229,7 +243,7 @@ def button_owner(data: str):
     parts = str(data or "").split(":")
     if len(parts) < 3 or parts[0] != "cs":
         return None
-    if parts[1] in {"guide", "open"}:
+    if parts[1] in {"guide", "open", "go"}:
         if len(parts) >= 4 and parts[-1].isdigit():
             return int(parts[-1])
         return None
@@ -337,7 +351,7 @@ def _dots(value: int) -> str:
 
 def guide_home(*, has_key: bool, held: list[dict], open_now: bool = True) -> str:
     """Первый экран: открыть, купить недостающее или подождать кассу."""
-    title = f"{mark(KEY['emoji'], KEY['premium'])} <b>Кейсы</b>"
+    title = f"<tg-emoji emoji-id='5357105716094085394'>⚫️</tg-emoji> <b>Кейсы</b>"
     if not open_now:
         return f"{title}\n<i>Временно недоступны. Нужно немного подождать.</i>"
     if has_key and held:
@@ -348,7 +362,8 @@ def guide_home(*, has_key: bool, held: list[dict], open_now: bool = True) -> str
     if has_key:
         return f"{title}\n<i>Нужен кейс.</i>"
     if held:
-        return f"{title}\n<i>Нужен ключ.</i>"
+        smile = mark(NEED_KEY_EMOJI, NEED_KEY_PREMIUM)
+        return f"{smile} <b>Кейсы</b>\n<i>Нужен ключ.</i>"
     return f"{title}\n<i>Нужны ключ и кейс.</i>"
 
 
@@ -361,8 +376,8 @@ def guide_how(ceilings: list[int]) -> str:
         caps.append(int(items[len(caps)]["max"]))
     short = {"small": "Маленький", "mid": "Средний", "large": "Большой"}
     lines = [
-        f"{mark(KEY['emoji'], KEY['premium'])} <b>Как открыть</b>",
-        "<i>Ключ и кейс. Затем «Открыть» или команда.</i>",
+        f"<tg-emoji emoji-id='5357421327470866510'>⚫️</tg-emoji> <b>Как открыть</b>",
+        "<i>Ключ и кейс. Затем «Открыть» или команда.</i>\n",
     ]
     for item in items:
         lines.append(f"<code>использовать {item['emoji']}</code>")
@@ -370,7 +385,7 @@ def guide_how(ceilings: list[int]) -> str:
         f"{short[item['id']]} до <b>{_dots(cap)}</b>"
         for item, cap in zip(items, caps)
     ))
-    lines.append("<i>Ключ и кейс сгорают. Приходит выпавшее число.</i>")
+    lines.append("<i>Ключ и кейс сгорают.</i>")
     return "\n".join(lines)
 
 

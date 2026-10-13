@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server" / "py"))
 
 from cases.design import (
-    KEY_PREMIUM,
     average,
     button_owner,
     check_rules,
@@ -14,8 +13,13 @@ from cases.design import (
     guide_home,
     guide_how,
     is_case_ask,
+    HOW_ICON,
+    KEY_PREMIUM,
+    NEED_KEY_PREMIUM,
+    buy_label,
     key_text,
     match_bought,
+    open_label,
     need_key_text,
     owns,
     ready_open_text,
@@ -31,9 +35,10 @@ from cases.design import (
 def test_key_and_case_copy_use_the_given_premium_ids():
     key = key_text()
     need = need_key_text("small")
+    assert KEY_PREMIUM == "5330115548900501467"
     assert KEY_PREMIUM in key
+    assert KEY_PREMIUM in need
     assert "5379808153011502648" in need
-    assert "<code>" in need
     assert "5927197049077372412" in need_key_text("large")
     assert "5375106250449100282" in need_key_text("mid")
 
@@ -125,8 +130,20 @@ def test_case_words_open_the_guide():
     assert "Нужен кейс" in home
     how = guide_how([50, 70, 170])
     assert "<code>использовать 📦</code>" in how
-    assert "5278573677900752088" in how
     assert "до <b>170</b>" in how
+    waiting = guide_home(has_key=False, held=[{"emoji": "📦"}])
+    assert NEED_KEY_PREMIUM in waiting
+    assert "Нужен ключ" in waiting
+    assert buy_label("Маленький кейс") == "Купить маленький кейс"
+    assert buy_label("Ключ") == "Купить ключ"
+    assert open_label("Большой кейс") == "Открыть большой кейс"
+    assert HOW_ICON == "5357371226677359435"
+    assert button_owner(stamp_callback("cs:go:shop-4", 9)) == 9
+    assert button_owner("cs:go:shop-4") is None
+    desk = (Path(__file__).resolve().parents[1] / "bot" / "funcs" / "case_desk.py").read_text(encoding="utf-8")
+    assert "_guide_button(\"Назад\", where, user_id, \"\")" in desk
+    assert "Открыть покупку" not in desk
+    assert "Эта кнопка не ваша" in desk
     stamped = stamp_callback("cs:guide:how", 7)
     assert button_owner(stamped) == 7
 

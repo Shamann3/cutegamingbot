@@ -19,7 +19,9 @@ if str(_py) not in sys.path:
     sys.path.insert(0, str(_py))
 
 from cases.design import (  # noqa: E402
+    HOW_ICON,
     KEY,
+    buy_label,
     button_owner,
     case_by_id,
     closed_text,
@@ -36,6 +38,7 @@ from cases.design import (  # noqa: E402
     own_lot_text,
     HISTORY,
     found_text,
+    open_label,
     owns,
     public_case,
     ready_open_text,
@@ -336,9 +339,15 @@ async def _offer(item: dict):
     }
 
 
+def _safe_startapp(startapp: str) -> bool:
+    raw = str(startapp or "")
+    kind, _, item_id = raw.partition("-")
+    return kind in {"shop", "market", "own"} and item_id.isdigit()
+
+
 def _find_button(target: str, user_id: int, origin: str = "home") -> InlineKeyboardButton:
     item = face(target)
-    title = item["name"] if item else "Предмет"
+    title = buy_label(item["name"]) if item else "Купить предмет"
     emoji = item["premium"] if item else ""
     step = origin if origin in {"home", "how"} else "home"
     return _button(title, stamp_callback(f"cs:find:{target}:{step}", user_id), emoji)
@@ -346,13 +355,41 @@ def _find_button(target: str, user_id: int, origin: str = "home") -> InlineKeybo
 
 def _open_case_button(case_id: str, user_id: int) -> InlineKeyboardButton:
     item = face(case_id)
-    return _button("Открыть", stamp_callback(f"cs:open:{case_id}", user_id), item["premium"] if item else "")
+    title = open_label(item["name"]) if item else "Открыть кейс"
+    return _button(title, stamp_callback(f"cs:open:{case_id}", user_id), item["premium"] if item else "")
 
 
 def _back_button(user_id: int, step: str = "home") -> InlineKeyboardButton:
     where = step if step in {"home", "how"} else "home"
-    icon = KEY["premium"] if where == "home" else ""
-    return _guide_button("Назад", where, user_id, icon)
+    return _guide_button("Назад", where, user_id, "")
+
+
+def _link_button(text: str, startapp: str, private: bool, emoji: str, user_id: int) -> InlineKeyboardButton:
+    """В личке раздел открывается сразу. В группе ссылку получает только хозяин кнопки."""
+    if private:
+        return _open_button(text, startapp, True, emoji)
+    return _button(text, stamp_callback(f"cs:go:{startapp}", user_id), emoji)
+
+
+def _buy_open_button(name: str, startapp: str, private: bool, emoji: str, user_id: int) -> InlineKeyboardButton:
+    return _link_button(buy_label(name), startapp, private, emoji, user_id)
+
+
+async def _dm_button(user_id: int, text: str, button: InlineKeyboardButton) -> bool:
+    """Кнопка покупки уходит в личку, чтобы в группе её нажал только хозяин."""
+    try:
+        from main import bot
+        await bot.send_message(
+            int(user_id),
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[button]]),
+        )
+        return True
+    except Exception:
+        log.exception("case dm")
+        return False
 
 
 def _with_back(rows: list, user_id: int, step: str = "home") -> InlineKeyboardMarkup:
@@ -408,7 +445,7 @@ async def _guide_payload(user_id: int, step: str = "home"):
     for case_id in ("small", "mid", "large"):
         if not any(item["id"] == case_id for item in held):
             rows.append([_find_button(case_id, user_id, "home")])
-    rows.append([_guide_button("Как открыть", "how", user_id, KEY["premium"])])
+    rows.append([_guide_button("Как открыть", "how", user_id, HOW_ICON)])
     return guide_home(has_key=has_key, held=held, open_now=open_now), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -420,7 +457,7 @@ async def open_guide(message) -> None:
         log.exception("case guide")
         text = guide_home(has_key=False, held=[])
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [_guide_button("Как открыть", "how", user_id, KEY["premium"])],
+            [_guide_button("Как открыть", "how", user_id, HOW_ICON)],
         ])
     await message.reply(
         text,
@@ -605,6 +642,9 @@ async def _show(call, text: str, markup: InlineKeyboardMarkup | None, target: st
 async def case_click(call):
     data = call.data or ""
     owner = button_owner(data)
+    if getattr(call, "from_user", None) is None:
+        await call.answer("Эта кнопка не ваша", show_alert=True)
+        return
     clicker = int(call.from_user.id)
     if owner is None:
         await call.answer("Кнопка устарела", show_alert=True)
@@ -634,6 +674,25 @@ async def case_click(call):
         except Exception:
             log.exception("case open button")
             await _show(call, closed_text(), _desk_markup(clicker, back=True), "")
+        return
+    if parts[1:2] == ["go"]:
+        startapp = parts[2] if len(parts) >= 3 else ""
+        if not _safe_startapp(startapp):
+            await call.answer("Покупка не открылась", show_alert=True)
+            return
+        kind, _, raw_id = startapp.partition("-")
+        row = await db.pool.fetchrow("SELECT name FROM dex WHERE id = $1", int(raw_id))
+        name = str(row["name"]) if row and row["name"] else "предмет"
+        title = "Снять лот" if kind == "own" else buy_label(name)
+        sent = await _dm_button(
+            clicker,
+            f"<b>{title}</b>",
+            _open_button(title, startapp, True, ""),
+        )
+        if not sent:
+            await call.answer("Напишите боту в личные сообщения — туда придёт кнопка", show_alert=True)
+            return
+        await call.answer("Кнопка в личных сообщениях")
         return
     target = find_target(data)
     item = face(target)
@@ -676,8 +735,20 @@ async def case_click(call):
         lot = await _own_lot(clicker, item)
         private = _private(call.message)
         if lot:
+            if not private:
+                sent = await _dm_button(
+                    clicker,
+                    own_lot_text(item["name"], item["emoji"], item["premium"]),
+                    _open_button("Снять лот", lot["startapp"], True, item["premium"]),
+                )
+                if not sent:
+                    await call.answer("Напишите боту в личные сообщения — туда придёт кнопка", show_alert=True)
+                    return
+                await _show(call, own_lot_text(item["name"], item["emoji"], item["premium"]), _with_back([], clicker, origin), target)
+                await call.answer("Кнопка в личных сообщениях")
+                return
             markup = _with_back(
-                [[_open_button("Снять лот", lot["startapp"], private, item["premium"])]],
+                [[_link_button("Снять лот", lot["startapp"], True, item["premium"], clicker)]],
                 clicker,
                 origin,
             )
@@ -694,17 +765,25 @@ async def case_click(call):
             )
             await call.answer()
             return
+        note = found_text(item["name"], item["emoji"], item["premium"], offer["where"], offer["place"])
+        if not private:
+            sent = await _dm_button(
+                clicker,
+                note,
+                _open_button(buy_label(item["name"]), offer["startapp"], True, item["premium"]),
+            )
+            if not sent:
+                await call.answer("Напишите боту в личные сообщения — туда придёт кнопка покупки", show_alert=True)
+                return
+            await _show(call, note, _with_back([], clicker, origin), target)
+            await call.answer("Кнопка покупки в личных сообщениях")
+            return
         markup = _with_back(
-            [[_open_button("Открыть покупку", offer["startapp"], private, item["premium"])]],
+            [[_buy_open_button(item["name"], offer["startapp"], True, item["premium"], clicker)]],
             clicker,
             origin,
         )
-        await _show(
-            call,
-            found_text(item["name"], item["emoji"], item["premium"], offer["where"], offer["place"]),
-            markup,
-            target,
-        )
+        await _show(call, note, markup, target)
         await call.answer("Смотрю магазин и биржу")
     except Exception:
         log.exception("case find")

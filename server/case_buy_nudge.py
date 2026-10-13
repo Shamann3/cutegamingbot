@@ -13,11 +13,12 @@ if _py not in sys.path:
     sys.path.insert(0, _py)
 
 from cases.design import (  # noqa: E402
-    KEY,
     face,
+    buy_label,
     key_text,
     match_bought,
     need_key_text,
+    open_label,
     owns,
     ready_open_text,
     stamp_callback,
@@ -28,7 +29,7 @@ from json_db_codec import decode_json_payload  # noqa: E402
 def _button(target: str, user_id: int) -> dict:
     item = face(target) or {}
     fields = {
-        "text": item.get("name") or "Предмет",
+        "text": buy_label(item.get("name") or "предмет"),
         "callback_data": stamp_callback(f"cs:find:{target}:home", int(user_id)),
     }
     premium = str(item.get("premium") or "")
@@ -40,7 +41,7 @@ def _button(target: str, user_id: int) -> dict:
 def _open_button(case_id: str, user_id: int) -> dict:
     item = face(case_id) or {}
     fields = {
-        "text": "Открыть",
+        "text": open_label(item.get("name") or "кейс"),
         "callback_data": stamp_callback(f"cs:open:{case_id}", int(user_id)),
     }
     premium = str(item.get("premium") or "")
@@ -50,14 +51,10 @@ def _open_button(case_id: str, user_id: int) -> dict:
 
 
 def _back_button(user_id: int) -> dict:
-    fields = {
+    return {
         "text": "Назад",
         "callback_data": stamp_callback("cs:guide:home", int(user_id)),
     }
-    premium = str(KEY.get("premium") or "")
-    if premium.isdigit():
-        fields["icon_custom_emoji_id"] = premium
-    return fields
 
 
 async def _edit(chat_id: int, message_id: int, text: str, rows: list) -> bool:
