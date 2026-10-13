@@ -459,7 +459,7 @@ async def explain_key(user_id: int, message) -> None:
     if held and await _fund_open():
         rows = [[_open_case_button(item["id"], user_id)] for item in held]
         await message.reply(
-            ready_open_text(held),
+            ready_open_text(held, button=True),
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=_with_back(rows, user_id),
@@ -687,7 +687,7 @@ async def case_click(call):
                 held = await _held_cases(clicker, bag)
                 if held and await _fund_open():
                     rows = [[_open_case_button(held_item["id"], clicker)] for held_item in held]
-                    await _show(call, ready_open_text(held), _with_back(rows, clicker, origin), "")
+                    await _show(call, ready_open_text(held, button=True), _with_back(rows, clicker, origin), "")
                 elif held:
                     await _show(call, closed_text(), _with_back([], clicker, origin), "")
                 else:
@@ -696,7 +696,7 @@ async def case_click(call):
             elif await _holds(clicker, KEY, bag) and await _fund_open():
                 await _show(
                     call,
-                    ready_open_text([item]),
+                    ready_open_text([item], button=True),
                     _with_back([[_open_case_button(target, clicker)]], clicker, origin),
                     "",
                 )

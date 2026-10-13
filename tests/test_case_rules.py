@@ -128,9 +128,17 @@ def test_case_words_open_the_guide():
         assert not is_case_ask(phrase), phrase
     home = guide_home(has_key=True, held=[])
     assert "Нужен кейс" in home
+    empty = guide_home(has_key=False, held=[])
+    assert "<code>использовать 📦</code>" in empty
+    assert "один кейс" in empty
     how = guide_how([50, 70, 170])
     assert "<code>использовать 📦</code>" in how
     assert "до <b>170</b>" in how
+    assert "Вы можете открыть кейс, написав одно из сообщений ниже." in how
+    assert "или команда" not in how
+    nudge = (Path(__file__).resolve().parents[1] / "server" / "case_buy_nudge.py").read_text(encoding="utf-8")
+    imported = nudge.split("from cases.design import", 1)[1].split(")", 1)[0]
+    assert "KEY" in imported
     waiting = guide_home(has_key=False, held=[{"emoji": "📦"}])
     assert NEED_KEY_PREMIUM in waiting
     assert "Нужен ключ" in waiting
@@ -154,7 +162,9 @@ def test_ready_case_is_one_command_and_no_button_copy():
     small = case_by_id("small")
     text = ready_open_text([small])
     assert "<code>использовать 📦</code>" in text
-    assert "Можно открыть" in text
+    assert "Вы можете открыть маленький кейс." in text
+    fresh = ready_open_text([small], fresh=True)
+    assert "Теперь вы можете открыть маленький кейс, написав сообщение ниже." in fresh
     assert owns({"Маленький кейс": 1}, small)
     assert owns({"4": 1}, small, 4)
     assert not owns({"Ключ": 1}, small)

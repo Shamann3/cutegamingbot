@@ -13,15 +13,16 @@ if _py not in sys.path:
     sys.path.insert(0, _py)
 
 from cases.design import (  # noqa: E402
-    face,
+    KEY,
     buy_label,
+    face,
     key_text,
     match_bought,
     need_key_text,
-    open_label,
     owns,
     ready_open_text,
     stamp_callback,
+    use_lines,
 )
 from json_db_codec import decode_json_payload  # noqa: E402
 
@@ -31,18 +32,6 @@ def _button(target: str, user_id: int) -> dict:
     fields = {
         "text": buy_label(item.get("name") or "предмет"),
         "callback_data": stamp_callback(f"cs:find:{target}:home", int(user_id)),
-    }
-    premium = str(item.get("premium") or "")
-    if premium.isdigit():
-        fields["icon_custom_emoji_id"] = premium
-    return fields
-
-
-def _open_button(case_id: str, user_id: int) -> dict:
-    item = face(case_id) or {}
-    fields = {
-        "text": open_label(item.get("name") or "кейс"),
-        "callback_data": stamp_callback(f"cs:open:{case_id}", int(user_id)),
     }
     premium = str(item.get("premium") or "")
     if premium.isdigit():
@@ -140,15 +129,22 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
             if case and case["id"] != "key" and owns(bag, case, dex_ids.get(case["id"]))
         ]
         has_key = owns(bag, KEY, dex_ids.get("key"))
-        rows = []
+        if bought != "key" and item and not any(case["id"] == item["id"] for case in held_cases):
+            held_cases.append(item)
         opened = face(wanted) if key_finishes_case else None
-        ready = [opened] if opened and owns(bag, opened, dex_ids.get(opened["id"])) else held_cases
-        if bought == "key" and ready:
-            text = ready_open_text(ready)
-            rows = [[_open_button(case["id"], user_id)] for case in ready if case]
-        elif bought != "key" and has_key:
-            text = ready_open_text([item])
-            rows = [[_open_button(item["id"], user_id)]]
+        if opened and owns(bag, opened, dex_ids.get(opened["id"])):
+            if not any(case["id"] == opened["id"] for case in held_cases):
+                held_cases.append(opened)
+        rows = []
+        if held_cases and has_key:
+            text = ready_open_text(held_cases, fresh=True)
+        elif held_cases:
+            text = (
+                f"{need_key_text(held_cases[0]['id'])}\n"
+                "<i>Потом напишите сообщение ниже.</i>\n"
+                f"{use_lines(held_cases)}"
+            )
+            rows = [[_button("key", user_id)]]
         elif bought == "key":
             text = key_text()
             rows = [[_button(case_id, user_id)] for case_id in ("small", "mid", "large")]
@@ -160,4 +156,4 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
         if edited:
             await pool.execute("DELETE FROM case_buy_prompts WHERE user_id = $1", int(user_id))
     except Exception:
-        log.warning("case buy nudge skipped")
+        log.exception("case buy nudge skipped")

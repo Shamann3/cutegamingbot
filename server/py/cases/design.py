@@ -111,14 +111,20 @@ def open_label(name: str) -> str:
 
 def key_text() -> str:
     icon = mark(KEY["emoji"], KEY["premium"])
-    return f"{icon} <b>Нужен кейс</b>\n<i>Кнопка купит его.</i>"
+    return (
+        f"{icon} <b>Нужен кейс</b>\n"
+        "<i>Кнопка ниже купит его. Потом кейс открывается сообщением.</i>"
+    )
 
 
 def need_key_text(case_id: str) -> str:
     item = case_by_id(case_id) or _DEFAULTS[0]
     icon = mark(item["emoji"], item["premium"])
     key = mark(KEY["emoji"], KEY["premium"])
-    return f"{icon} <b>Нужен ключ</b>\n{key} <i>Кнопка купит его.</i>"
+    return (
+        f"{icon} <b>Нужен ключ</b>\n"
+        f"{key} <i>Кнопка ниже купит его. Потом напишите сообщение с кейсом.</i>"
+    )
 
 
 def held_text(name: str, emoji: str, premium: str) -> str:
@@ -128,16 +134,62 @@ def held_text(name: str, emoji: str, premium: str) -> str:
     )
 
 
-def ready_open_text(items: list[dict]) -> str:
-    """Ключ и кейс уже есть. Одна команда — и кнопка «Открыть»."""
-    blocks = []
-    for item in items:
+def use_lines(items: list[dict]) -> str:
+    """Команда для каждого кейса, который уже есть у человека."""
+    lines = []
+    seen = set()
+    for item in items or []:
         emoji = str(item.get("emoji") or "")
-        blocks.append(
-            f"{mark(emoji, str(item.get('premium') or ''))} <b>Можно открыть</b>\n"
-            f"<code>использовать {emoji}</code>"
+        if not emoji or emoji in seen:
+            continue
+        seen.add(emoji)
+        lines.append(
+            f"{mark(emoji, str(item.get('premium') or ''))} <code>использовать {emoji}</code>"
         )
-    return "\n\n".join(blocks)
+    return "\n".join(lines)
+
+
+def _case_names(items: list[dict]) -> list[str]:
+    names = []
+    seen = set()
+    for item in items or []:
+        name = " ".join(str(item.get("name") or "").split()).casefold()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def open_lead(items: list[dict], *, fresh: bool = False, button: bool = False) -> str:
+    """До покупки — как открыть. Сразу после покупки — что писать теперь."""
+    names = _case_names(items)
+    one = len(names) == 1
+    which = names[0] if one else "кейс"
+    if fresh:
+        if one:
+            head = f"Теперь вы можете открыть {which}, написав сообщение ниже."
+        else:
+            head = "Теперь вы можете открыть кейс, написав одно из сообщений ниже."
+        return f"<b>{head}</b>"
+    if one:
+        head = f"Вы можете открыть {which}."
+        below = "Напишите сообщение ниже или нажмите кнопку." if button else "Напишите сообщение ниже."
+        return f"<b>{head}</b>\n<i>{below}</i>"
+    if button:
+        head = "Вы можете открыть кейс. Напишите одно из сообщений ниже или нажмите кнопку."
+    else:
+        head = "Вы можете открыть кейс, написав одно из сообщений ниже."
+    return f"<b>{head}</b>"
+
+
+def ready_open_text(items: list[dict], *, fresh: bool = False, button: bool = False) -> str:
+    """Команда под пояснением. fresh — только что купил. button — рядом есть «Открыть»."""
+    body = use_lines(items)
+    lead = open_lead(items, fresh=fresh, button=button)
+    if not body:
+        return lead
+    return f"{lead}\n{body}"
 
 
 def closed_text() -> str:
@@ -212,7 +264,7 @@ def owns(items: dict, item: dict, dex_id=None) -> bool:
 def found_text(name: str, emoji: str, premium: str, where: str, place: str) -> str:
     return (
         f"{mark(emoji, premium)} <b>{name}</b>\n"
-        f"<i>Есть {where}. Кнопка купит его.</i>"
+        f"<i>Есть {where}. Кнопка ниже откроет покупку.</i>"
     )
 
 
@@ -355,16 +407,18 @@ def guide_home(*, has_key: bool, held: list[dict], open_now: bool = True) -> str
     if not open_now:
         return f"{title}\n<i>Временно недоступны. Нужно немного подождать.</i>"
     if has_key and held:
-        lines = [title, "<i>Можно открыть.</i>"]
-        for item in held:
-            lines.append(f"<code>использовать {item.get('emoji') or ''}</code>")
-        return "\n".join(lines)
+        return f"{title}\n{ready_open_text(held, button=True)}"
     if has_key:
-        return f"{title}\n<i>Нужен кейс.</i>"
+        return f"{title}\n<i>Нужен кейс. Кнопка ниже купит его.</i>"
     if held:
         smile = mark(NEED_KEY_EMOJI, NEED_KEY_PREMIUM)
-        return f"{smile} <b>Кейсы</b>\n<i>Нужен ключ.</i>"
-    return f"{title}\n<i>Нужны ключ и кейс.</i>"
+        return f"{smile} <b>Кейсы</b>\n<i>Нужен ключ. Кнопка ниже купит его.</i>"
+    return (
+        f"{title}\n"
+        "<i>Купите ключ и один кейс. Потом напишите, например:</i>\n"
+        "<code>использовать 📦</code>\n"
+        "<i>Это маленький кейс. Остальные команды — в «Как открыть».</i>"
+    )
 
 
 def guide_how(ceilings: list[int]) -> str:
@@ -374,18 +428,16 @@ def guide_how(ceilings: list[int]) -> str:
     caps = list(ceilings or [])
     while len(caps) < 3:
         caps.append(int(items[len(caps)]["max"]))
-    short = {"small": "Маленький", "mid": "Средний", "large": "Большой"}
     lines = [
         f"<tg-emoji emoji-id='5357421327470866510'>⚫️</tg-emoji> <b>Как открыть</b>",
-        "<i>Ключ и кейс. Затем «Открыть» или команда.</i>\n",
+        "<i>Вы можете открыть кейс, написав одно из сообщений ниже.</i>",
     ]
-    for item in items:
-        lines.append(f"<code>использовать {item['emoji']}</code>")
-    lines.append(" · ".join(
-        f"{short[item['id']]} до <b>{_dots(cap)}</b>"
-        for item, cap in zip(items, caps)
-    ))
-    lines.append("<i>Ключ и кейс сгорают.</i>")
+    for item, cap in zip(items, caps):
+        lines.append(
+            f"<code>использовать {item['emoji']}</code>\n"
+            f"{item['name']} · до <b>{_dots(cap)}</b>"
+        )
+    lines.append("<i>Нужны ключ и кейс. После открытия оба исчезнут.</i>")
     return "\n".join(lines)
 
 
