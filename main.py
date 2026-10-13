@@ -41101,6 +41101,8 @@ async def botmain():
     import bot.funcs.water_games  # кнопки водных игр регистрируются до polling
     import bot.funcs.case_desk  # кнопки кейсов регистрируются до polling
     import bot.funcs.group_door
+    import bot.funcs.creator_join
+    bot.funcs.creator_join.bind(dp)
     bot.funcs.group_door.start(bot1)
     try:
         await bot.funcs.water_games.ensure()
@@ -41143,7 +41145,8 @@ async def botmain():
                 "callback_query",
                 "inline_query",
                 "chosen_inline_result",
-                "pre_checkout_query"
+                "pre_checkout_query",
+                "chat_join_request",
             ],
         )
 
