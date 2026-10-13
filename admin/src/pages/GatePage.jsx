@@ -8,7 +8,6 @@ import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
 import { usePerfMode } from '../lib/perfMode'
 import { playMeme } from '../lib/memeSounds'
-import { gateFlowMs } from './sections/GroupEnter'
 import AcceptedPass from '../components/AcceptedPass'
 
 /** Доступ ещё не сверен — двери уже видны и кликабельны. */
@@ -21,15 +20,13 @@ function detectStillGate() {
   return (navigator.hardwareConcurrency || 4) <= 2
 }
 
-function Door({ title, detail, mark, open, onClick, order = 0, busy = false, chosen = false }) {
+function Door({ title, detail, mark, open, onClick, order = 0 }) {
   return (
     <button
       type="button"
-      className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}${chosen ? ' is-chosen' : ''}`}
+      className={`gate-door gate-rise${open ? ' is-open' : ' is-sealed'}`}
       style={{ '--rise': order }}
       onClick={onClick}
-      disabled={busy}
-      aria-busy={busy || undefined}
     >
       <span className="gate-door-sheen" aria-hidden="true" />
       <span className="gate-door-title">{title}</span>
@@ -43,7 +40,7 @@ function CuteBrand() {
   return <span className="gate-brand-word">CuteGamingBot</span>
 }
 
-export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply }) {
+export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply, fault = '' }) {
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [colorOpen, setColorOpen] = useState(false)
@@ -53,14 +50,13 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const [hold, setHold] = useState('')
   const [pass, setPass] = useState('')
   const watched = useRef({ staff: false, group: false })
-  const [note, setNote] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [flow, setFlow] = useState('')
+  const [note, setNote] = useState(fault)
   const [still] = useState(detectStillGate)
   const { lightMode, setLightMode } = usePerfMode()
   const sparse = lightMode && !still
   const requestId = useRef(0)
   const flight = useRef(Promise.resolve(GUEST_PORTRAIT))
+  const pressLock = useRef(false)
 
   useEffect(() => {
     playMeme('gate')
@@ -150,17 +146,10 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             ? 'Должность уже есть. Сначала отправьте заявку — ключ придёт в бота.'
             : <>Для администратора группы. Нажмите — заявка. Ключ придёт в бота <CuteBrand />.</>
 
-  const sail = async (kind) => {
-    const ms = gateFlowMs()
-    if (!ms) return
-    setFlow(kind)
-    await new Promise((resolve) => window.setTimeout(resolve, ms))
-  }
-
   const pressStaff = async () => {
-    if (busy) return
+    if (pressLock.current) return
+    pressLock.current = true
     setNote('')
-    setBusy(true)
     try {
       let face = portrait
       if (checking) {
@@ -182,21 +171,18 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         onStaffApply()
         return
       }
-      try {
-        await sail('staff')
-        await onStaffEnter(face)
-      } catch (err) {
-        setNote(err?.message || 'Панель не открылась. Нажмите ещё раз.')
-      }
+      await onStaffEnter(face)
+    } catch (err) {
+      setNote(err?.message || 'Панель не открылась. Нажмите ещё раз.')
     } finally {
-      setBusy(false)
+      pressLock.current = false
     }
   }
 
   const pressGroup = async () => {
-    if (busy) return
+    if (pressLock.current) return
+    pressLock.current = true
     setNote('')
-    setBusy(true)
     try {
       let face = portrait
       if (checking) {
@@ -211,7 +197,6 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         }
       }
       if (face?.isProjectCreator) {
-        await sail('group')
         onGroupEnter(face)
         return
       }
@@ -223,15 +208,14 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
         onGroupApply()
         return
       }
-      await sail('group')
       onGroupEnter(face)
     } finally {
-      setBusy(false)
+      pressLock.current = false
     }
   }
 
   return (
-    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}${flow ? ' is-flow' : ''}`}>
+    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
       <MatrixRain
         className="gate-matrix"
         paused={still}
@@ -298,8 +282,6 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               mark={checking && !staffKnown && !error ? '…' : portrait.applicationStatus === 'pending' && !error && !portrait.isProjectCreator ? 'Ждёт' : staffKnown || error ? 'Войти' : 'Регистрация'}
               open={staffKnown || Boolean(error)}
               onClick={error ? onStaffEnter : pressStaff}
-              busy={busy}
-              chosen={flow === 'staff'}
               order={4}
             />
             <Door
@@ -308,8 +290,6 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
               mark={checking && !portrait.isProjectCreator && !portrait.groupCanEnter ? '…' : portrait.groupCanEnter || portrait.isProjectCreator ? 'Войти' : !error && portrait.groupApplicationStatus === 'pending' ? 'Ждёт' : 'Заявка'}
               open
               onClick={pressGroup}
-              busy={busy}
-              chosen={flow === 'group'}
               order={5}
             />
           </div>

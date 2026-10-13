@@ -320,8 +320,10 @@ body.perf-light .gate-matrix {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  flex-shrink: 0;
   gap: 10px;
   min-height: 210px;
+  height: auto;
   padding: 22px 22px 18px;
   border-radius: 22px;
   border: 1px solid var(--gate-line);
@@ -353,6 +355,7 @@ body.perf-light .gate-matrix {
 }
 
 .gate-door-title {
+  flex: 0 0 auto;
   font-size: clamp(22px, 3vw, 34px);
   line-height: 1.15;
   letter-spacing: -0.03em;
@@ -364,6 +367,7 @@ body.perf-light .gate-matrix {
 }
 
 .gate-door-detail {
+  flex: 0 0 auto;
   font-size: 14px;
   line-height: 1.4;
   max-width: 100%;
@@ -374,7 +378,9 @@ body.perf-light .gate-matrix {
 }
 
 .gate-door-mark {
+  flex: 0 0 auto;
   margin-top: auto;
+  padding-top: 8px;
   font-size: 12px;
   letter-spacing: 0.16em;
   text-transform: uppercase;

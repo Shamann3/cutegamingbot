@@ -1437,16 +1437,21 @@ body.perf-light .accent-aura-rain {
 
 @media (max-height: 900px) {
   .gate-door {
-    min-height: 156px !important;
-    padding: 14px 16px !important;
-    gap: 6px !important;
+    min-height: 0 !important;
+    height: auto !important;
+    flex-shrink: 0 !important;
+    padding: 16px 18px !important;
+    gap: 10px !important;
   }
 
   .gate-door-detail {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    display: block !important;
+    -webkit-line-clamp: unset !important;
+    overflow: visible !important;
+  }
+
+  .gate-door-mark {
+    margin-top: 6px !important;
   }
 }
 

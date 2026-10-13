@@ -117,6 +117,7 @@ function detectCalm() {
 export default function SecurityBoot({
   personal = false,
   kind = 'gate',
+  hold = false,
   onDone,
 }) {
   const scriptRef = useRef(null)
@@ -130,17 +131,30 @@ export default function SecurityBoot({
   const dataReadyRef = useRef(!script.needsData)
   const onDoneRef = useRef(onDone)
   const fired = useRef(false)
+  const holdRef = useRef(hold)
+  const wasHeld = useRef(false)
   onDoneRef.current = onDone
+  holdRef.current = hold
 
   useEffect(() => {
     playMeme('matrix')
   }, [])
 
   const finish = () => {
-    if (fired.current) return
+    if (fired.current || holdRef.current) return
     fired.current = true
     onDoneRef.current?.()
   }
+
+  useEffect(() => {
+    if (hold) {
+      wasHeld.current = true
+      return undefined
+    }
+    if (!wasHeld.current || progress < 1) return undefined
+    const timer = window.setTimeout(finish, 180)
+    return () => window.clearTimeout(timer)
+  }, [hold, progress])
 
   useEffect(() => {
     if (!script.needsData) return undefined

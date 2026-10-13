@@ -56,6 +56,8 @@ export default function App() {
   const [applyPreview, setApplyPreview] = useState(false)
   const [groupAgain, setGroupAgain] = useState('')
   const [channel, setChannel] = useState(null)
+  const [staffHold, setStaffHold] = useState(false)
+  const [gateFault, setGateFault] = useState('')
   const [rite, setRite] = useState('')
   const channelNext = useRef('gate')
   const riteNext = useRef('')
@@ -132,6 +134,9 @@ export default function App() {
 
   const openStaff = useCallback(async (fromGate) => {
     if (fromGate?.isProjectCreator) {
+      setGateFault('')
+      setStaffHold(true)
+      openChannel('staff', 'panel')
       try {
         const data = await enterAsCreator()
         if (!data?.token) throw new Error('Панель не открылась. Нажмите ещё раз.')
@@ -139,11 +144,14 @@ export default function App() {
       } catch (err) {
         if (!isAdminSessionValid()) {
           const text = String(err?.message || '')
-          throw new Error(text && !/ключ/i.test(text) ? text : 'Панель не открылась. Нажмите ещё раз.')
+          setGateFault(text && !/ключ/i.test(text) ? text : 'Панель не открылась. Нажмите ещё раз.')
+          setScreen('gate')
+          return
         }
+      } finally {
+        setStaffHold(false)
       }
       primeDashboardStats()
-      openChannel('staff', 'panel')
       return
     }
     if (isAdminSessionValid()) {
@@ -211,6 +219,7 @@ export default function App() {
       <SecurityBoot
         personal={accentIsPersonal(loadStoredAccent())}
         kind={channel}
+        hold={channel === 'staff' && staffHold}
         onDone={() => setScreen(channelNext.current)}
       />
     )
@@ -219,6 +228,7 @@ export default function App() {
   if (screen === 'gate') {
     return (
       <GatePage
+        fault={gateFault}
         onStaffEnter={openStaff}
         onStaffApply={openStaffApply}
         onGroupEnter={openGroup}

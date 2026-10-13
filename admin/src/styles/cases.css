@@ -29,12 +29,13 @@
 
 .case-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 14px;
 }
 
 .case-card {
-  padding: 16px;
+  min-width: 0;
+  padding: 18px 18px 16px;
   border-radius: 18px;
   background: var(--e-plate, #17171b);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -47,7 +48,8 @@
 }
 
 .case-shelf {
-  padding: 16px;
+  min-width: 0;
+  padding: 18px 18px 16px;
   border-radius: 18px;
   background: var(--e-plate, #17171b);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -72,17 +74,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--e-text-2, rgba(255, 255, 255, 0.62));
-}
-
-.case-shelf input {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 12px;
-  background: transparent;
-  color: inherit;
-  padding: 8px 10px;
-  font: inherit;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .case-shelf.is-saved {
@@ -197,20 +188,25 @@
 .case-card label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 14px;
+  min-width: 0;
   font-size: 12px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--e-text-2, rgba(255, 255, 255, 0.62));
 }
 
-.case-card input {
+.case-card input,
+.case-shelf input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.28);
   color: inherit;
-  padding: 8px 10px;
+  padding: 8px 12px;
   font: inherit;
   letter-spacing: 0;
   text-transform: none;
@@ -238,33 +234,78 @@
 .case-meter i:nth-child(5),
 .case-meter i:nth-child(6) { background: rgba(255, 255, 255, 0.28); }
 
+.case-sum {
+  margin: 16px 0 0;
+}
+
 .case-card ul {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 16px 0 0;
   padding: 0;
+  display: grid;
+  gap: 0;
 }
 
 .case-card li {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 12px;
   align-items: end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.case-card li .case-role {
+  margin: 0 0 2px;
+}
+
+.case-card li label {
+  margin-top: 0;
 }
 
 .case-card li button,
 .case-actions button {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  background: transparent;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
   color: inherit;
-  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: 0;
   cursor: pointer;
+}
+
+.case-card li button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.case-card li button:disabled,
+.case-actions button:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
 
 .case-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.case-actions button:last-child:not(:disabled) {
+  background: rgba(var(--e-accent-rgb, 244, 244, 244), 0.92);
+  color: #111;
+  border-color: transparent;
+  font-weight: 650;
 }
 
 .case-fault {
