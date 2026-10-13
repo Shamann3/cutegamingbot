@@ -42,6 +42,8 @@ describe('cases desk', () => {
     })
     render(<CasesSection />)
     expect(await screen.findByText(/В среднем/)).toBeTruthy()
+    expect(screen.getByText('Маленькая сумма')).toBeTruthy()
+    expect(screen.getByText('Потолок')).toBeTruthy()
     expect(screen.getByText(/Комиссии нет/)).toBeTruthy()
     fireEvent.change(screen.getByLabelText('Потолок Маленький кейс'), { target: { value: '40' } })
     fireEvent.change(screen.getByLabelText('Приз 1 Маленький кейс'), { target: { value: '8' } })

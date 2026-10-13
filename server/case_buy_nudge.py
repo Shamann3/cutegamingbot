@@ -15,6 +15,7 @@ if _py not in sys.path:
 from cases.design import (  # noqa: E402
     KEY,
     buy_label,
+    case_by_id,
     face,
     key_text,
     match_bought,
@@ -135,6 +136,16 @@ async def nudge_after_purchase(pool, user_id: int, item_id) -> None:
         if opened and owns(bag, opened, dex_ids.get(opened["id"])):
             if not any(case["id"] == opened["id"] for case in held_cases):
                 held_cases.append(opened)
+        try:
+            saved = await pool.fetch("SELECT case_id, max_cute FROM case_rules")
+        except Exception:
+            saved = []
+        ceilings = {str(row["case_id"]): int(row["max_cute"]) for row in saved}
+        for case in held_cases:
+            if not case:
+                continue
+            base = case_by_id(case["id"])
+            case["max"] = ceilings.get(case["id"], int(base["max"]) if base else 0)
         rows = []
         if held_cases and has_key:
             text = ready_open_text(held_cases, fresh=True)

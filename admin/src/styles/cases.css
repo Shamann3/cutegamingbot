@@ -3,8 +3,22 @@
   gap: 18px;
 }
 
-.case-head h2 {
+.case-head h2,
+.case-odds h3 {
   margin: 0 0 6px;
+}
+
+.case-odds p {
+  margin: 0;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.case-role {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
 }
 
 .case-head p,

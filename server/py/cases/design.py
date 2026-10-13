@@ -8,6 +8,8 @@ KEY_PREMIUM = "5330115548900501467"
 NEED_KEY_EMOJI = "🙂"
 NEED_KEY_PREMIUM = "5350585998688430541"
 HOW_ICON = "5357371226677359435"
+WHY_ICON = "5357314442914736629"
+WHY_MARK = "5354834614697370508"
 CASE_PREMIUM = {
     "small": "5379808153011502648",
     "mid": "5375106250449100282",
@@ -143,9 +145,12 @@ def use_lines(items: list[dict]) -> str:
         if not emoji or emoji in seen:
             continue
         seen.add(emoji)
-        lines.append(
-            f"{mark(emoji, str(item.get('premium') or ''))} <code>использовать {emoji}</code>"
-        )
+        lines.append(f"<code>использовать {emoji}</code>")
+        cap = item.get("max")
+        if cap:
+            name = " ".join(str(item.get("name") or "").split())
+            shown = f"до <b>{_dots(int(cap))}</b>"
+            lines.append(f"{name} · {shown}" if name else shown)
     return "\n".join(lines)
 
 
@@ -439,6 +444,31 @@ def guide_how(ceilings: list[int]) -> str:
         )
     lines.append("<i>Нужны ключ и кейс. После открытия оба исчезнут.</i>")
     return "\n".join(lines)
+
+
+def guide_why(ceilings: list[int]) -> str:
+    """Зачем кейсы и какой максимум у каждого."""
+    order = ("small", "mid", "large")
+    items = [case_by_id(case_id) for case_id in order]
+    caps = list(ceilings or [])
+    while len(caps) < 3:
+        caps.append(int(items[len(caps)]["max"]))
+    lines = [
+        (
+            f"<tg-emoji emoji-id=\"{WHY_MARK}\">⚫️</tg-emoji> "
+            "<b>Система кейсов была создана для того, чтобы пользователи проекта "
+            "могли дополнительно испытать свою удачу и заработать куты.</b>"
+        ),
+        "",
+        "<i>Максимум с кейса:</i>",
+    ]
+    for item, cap in zip(items, caps):
+        lines.append(f"{item['name']} — до <b>{_dots(cap)}</b>")
+    return "\n".join(lines)
+
+
+def ceiling_note(cap: int) -> str:
+    return f"<i>Максимум с этого кейса — <b>{_dots(int(cap))}</b> кут.</i>"
 
 
 # Настоящая команда предмета. «использовать кейс» — это вопрос, не расход.

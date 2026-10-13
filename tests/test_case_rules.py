@@ -12,8 +12,11 @@ from cases.design import (
     find_target,
     guide_home,
     guide_how,
+    guide_why,
+    use_lines,
     is_case_ask,
     HOW_ICON,
+    WHY_ICON,
     KEY_PREMIUM,
     NEED_KEY_PREMIUM,
     buy_label,
@@ -146,6 +149,14 @@ def test_case_words_open_the_guide():
     assert buy_label("Ключ") == "Купить ключ"
     assert open_label("Большой кейс") == "Открыть большой кейс"
     assert HOW_ICON == "5357371226677359435"
+    why = guide_why([50, 70, 170])
+    assert "5354834614697370508" in why
+    assert "до <b>50</b>" in why
+    assert "до <b>170</b>" in why
+    shown = use_lines([{"emoji": "📦", "name": "Маленький кейс", "max": 50, "premium": "5379808153011502648"}])
+    assert shown.startswith("<code>использовать 📦</code>")
+    assert "5379808153011502648" not in shown
+    assert "до <b>50</b>" in shown
     assert button_owner(stamp_callback("cs:go:shop-4", 9)) == 9
     assert button_owner("cs:go:shop-4") is None
     desk = (Path(__file__).resolve().parents[1] / "bot" / "funcs" / "case_desk.py").read_text(encoding="utf-8")
@@ -153,6 +164,9 @@ def test_case_words_open_the_guide():
     assert "Открыть покупку" not in desk
     assert "личные сообщения" not in desk
     assert "Эта кнопка не ваша" in desk
+    assert "Зачем нужны кейсы?" in desk
+    assert "WHY_ICON" in desk
+    assert WHY_ICON == "5357314442914736629"
     stamped = stamp_callback("cs:guide:how", 7)
     assert button_owner(stamped) == 7
 
@@ -162,6 +176,7 @@ def test_ready_case_is_one_command_and_no_button_copy():
     small = case_by_id("small")
     text = ready_open_text([small])
     assert "<code>использовать 📦</code>" in text
+    assert "5379808153011502648" not in text
     assert "Вы можете открыть маленький кейс." in text
     fresh = ready_open_text([small], fresh=True)
     assert "Теперь вы можете открыть маленький кейс, написав сообщение ниже." in fresh

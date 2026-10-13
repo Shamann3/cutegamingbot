@@ -20,16 +20,19 @@ if str(_py) not in sys.path:
 
 from cases.design import (  # noqa: E402
     HOW_ICON,
+    WHY_ICON,
     KEY,
     buy_label,
     button_owner,
     case_by_id,
+    ceiling_note,
     closed_text,
     face,
     find_target,
     fund_ids,
     guide_home,
     guide_how,
+    guide_why,
     is_case_ask,
     key_text,
     miss_text,
@@ -289,6 +292,8 @@ async def _held_cases(user_id: int, items: dict | None = None) -> list[dict]:
     for case_id in ("small", "mid", "large"):
         item = face(case_id)
         if item and await _holds(user_id, item, items):
+            rules = await _rules(case_id)
+            item["max"] = int(rules["max"])
             found.append(item)
     return found
 
@@ -405,6 +410,13 @@ async def _guide_payload(user_id: int, step: str = "home"):
     has_key = await _holds(user_id, KEY, bag)
     held = await _held_cases(user_id, bag)
     open_now = await _fund_open()
+    if step == "why":
+        ceilings = []
+        for case_id in ("small", "mid", "large"):
+            ceilings.append(int((await _rules(case_id))["max"]))
+        return guide_why(ceilings), InlineKeyboardMarkup(inline_keyboard=[
+            [_back_button(user_id, "home")],
+        ])
     if step == "how":
         ceilings = []
         for case_id in ("small", "mid", "large"):
@@ -415,6 +427,7 @@ async def _guide_payload(user_id: int, step: str = "home"):
         for case_id in ("small", "mid", "large"):
             if not any(item["id"] == case_id for item in held):
                 rows.append([_find_button(case_id, user_id, "how")])
+        rows.append([_guide_button("Зачем нужны кейсы?", "why", user_id, WHY_ICON)])
         rows.append([_back_button(user_id, "home")])
         return guide_how(ceilings), InlineKeyboardMarkup(inline_keyboard=rows)
     rows = []
@@ -427,6 +440,7 @@ async def _guide_payload(user_id: int, step: str = "home"):
         if not any(item["id"] == case_id for item in held):
             rows.append([_find_button(case_id, user_id, "home")])
     rows.append([_guide_button("Как открыть", "how", user_id, HOW_ICON)])
+    rows.append([_guide_button("Зачем нужны кейсы?", "why", user_id, WHY_ICON)])
     return guide_home(has_key=has_key, held=held, open_now=open_now), InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -637,7 +651,8 @@ async def case_click(call):
     if parts[1:2] == ["guide"]:
         step = parts[2] if len(parts) >= 3 else "home"
         try:
-            text, markup = await _guide_payload(clicker, "how" if step == "how" else "home")
+            shown = step if step in {"how", "why"} else "home"
+            text, markup = await _guide_payload(clicker, shown)
             await _show(call, text, markup, "")
             await call.answer()
         except Exception:
@@ -733,6 +748,8 @@ async def case_click(call):
             await call.answer()
             return
         note = found_text(item["name"], item["emoji"], item["premium"], offer["where"], offer["place"])
+        if target in {"small", "mid", "large"}:
+            note += "\n" + ceiling_note(int((await _rules(target))["max"]))
         markup = _with_back(
             [[_buy_open_button(item["name"], offer["startapp"], private, item["premium"], clicker)]],
             clicker,

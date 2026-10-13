@@ -46,6 +46,18 @@ function ready(card) {
   }) && Math.max(...bands.map((row) => Number(row.amount) || 0)) === max
 }
 
+function bandRole(row, bands, max) {
+  const amount = Number(row.amount) || 0
+  const amounts = (bands || []).map((item) => Number(item.amount) || 0).filter((value) => value > 0)
+  if (!amount || !amounts.length) return 'Сумма'
+  const low = Math.min(...amounts)
+  const top = Math.max(...amounts)
+  if (amount === Number(max) && amount === top) return 'Потолок'
+  if (amount === low) return 'Маленькая сумма'
+  if (amount === top) return 'Большая сумма'
+  return 'Средняя сумма'
+}
+
 function CaseCard({ card, onSave }) {
   const [draft, setDraft] = useState(card)
   const [busy, setBusy] = useState(false)
@@ -99,7 +111,13 @@ function CaseCard({ card, onSave }) {
     <article className={`case-card${saved ? ' is-saved' : ''}`}>
       <header>
         <h3>{draft.emoji} {draft.name}</h3>
-        <p>{ok ? `В среднем ${money(mean)} кут из ${money(draft.max)}` : 'Шансы должны сложиться в 100'}</p>
+        <p>
+          {ok
+            ? `В среднем ${money(mean)} кут. Потолок ${money(draft.max)} выпадает в ${draft.bands.find((row) => Number(row.amount) === Number(draft.max))?.chance || 0}% случаев.`
+            : chanceSum !== 100
+              ? `Шансы сейчас ${chanceSum} из 100`
+              : 'Самая большая сумма должна равняться потолку'}
+        </p>
       </header>
       <label>
         Потолок, кут
@@ -121,8 +139,9 @@ function CaseCard({ card, onSave }) {
       <ul>
         {(draft.bands || []).map((row, index) => (
           <li key={index}>
+            <span className="case-role">{bandRole(row, draft.bands, draft.max)}</span>
             <label>
-              Шанс, %
+              Как часто, %
               <input
                 inputMode="numeric"
                 aria-label={`Шанс ${index + 1} ${draft.name}`}
@@ -131,7 +150,7 @@ function CaseCard({ card, onSave }) {
               />
             </label>
             <label>
-              Приз, кут
+              Сумма, кут
               <input
                 inputMode="numeric"
                 aria-label={`Приз ${index + 1} ${draft.name}`}
@@ -318,6 +337,31 @@ export default function CasesSection({ onOpenUser }) {
       </header>
       {error && <p className="case-fault">{error}</p>}
       {!board && !error && <p>Считаем кейсы…</p>}
+      {board && (
+        <>
+          <header className="case-odds">
+            <h3>Как часто выпадает сумма</h3>
+            <p>У каждого кейса свои шансы. Маленькая сумма и потолок настраиваются отдельно. В сумме должно быть 100.</p>
+          </header>
+          <div className="case-grid">
+            {(board.cases || []).map((card, index) => (
+              <div key={card.id} style={{ animationDelay: `${index * 70}ms` }}>
+                <CaseCard
+                  card={card}
+                  onSave={async (body) => {
+                    const saved = await saveCaseRules(body)
+                    setBoard((prev) => ({
+                      ...prev,
+                      cases: (prev?.cases || []).map((item) => (item.id === saved.id ? saved : item)),
+                    }))
+                    return saved
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {board && <FundDesk board={{ ...board, onOpenUser }} />}
       {board && (
         <div className="case-grid case-shop">
@@ -345,23 +389,6 @@ export default function CasesSection({ onOpenUser }) {
           ))}
         </div>
       )}
-      <div className="case-grid">
-        {(board?.cases || []).map((card, index) => (
-          <div key={card.id} style={{ animationDelay: `${index * 70}ms` }}>
-            <CaseCard
-              card={card}
-              onSave={async (body) => {
-                const saved = await saveCaseRules(body)
-                setBoard((prev) => ({
-                  ...prev,
-                  cases: (prev?.cases || []).map((item) => (item.id === saved.id ? saved : item)),
-                }))
-                return saved
-              }}
-            />
-          </div>
-        ))}
-      </div>
     </section>
   )
 }
