@@ -117,6 +117,9 @@ from bot.admins.mute import (
   is_protected_creator,
   protected_creator_denied_html,
   SELF_REVOKE_ALERT,
+  ISSUER_REVOKE_ALERT,
+  CARD_GONE_ALERT,
+  revoke_button_belongs_to,
   _service_unavailable_message,
   _generic_handler_error_message,
   _target_lookup_error_message,
@@ -1364,6 +1367,69 @@ async def _remove_last_warn_typed(
     return False, None
 
 
+async def _remove_warn_owned(
+  user_id: int,
+  mode: Mode,
+  chat_id: int,
+  issuer_id: int,
+  record_id: int | None = None,
+) -> Tuple[bool, Optional[int]]:
+  """Снимает предупреждение автора карточки, не чужое более новое."""
+  await _ensure_warn_schema()
+  if not _warn_schema_ready:
+    return False, None
+  try:
+    async with _db_acquire() as conn:
+      if record_id:
+        where = "id = $1 AND user_id = $2 AND admin_user_id = $3 AND mode = $4"
+        params: Tuple[Any, ...] = (int(record_id), user_id, issuer_id, mode)
+        if mode == "chat":
+          where += " AND chat_id = $5"
+          params = (*params, chat_id)
+        row = await conn.fetchrow(
+          f"DELETE FROM active_warns WHERE {where} RETURNING id",
+          *params,
+        )
+      elif mode == "chat":
+        row = await conn.fetchrow(
+          """
+          DELETE FROM active_warns
+          WHERE id = (
+            SELECT id FROM active_warns
+            WHERE user_id = $1 AND mode = 'chat' AND chat_id = $2 AND admin_user_id = $3
+            ORDER BY created_at DESC, id DESC LIMIT 1
+          )
+          RETURNING id
+          """,
+          user_id, chat_id, issuer_id,
+        )
+      else:
+        row = await conn.fetchrow(
+          """
+          DELETE FROM active_warns
+          WHERE id = (
+            SELECT id FROM active_warns
+            WHERE user_id = $1 AND mode = $2 AND admin_user_id = $3
+            ORDER BY created_at DESC, id DESC LIMIT 1
+          )
+          RETURNING id
+          """,
+          user_id, mode, issuer_id,
+        )
+    if row:
+      warn_id = int(row["id"])
+      try:
+        from bot.admins import punish_timers
+        punish_timers.cancel_warn(warn_id)
+      except Exception:
+        pass
+      return True, warn_id
+    return False, None
+  except Exception as e:
+    WarnDebug.log("DB", "remove owned skip", err=str(e), user=user_id)
+    return False, None
+
+
 async def _list_warns_detailed(user_id: int) -> List[Dict[str, Any]]:
   """Список активных предупреждений с админом/причиной/сроком/видом (новые сверху).
 
@@ -1980,6 +2046,7 @@ async def _send_warn_success(
   count: int,
   parsed: ParsedWarn,
   chat_id: int,
+  warn_id: int = 0,
 ) -> None:
   disp = await _get_chat_display(chat_id)
   chat_line = _format_chat_line(disp)
@@ -1997,7 +2064,9 @@ async def _send_warn_success(
     )
     + _debug_hint("warn_ok"),
     parse_mode="HTML", link_preview_options=NO_PREVIEW,
-    reply_markup=_warn_revoke_keyboard(message.from_user.id, player.user_id, parsed.mode),
+    reply_markup=_warn_revoke_keyboard(
+      message.from_user.id, player.user_id, parsed.mode, warn_id,
+    ),
   )
 
 
@@ -2442,7 +2511,9 @@ async def _finalize_warn(
       message, parsed, proof_media_id, chat_id, admin_name, admin_role, staff,
     )
   else:
-    await _send_warn_success(message, player, staff, new_count, parsed, chat_id)
+    await _send_warn_success(
+      message, player, staff, new_count, parsed, chat_id, warn_id,
+    )
     await _notify_warn_violator(player, staff, new_count, parsed.reason, parsed)
     await _broadcast_warn_groups(chat_id, parsed, staff, player, new_count)
   return True
@@ -2465,17 +2536,36 @@ def _warn_pending_cancel_keyboard(admin_id: int, target_id: int) -> InlineKeyboa
   ]])
 
 
-def _warn_revoke_callback_data(admin_id: int, target_id: int, mode: Mode = "chat") -> str:
-  return f"warn:revoke:{admin_id}:{target_id}:{mode}"
+def warn_revoke_record(callback_data: str) -> int | None:
+  """Id предупреждения на новой карточке. Старые кнопки его не несут."""
+  parts = (callback_data or "").split(":")
+  if len(parts) < 6 or parts[0] != "warn" or parts[1] != "revoke":
+    return None
+  if parts[4] not in ("chat", "all", "full"):
+    return None
+  try:
+    record = int(parts[5])
+  except (TypeError, ValueError):
+    return None
+  return record if record > 0 else None
+
+
+def _warn_revoke_callback_data(
+  admin_id: int, target_id: int, mode: Mode = "chat", warn_id: int = 0,
+) -> str:
+  base = f"warn:revoke:{admin_id}:{target_id}:{mode}"
+  if int(warn_id or 0) > 0:
+    return f"{base}:{int(warn_id)}"
+  return base
 
 
 def _warn_revoke_keyboard(
-  admin_id: int, target_id: int, mode: Mode = "chat",
+  admin_id: int, target_id: int, mode: Mode = "chat", warn_id: int = 0,
 ) -> InlineKeyboardMarkup:
   return InlineKeyboardMarkup(inline_keyboard=[[
     InlineKeyboardButton(
       text=WarnText.BTN_REVOKE,
-      callback_data=_warn_revoke_callback_data(admin_id, target_id, mode),
+      callback_data=_warn_revoke_callback_data(admin_id, target_id, mode, warn_id),
     ),
   ]])
 
@@ -3064,6 +3154,8 @@ async def _execute_unwarn_core(
   reply: Callable[[str], Awaitable[Any]],
   announce_result: bool = True,
   mode: Mode = "chat",
+  owned_by: int | None = None,
+  record_id: int | None = None,
 ) -> str:
   """Ядро снятия ОДНОГО предупреждения вида `mode`. 'revoked' | 'none' | 'db_error'.
 
@@ -3084,7 +3176,7 @@ async def _execute_unwarn_core(
     return "forbidden_self"
 
   before = await _count_warns_typed(target_id, mode, chat_id)
-  if before <= 0:
+  if owned_by is None and before <= 0:
     if announce_result:
       await reply(
         WarnText.NO_WARNS.format(
@@ -3093,12 +3185,19 @@ async def _execute_unwarn_core(
       )
     return "none"
 
-  removed, _removed_id = await _remove_last_warn_typed(target_id, mode, chat_id)
-  after = await _count_warns_typed(target_id, mode, chat_id)
+  if owned_by is None:
+    removed, _removed_id = await _remove_last_warn_typed(target_id, mode, chat_id)
+  else:
+    removed, _removed_id = await _remove_warn_owned(
+      target_id, mode, chat_id, owned_by, record_id,
+    )
   if not removed:
+    if owned_by is not None:
+      return "gone"
     if announce_result:
       await reply(WarnText.UNWARN_DB_FAIL + _debug_hint("unwarn_db"))
     return "db_error"
+  after = await _count_warns_typed(target_id, mode, chat_id)
 
   await _log_warn_action(
     "unwarn", target_id, player.name, target_username,
@@ -3828,7 +3927,7 @@ async def on_warn_pending_cancel(callback: CallbackQuery) -> None:
 async def on_warn_revoke(callback: CallbackQuery) -> None:
   """Снятие одного предупреждения по кнопке под сообщением «Предупреждение выдано».
 
-  Нажать может любой сотрудник с правом на выдачу/снятие предупреждений.
+  Нажать может только сотрудник, который выдал это предупреждение.
   """
   if not callback.from_user or not callback.message:
     await callback.answer()
@@ -3852,6 +3951,9 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
+  if not revoke_button_belongs_to(callback.data or "", clicker):
+    await callback.answer(ISSUER_REVOKE_ALERT, show_alert=True)
+    return
   chat_id = callback.message.chat.id
   # Право снятия соответствует виду предупреждения: warn / warnall / warnfull.
   revoke_action = _WARN_MODE_PERMISSION.get(mode, "warn")
@@ -3892,6 +3994,8 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
     reply=_noop,
     announce_result=False,
     mode=mode,
+    owned_by=clicker,
+    record_id=warn_revoke_record(callback.data or ""),
   )
 
   if status == "revoked":
@@ -3905,6 +4009,9 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
     )
     await _edit_revoked_message(callback.message, new_text)
     await callback.answer(WarnText.CB_REVOKED)
+  elif status == "gone":
+    await _edit_remove_keyboard(callback.message)
+    await callback.answer(CARD_GONE_ALERT, show_alert=True)
   elif status == "none":
     await _edit_remove_keyboard(callback.message)
     await callback.answer(WarnText.CB_NONE, show_alert=True)

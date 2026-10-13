@@ -58,35 +58,163 @@ function bandRole(row, bands, max) {
   return 'Средняя сумма'
 }
 
+function timesLabel(count) {
+  const n = Math.abs(Number(count) || 0)
+  const n10 = n % 10
+  const n100 = n % 100
+  const word = n10 === 1 && n100 !== 11
+    ? 'раз'
+    : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)
+      ? 'раза'
+      : 'раз'
+  return `${n} ${word} из 100`
+}
+
+function ceilingIndex(bands, max) {
+  const cap = Number(max)
+  const exact = (bands || []).findIndex((row) => Number(row.amount) === cap && cap > 0)
+  if (exact >= 0) return exact
+  let top = 0
+  ;(bands || []).forEach((row, index) => {
+    if ((Number(row.amount) || 0) >= (Number(bands[top]?.amount) || 0)) top = index
+  })
+  return top
+}
+
+function balanceChances(bands, index, raw) {
+  const count = bands.length
+  const room = 100 - (count - 1)
+  let next = Math.round(Number(digits(raw)) || 0)
+  next = Math.max(1, Math.min(room, next))
+  const weights = bands.map((row, at) => (at === index ? 0 : Math.max(1, Number(row.chance) || 1)))
+  const weightSum = weights.reduce((sum, value) => sum + value, 0) || 1
+  const rest = 100 - next
+  const shares = weights.map((weight) => (weight ? (rest * weight) / weightSum : 0))
+  const floors = shares.map((value) => Math.floor(value))
+  let left = rest - floors.reduce((sum, value) => sum + value, 0)
+  const order = shares
+    .map((value, at) => ({ at, frac: value - Math.floor(value) }))
+    .filter((item) => item.at !== index)
+    .sort((a, b) => b.frac - a.frac || a.at - b.at)
+  order.forEach((item) => {
+    if (left <= 0) return
+    floors[item.at] += 1
+    left -= 1
+  })
+  floors.forEach((value, at) => {
+    if (at !== index && value < 1) floors[at] = 1
+  })
+  floors[index] = next
+  let drift = floors.reduce((sum, value) => sum + value, 0) - 100
+  const donors = floors
+    .map((value, at) => ({ at, value }))
+    .filter((item) => item.at !== index)
+    .sort((a, b) => b.value - a.value)
+  donors.forEach((donor) => {
+    if (drift <= 0) return
+    const cut = Math.min(drift, floors[donor.at] - 1)
+    if (cut > 0) {
+      floors[donor.at] -= cut
+      drift -= cut
+    }
+  })
+  return bands.map((row, at) => ({ ...row, chance: String(floors[at]) }))
+}
+
 function CaseCard({ card, onSave }) {
   const [draft, setDraft] = useState(card)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [hot, setHot] = useState(-1)
   const ok = ready(draft)
   const chanceSum = (draft.bands || []).reduce((total, row) => total + (Number(row.chance) || 0), 0)
   const mean = averageOf(draft.bands)
+  const capAt = ceilingIndex(draft.bands, draft.max)
+  const smallBand = (draft.bands || []).find((row) => bandRole(row, draft.bands, draft.max) === 'Маленькая сумма')
+  const topBand = (draft.bands || [])[capAt]
+  const canAdd = (draft.bands || []).length < 6 && (draft.bands || []).some((row) => Number(row.chance) > 1)
 
   useEffect(() => {
     setDraft(card)
   }, [card])
 
-  const setBand = (index, key, value) => {
-    const bands = draft.bands.map((row, at) => (at === index ? { ...row, [key]: digits(value) } : row))
-    setDraft({ ...draft, bands })
+  const setChance = (index, value) => {
+    setDraft({ ...draft, bands: balanceChances(draft.bands, index, value) })
+    setSaved(false)
+    setHot(index)
+  }
+
+  const setAmount = (index, raw) => {
+    let amount = digits(raw)
+    let max = draft.max
+    if (index === capAt) {
+      if (amount !== '') max = amount
+    } else if (amount !== '' && Number(max) && Number(amount) > Number(max)) {
+      amount = String(max)
+    }
+    const bands = draft.bands.map((row, at) => (at === index ? { ...row, amount } : row))
+    setDraft({ ...draft, max, bands })
     setSaved(false)
   }
 
-  const addBand = () => {
-    if (draft.bands.length >= 6) return
-    setDraft({ ...draft, bands: [...draft.bands, { chance: '', amount: '' }] })
+  const setMax = (raw) => {
+    const max = digits(raw)
+    const at = ceilingIndex(draft.bands, draft.max)
+    const bands = draft.bands.map((row, index) => (
+      index === at ? { ...row, amount: max === '' ? row.amount : max } : row
+    ))
+    setDraft({ ...draft, max, bands })
     setSaved(false)
+  }
+
+  const commitMax = () => {
+    const cap = Number(draft.max)
+    if (!cap) return
+    const bands = draft.bands.map((row) => (
+      Number(row.amount) > cap ? { ...row, amount: String(cap) } : row
+    ))
+    const at = ceilingIndex(bands, cap)
+    if (Number(bands[at]?.amount) !== cap) bands[at] = { ...bands[at], amount: String(cap) }
+    setDraft({ ...draft, bands })
+  }
+
+  const addBand = () => {
+    const bands = draft.bands || []
+    if (!canAdd) return
+    const chances = bands.map((row) => Number(row.chance) || 0)
+    const donor = chances.reduce((best, value, index) => (value > chances[best] ? index : best), 0)
+    const give = Math.min(10, chances[donor] - 1)
+    const amounts = bands.map((row) => Number(row.amount) || 0)
+    const low = Math.min(...amounts.filter((value) => value > 0))
+    const high = Number(draft.max) || Math.max(...amounts)
+    let mid = Math.max(1, Math.round((low + high) / 2))
+    if (mid >= high) mid = Math.max(1, high - 1)
+    const next = bands.map((row, index) => (
+      index === donor
+        ? { ...row, chance: String(chances[donor] - give) }
+        : { ...row, chance: String(chances[index]) }
+    ))
+    next.push({ chance: String(give), amount: String(mid) })
+    setDraft({ ...draft, bands: next })
+    setSaved(false)
+    setHot(next.length - 1)
   }
 
   const dropBand = (index) => {
     if (draft.bands.length <= 2) return
-    setDraft({ ...draft, bands: draft.bands.filter((_, at) => at !== index) })
+    const gone = Number(draft.bands[index].chance) || 0
+    const rest = draft.bands.filter((_, at) => at !== index)
+    const host = ceilingIndex(rest, draft.max)
+    setDraft({
+      ...draft,
+      bands: rest.map((row, at) => ({
+        ...row,
+        chance: String((Number(row.chance) || 0) + (at === host ? gone : 0)),
+      })),
+    })
     setSaved(false)
+    setHot(-1)
   }
 
   const save = async () => {
@@ -113,7 +241,7 @@ function CaseCard({ card, onSave }) {
         <h3>{draft.emoji} {draft.name}</h3>
         <p>
           {ok
-            ? `В среднем ${money(mean)} кут. Потолок ${money(draft.max)} выпадает в ${draft.bands.find((row) => Number(row.amount) === Number(draft.max))?.chance || 0}% случаев.`
+            ? `В среднем ${money(mean)} кут. Маленькая ${money(smallBand?.amount)} — ${timesLabel(smallBand?.chance)}. Потолок ${money(topBand?.amount)} — ${timesLabel(topBand?.chance)}.`
             : chanceSum !== 100
               ? `Шансы сейчас ${chanceSum} из 100`
               : 'Самая большая сумма должна равняться потолку'}
@@ -125,49 +253,59 @@ function CaseCard({ card, onSave }) {
           inputMode="numeric"
           aria-label={`Потолок ${draft.name}`}
           value={draft.max}
-          onChange={(event) => {
-            setDraft({ ...draft, max: digits(event.target.value) })
-            setSaved(false)
-          }}
+          onChange={(event) => setMax(event.target.value)}
+          onBlur={commitMax}
         />
       </label>
       <div className="case-meter" aria-hidden="true">
         {(draft.bands || []).map((row, index) => (
-          <i key={index} style={{ width: `${Math.max(Number(row.chance) || 0, 0)}%` }} />
+          <i
+            key={index}
+            className={hot === index ? 'is-hot' : ''}
+            style={{ width: `${Math.max(Number(row.chance) || 0, 0)}%` }}
+          />
         ))}
       </div>
       <ul>
         {(draft.bands || []).map((row, index) => (
-          <li key={index}>
-            <span className="case-role">{bandRole(row, draft.bands, draft.max)}</span>
-            <label>
-              Как часто, %
-              <input
-                inputMode="numeric"
-                aria-label={`Шанс ${index + 1} ${draft.name}`}
-                value={row.chance}
-                onChange={(event) => setBand(index, 'chance', event.target.value)}
-              />
-            </label>
+          <li key={index} className={hot === index ? 'is-hot' : ''}>
+            <div className="case-share-head">
+              <span className="case-role">{bandRole(row, draft.bands, draft.max)}</span>
+              <b className="case-pct">{Number(row.chance) || 0}%</b>
+            </div>
+            <p className="case-share-line">{money(row.amount)} кут · {timesLabel(row.chance)}</p>
+            <input
+              className="case-range"
+              type="range"
+              min={1}
+              max={Math.max(1, 100 - (draft.bands.length - 1))}
+              step={1}
+              aria-label={`Шанс ${index + 1} ${draft.name}`}
+              value={Number(row.chance) || 1}
+              onFocus={() => setHot(index)}
+              onBlur={() => setHot(-1)}
+              onPointerDown={() => setHot(index)}
+              onPointerUp={() => setHot(-1)}
+              onChange={(event) => setChance(index, event.target.value)}
+            />
             <label>
               Сумма, кут
               <input
                 inputMode="numeric"
                 aria-label={`Приз ${index + 1} ${draft.name}`}
                 value={row.amount}
-                onChange={(event) => setBand(index, 'amount', event.target.value)}
+                onChange={(event) => setAmount(index, event.target.value)}
               />
             </label>
-            <button type="button" onClick={() => dropBand(index)} disabled={draft.bands.length <= 2}>
-              Убрать
-            </button>
+            {draft.bands.length > 2 && (
+              <button type="button" onClick={() => dropBand(index)}>Убрать</button>
+            )}
           </li>
         ))}
       </ul>
-      <p className="case-sum">Сейчас {chanceSum} из 100</p>
       {error && <p className="case-fault">{error}</p>}
       <div className="case-actions">
-        <button type="button" onClick={addBand} disabled={draft.bands.length >= 6}>Ещё исход</button>
+        <button type="button" onClick={addBand} disabled={!canAdd}>Добавить сумму</button>
         <button type="button" onClick={save} disabled={!ok || busy}>{busy ? 'Пишем…' : 'Сохранить'}</button>
       </div>
     </article>
@@ -341,7 +479,7 @@ export default function CasesSection({ onOpenUser }) {
         <>
           <header className="case-odds">
             <h3>Как часто выпадает сумма</h3>
-            <p>У каждого кейса свои шансы. Маленькая сумма и потолок настраиваются отдельно. В сумме должно быть 100.</p>
+            <p>Полоска — это 100 открытий. Сдвиньте её у маленькой суммы или у потолка: остальные подстроятся сами.</p>
           </header>
           <div className="case-grid">
             {(board.cases || []).map((card, index) => (

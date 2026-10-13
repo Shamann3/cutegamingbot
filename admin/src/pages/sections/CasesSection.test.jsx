@@ -48,6 +48,8 @@ describe('cases desk', () => {
     fireEvent.change(screen.getByLabelText('Потолок Маленький кейс'), { target: { value: '40' } })
     fireEvent.change(screen.getByLabelText('Приз 1 Маленький кейс'), { target: { value: '8' } })
     fireEvent.change(screen.getByLabelText('Шанс 1 Маленький кейс'), { target: { value: '80' } })
+    expect(screen.getByLabelText('Шанс 2 Маленький кейс').value).toBe('20')
+    expect(screen.getAllByText(/80 раз из 100/).length).toBeGreaterThan(0)
     fireEvent.change(screen.getByLabelText('Приз 2 Маленький кейс'), { target: { value: '40' } })
     fireEvent.change(screen.getByLabelText('Шанс 2 Маленький кейс'), { target: { value: '20' } })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))

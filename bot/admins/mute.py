@@ -1489,11 +1489,24 @@ def _permission_action(action: str) -> str:
 #   1. Нарушитель не может снять наказание с самого себя - даже если у него есть
 #      должность с правом на эту систему наказаний (проверка actor_id == target_id
 #      в ядрах снятия _execute_unmute_core / _execute_unban_core / _execute_unwarn_core).
-#   2. Снять наказание может только сотрудник с доступом к соответствующей системе
-#      (право mute / ban / warn) - это гарантируют check_staff_permission в командах
-#      и под кнопками снятия.
+#   2. Снять наказание командой может сотрудник с доступом к этой системе.
+#   3. Кнопка под карточкой наказания принадлежит только тому, кто его выдал.
+#      Чужое нажатие не снимает наказание и не переписывает карточку.
 # Нижестоящие должности без права и обычные пользователи снять наказание не могут.
 SELF_REVOKE_ALERT = "Нельзя снять наказание с самого себя."
+ISSUER_REVOKE_ALERT = "Снять может только тот, кто выдал это наказание."
+CARD_GONE_ALERT = "Эта кнопка уже не снимает наказание."
+
+
+def revoke_button_belongs_to(callback_data: str, clicker_id: int) -> bool:
+    """Кнопка «снять» под карточкой: только автор этого наказания."""
+    parts = (callback_data or "").split(":")
+    if len(parts) < 4 or parts[1] != "revoke":
+        return False
+    try:
+        return int(parts[2]) == int(clicker_id)
+    except (TypeError, ValueError):
+        return False
 
 
 def self_revoke_denied_html() -> str:
@@ -7950,7 +7963,7 @@ async def mute_cancel_callback(callback: CallbackQuery) -> None:
 async def mute_revoke_callback(callback: CallbackQuery) -> None:
   """Снятие мута по кнопке под сообщением «Ограничение выдано».
 
-  Нажать может любой сотрудник с правом на снятие мута (unmute).
+  Нажать может только сотрудник, который выдал это ограничение.
   """
   if not callback.from_user or not callback.message:
     await callback.answer()
@@ -7971,6 +7984,9 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
+  if not revoke_button_belongs_to(callback.data or "", clicker):
+    await callback.answer(ISSUER_REVOKE_ALERT, show_alert=True)
+    return
   chat_id = callback.message.chat.id
   perm = await check_punish_permission(clicker, "unmute", chat_id)
   if perm != "allowed":
@@ -7996,6 +8012,14 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
 
   staff = await StaffRef.from_user_id(clicker, chat_id=chat_id)
   target_name, target_username = await _resolve_user_display(target_id)
+  last_mute = (
+    await _get_last_mute_record_any(target_id)
+    if reach == "all" else
+    await _get_last_mute_record(chat_id, target_id)
+  )
+  if last_mute and int(last_mute.admin_user_id) != int(clicker):
+    await callback.answer(CARD_GONE_ALERT, show_alert=True)
+    return
 
   async def _noop(_text: str) -> None:
     return None

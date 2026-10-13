@@ -127,6 +127,9 @@ from bot.admins.mute import (
   is_protected_creator,
   protected_creator_denied_html,
   SELF_REVOKE_ALERT,
+  ISSUER_REVOKE_ALERT,
+  CARD_GONE_ALERT,
+  revoke_button_belongs_to,
 )
 
 ban_router = Router(name="staff_ban")
@@ -986,6 +989,39 @@ async def _record_active_bans(
     BanDebug.log("DB", "record active bans skipped", err=str(e))
   except Exception as e:
     BanDebug.error("DB", "record active bans", e, target=parsed.target_id)
+
+
+async def _ban_card_still_owns(
+  target_id: int, issuer_id: int, mode: str, chat_id: int,
+) -> bool:
+  """Кнопка снимает бан, только если последнее такое наказание всё ещё его."""
+  try:
+    async with _db_acquire() as conn:
+      if mode == "chat":
+        row = await conn.fetchrow(
+          """
+          SELECT admin_user_id FROM staff_actions
+          WHERE action_type = 'ban' AND target_player_id = $1
+            AND scope = 'chat' AND chat_id = $2
+          ORDER BY id DESC LIMIT 1
+          """,
+          target_id, chat_id,
+        )
+      else:
+        row = await conn.fetchrow(
+          """
+          SELECT admin_user_id FROM staff_actions
+          WHERE action_type = 'ban' AND target_player_id = $1 AND scope = $2
+          ORDER BY id DESC LIMIT 1
+          """,
+          target_id, mode,
+        )
+  except Exception as e:
+    BanDebug.log("DB", "ban card owner skip", err=str(e), target=target_id)
+    return True
+  if not row or row["admin_user_id"] is None:
+    return True
+  return int(row["admin_user_id"]) == int(issuer_id)
 
 
 async def _delete_active_ban(user_id: int, chat_id: int) -> None:
@@ -3077,7 +3113,7 @@ async def on_ban_pending_cancel(callback: CallbackQuery) -> None:
 async def on_ban_revoke(callback: CallbackQuery) -> None:
   """Снятие бана по кнопке под сообщением «Блокировка выполнена».
 
-  Нажать может любой сотрудник с правом на бан/разбан.
+  Нажать может только сотрудник, который выдал эту блокировку.
   """
   if not callback.from_user or not callback.message:
     await callback.answer()
@@ -3101,6 +3137,9 @@ async def on_ban_revoke(callback: CallbackQuery) -> None:
     return
 
   clicker = callback.from_user.id
+  if not revoke_button_belongs_to(callback.data or "", clicker):
+    await callback.answer(ISSUER_REVOKE_ALERT, show_alert=True)
+    return
   chat_id = callback.message.chat.id
   # Право проверяем по охвату снятия: ban / banall / banfull.
   revoke_action = _BAN_MODE_PERMISSION.get(mode, "ban")
@@ -3123,6 +3162,10 @@ async def on_ban_revoke(callback: CallbackQuery) -> None:
     if blocked:
       await callback.answer(seat_refusal_alert(blocked), show_alert=True)
       return
+
+  if not await _ban_card_still_owns(target_id, clicker, mode, chat_id):
+    await callback.answer(CARD_GONE_ALERT, show_alert=True)
+    return
 
   staff = await StaffRef.from_user_id(clicker, chat_id=chat_id)
   target_name, target_username = await _resolve_user_display(target_id)

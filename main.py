@@ -41100,6 +41100,8 @@ async def botmain():
     print("[🚀] Запускаем основной и платёжный боты...")
     import bot.funcs.water_games  # кнопки водных игр регистрируются до polling
     import bot.funcs.case_desk  # кнопки кейсов регистрируются до polling
+    import bot.funcs.group_door
+    bot.funcs.group_door.start(bot1)
     try:
         await bot.funcs.water_games.ensure()
     except Exception as water_boot_error:

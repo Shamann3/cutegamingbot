@@ -83,4 +83,11 @@ async def reject_if_private_game(message: Message, game_key: Optional[str] = Non
                 return True
         except Exception as e:
             print(f"[GROUP_ONLY] desk reject failed: {e!r}")
+
+    try:
+        from bot.funcs.group_door import guard_action
+        if await guard_action(message, "play"):
+            return True
+    except Exception as e:
+        print(f"[GROUP_ONLY] door reject failed: {e!r}")
     return False

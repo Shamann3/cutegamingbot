@@ -276,36 +276,6 @@ async def chatbalance(message: Message):
                 "<b>В личных сообщениях нет баланса группы для пополнения кут.</b>" , parse_mode="HTML")
             return
 
-        # Проверка публичности группы
-        chat_id_CheckpublickGroup = int(message.chat.id)
-        user_id_CheckpublickGroup = int(message.from_user.id)
-
-        print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] 🟪 Запускаю проверку публичности группы...")
-        dbg_CheckpublickGroup(
-            f"Request deposit: chat_id={chat_id_CheckpublickGroup}, "
-            f"user_id={user_id_CheckpublickGroup}, chat_type={message.chat.type}")
-
-        publicResult_CheckpublickGroup = await publicChecker_CheckpublickGroup.check_public_group_CheckpublickGroup(
-            bot=bot1 , db=db , chat_id_CheckpublickGroup=chat_id_CheckpublickGroup)
-
-        print(
-            f"[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] 🟪 Результат проверки: "
-            f"is_public={publicResult_CheckpublickGroup.is_public_CheckpublickGroup}, "
-            f"username={publicResult_CheckpublickGroup.username_CheckpublickGroup!r}, "
-            f"source={publicResult_CheckpublickGroup.source_CheckpublickGroup!r}, "
-            f"reason={publicResult_CheckpublickGroup.reason_CheckpublickGroup!r}")
-
-        if not publicResult_CheckpublickGroup.is_public_CheckpublickGroup:
-            print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] ⛔ Группа не публичная, пополнение запрещено")
-            dbg_CheckpublickGroup(
-                f"Denied: source={publicResult_CheckpublickGroup.source_CheckpublickGroup}, "
-                f"reason={publicResult_CheckpublickGroup.reason_CheckpublickGroup}")
-            await message.reply(
-                "<tg-emoji emoji-id='5447644880824181073'>⚠️</tg-emoji> "
-                "<b>Баланс группы доступен в публичных чатах — у группы должен быть открытый @username.</b>" ,
-                parse_mode="HTML")
-            return
-
         try:
             print("[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] 🟩 Начинаю основную логику пополнения")
 
@@ -368,6 +338,11 @@ async def chatbalance(message: Message):
                 "<tg-emoji emoji-id='5472178859300363509'>🏖</tg-emoji>" , parse_mode="HTML" , reply_markup=keyboard)
             print(
                 f"[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] ✅ Сообщение отправлено, message_id={getattr(sent_msg , 'message_id' , None)}")
+            try:
+                from bot.funcs.group_door import after_deposit
+                await after_deposit(message)
+            except Exception as door_exc:
+                print(f"[ПОПОЛНЕНИЕ БАЛАНСА ГРУППЫ] door note {type(door_exc).__name__}")
 
             return
 
@@ -440,6 +415,10 @@ async def chatbalance(message: Message):
             await message.reply(
                 "<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> "
                 "<b>В личных сообщениях нет баланса группы для снятия кут.</b>" , parse_mode="HTML")
+            return
+
+        from bot.funcs.group_door import guard_action
+        if await guard_action(message, "withdraw"):
             return
 
         # Проверка публичности группы
@@ -621,7 +600,9 @@ async def chatbalance(message: Message):
             f"source={publicResult_CheckpublickGroup.source_CheckpublickGroup!r}, "
             f"reason={publicResult_CheckpublickGroup.reason_CheckpublickGroup!r}")
 
-        if not publicResult_CheckpublickGroup.is_public_CheckpublickGroup:
+        from bot.funcs.group_door import screen_banner, mark_told
+        door_banner = await screen_banner(bot1, db, chat_id_CheckpublickGroup)
+        if not publicResult_CheckpublickGroup.is_public_CheckpublickGroup and not door_banner:
             await message.reply(
                 "<tg-emoji emoji-id='5447644880824181073'>⚠️</tg-emoji> "
                 "<b>Баланс группы доступен в публичных чатах — у группы должен быть открытый @username.</b>" ,
@@ -672,6 +653,8 @@ async def chatbalance(message: Message):
                 atmosphere_pct=atmo,
                 atmosphere_report=atmo_report,
             )
+            if door_banner:
+                screen = door_banner + "\n\n" + screen
             try:
                 sent_message = await message.reply(
                     screen, reply_markup=keyboard, parse_mode="HTML",
@@ -686,6 +669,10 @@ async def chatbalance(message: Message):
                     raise
 
             user_message_balance_chat [ user_id ] = sent_message.message_id
+            if door_banner:
+                from bot.funcs.group_door import dm_creator
+                if await mark_told(db, chat_id, 1):
+                    await dm_creator(bot1, db, chat_id, door_banner)
             print(f"[БАЛАНС ЧАТА] ✅ Сообщение отправлено, message_id={sent_message.message_id}")
             return
 
