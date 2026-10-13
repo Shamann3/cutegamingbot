@@ -287,11 +287,13 @@ def deposit_note(reasons: list[str], amount: int, left: str) -> str:
 
 
 def protected_ids() -> set[int]:
+    """Кассы проекта. Тестовая группа сюда не входит: на ней проверяют вход."""
     from server.py.cases.design import fund_ids
     ids = {int(item) for item in fund_ids()}
     try:
-        from bot.config.config import TECHNICAL_CHAT_IDS
+        from bot.config.config import TECHNICAL_CHAT_IDS, test_id
         ids.update(int(item) for item in TECHNICAL_CHAT_IDS)
+        ids.discard(int(test_id))
     except Exception:
         pass
     return ids
@@ -335,6 +337,8 @@ async def read_door(bot, chat_id: int, *, fresh: bool = False) -> dict:
     door["known"] = True
     door["title"] = str(getattr(chat, "title", "") or "")
     _CACHE[int(chat_id)] = (now, dict(door))
+    if not door["open"]:
+        print(f"[DOOR] closed chat={chat_id} reasons={','.join(door['reasons'])}")
     return door
 
 

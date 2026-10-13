@@ -23,6 +23,15 @@ from bot.funcs.group_door import (
 )
 
 
+def test_player_test_group_is_not_a_fund():
+    from bot.config.config import test_id
+    from bot.funcs.group_door import protected_ids
+    from server.py.cases.design import fund_ids
+    ids = protected_ids()
+    assert int(test_id) not in ids
+    assert all(int(item) in ids for item in fund_ids())
+
+
 def test_open_door_needs_username_and_no_requests():
     assert classify_door("CuteGamingChat", False)["open"] is True
     closed = classify_door("CuteGamingChat", True)
