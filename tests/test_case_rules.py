@@ -143,6 +143,7 @@ def test_case_words_open_the_guide():
     desk = (Path(__file__).resolve().parents[1] / "bot" / "funcs" / "case_desk.py").read_text(encoding="utf-8")
     assert "_guide_button(\"Назад\", where, user_id, \"\")" in desk
     assert "Открыть покупку" not in desk
+    assert "личные сообщения" not in desk
     assert "Эта кнопка не ваша" in desk
     stamped = stamp_callback("cs:guide:how", 7)
     assert button_owner(stamped) == 7
