@@ -20,6 +20,7 @@ from water_games.design import (
     SHOT_CAP,
     btn_join,
     calm_alert,
+    calm_shot_text,
     calm_button_text,
     calm_button_visible,
     calm_left_phrase,
@@ -254,10 +255,16 @@ def test_five_games_keep_the_day_calm_without_replacing_a_shield():
     assert len(alert) <= 200
     assert len(calm_alert(0, 100, 7 * 24 * 3600)) <= 200
     assert "уже есть" in calm_alert(5, 5, 10)
-    shot = screen_text("shot_calm", played=6, need=5, span="24 часа")
-    assert "не облить" in shot
-    assert "Вода остаётся" in shot
+    shot = calm_shot_text("Вася", 6, 5, 21 * 3600)
+    assert "<b>Вася нельзя облить</b>" in shot
+    assert "Пользователь сыграл 6 из 5 игр." in shot
+    assert "После 5 игр пистолетик не забирает куты этого человека." in shot
+    assert "Защита ещё будет длиться 21 час." in shot
+    assert "Вода остаётся у вас." in shot
     assert "под защитой" not in shot
+    unnamed = calm_shot_text("", 5, 5, 0)
+    assert unnamed.startswith("<b>Этого человека нельзя облить</b>")
+    assert "Защита ещё будет длиться 0 секунд." in unnamed
 
 
 def test_a_water_purchase_advances_only_its_own_message():

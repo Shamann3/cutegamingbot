@@ -1971,6 +1971,13 @@ def _resolve_reply_target_user_id(message: Message) -> Optional[int]:
             pass
 
     if reply_user is not None and bool(getattr(reply_user, "is_bot", False)):
+        from bot.funcs.reply_origin import person_behind_bot_message
+        behind = person_behind_bot_message(
+            reply,
+            chat_id=getattr(getattr(message, "chat", None), "id", None),
+        )
+        if behind:
+            return int(behind)
         caption = _profile_safe_str(getattr(reply, "text", None) or getattr(reply, "caption", None), "")
         id_match = re.search(r"<code>(\d{5,})</code>", caption)
         if id_match:

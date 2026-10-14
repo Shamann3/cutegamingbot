@@ -283,6 +283,27 @@ def test_name_nobody_has_explains_how_to_find_the_person():
     assert message.replies[0][0] == who.name_missing_html("Григорий")
 
 
+def test_reply_to_the_bot_opens_the_person_the_bot_answered():
+    from bot.funcs.reply_origin import note_human, note_bot_reply, reset_reply_origin
+    reset_reply_origin()
+    note_human(CHAT, 15, 77)
+    note_bot_reply(CHAT, 9, 15)
+    ns = _load()
+    bot_user = _user(Bot.id, "Cute", is_bot=True)
+    reply = SimpleNamespace(
+        message_id=9,
+        chat=SimpleNamespace(id=CHAT),
+        from_user=bot_user,
+        sender_chat=None,
+        text="ответ бота",
+        reply_to_message=None,
+    )
+    message = _msg("кто ты", bot=Bot(), reply_to=reply)
+    _run(ns, message, Pool())
+    assert ns["profiles"] == [77]
+    assert message.replies[0][0] == "PROFILE 77"
+
+
 def test_reply_to_a_stranger_opens_his_profile():
     ns = _load()
     pool = Pool()

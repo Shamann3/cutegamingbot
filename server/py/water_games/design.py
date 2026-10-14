@@ -22,6 +22,7 @@ data= не переписывают: по нему бот понимает на�
 
 from __future__ import annotations
 
+import html
 import re
 import textwrap
 from datetime import datetime, timedelta, timezone
@@ -420,6 +421,22 @@ def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
     return ""
 
 
+def calm_shot_text(name, played, need, left_seconds) -> str:
+    """Почему этого человека нельзя облить: имя, игры и срок защиты."""
+    who = " ".join(str(name or "").split()) or "Этого человека"
+    try:
+        seconds = int(left_seconds or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    return screen_text(
+        "shot_calm",
+        name=html.escape(who),
+        played=int(played or 0),
+        need=int(need or 0),
+        left=calm_one_left(max(0, seconds)),
+    )
+
+
 def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
     clock = left_clock(left_seconds)
@@ -771,8 +788,8 @@ screen(
 screen(
     "shot_calm",
     """
-    <b>Сейчас его не облить</b>
-    <i>{played} из {need} за {span}. Вода остаётся у вас.</i>
+    <b>{name} нельзя облить</b>
+    <i>Пользователь сыграл {played} из {need} игр. После {need} игр пистолетик не забирает куты этого человека. Защита ещё будет длиться {left}. Вода остаётся у вас.</i>
     """,
 )
 

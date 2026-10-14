@@ -57,6 +57,7 @@ from bot.funcs.water_games_design import (
     missing_item_text,
     poor_fee_text,
     public_group_name,
+    calm_shot_text,
     left_clock,
     screen_text,
     settle_umbrella,
@@ -74,6 +75,14 @@ from bot.funcs.webapp_links import section_button_fields
 from main import bot1, db, dp
 
 log = logging.getLogger("water_games")
+
+
+class CalmHold(Exception):
+    """Игр хватило: куты этого человека не переводятся."""
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self.text = text
 
 _ready = False
 _joke_at = 0
@@ -854,6 +863,57 @@ def _guard_span(row) -> str:
     return "ещё " + _left_of(row["until"], datetime.now(timezone.utc))
 
 
+def _visible_name(user) -> str:
+    if user is None:
+        return ""
+    parts = []
+    for piece in (getattr(user, "first_name", ""), getattr(user, "last_name", "")):
+        text = " ".join(str(piece or "").split())
+        if text:
+            parts.append(text)
+    if parts:
+        return " ".join(parts)
+    username = " ".join(str(getattr(user, "username", "") or "").split())
+    return f"@{username}" if username else ""
+
+
+async def _target_name(target_id: int, message=None) -> str:
+    reply = getattr(message, "reply_to_message", None) if message is not None else None
+    user = getattr(reply, "from_user", None) if reply is not None else None
+    try:
+        same = user is not None and int(getattr(user, "id", 0) or 0) == int(target_id)
+    except (TypeError, ValueError):
+        same = False
+    if same:
+        found = _visible_name(user)
+        if found:
+            return found
+    try:
+        row = await db.pool.fetchrow(
+            "SELECT first_name, username FROM users WHERE user_id = $1",
+            int(target_id),
+        )
+    except Exception:
+        row = None
+    if not row:
+        return ""
+    name = " ".join(str(row["first_name"] or "").split())
+    if name:
+        return name
+    username = " ".join(str(row["username"] or "").split())
+    return f"@{username}" if username else ""
+
+
+async def _calm_words(target_id: int, calm: dict, message=None) -> str:
+    name = await _target_name(target_id, message)
+    return calm_shot_text(
+        name,
+        calm.get("played"),
+        calm.get("need"),
+        calm.get("left_sec"),
+    )
+
+
 async def _calm_of(user_id: int) -> dict:
     from bot.funcs.calm_hold import calm_state
     try:
@@ -878,12 +938,7 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
     else:
         calm = await _calm_of(target_id)
         if calm["calm"]:
-            text = screen_text(
-                "shot_calm",
-                played=calm["played"],
-                need=calm["need"],
-                span=left_clock(calm.get("seconds") or int(calm.get("hours") or 24) * 3600),
-            )
+            text = await _calm_words(target_id, calm, message)
             if edit_call is not None:
                 await _edit_call(edit_call, text)
                 return
@@ -952,6 +1007,9 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
 
 async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, now) -> tuple[str, object]:
     """Перевод через общий путь баланса: база, история и кэш меняются вместе."""
+    calm = await _calm_of(target_id)
+    if calm.get("calm"):
+        raise CalmHold(await _calm_words(target_id, calm))
     rules = await _shot_rules()
     payout, fee = split_take(int(amount), rules["commissionPercent"])
     await db.transfer_currency(int(target_id), int(user_id), int(amount), word("history_shot"))
@@ -1035,12 +1093,7 @@ async def _finish_pour(call, offer_id: int) -> None:
         return
     calm = await _calm_of(target_id)
     if calm["calm"]:
-        await _edit_call(call, screen_text(
-            "shot_calm",
-            played=calm["played"],
-            need=calm["need"],
-            span=left_clock(calm.get("seconds") or int(calm.get("hours") or 24) * 3600),
-        ))
+        await _edit_call(call, await _calm_words(target_id, calm, getattr(call, "message", None)))
         await call.answer()
         return
     enemy = await _inventory(target_id)
@@ -1085,6 +1138,10 @@ async def _finish_pour(call, offer_id: int) -> None:
         return
     try:
         text, markup = await _apply_hit(user_id, target_id, chat_id, amount, now)
+    except CalmHold as hold:
+        await _edit_call(call, hold.text)
+        await call.answer()
+        return
     except InsufficientBalanceError as exc:
         screen = "shot_gift" if "подароч" in str(exc) else "shot_dry"
         await _edit_call(call, screen_text(screen))

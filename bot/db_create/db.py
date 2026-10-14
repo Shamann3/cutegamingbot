@@ -8968,6 +8968,7 @@ class Database:
                     new_wins = (result [ 'wins' ] or 0) + increment
                     await connection.execute("UPDATE users SET wins = $1 WHERE user_id = $2" , new_wins , user_id)
                     await self._note_games_played(connection, user_id, increment)
+                    await self._note_game_tick(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_wins] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")
@@ -9222,6 +9223,7 @@ class Database:
                     new_loose = (result [ 'loose' ] or 0) + increment
                     await connection.execute("UPDATE users SET loose = $1 WHERE user_id = $2" , new_loose , user_id)
                     await self._note_games_played(connection, user_id, increment)
+                    await self._note_game_tick(connection, user_id, increment)
 
                 if (result [ 'refcheckgame' ] or 0) == 0:
                     print("[update_user_loose] ✏️ refcheckgame=0, устанавливаю refcheckgame=1")

@@ -89,10 +89,10 @@ async def games_in_window(db, user_id: int, seconds: int) -> tuple[int, int]:
         row = await db.pool.fetchrow(
             """
             SELECT COALESCE(SUM(games), 0) AS played,
-                   EXTRACT(EPOCH FROM (MIN(played_at) + make_interval(secs => $2) - NOW())) AS remain
+                   EXTRACT(EPOCH FROM (MIN(played_at) + ($2::int * INTERVAL '1 second') - NOW())) AS remain
             FROM user_game_ticks
             WHERE user_id = $1
-              AND played_at > NOW() - make_interval(secs => $2)
+              AND played_at > NOW() - ($2::int * INTERVAL '1 second')
             """,
             int(user_id),
             span,

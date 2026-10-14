@@ -185,8 +185,20 @@ bot1 = Bot(
 )
 
 bot1.session.middleware(TelegramApiLogger())
+try:
+    from bot.funcs.reply_origin import ReplyOriginMiddleware
+
+    bot1.session.middleware(ReplyOriginMiddleware())
+except Exception as _origin_err:
+    print(f"⚠️ [WHO] origin memory not attached: {_origin_err!r}")
 
 dp = Dispatcher()
+try:
+    from bot.funcs.reply_origin import ReplyOriginUpdate
+
+    dp.update.outer_middleware(ReplyOriginUpdate())
+except Exception as _origin_upd_err:
+    print(f"⚠️ [WHO] origin update not attached: {_origin_upd_err!r}")
 router = Router()
 
 # ── Мэджик: единая цепь управления ВСЕМИ inline-кнопками ──
