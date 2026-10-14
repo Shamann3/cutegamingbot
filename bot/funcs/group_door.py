@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """Открытый вход в группу с балансом.
 
-Положить куты можно всегда. Снять и играть можно, когда группа
-публичная и заявки на вступление выключены. Если вход закрыт три
-дня подряд и предупреждение уже дошло, куты уходят в технические
-группы. Новое пополнение не обнуляет уже идущий срок.
+Положить куты можно всегда. Снять и играть можно, когда группу
+видно по имени, в неё заходят сами, участникам можно писать и
+сообщения бесплатные. Если так не сделано три дня подряд и
+предупреждение уже дошло, куты уходят в технические группы.
+Новое пополнение не обнуляет уже идущий срок.
 """
 from __future__ import annotations
 
@@ -59,12 +60,29 @@ def paid_stars(value) -> int:
     return stars if stars > 0 else 0
 
 
-def classify_door(username, join_by_request: bool, stars=0) -> dict:
+def members_can_write(permissions) -> bool:
+    """False только когда Telegram прямо запретил обычным участникам писать.
+
+    Пустые права не закрывают дверь: тогда запрет просто не пришёл.
+    """
+    if permissions is None:
+        return True
+    flag = getattr(permissions, "can_send_messages", None)
+    if flag is None and isinstance(permissions, dict):
+        flag = permissions.get("can_send_messages")
+    if flag is None:
+        return True
+    return bool(flag)
+
+
+def classify_door(username, join_by_request: bool, stars=0, *, can_send: bool = True) -> dict:
     reasons = []
     if not public_username(username):
         reasons.append("private")
     if join_by_request:
         reasons.append("requests")
+    if not can_send:
+        reasons.append("quiet")
     price = paid_stars(stars)
     if price > 0:
         reasons.append("stars")
@@ -159,6 +177,8 @@ def _actions(reasons: list[str] | None) -> str:
         acts.append("сделайте группу публичной")
     if "requests" in picked:
         acts.append("уберите заявки на вступление")
+    if "quiet" in picked:
+        acts.append("разрешите участникам писать")
     if "stars" in picked:
         acts.append("уберите плату звёздами за сообщения")
     if not acts:
@@ -174,15 +194,23 @@ def why_lines(reasons: list[str]) -> str:
     lines = []
     if "requests" in reasons:
         lines.append(
-            f"{mark('rule')} <b>Включены заявки на вступление. Новый человек сам зайти не может.</b>"
+            f"{mark('rule')} <b>Включены заявки на вступление. Новый человек сам зайти не может. "
+            f"В настройках группы выключите их.</b>"
         )
     if "private" in reasons:
         lines.append(
-            f"{mark('rule')} <b>Группа приватная. Зайти могут только те, кого пригласили.</b>"
+            f"{mark('rule')} <b>Группа приватная. Её не найти по имени. "
+            f"В настройках группы включите публичную и задайте @имя.</b>"
+        )
+    if "quiet" in reasons:
+        lines.append(
+            f"{mark('rule')} <b>Участникам нельзя писать. Внизу чата так и сказано. "
+            f"В настройках группы включите отправку сообщений.</b>"
         )
     if "stars" in reasons:
         lines.append(
-            f"{mark('rule')} <b>Сообщения платные. Чтобы написать, нужны звёзды.</b>"
+            f"{mark('rule')} <b>Сообщения платные. Чтобы написать, нужны звёзды. "
+            f"В настройках группы уберите плату.</b>"
         )
     return "\n".join(lines)
 
@@ -193,18 +221,18 @@ def steps_line(reasons: list[str] | None = None) -> str:
 
 def warn_block() -> str:
     return (
-        f"{mark('warn')} <b>Если за 3 дня этого не сделать, проект заберёт куты "
+        f"{mark('warn')} <b>Если за 3 дня так и оставить, куты уйдут "
         f"в технические группы. Вернуть их нельзя.</b>\n"
-        f"Напишем ещё, когда останется 2 дня, и ещё за 1 день.\n"
-        f"<blockquote><b>Это предупреждение</b></blockquote>"
+        f"Напомним, когда останется 2 дня, и ещё за 1 день.\n"
+        f"<blockquote><b>Куты пока в группе</b></blockquote>"
     )
 
 
 def start_text(reasons: list[str], amount: int) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять их и играть на них можно, только если группа публичная, "
-        f"заявок на вступление нет и сообщения бесплатные.\n"
+        f"Играть и снимать можно, когда группа открыта. "
+        f"Это переключатели в настройках группы.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line(reasons)}\n"
         f"{warn_block()}"
@@ -216,7 +244,7 @@ def day1_text(reasons: list[str], amount: int) -> str:
         f"{mark('day')} <b>Осталось 2 дня.</b> В группе ещё {dots(amount)} кут.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line(reasons)}\n"
-        f"Если этого не сделать, проект заберёт куты."
+        f"Если переключатели не включить, куты заберут."
     )
 
 
@@ -241,6 +269,8 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
         bits.append("группа была приватной")
     if "requests" in reasons:
         bits.append("стояли заявки на вступление")
+    if "quiet" in reasons:
+        bits.append("участникам было нельзя писать")
     if "stars" in reasons:
         bits.append("сообщения были платными")
     reason = " и ".join(bits) if bits else "вход был закрыт"
@@ -252,19 +282,20 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
     history = "Мы уже писали: " + ", ".join(sent) + "."
     return (
         f"{mark('now')} <b>Проект забрал {dots(amount)} кут в технические группы.</b>\n"
-        f"3 дня зайти мог не любой: {reason}.{when}\n"
+        f"3 дня группа была закрыта: {reason}.{when}\n"
         f"{history}\n"
         f"{steps_line(reasons)}\n"
         f"<b>Новые куты снова ждут 3 дня. Положить можно сразу. "
-        f"Снять и играть можно, когда группа публичная и заявок на вступление нет.</b>"
+        f"Снять и играть можно, когда группа открыта.</b>"
     )
 
 
 def recovered_text(username: str | None) -> str:
     name = f" Публичное имя: @{username}." if username else ""
     return (
-        f"{mark('keep')} <b>Группа публичная. Куты остаются в группе.</b>\n"
-        f"Заявок на вступление нет. Сообщения бесплатные.{name} Снять и играть снова можно."
+        f"{mark('keep')} <b>Группа открыта. Куты остаются в группе.</b>\n"
+        f"Её видно по имени. Зайти можно самому. Писать можно бесплатно.{name} "
+        f"Снять и играть снова можно."
     )
 
 
@@ -280,15 +311,11 @@ def clock_line(amount: int, left: str) -> str:
 def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
     if kind == "withdraw":
         lead = (
-            f"<b>{mark('keep')} Снять куты нельзя.</b> "
-            f"Группа должна быть публичной, без заявок на вступление "
-            f"и с бесплатными сообщениями."
+            f"<b>{mark('keep')} Снять куты нельзя, пока группа закрыта.</b>"
         )
     else:
         lead = (
-            f"{mark('play')} <b>Играть нельзя.</b> "
-            f"Группа должна быть публичной, без заявок на вступление "
-            f"и с бесплатными сообщениями."
+            f"{mark('play')} <b>Играть нельзя, пока группа закрыта.</b>"
         )
     return (
         f"{lead}\n"
@@ -302,8 +329,8 @@ def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
 def banner_html(reasons: list[str], amount: int, left: str) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять и играть можно, только если группа публичная, заявок на вступление нет "
-        f"и сообщения бесплатные.\n"
+        f"Играть и снимать можно, когда группа открыта. "
+        f"Это переключатели в настройках группы.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line(reasons)}\n"
         f"{mark('warn')} <b>Если ничего не менять, куты заберут через {left}.</b>\n"
@@ -366,7 +393,7 @@ def unread_text(kind: str) -> str:
 def _reasons(raw: str | None) -> list[str]:
     if not raw:
         return []
-    return [part for part in str(raw).split(",") if part in {"private", "requests", "stars"}]
+    return [part for part in str(raw).split(",") if part in {"private", "requests", "quiet", "stars"}]
 
 
 async def ensure_table(db) -> None:
@@ -414,7 +441,8 @@ async def read_door(bot, chat_id: int, *, fresh: bool = False) -> dict:
     username = getattr(chat, "username", None)
     requests = bool(getattr(chat, "join_by_request", False))
     stars = paid_stars(getattr(chat, "paid_message_star_count", None))
-    door = classify_door(username, requests, stars)
+    can_send = members_can_write(getattr(chat, "permissions", None))
+    door = classify_door(username, requests, stars, can_send=can_send)
     door["known"] = True
     door["title"] = str(getattr(chat, "title", "") or "")
     _CACHE[int(chat_id)] = (now, dict(door))

@@ -11,6 +11,7 @@ from bot.funcs.group_door import (
     banner_html,
     block_text,
     classify_door,
+    members_can_write,
     day1_text,
     day2_text,
     deposit_note,
@@ -51,6 +52,16 @@ def test_open_door_needs_username_and_no_requests():
     assert paid["stars"] == 3
     assert classify_door("CuteGamingChat", False, 0)["open"] is True
     assert classify_door("CuteGamingChat", False, None)["open"] is True
+    quiet = classify_door("CuteGamingChat", False, 0, can_send=False)
+    assert quiet["open"] is False
+    assert quiet["reasons"] == ["quiet"]
+    assert members_can_write(None) is True
+    assert members_can_write({"can_send_messages": False}) is False
+    assert members_can_write({"can_send_messages": True}) is True
+    quiet_note = start_text(["quiet"], 1639)
+    assert "нельзя писать" in quiet_note
+    assert "разрешите участникам писать" in quiet_note
+    assert "сделайте группу публичной" not in quiet_note
     star_note = start_text(["stars"], 1639)
     assert "Сообщения платные" in star_note
     assert "уберите плату звёздами за сообщения" in star_note
