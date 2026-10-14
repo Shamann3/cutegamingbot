@@ -4,24 +4,75 @@ from __future__ import annotations
 
 import asyncio
 import html
+import re
 import secrets
 
 from aiogram.types import EphemeralMessageParameters
 
 WHISPER_TTL = 6 * 60 * 60
 _ALERT = 200
-_WORDS = ("прошептать", "шепнуть")
+_WORDS = ("прошептать", "шептнуть", "шепнуть")
 _BOX: dict[str, dict] = {}
+_WAIT: dict[int, dict] = {}
+_TOKENS: dict[str, int] = {}
+BOT_OPEN = "https://t.me/CuteGamingBot"
+_NOT_A_PERSON = {"joinchat", "addstickers", "share", "proxy", "socks", "iv", "login"}
+_LINK = re.compile(
+    r"(?:https?://)?(?:t\.me|telegram\.me)/@?([A-Za-z0-9_]{4,32})/?",
+    re.IGNORECASE,
+)
+_TG_USER = re.compile(r"tg://user\?id=(\d+)", re.IGNORECASE)
+_PLAIN_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{3,31}")
 
 
 def whisper_body(text: str) -> str | None:
-    """Текст после «прошептать» или «шепнуть». None, если это не шёпот."""
+    """Текст после команды. None, если это не шёпот."""
     raw = str(text or "").strip()
     low = raw.lower()
     for word in _WORDS:
         if low.startswith(word):
             return raw[len(word):].strip()
     return None
+
+
+def look_like_target(token: str, *, plain: bool = False) -> tuple[str, str] | None:
+    """('username', имя) или ('id', цифры). Иначе это не адрес человека."""
+    raw = str(token or "").strip().strip("<>").rstrip(".,);")
+    if not raw:
+        return None
+    if raw.startswith("@"):
+        name = raw[1:]
+        if re.fullmatch(r"[A-Za-z0-9_]{4,32}", name):
+            return ("username", name)
+        return None
+    found = _TG_USER.fullmatch(raw)
+    if found:
+        return ("id", found.group(1))
+    if raw.isdigit() and len(raw) >= 5:
+        return ("id", raw)
+    link = _LINK.fullmatch(raw.split("?", 1)[0].split("#", 1)[0])
+    if link:
+        name = link.group(1)
+        if name.lower() in _NOT_A_PERSON:
+            return None
+        if name.isdigit():
+            return ("id", name)
+        return ("username", name)
+    if plain and _PLAIN_NAME.fullmatch(raw):
+        return ("username", raw)
+    return None
+
+
+def split_address(body: str, *, plain: bool = False) -> tuple[tuple[str, str] | None, str]:
+    """Первое слово — адрес, остальное — текст шёпота."""
+    text = str(body or "").strip()
+    if not text:
+        return None, ""
+    head, _, tail = text.partition(" ")
+    target = look_like_target(head, plain=plain)
+    if target is None:
+        return None, text
+    return target, tail.strip()
 
 
 def whisper_page(sender_name: str, text: str) -> str:
@@ -62,6 +113,73 @@ async def _expire(token: str) -> None:
     _BOX.pop(token, None)
 
 
+def group_has_secret(body: str) -> bool:
+    """В группе после команды уже написан текст. Его нельзя прятать удалением."""
+    return bool(str(body or "").strip())
+
+
+def ask_text(receiver_name: str, *, leaked: bool) -> str:
+    who = html.escape(" ".join(str(receiver_name or "").split()) or "этого человека")
+    if leaked:
+        return (
+            "<b>Этот текст уже был в группе.</b>\n"
+            "Администратор может открыть удалённое сообщение в недавних действиях.\n"
+            f"Напишите другой шёпот для {who} сюда. В группе его не будет."
+        )
+    return (
+        f"<b>Напишите шёпот для {who}.</b>\n"
+        "Текст останется в этой переписке. В группе будет только карточка, без слов."
+    )
+
+
+def arm_wait(*, sender_id: int, receiver_id: int, sender_name: str, receiver_name: str, chat_id: int) -> str:
+    token = secrets.token_hex(6)
+    sender = int(sender_id)
+    previous = _WAIT.pop(sender, None)
+    if previous:
+        _TOKENS.pop(str(previous.get("token") or ""), None)
+    _WAIT[sender] = {
+        "token": token,
+        "receiver_id": int(receiver_id),
+        "sender_name": " ".join(str(sender_name or "").split()),
+        "receiver_name": " ".join(str(receiver_name or "").split()),
+        "chat_id": int(chat_id),
+    }
+    _TOKENS[token] = sender
+    try:
+        asyncio.get_running_loop()
+        asyncio.create_task(_expire_wait(sender, token))
+    except RuntimeError:
+        pass
+    return token
+
+
+async def _expire_wait(sender_id: int, token: str) -> None:
+    await asyncio.sleep(WHISPER_TTL)
+    row = _WAIT.get(int(sender_id))
+    if row and row.get("token") == token:
+        _WAIT.pop(int(sender_id), None)
+        _TOKENS.pop(token, None)
+
+
+def waiting(sender_id: int) -> dict | None:
+    row = _WAIT.get(int(sender_id))
+    return dict(row) if row else None
+
+
+def claim_wait(sender_id: int) -> dict | None:
+    row = _WAIT.pop(int(sender_id), None)
+    if not row:
+        return None
+    _TOKENS.pop(str(row.get("token") or ""), None)
+    return row
+
+
+def wait_owner(token: str) -> int | None:
+    sender = _TOKENS.get(str(token or ""))
+    return int(sender) if sender else None
+
+
 def drop_whisper(token: str) -> None:
     _BOX.pop(str(token or ""), None)
 
@@ -81,7 +199,6 @@ async def present_whisper(callback) -> None:
         return
     opened = await _send_private(callback, record)
     if opened:
-        drop_whisper(token)
         try:
             await callback.answer()
         except Exception:
@@ -89,7 +206,6 @@ async def present_whisper(callback) -> None:
         return
     try:
         await callback.answer(alert_text(record["text"]), show_alert=True)
-        drop_whisper(token)
     except Exception as exc:
         print(f"[WHISPER] alert fail {type(exc).__name__}")
 

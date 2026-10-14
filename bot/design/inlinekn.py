@@ -1548,50 +1548,26 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
 
 
-    elif any(query_text.startswith(keyword) for keyword in [ "шепнуть" , "прошептать" ]):
+    elif any(query_text.startswith(keyword) for keyword in [ "шепнуть" , "шептнуть" , "прошептать" ]):
 
         try:
 
             # Очищаем запрос от ключевых слов
 
-            from bot.funcs.whisper_open import whisper_body
+            from bot.funcs.whisper_open import split_address, whisper_body
 
             whisper_message = whisper_body(inline_query.query or "")
             if whisper_message is None or not whisper_message:
                 raise ValueError("Нет сообщения")
 
-            # Парсим команду на @username или id
+            found, message = split_address(whisper_message, plain=True)
+            if found is None or not message:
+                raise ValueError("Напишите: шепнуть @имя текст")
 
-            parts = whisper_message.split(" " , 1)  # Разделяем на две части: получатель и сообщение
-
-            if len(parts) < 2:
-                raise ValueError("Нет получателя для шепота")
-
-            target = parts [ 0 ].strip()  # Это будет либо @username, либо id
-
-            message = parts [ 1 ].strip()
-
-            # Проверяем, если это @username
-
-            if target.startswith("@"):  # Если это @username
-
-                target = target [ 1: ]
-
-                receiver_id = await db.get_user_id_by_username(target.lower())
-
-
-            # Проверяем, если это числовой ID
-
-            elif target.isdigit():  # Если это числовой ID
-
-                receiver_id = int(target)
-
-
-            # Если получатель не является ни @username, ни числовым ID
-
+            if found[0] == "id":
+                receiver_id = int(found[1])
             else:
-
-                raise ValueError("Неверный формат получателя")
+                receiver_id = await db.get_user_id_by_username(found[1].lower())
 
             if not receiver_id:
                 raise ValueError("Не удалось найти пользователя по данному ID или @username")
@@ -1657,7 +1633,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
                 title="⚠️ Неправильный формат" ,
 
-                description="🕊 Прошептать [@username или id] [сообщение]" ,
+                description="🕊 шепнуть @имя, ссылку или id и текст" ,
 
                 input_message_content=InputTextMessageContent(
 

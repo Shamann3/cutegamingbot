@@ -409,8 +409,10 @@ other = f'''
 <tg-emoji emoji-id='5280924618444514633'>🐻‍❄️</tg-emoji> <b><i>Выбор любого числа, между указанными числами</i></b>
 <blockquote><code>Кут рандом [1 число] [2 число]</code></blockquote>
 
-<tg-emoji emoji-id='5418331857878016419'>💬</tg-emoji> <b><i>Скрытое сообщение</i></b>
-<blockquote><code>Прошептать [сообщение]</code></blockquote>
+<tg-emoji emoji-id='5418331857878016419'>💬</tg-emoji> <b><i>Скрытое сообщение. Текст пишется боту в личку</i></b>
+<blockquote><code>Прошептать</code>
+<code>шепнуть @имя текст</code>
+<code>шептнуть</code></blockquote>
 
 <tg-emoji emoji-id='5469870473292556436'>🍺</tg-emoji> <b><i>Стикеры</i></b>
 <blockquote><code>Кут стик</code></blockquote>

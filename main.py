@@ -7439,6 +7439,14 @@ async def universal_start_handler(message: Message, command: Optional[CommandObj
 
     print(f"🔎 [START][DEEP] raw={deep_raw!r} token={deep_token!r} decoded={deep!r} user_id={user_id}")
 
+    if deep.startswith("whis_"):
+        try:
+            from bot.funcs.Shep import remind_whisper_wait
+            if await remind_whisper_wait(message, deep[5:]):
+                return
+        except Exception as whisper_err:
+            print(f"[WHISPER] start {type(whisper_err).__name__}")
+
     # ─────────────────────────────────────────────────────────────────────────
     # 2) Инвойс (оставляем принцип if deep.startswith("insert_"))
     # ─────────────────────────────────────────────────────────────────────────
@@ -34512,6 +34520,14 @@ async def add_firstname_to_usercheck_balance(message: Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
+    if getattr(getattr(message, "chat", None), "type", "") == "private":
+        try:
+            from bot.funcs.Shep import accept_whisper_private
+            if await accept_whisper_private(message):
+                return
+        except Exception as whisper_err:
+            print(f"[WHISPER] private {type(whisper_err).__name__}")
+
     # TikTok wait: общий F.text скипаем только в ЛИЧКЕ. Группа должна жить как обычно.
     _tt_armed = False
     _tt_chat_type = getattr(getattr(message, "chat", None), "type", "")
@@ -38424,7 +38440,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
 
             task1 = asyncio.create_task(measure_time(other2(message) , "other2"))
             await task1
-        sheptext = {"прошептать" , "шепнуть"}
+        sheptext = {"прошептать", "шептнуть", "шепнуть"}
         if any(text_lower.startswith(keyword) for keyword in sheptext):
             from bot.funcs.Shep import shep3412
             try:
