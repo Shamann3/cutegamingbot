@@ -344,8 +344,25 @@ def _ru_count(count: int, one: str, few: str, many: str) -> str:
     return f"{number} {word}"
 
 
+def calm_short_left(seconds) -> str:
+    """Одно число на кнопке: 2д, 21ч, 58м или 28с."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    if total >= 86400:
+        return f"{total // 86400}д"
+    if total >= 3600:
+        return f"{total // 3600}ч"
+    if total >= 60:
+        return f"{total // 60}м"
+    return f"{total}с"
+
+
 def calm_one_left(seconds) -> str:
-    """Одно число: часы, или минуты, или секунды."""
+    """Одно число словами: часы, или минуты, или секунды."""
     try:
         total = int(seconds)
     except (TypeError, ValueError):
@@ -421,9 +438,8 @@ def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     if seconds < 0:
         seconds = 0
     if state["calm"]:
-        hold = "защита сейчас заканчивается" if seconds < 1 else f"защита ещё {calm_one_left(seconds)}"
-        return f"{state['played']}/{state['need']} игр | {hold}"
-    return f"{state['played']}/{state['need']} игр | {calm_left_phrase(seconds)}"
+        return f"{state['played']}/{state['need']} игр | {calm_short_left(seconds)} ⚔️"
+    return f"{state['played']}/{state['need']} игр | {calm_short_left(seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
