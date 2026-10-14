@@ -138,6 +138,16 @@ _QUIET_PATTERNS = (
     "bot was blocked by the user",
     "user is deactivated",
     "chat not found",
+    # Человек не открывал бота, вышел, удалил чат или бота выгнали из группы.
+    # Доставка невозможна. Вызывающий код это пропускает, трейс здесь не нужен.
+    "can't initiate conversation",
+    "bot was kicked",
+    "bot is not a member",
+    "chat was deleted",
+    "can't send messages to bots",
+    "chat_write_forbidden",
+    "topic_closed",
+    "group chat was upgraded",
     # getChatMember так отвечает, когда человека нет в этой группе.
     # Это ответ Telegram, не авария: аккаунт при этом может существовать.
     "participant_id_invalid",
