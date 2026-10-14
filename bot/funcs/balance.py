@@ -324,12 +324,7 @@ async def handle_balance(message: types.Message, db):
     if calm_left_start is None:
         calm_left_start = calm_now.get("seconds") or int(calm_now.get("hours") or 24) * 3600
     calm_left_start = int(calm_left_start or 0)
-    if (
-        user_balance > 0
-        and st_int != BAL_STATUS_BURNED
-        and calm_now.get("enabled")
-        and not calm_now.get("calm")
-    ):
+    if calm_now.get("enabled", True):
         calm_row_index = len(kb_rows)
         kb_rows.append([_calm_button(owner_id, calm_played, calm_need, calm_left_start)])
 
@@ -5090,12 +5085,7 @@ async def cb_balance_refresh(c: types.CallbackQuery):
         calm_now = await _calm_now(owner_id)
     except Exception:
         calm_now = {"enabled": False, "calm": False}
-    if (
-        user_balance > 0
-        and st_int != BAL_STATUS_BURNED
-        and calm_now.get("enabled")
-        and not calm_now.get("calm")
-    ):
+    if calm_now.get("enabled", True):
         calm_played = int(calm_now.get("played") or 0)
         calm_need = int(calm_now.get("need") or 5)
         calm_left_start = calm_now.get("left_sec")

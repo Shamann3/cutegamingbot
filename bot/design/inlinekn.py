@@ -1554,12 +1554,10 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
             # Очищаем запрос от ключевых слов
 
-            whisper_message = query_text.lower()
+            from bot.funcs.whisper_open import whisper_body
 
-            for keyword in [ "шепнуть" , "прошептать" ]:
-                whisper_message = whisper_message.replace(keyword , "").strip()
-
-            if not whisper_message:
+            whisper_message = whisper_body(inline_query.query or "")
+            if whisper_message is None or not whisper_message:
                 raise ValueError("Нет сообщения")
 
             # Парсим команду на @username или id
@@ -1577,11 +1575,9 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
             if target.startswith("@"):  # Если это @username
 
-                target = target [ 1: ]  # Убираем @
+                target = target [ 1: ]
 
-                print(f"Ищем пользователя по username: {target}")  # Лог для отладки
-
-                receiver_id = await db.get_user_id_by_username(target)  # Получаем ID по username
+                receiver_id = await db.get_user_id_by_username(target.lower())
 
 
             # Проверяем, если это числовой ID
@@ -1602,9 +1598,18 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
             # Создаем кнопку, чтобы получить шепот
 
+            from bot.funcs.whisper_open import keep_whisper
+
+            sender_name = await db.get_user_first_name(user_id)
+            token = await keep_whisper(
+                sender_id=user_id,
+                receiver_id=receiver_id,
+                sender_name=sender_name or "",
+                text=message,
+            )
             send_button = InlineKeyboardButton(
 
-                text="Прочитать" , callback_data=f"inline_view_message_{receiver_id}"
+                text="Прочитать шёпот" , callback_data=f"wh:{token}"
 
             )
 
@@ -1615,20 +1620,6 @@ async def inline_help_game(inline_query: types.InlineQuery):
             )
 
             # Сохраняем шепот во временное хранилище
-
-            asyncio.create_task(
-
-                inline_store_temp_whisper(
-
-                    sender_id=user_id ,
-
-                    receiver_id=receiver_id ,
-
-                    message=message ,
-
-                )
-
-            )
 
             receiver_name = await db.get_user_first_name(receiver_id)
             receiver_username = await db.get_username_by_user_id(receiver_id)
@@ -1645,7 +1636,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
                 input_message_content=InputTextMessageContent(
 
-                    message_text=f"💬 <b>Кто-то отправил скрытое сообщение {name_link1}!</b>" ,
+                    message_text=f"💬 <b>{name_link1}, вам шепнули</b>\n<i>Кто именно — внутри шёпота.</i>" ,
 
                     parse_mode="HTML", disable_web_page_preview=True
 

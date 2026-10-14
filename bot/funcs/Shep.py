@@ -1,63 +1,68 @@
 from main import *
 
-# Временное хранилище шепотов (receiver_id -> whisper_data)
+from bot.funcs.whisper_open import keep_whisper, present_whisper, whisper_body
 
 
-# Асинхронная функция для хранения шепота с автоочисткой
 async def store_temp_whisper(sender_id: int, receiver_id: int, message: str, ttl: int = 180):
+    """Старый ящик. Новые шёпоты живут в whisper_open."""
     temp_whispers[receiver_id] = {
         'sender_id': sender_id,
         'message': message
     }
-
     await asyncio.sleep(ttl)
     temp_whispers.pop(receiver_id, None)
 
 
-
 @dp.message()
 async def shep3412(message: Message):
-    if message.reply_to_message:
-        text = message.text.lower().strip()
-        if text.startswith(("прошептать", "шепнуть")):
-            receiver_id = message.reply_to_message.from_user.id
-            sender_id = message.from_user.id
-            whisper_message = text.replace("прошептать", "").replace("шепнуть", "").strip()
+    if not message.reply_to_message or not message.text or message.from_user is None:
+        return
+    body = whisper_body(message.text)
+    if body is None:
+        return
+    target = message.reply_to_message.from_user
+    if target is None:
+        return
+    if not body:
+        await message.reply("Напишите текст после «прошептать».")
+        return
 
-            sender_name = await db.get_user_first_name(sender_id)
-            receiver_name = await db.get_user_first_name(receiver_id)
-            receiver_username = await db.get_username_by_user_id(receiver_id)
-            sender_username = await db.get_username_by_user_id(sender_id)
+    receiver_id = target.id
+    sender_id = message.from_user.id
+    sender_name = await db.get_user_first_name(sender_id)
+    receiver_name = await db.get_user_first_name(receiver_id)
+    receiver_username = await db.get_username_by_user_id(receiver_id)
+    sender_username = await db.get_username_by_user_id(sender_id)
+    token = await keep_whisper(
+        sender_id=sender_id,
+        receiver_id=receiver_id,
+        sender_name=sender_name or message.from_user.first_name or "",
+        text=body,
+    )
+    name_link1 = await create_user_link(receiver_id, receiver_name, receiver_username)
+    name_link2 = await create_user_link(sender_id, sender_name, sender_username)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Прочитать шёпот", callback_data=f"wh:{token}")
+    ]])
+    message_text = (
+        f"💬 <b>{name_link1}, вам шепнули</b>\n"
+        f"<i>от {name_link2}</i>"
+    )
+    await message.answer(
+        message_text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
-            # Сохраняем шепот с временем
-            temp_whispers[receiver_id] = {
-                'sender_id': sender_id,
-                'message': whisper_message,
-                'timestamp': time.time()
-            }
 
-            # Генерация ссылок и клавиатуры
-
-            name_link1 = await create_user_link(receiver_id, receiver_name, receiver_username)
-            name_link2 = await create_user_link(sender_id, sender_name, sender_username)
-
-            button = InlineKeyboardButton(
-                text="Посмотреть сообщение",
-                callback_data=f"view_message_{receiver_id}"
-            )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
-
-            button_temp_whispers[receiver_id] = {'keyboard_join': keyboard}
-
-            message_text = (
-                f"💬 <b>{name_link1}, <i>вам отправили скрытое сообщение</i></b>\n"
-                f"<b>👨‍💻 от </b><b>{name_link2}</b>"
-            )
-
-            await message.answer(message_text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
-            await message.delete()
-    button_temp_whispers.save()
-    temp_whispers.save()
+@dp.callback_query(lambda c: c.data and c.data.startswith("wh:"))
+async def open_whisper_button(callback_query: types.CallbackQuery):
+    await present_whisper(callback_query)
 
 @dp.callback_query(lambda c: c.data.startswith('view_message_'))
 async def asdasdview_message(callback_query: types.CallbackQuery):

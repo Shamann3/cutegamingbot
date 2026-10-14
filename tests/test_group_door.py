@@ -5,6 +5,9 @@ from bot.funcs.group_door import (
     DAY,
     GRACE,
     action_blocked,
+    may_pass,
+    unread_door,
+    unread_text,
     banner_html,
     block_text,
     classify_door,
@@ -42,6 +45,16 @@ def test_open_door_needs_username_and_no_requests():
     assert private["reasons"] == ["private"]
     both = classify_door("", True)
     assert both["reasons"] == ["private", "requests"]
+    paid = classify_door("CuteGamingChat", False, 3)
+    assert paid["open"] is False
+    assert paid["reasons"] == ["stars"]
+    assert paid["stars"] == 3
+    assert classify_door("CuteGamingChat", False, 0)["open"] is True
+    assert classify_door("CuteGamingChat", False, None)["open"] is True
+    star_note = start_text(["stars"], 1639)
+    assert "Сообщения платные" in star_note
+    assert "уберите плату звёздами за сообщения" in star_note
+    assert "сделайте группу публичной" not in star_note
     assert public_username("ab") is None
     assert public_username("@CuteGamingChat") == "CuteGamingChat"
 
@@ -63,6 +76,19 @@ def test_sweep_keeps_running_clocks_and_walks_past_one_page():
     small, done = sweep_batch([], [-9], 3)
     assert small == [-9]
     assert done is True
+
+
+def test_a_missed_chat_check_does_not_open_the_door():
+    missed = unread_door()
+    assert may_pass(missed) is False
+    assert missed["open"] is False
+    play = unread_text("play")
+    withdraw = unread_text("withdraw")
+    assert "Играть нельзя" in play
+    assert "Снять куты нельзя" in withdraw
+    assert "Положить куты можно" in play
+    assert may_pass({"known": True, "open": True}) is True
+    assert may_pass({"known": True, "open": False, "reasons": ["stars"]}) is False
 
 
 def test_pots_cover_the_whole_sum():

@@ -412,8 +412,18 @@ def calm_button_visible(played, need=CALM_GAMES) -> bool:
 
 
 def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
+    """Счётчик на балансе: сколько игр уже есть и сколько ещё длится срок."""
     state = calm_progress(played, need)
-    return f"{state['played']}/{state['need']} игр | {calm_left_phrase(left_seconds)}"
+    try:
+        seconds = int(left_seconds or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds < 0:
+        seconds = 0
+    if state["calm"]:
+        hold = "защита сейчас заканчивается" if seconds < 1 else f"защита ещё {calm_one_left(seconds)}"
+        return f"{state['played']}/{state['need']} игр | {hold}"
+    return f"{state['played']}/{state['need']} игр | {calm_left_phrase(seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:

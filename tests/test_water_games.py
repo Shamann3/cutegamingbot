@@ -247,6 +247,8 @@ def test_five_games_keep_the_day_calm_without_replacing_a_shield():
     assert calm_left_phrase(22) == "остались 22 секунды"
     assert calm_left_phrase(0) == "осталось 0 секунд"
     assert calm_button_text(1, 5, 21 * 3600) == "1/5 игр | остался 21 час"
+    assert calm_button_text(5, 5, 21 * 3600) == "5/5 игр | защита ещё 21 час"
+    assert calm_button_text(6, 5, 0) == "6/5 игр | защита сейчас заканчивается"
     assert calm_button_text(1, 5, 22 * 3600 + 59 * 60 + 28) == "1/5 игр | остались 22 часа"
     alert = calm_alert(1, 5, 22 * 3600 + 58 * 60 + 6)
     assert "Вам нужно сыграть 1 / 5 игр за 22ч/58м/6с" in alert

@@ -50,13 +50,30 @@ def public_username(value) -> str | None:
     return text
 
 
-def classify_door(username, join_by_request: bool) -> dict:
+def paid_stars(value) -> int:
+    """Сколько звёзд стоит одно сообщение. Пустое и ноль — сообщения бесплатные."""
+    try:
+        stars = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return stars if stars > 0 else 0
+
+
+def classify_door(username, join_by_request: bool, stars=0) -> dict:
     reasons = []
     if not public_username(username):
         reasons.append("private")
     if join_by_request:
         reasons.append("requests")
-    return {"open": not reasons, "reasons": reasons, "username": public_username(username)}
+    price = paid_stars(stars)
+    if price > 0:
+        reasons.append("stars")
+    return {
+        "open": not reasons,
+        "reasons": reasons,
+        "username": public_username(username),
+        "stars": price,
+    }
 
 
 def human_left(delta: timedelta) -> str:
@@ -135,6 +152,24 @@ def sweep_batch(due: list[int], page: list[int], page_size: int) -> tuple[list[i
     return seen, len(page) < int(page_size)
 
 
+def _actions(reasons: list[str] | None) -> str:
+    picked = list(reasons or [])
+    acts = []
+    if "private" in picked:
+        acts.append("сделайте группу публичной")
+    if "requests" in picked:
+        acts.append("уберите заявки на вступление")
+    if "stars" in picked:
+        acts.append("уберите плату звёздами за сообщения")
+    if not acts:
+        acts = ["сделайте группу публичной", "уберите заявки на вступление"]
+    if len(acts) == 1:
+        return acts[0]
+    if len(acts) == 2:
+        return f"{acts[0]} и {acts[1]}"
+    return ", ".join(acts[:-1]) + " и " + acts[-1]
+
+
 def why_lines(reasons: list[str]) -> str:
     lines = []
     if "requests" in reasons:
@@ -145,21 +180,21 @@ def why_lines(reasons: list[str]) -> str:
         lines.append(
             f"{mark('rule')} <b>Группа приватная. Зайти могут только те, кого пригласили.</b>"
         )
+    if "stars" in reasons:
+        lines.append(
+            f"{mark('rule')} <b>Сообщения платные. Чтобы написать, нужны звёзды.</b>"
+        )
     return "\n".join(lines)
 
 
-def steps_line() -> str:
-    return (
-        f"{mark('keep')} <b>Что сделать: сделайте группу публичной "
-        f"и уберите заявки на вступление.</b>"
-    )
+def steps_line(reasons: list[str] | None = None) -> str:
+    return f"{mark('keep')} <b>Что сделать: {_actions(reasons)}.</b>"
 
 
 def warn_block() -> str:
     return (
-        f"{mark('warn')} <b>Если за 3 дня группу не сделать публичной "
-        f"и не убрать заявки, проект заберёт куты в технические группы. "
-        f"Вернуть их нельзя.</b>\n"
+        f"{mark('warn')} <b>Если за 3 дня этого не сделать, проект заберёт куты "
+        f"в технические группы. Вернуть их нельзя.</b>\n"
         f"Напишем ещё, когда останется 2 дня, и ещё за 1 день.\n"
         f"<blockquote><b>Это предупреждение</b></blockquote>"
     )
@@ -168,10 +203,10 @@ def warn_block() -> str:
 def start_text(reasons: list[str], amount: int) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять их и играть на них можно, только если группа публичная "
-        f"и заявок на вступление нет.\n"
+        f"Снять их и играть на них можно, только если группа публичная, "
+        f"заявок на вступление нет и сообщения бесплатные.\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}\n"
+        f"{steps_line(reasons)}\n"
         f"{warn_block()}"
     )
 
@@ -180,8 +215,8 @@ def day1_text(reasons: list[str], amount: int) -> str:
     return (
         f"{mark('day')} <b>Осталось 2 дня.</b> В группе ещё {dots(amount)} кут.\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}\n"
-        f"Если группу не сделать публичной и не убрать заявки, проект заберёт куты."
+        f"{steps_line(reasons)}\n"
+        f"Если этого не сделать, проект заберёт куты."
     )
 
 
@@ -191,7 +226,7 @@ def day2_text(reasons: list[str], amount: int) -> str:
         f"Завтра проект заберёт {dots(amount)} кут. "
         f"Куты, которые положите сегодня, уйдут вместе с ними.\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}\n"
+        f"{steps_line(reasons)}\n"
         f"<blockquote><b>Обратно эту сумму не вернут</b></blockquote>"
     )
 
@@ -201,10 +236,14 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
     if since is not None:
         stamp = since.astimezone(timezone.utc).strftime("%d.%m")
         when = f" Ждали с {stamp}."
-    reason = "стояли заявки на вступление" if reasons == ["requests"] else (
-        "группа была приватной" if reasons == ["private"] else
-        "группа была приватной и стояли заявки на вступление"
-    )
+    bits = []
+    if "private" in reasons:
+        bits.append("группа была приватной")
+    if "requests" in reasons:
+        bits.append("стояли заявки на вступление")
+    if "stars" in reasons:
+        bits.append("сообщения были платными")
+    reason = " и ".join(bits) if bits else "вход был закрыт"
     sent = ["в начале"]
     if warned >= 2:
         sent.append("за 2 дня")
@@ -215,7 +254,7 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
         f"{mark('now')} <b>Проект забрал {dots(amount)} кут в технические группы.</b>\n"
         f"3 дня зайти мог не любой: {reason}.{when}\n"
         f"{history}\n"
-        f"{steps_line()}\n"
+        f"{steps_line(reasons)}\n"
         f"<b>Новые куты снова ждут 3 дня. Положить можно сразу. "
         f"Снять и играть можно, когда группа публичная и заявок на вступление нет.</b>"
     )
@@ -225,7 +264,7 @@ def recovered_text(username: str | None) -> str:
     name = f" Публичное имя: @{username}." if username else ""
     return (
         f"{mark('keep')} <b>Группа публичная. Куты остаются в группе.</b>\n"
-        f"Заявок на вступление нет.{name} Снять и играть снова можно."
+        f"Заявок на вступление нет. Сообщения бесплатные.{name} Снять и играть снова можно."
     )
 
 
@@ -234,8 +273,7 @@ def clock_line(amount: int, left: str) -> str:
         return ""
     return (
         f"\n{mark('warn')} <b>Сейчас {dots(amount)} кут. "
-        f"Если группу не сделать публичной и не убрать заявки, "
-        f"через {left} проект их заберёт.</b>"
+        f"Если этого не сделать, через {left} проект их заберёт.</b>"
     )
 
 
@@ -243,17 +281,19 @@ def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
     if kind == "withdraw":
         lead = (
             f"<b>{mark('keep')} Снять куты нельзя.</b> "
-            f"Группа должна быть публичной, без заявок на вступление."
+            f"Группа должна быть публичной, без заявок на вступление "
+            f"и с бесплатными сообщениями."
         )
     else:
         lead = (
             f"{mark('play')} <b>Играть нельзя.</b> "
-            f"Группа должна быть публичной, без заявок на вступление."
+            f"Группа должна быть публичной, без заявок на вступление "
+            f"и с бесплатными сообщениями."
         )
     return (
         f"{lead}\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}"
+        f"{steps_line(reasons)}"
         f"{clock_line(amount, left)}\n"
         f"Положить куты можно."
     )
@@ -262,9 +302,10 @@ def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
 def banner_html(reasons: list[str], amount: int, left: str) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять и играть можно, только если группа публичная и заявок на вступление нет.\n"
+        f"Снять и играть можно, только если группа публичная, заявок на вступление нет "
+        f"и сообщения бесплатные.\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}\n"
+        f"{steps_line(reasons)}\n"
         f"{mark('warn')} <b>Если ничего не менять, куты заберут через {left}.</b>\n"
         f"<blockquote><b>Это предупреждение</b></blockquote>"
     )
@@ -275,9 +316,8 @@ def deposit_note(reasons: list[str], amount: int, left: str) -> str:
         f"{mark('now')} <b>Куты положили. Срок не сбросился: осталось {left}. "
         f"Сейчас в группе {dots(amount)} кут.</b>\n"
         f"{why_lines(reasons)}\n"
-        f"{steps_line()}\n"
-        f"{mark('play')} <b>Снять и играть пока нельзя: группа ещё не публичная "
-        f"или стоят заявки. Положить ещё можно.</b>"
+        f"{steps_line(reasons)}\n"
+        f"{mark('play')} <b>Снять и играть пока нельзя. Положить ещё можно.</b>"
     )
 
 
@@ -294,10 +334,39 @@ def protected_ids() -> set[int]:
     return ids
 
 
+def unread_door() -> dict:
+    """getChat не ответил. Вход не считаем открытым и срок изъятия не запускаем."""
+    return {
+        "known": False,
+        "open": False,
+        "reasons": [],
+        "username": None,
+        "title": "",
+        "unread": True,
+    }
+
+
+def may_pass(door: dict) -> bool:
+    """Снять и играть можно только когда вход точно открыт."""
+    return bool(door.get("known")) and bool(door.get("open")) and not door.get("unread")
+
+
+def unread_text(kind: str) -> str:
+    if kind == "withdraw":
+        lead = f"<b>{mark('keep')} Снять куты нельзя.</b> Сейчас не видно, открыта ли группа."
+    else:
+        lead = f"{mark('play')} <b>Играть нельзя.</b> Сейчас не видно, открыта ли группа."
+    return (
+        f"{lead}\n"
+        f"Подождите немного и попробуйте снова.\n"
+        f"Положить куты можно."
+    )
+
+
 def _reasons(raw: str | None) -> list[str]:
     if not raw:
         return []
-    return [part for part in str(raw).split(",") if part in {"private", "requests"}]
+    return [part for part in str(raw).split(",") if part in {"private", "requests", "stars"}]
 
 
 async def ensure_table(db) -> None:
@@ -316,19 +385,36 @@ async def ensure_table(db) -> None:
         )
 
 
+async def _ask_chat(bot, chat_id: int):
+    last = None
+    for attempt in range(2):
+        try:
+            return await asyncio.wait_for(bot.get_chat(int(chat_id)), timeout=4)
+        except Exception as exc:
+            last = exc
+            if attempt == 0:
+                await asyncio.sleep(0.4)
+    print(f"[DOOR] getChat fail chat={chat_id} {type(last).__name__}")
+    return None
+
+
 async def read_door(bot, chat_id: int, *, fresh: bool = False) -> dict:
     now = asyncio.get_running_loop().time()
     cached = _CACHE.get(int(chat_id))
     if not fresh and cached and now - cached[0] < _CACHE_SEC:
         return dict(cached[1])
-    try:
-        chat = await asyncio.wait_for(bot.get_chat(int(chat_id)), timeout=4)
-    except Exception as exc:
-        print(f"[DOOR] getChat fail chat={chat_id} {type(exc).__name__}")
-        return {"known": False, "open": True, "reasons": [], "username": None, "title": ""}
+    chat = await _ask_chat(bot, chat_id)
+    if chat is None:
+        if cached and not cached[1].get("open"):
+            held = dict(cached[1])
+            held["known"] = True
+            held["unread"] = False
+            return held
+        return unread_door()
     username = getattr(chat, "username", None)
     requests = bool(getattr(chat, "join_by_request", False))
-    door = classify_door(username, requests)
+    stars = paid_stars(getattr(chat, "paid_message_star_count", None))
+    door = classify_door(username, requests, stars)
     door["known"] = True
     door["title"] = str(getattr(chat, "title", "") or "")
     _CACHE[int(chat_id)] = (now, dict(door))
@@ -589,7 +675,15 @@ async def guard_action(message, kind: str) -> bool:
         door = await sync(bot, db, chat_id, announce=False)
     except Exception as exc:
         print(f"[DOOR] guard fail chat={chat_id} {type(exc).__name__}")
-        return False
+        door = unread_door()
+    if not may_pass(door) and (door.get("unread") or not door.get("known")):
+        text = unread_text(kind)
+        try:
+            await message.reply(text, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception as exc:
+            print(f"[DOOR] unread reply fail {type(exc).__name__}")
+            return False
+        return True
     if not door.get("known") or door.get("open"):
         if door.get("notice"):
             try:
