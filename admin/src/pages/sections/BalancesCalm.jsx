@@ -8,17 +8,22 @@ function fmt(value) {
   return Number(value || 0).toLocaleString('ru-RU')
 }
 
-function oneLeft(total) {
+function leftPhrase(total) {
   const safe = Math.max(0, Math.floor(Number(total) || 0))
-  const word = (count, one, few, many) => {
+  const agree = (count, one, few, many, feminine) => {
     const tail = count % 100
-    if (Math.floor(tail / 10) !== 1 && count % 10 === 1) return `${count} ${one}`
-    if (Math.floor(tail / 10) !== 1 && [2, 3, 4].includes(count % 10)) return `${count} ${few}`
-    return `${count} ${many}`
+    const last = count % 10
+    if (Math.floor(tail / 10) !== 1 && last === 1) {
+      return `${feminine ? 'осталась' : 'остался'} ${count} ${one}`
+    }
+    if (Math.floor(tail / 10) !== 1 && [2, 3, 4].includes(last)) {
+      return `остались ${count} ${few}`
+    }
+    return `осталось ${count} ${many}`
   }
-  if (safe >= 3600) return word(Math.floor(safe / 3600), 'час', 'часа', 'часов')
-  if (safe >= 60) return word(Math.floor(safe / 60), 'минута', 'минуты', 'минут')
-  return word(safe, 'секунда', 'секунды', 'секунд')
+  if (safe >= 3600) return agree(Math.floor(safe / 3600), 'час', 'часа', 'часов', false)
+  if (safe >= 60) return agree(Math.floor(safe / 60), 'минута', 'минуты', 'минут', true)
+  return agree(safe, 'секунда', 'секунды', 'секунд', true)
 }
 
 function leftClock(total) {
@@ -434,7 +439,7 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
           </div>
           <p className="bal-preview">
             {form.enabled
-              ? `0/${games} | осталось ${oneLeft(windowSeconds)}`
+              ? `0/${games} игр | ${leftPhrase(windowSeconds)}`
               : 'Сейчас покой выключен.'}
           </p>
           <button type="button" className="sec-btn" disabled={saving} onClick={save}>

@@ -116,4 +116,16 @@ describe('DashboardSection', () => {
     )
     expect(values).toEqual(['2 млн', '1,5 млн'])
   })
+
+  it('на карточке видны доля периода и разница с прошлым', async () => {
+    vi.mocked(readDashboardSnapshot).mockReturnValue(SNAPSHOT)
+    vi.mocked(awaitDashboardStats).mockResolvedValue(SNAPSHOT)
+    const { container } = render(<DashboardSection />)
+    await flush(0)
+
+    const text = container.textContent.replace(/[\u00a0\u202f]/g, ' ')
+    expect(text).toContain('25% от суммы фрагментов')
+    expect(text).toContain('+234 к «вчера»')
+    expect(container.querySelectorAll('.dash-strip-value').length).toBeGreaterThan(0)
+  })
 })

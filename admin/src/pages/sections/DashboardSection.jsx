@@ -7,6 +7,7 @@ import {
 import { useIsPhone } from '../../lib/useIsDesktop'
 import { awaitDashboardStats, readDashboardSnapshot } from '../../lib/dashboardPrefetch'
 import { fmt, fmtCompact } from '../../lib/numberFormat'
+import { barPercents, metricDelta } from '../../lib/metricModel'
 import { useMetricSheet } from '../../components/MetricSheet'
 
 function periodBars(map) {
@@ -44,26 +45,56 @@ function CollectingCopy() {
   )
 }
 
+function chartNumber(value) {
+  const number = Number(value) || 0
+  if (Math.abs(number) >= 10000) return fmtCompact(number)
+  return fmt(number)
+}
+
 function PeriodStrip({ map, active }) {
   const bars = periodBars(map)
-  const max = Math.max(...bars.map((bar) => bar.value), 1)
+  const heights = barPercents(bars.map((bar) => bar.value))
+  const total = bars.reduce((sum, bar) => sum + (bar.value > 0 ? bar.value : 0), 0)
+  const chosen = bars.find((bar) => bar.id === active) || bars[0]
+  const chosenValue = chosen && chosen.value > 0 ? chosen.value : 0
+  const share = chosen && total > 0 ? Math.round((chosenValue / total) * 100) : 0
   return (
-    <span className="dash-strip" aria-hidden="true">
-      {bars.map((bar, index) => (
-        <span
-          key={bar.id}
-          className={`dash-strip-col${bar.id === active ? ' is-on' : ''}`}
-          style={{ '--i': index }}
-        >
-          <span className="dash-strip-track">
-            <span
-              className="dash-strip-bar"
-              style={{ height: `${Math.max(bar.value > 0 ? 14 : 4, Math.round((bar.value / max) * 100))}%` }}
-            />
+    <span className="dash-chart">
+      <span className="dash-strip">
+        {bars.map((bar, index) => (
+          <span
+            key={bar.id}
+            className={`dash-strip-col${bar.id === active ? ' is-on' : ''}`}
+            style={{ '--i': index }}
+          >
+            <span className="dash-strip-track">
+              <span className="dash-strip-bar" style={{ height: `${heights[index]}%` }} />
+            </span>
+            <span className="dash-strip-label">{bar.label}</span>
+            <span className="dash-strip-value">{chartNumber(bar.value)}</span>
           </span>
-          <span className="dash-strip-label">{bar.label}</span>
+        ))}
+      </span>
+      {chosen && (
+        <span className="dash-chart-readout">
+          <strong>{chosen.label}</strong>
+          <span>{fmt(chosen.value)}</span>
+          <em>{total > 0 ? `${share}% от суммы фрагментов` : 'нет значений'}</em>
         </span>
-      ))}
+      )}
+    </span>
+  )
+}
+
+function DeltaLine({ current, previous, previousLabel }) {
+  const delta = metricDelta(current, previous)
+  if (delta == null) return null
+  const tone = delta > 0 ? 'is-up' : delta < 0 ? 'is-down' : ''
+  return (
+    <span className={`dash-delta ${tone}`}>
+      {delta > 0 ? '+' : ''}
+      {fmt(delta)}
+      {previousLabel ? ` к «${previousLabel}»` : ''}
     </span>
   )
 }
@@ -91,6 +122,7 @@ function UsageCard({ title, pair, map, meta, loading, suffix, period, split, onO
             {meta.now}
             {previous != null ? ` · ${meta.prev}: ${fmtCompact(previous)}` : ''}
           </span>
+          <DeltaLine current={current} previous={previous} previousLabel={meta.prev} />
           {!loading && map && <PeriodStrip map={map} active={period} />}
           {split && (
             <div className="dash-usage-split">
@@ -349,6 +381,7 @@ export default function DashboardSection() {
               {meta.now}
               {` · ${meta.prev}: ${fmt(botPrev)}`}
             </span>
+            <DeltaLine current={botNow} previous={botPrev} previousLabel={meta.prev} />
             <PeriodStrip map={usage.botEvents} active={period} />
           </>
         )}

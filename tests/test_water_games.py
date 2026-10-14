@@ -22,6 +22,7 @@ from water_games.design import (
     calm_alert,
     calm_button_text,
     calm_button_visible,
+    calm_left_phrase,
     calm_one_left,
     calm_progress,
     calm_seconds,
@@ -232,7 +233,20 @@ def test_five_games_keep_the_day_calm_without_replacing_a_shield():
     assert calm_one_left(58 * 60 + 6) == "58 минут"
     assert calm_one_left(28) == "28 секунд"
     assert calm_one_left(1) == "1 секунда"
-    assert calm_button_text(1, 5, 22 * 3600 + 59 * 60 + 28) == "1/5 | осталось 22 часа"
+    assert calm_left_phrase(21 * 3600) == "остался 21 час"
+    assert calm_left_phrase(1 * 3600) == "остался 1 час"
+    assert calm_left_phrase(22 * 3600) == "остались 22 часа"
+    assert calm_left_phrase(5 * 3600) == "осталось 5 часов"
+    assert calm_left_phrase(11 * 3600) == "осталось 11 часов"
+    assert calm_left_phrase(60) == "осталась 1 минута"
+    assert calm_left_phrase(21 * 60) == "осталась 21 минута"
+    assert calm_left_phrase(2 * 60) == "остались 2 минуты"
+    assert calm_left_phrase(11 * 60) == "осталось 11 минут"
+    assert calm_left_phrase(1) == "осталась 1 секунда"
+    assert calm_left_phrase(22) == "остались 22 секунды"
+    assert calm_left_phrase(0) == "осталось 0 секунд"
+    assert calm_button_text(1, 5, 21 * 3600) == "1/5 игр | остался 21 час"
+    assert calm_button_text(1, 5, 22 * 3600 + 59 * 60 + 28) == "1/5 игр | остались 22 часа"
     alert = calm_alert(1, 5, 22 * 3600 + 58 * 60 + 6)
     assert "Вам нужно сыграть 1 / 5 игр за 22ч/58м/6с" in alert
     assert "полную защиту вашего баланса" in alert

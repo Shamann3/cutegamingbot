@@ -358,6 +358,38 @@ def calm_one_left(seconds) -> str:
     return _ru_count(total, "секунда", "секунды", "секунд")
 
 
+def _agree_left(count: int, one: str, few: str, many: str, *, feminine: bool) -> str:
+    """остался 21 час, осталась 1 минута, остались 22 часа, осталось 5 секунд."""
+    number = abs(int(count))
+    tail = number % 100
+    last = number % 10
+    if tail // 10 != 1 and last == 1:
+        verb = "осталась" if feminine else "остался"
+        word = one
+    elif tail // 10 != 1 and last in (2, 3, 4):
+        verb = "остались"
+        word = few
+    else:
+        verb = "осталось"
+        word = many
+    return f"{verb} {number} {word}"
+
+
+def calm_left_phrase(seconds) -> str:
+    """Слово «остался» согласовано с часом, минутой или секундой."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    if total >= 3600:
+        return _agree_left(total // 3600, "час", "часа", "часов", feminine=False)
+    if total >= 60:
+        return _agree_left(total // 60, "минута", "минуты", "минут", feminine=True)
+    return _agree_left(total, "секунда", "секунды", "секунд", feminine=True)
+
+
 def calm_progress(played, need=CALM_GAMES) -> dict:
     """Один баланс. Покой включается числом игр, а не вторым кошельком."""
     try:
@@ -380,7 +412,7 @@ def calm_button_visible(played, need=CALM_GAMES) -> bool:
 
 def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
-    return f"{state['played']}/{state['need']} игр | осталось {calm_one_left(left_seconds)}"
+    return f"{state['played']}/{state['need']} игр | {calm_left_phrase(left_seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
