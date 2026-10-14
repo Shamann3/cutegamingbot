@@ -1,5 +1,5 @@
 aiofiles==23.2.1
-aiogram==3.27.0
+aiogram==3.31.0
 aiohappyeyeballs==2.4.4
 aiohttp==3.11.12
 aiosend==3.0.5

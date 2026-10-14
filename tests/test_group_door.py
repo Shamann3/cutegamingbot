@@ -99,4 +99,8 @@ def test_texts_name_the_rule_and_stay_distinct():
     assert len({start, later, last, gone, play, withdraw, note, board, opened}) == 9
     assert "3" in start
     assert "1.500" in start
+    assert "сделайте группу публичной" in start
+    assert "уберите заявки на вступление" in start
+    assert "Группа приватная" in start
+    assert "заявки на вступление" in start
     assert human_left(GRACE).startswith("3")

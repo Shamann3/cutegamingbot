@@ -10,4 +10,4 @@ python-multipart
 tzdata
 
 # Farm bots (game + admin + support) — тот же venv, что и API
-aiogram==3.17.0
+aiogram==3.31.0

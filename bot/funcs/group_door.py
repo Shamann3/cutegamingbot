@@ -139,26 +139,27 @@ def why_lines(reasons: list[str]) -> str:
     lines = []
     if "requests" in reasons:
         lines.append(
-            f"{mark('rule')} <b>Включены заявки. Новый человек сам зайти не может: его нужно принять.</b>"
+            f"{mark('rule')} <b>Включены заявки на вступление. Новый человек сам зайти не может.</b>"
         )
     if "private" in reasons:
         lines.append(
-            f"{mark('rule')} <b>У группы нет имени для входа. Зайти могут только те, кого пригласили.</b>"
+            f"{mark('rule')} <b>Группа приватная. Зайти могут только те, кого пригласили.</b>"
         )
     return "\n".join(lines)
 
 
 def steps_line() -> str:
     return (
-        f"{mark('keep')} <b>Что сделать: поставьте группе имя, по которому можно зайти, "
-        f"и выключите заявки.</b>"
+        f"{mark('keep')} <b>Что сделать: сделайте группу публичной "
+        f"и уберите заявки на вступление.</b>"
     )
 
 
 def warn_block() -> str:
     return (
-        f"{mark('warn')} <b>Если за 3 дня вход не открыть, проект заберёт куты "
-        f"в технические группы. Вернуть их нельзя.</b>\n"
+        f"{mark('warn')} <b>Если за 3 дня группу не сделать публичной "
+        f"и не убрать заявки, проект заберёт куты в технические группы. "
+        f"Вернуть их нельзя.</b>\n"
         f"Напишем ещё, когда останется 2 дня, и ещё за 1 день.\n"
         f"<blockquote><b>Это предупреждение</b></blockquote>"
     )
@@ -167,7 +168,8 @@ def warn_block() -> str:
 def start_text(reasons: list[str], amount: int) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять их и играть на них можно, только если зайти может любой человек.\n"
+        f"Снять их и играть на них можно, только если группа публичная "
+        f"и заявок на вступление нет.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line()}\n"
         f"{warn_block()}"
@@ -179,7 +181,7 @@ def day1_text(reasons: list[str], amount: int) -> str:
         f"{mark('day')} <b>Осталось 2 дня.</b> В группе ещё {dots(amount)} кут.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line()}\n"
-        f"Если вход не открыть, проект заберёт куты."
+        f"Если группу не сделать публичной и не убрать заявки, проект заберёт куты."
     )
 
 
@@ -199,9 +201,9 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
     if since is not None:
         stamp = since.astimezone(timezone.utc).strftime("%d.%m")
         when = f" Ждали с {stamp}."
-    reason = "были включены заявки" if reasons == ["requests"] else (
-        "не было имени для входа" if reasons == ["private"] else
-        "не было имени для входа и были включены заявки"
+    reason = "стояли заявки на вступление" if reasons == ["requests"] else (
+        "группа была приватной" if reasons == ["private"] else
+        "группа была приватной и стояли заявки на вступление"
     )
     sent = ["в начале"]
     if warned >= 2:
@@ -215,15 +217,15 @@ def seize_text(reasons: list[str], amount: int, since: datetime | None, warned: 
         f"{history}\n"
         f"{steps_line()}\n"
         f"<b>Новые куты снова ждут 3 дня. Положить можно сразу. "
-        f"Снять и играть можно, когда зайти сможет любой.</b>"
+        f"Снять и играть можно, когда группа публичная и заявок на вступление нет.</b>"
     )
 
 
 def recovered_text(username: str | None) -> str:
-    name = f"@{username}" if username else "имя для входа"
+    name = f" Публичное имя: @{username}." if username else ""
     return (
-        f"{mark('keep')} <b>Вход открыт. Куты остаются в группе.</b>\n"
-        f"{name} есть, заявки выключены. Снять и играть снова можно."
+        f"{mark('keep')} <b>Группа публичная. Куты остаются в группе.</b>\n"
+        f"Заявок на вступление нет.{name} Снять и играть снова можно."
     )
 
 
@@ -232,15 +234,22 @@ def clock_line(amount: int, left: str) -> str:
         return ""
     return (
         f"\n{mark('warn')} <b>Сейчас {dots(amount)} кут. "
-        f"Если вход не открыть, через {left} проект их заберёт.</b>"
+        f"Если группу не сделать публичной и не убрать заявки, "
+        f"через {left} проект их заберёт.</b>"
     )
 
 
 def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
     if kind == "withdraw":
-        lead = f"<b>{mark('keep')} Снять куты нельзя.</b> В эту группу не может зайти любой человек."
+        lead = (
+            f"<b>{mark('keep')} Снять куты нельзя.</b> "
+            f"Группа должна быть публичной, без заявок на вступление."
+        )
     else:
-        lead = f"{mark('play')} <b>Играть нельзя.</b> В эту группу не может зайти любой человек."
+        lead = (
+            f"{mark('play')} <b>Играть нельзя.</b> "
+            f"Группа должна быть публичной, без заявок на вступление."
+        )
     return (
         f"{lead}\n"
         f"{why_lines(reasons)}\n"
@@ -253,7 +262,7 @@ def block_text(kind: str, reasons: list[str], amount: int, left: str) -> str:
 def banner_html(reasons: list[str], amount: int, left: str) -> str:
     return (
         f"{mark('now')} <b>В группе {dots(amount)} кут.</b>\n"
-        f"Снять и играть можно, только если зайти может любой человек.\n"
+        f"Снять и играть можно, только если группа публичная и заявок на вступление нет.\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line()}\n"
         f"{mark('warn')} <b>Если ничего не менять, куты заберут через {left}.</b>\n"
@@ -267,7 +276,8 @@ def deposit_note(reasons: list[str], amount: int, left: str) -> str:
         f"Сейчас в группе {dots(amount)} кут.</b>\n"
         f"{why_lines(reasons)}\n"
         f"{steps_line()}\n"
-        f"{mark('play')} <b>Снять и играть пока нельзя. Положить ещё можно.</b>"
+        f"{mark('play')} <b>Снять и играть пока нельзя: группа ещё не публичная "
+        f"или стоят заявки. Положить ещё можно.</b>"
     )
 
 
