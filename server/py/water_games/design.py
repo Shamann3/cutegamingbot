@@ -514,43 +514,19 @@ def calm_shot_text(name, played, need, left_seconds) -> str:
 
 
 def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600, now=None) -> str:
-    """Окно кнопки: сколько осталось до конца срока и когда начнётся новый."""
+    """Окно кнопки. Три строки как на экране, время до секунды в момент нажатия."""
     state = calm_progress(played, need)
-    try:
-        seconds = int(left_seconds or 0)
-    except (TypeError, ValueError):
-        seconds = 0
-    if seconds < 0:
-        seconds = 0
-    tail = "После {need} игр пистолетик не заберёт куты.".format(need=state["need"])
-    if state["played"] <= 0:
-        return (
-            "🍁 {played} / {need} игр\n"
-            "Срок ещё не идёт.\n"
-            "Новый начнётся с первой игры.\n"
-            "Он будет {span}.\n"
-            "{tail}"
-        ).format(
-            played=state["played"],
-            need=state["need"],
-            span=calm_short_left(seconds),
-            tail=tail,
-        )
-    clock = calm_live_clock(seconds)
-    when = calm_new_when(seconds, now)
+    clock = left_clock(left_seconds)
     if state["calm"]:
-        head = "🍁 {played} / {need} уже есть. Куты под защитой.".format(
-            played=state["played"], need=state["need"]
-        )
-    else:
-        head = "🍁 {played} / {need} игр".format(
-            played=state["played"], need=state["need"]
+        return (
+            f"🍁 {state['played']} / {state['need']} уже есть.\n"
+            "Обливать нельзя. Куты под защитой."
         )
     return (
-        "{head}\n"
-        "До конца срока : {clock}\n"
-        "{tail}"
-    ).format(head=head, clock=clock, when=when, tail=tail)
+        f"🍁 Вам нужно сыграть {state['played']} / {state['need']} игр за {clock} \n\n"
+        f"🪛 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n\n"
+        f"📯 Вас не смогут облить с пистолетика и украсть ваши куты"
+    )
 
 
 def shield_mark(kind: str) -> str:
