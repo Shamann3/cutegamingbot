@@ -11,6 +11,14 @@ from pydantic import BaseModel, Field
 from admin_auth import get_signed_in_user_id
 from admin_soft_restart import is_project_creator
 from balance_ledger import split_pots
+from balance_search import (
+    contains_pattern,
+    money_card,
+    plain_query,
+    prefix_pattern,
+    query_user_id,
+    whole,
+)
 
 _py = Path(__file__).resolve().parent / "py"
 if str(_py) not in sys.path:
@@ -240,33 +248,85 @@ async def _top_ops(pool) -> tuple[list[dict], list[str]]:
     return people, []
 
 
+async def _find_users(pool, text: str):
+    plain = plain_query(text)
+    if not plain:
+        return []
+    user_id = query_user_id(plain)
+    return await pool.fetch(
+        """
+        SELECT user_id, first_name, username, balance
+        FROM users
+        WHERE ($1::bigint IS NOT NULL AND user_id = $1)
+           OR lower(coalesce(username, '')) = lower($2)
+           OR coalesce(username, '') ILIKE $3 ESCAPE '\\'
+           OR coalesce(username, '') ILIKE $4 ESCAPE '\\'
+           OR coalesce(first_name, '') ILIKE $4 ESCAPE '\\'
+           OR ($5::text <> '' AND user_id::text LIKE $5)
+        ORDER BY
+          CASE
+            WHEN $1::bigint IS NOT NULL AND user_id = $1 THEN 0
+            WHEN lower(coalesce(username, '')) = lower($2) THEN 1
+            WHEN coalesce(username, '') ILIKE $3 ESCAPE '\\' THEN 2
+            ELSE 3
+          END,
+          balance DESC NULLS LAST,
+          user_id
+        LIMIT 20
+        """,
+        user_id,
+        plain,
+        prefix_pattern(plain),
+        contains_pattern(plain),
+        f"{plain}%" if user_id is not None else "",
+    )
+
+
+async def _group_rows(pool, user_id: int):
+    return await pool.fetch(
+        """
+        SELECT c.chat_id,
+               c.namechat,
+               c.usernamechat,
+               COALESCE(c.chatbalance, 0) AS chatbalance,
+               COALESCE(c.dexbalance, 0) AS dexbalance,
+               COALESCE(c.is_technical, FALSE) AS is_technical,
+               (c.creator_id = $1) AS is_creator
+        FROM chat c
+        WHERE (COALESCE(c.chatbalance, 0) >= 1 OR COALESCE(c.dexbalance, 0) >= 1)
+          AND (
+                c.creator_id = $1
+                OR c.chat_id IN (SELECT chat_id FROM memberchat WHERE user_id = $1)
+              )
+        ORDER BY chatbalance DESC, chat_id
+        LIMIT 80
+        """,
+        int(user_id),
+    )
+
+
+def _user_row(row, card: dict) -> dict:
+    return {
+        "userId": int(row["user_id"]),
+        "name": row["first_name"],
+        "username": row["username"],
+        "balance": card["personal"],
+        "groupsChat": card["groupsChat"],
+        "groupsDex": card["groupsDex"],
+        "groups": card["groups"],
+        "groupsHidden": int(card.get("groupsHidden") or 0),
+    }
+
+
 async def _lookup(pool, q: str, focus: int | None) -> tuple[dict, list[str]]:
-    text = (q or "").strip().lstrip("@")
+    text = plain_query(q)
     if not text and focus is None:
         return {"query": "", "users": [], "items": []}, []
     warnings: list[str] = []
     users = []
     try:
-        if text.isdigit():
-            rows = await pool.fetch(
-                """
-                SELECT user_id, first_name, username, balance
-                FROM users
-                WHERE user_id = $1
-                """,
-                int(text),
-            )
-        elif text:
-            rows = await pool.fetch(
-                """
-                SELECT user_id, first_name, username, balance
-                FROM users
-                WHERE username ILIKE $1 OR first_name ILIKE $1
-                ORDER BY balance DESC NULLS LAST
-                LIMIT 8
-                """,
-                f"%{text}%",
-            )
+        if text:
+            rows = await _find_users(pool, text)
         else:
             rows = await pool.fetch(
                 """
@@ -278,14 +338,110 @@ async def _lookup(pool, q: str, focus: int | None) -> tuple[dict, list[str]]:
             )
     except Exception:
         return {"query": text, "users": [], "items": []}, ["Поиск игрока сейчас не открылся"]
+    chosen = focus if focus is not None else (int(rows[0]["user_id"]) if rows else None)
+    if chosen is not None and all(int(row["user_id"]) != int(chosen) for row in rows):
+        try:
+            extra = await pool.fetchrow(
+                """
+                SELECT user_id, first_name, username, balance
+                FROM users
+                WHERE user_id = $1
+                """,
+                int(chosen),
+            )
+            if extra:
+                rows = [extra, *rows]
+        except Exception:
+            warnings.append("Карточка этого игрока сейчас не открылась")
+    cards = {}
     for row in rows:
-        users.append({
-            "userId": int(row["user_id"]),
-            "name": row["first_name"],
-            "username": row["username"],
-            "balance": int(row["balance"] or 0),
-        })
-    chosen = focus if focus is not None else (users[0]["userId"] if users else None)
+        user_id = int(row["user_id"])
+        groups = []
+        if chosen is not None and user_id == int(chosen):
+            try:
+                groups = [
+                    {
+                        "chatId": int(item["chat_id"]),
+                        "name": item["namechat"],
+                        "username": item["usernamechat"],
+                        "chat": item["chatbalance"],
+                        "dex": item["dexbalance"],
+                        "technical": item["is_technical"],
+                        "creator": item["is_creator"],
+                    }
+                    for item in await _group_rows(pool, user_id)
+                ]
+            except Exception:
+                warnings.append("Группы этого игрока сейчас не открылись")
+        card = money_card(row["balance"], groups)
+        if groups:
+            try:
+                pocket = await pool.fetchrow(
+                    """
+                    SELECT COALESCE(SUM(chatbalance), 0) AS chat,
+                           COALESCE(SUM(dexbalance), 0) AS dex,
+                           COUNT(*)::int AS groups
+                    FROM (
+                        SELECT c.chat_id,
+                               COALESCE(c.chatbalance, 0) AS chatbalance,
+                               COALESCE(c.dexbalance, 0) AS dexbalance
+                        FROM chat c
+                        WHERE (COALESCE(c.chatbalance, 0) >= 1 OR COALESCE(c.dexbalance, 0) >= 1)
+                          AND (
+                                c.creator_id = $1
+                                OR c.chat_id IN (SELECT chat_id FROM memberchat WHERE user_id = $1)
+                              )
+                    ) pockets
+                    """,
+                    user_id,
+                )
+                if pocket:
+                    card["groupsChat"] = whole(pocket["chat"])
+                    card["groupsDex"] = whole(pocket["dex"])
+                    card["groupsHidden"] = max(0, int(pocket["groups"] or 0) - len(card["groups"]))
+            except Exception:
+                warnings.append("Полная сумма групп этого игрока сейчас не посчиталась")
+        cards[user_id] = card
+        users.append(_user_row(row, card))
+    if chosen is not None and len(users) > 1:
+        others = [user["userId"] for user in users if user["userId"] != int(chosen)]
+        try:
+            sums = await pool.fetch(
+                """
+                SELECT user_id,
+                       COALESCE(SUM(chatbalance), 0) AS chat,
+                       COALESCE(SUM(dexbalance), 0) AS dex
+                FROM (
+                    SELECT m.user_id, c.chat_id,
+                           COALESCE(c.chatbalance, 0) AS chatbalance,
+                           COALESCE(c.dexbalance, 0) AS dexbalance
+                    FROM memberchat m
+                    JOIN chat c ON c.chat_id = m.chat_id
+                    WHERE m.user_id = ANY($1::bigint[])
+                      AND COALESCE(c.chatbalance, 0) >= 1
+                    UNION
+                    SELECT c.creator_id, c.chat_id,
+                           COALESCE(c.chatbalance, 0),
+                           COALESCE(c.dexbalance, 0)
+                    FROM chat c
+                    WHERE c.creator_id = ANY($1::bigint[])
+                      AND COALESCE(c.chatbalance, 0) >= 1
+                ) pockets
+                GROUP BY user_id
+                """,
+                others,
+            )
+            by_user = {int(item["user_id"]): item for item in sums}
+            for user in users:
+                if user["userId"] == int(chosen):
+                    continue
+                pocket = by_user.get(user["userId"])
+                if not pocket:
+                    continue
+                user["groupsChat"] = whole(pocket["chat"])
+                user["groupsDex"] = whole(pocket["dex"])
+        except Exception:
+            warnings.append("Куты групп у остальных людей сейчас не посчитались")
     items = []
     if chosen is not None:
         try:

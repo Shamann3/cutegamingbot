@@ -380,7 +380,7 @@ def calm_button_visible(played, need=CALM_GAMES) -> bool:
 
 def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
-    return f"{state['played']}/{state['need']} | осталось {calm_one_left(left_seconds)}"
+    return f"{state['played']}/{state['need']} игр | осталось {calm_one_left(left_seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
@@ -398,7 +398,7 @@ def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
         )
     return (
         f"🍁 Вам нужно сыграть {state['played']} / {state['need']} игр за {clock} \n\n"
-        f"🪛 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n\n"
+        f"🪎 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n\n"
         f"📯 Вас не смогут облить с пистолетика и украсть ваши куты"
     )
 

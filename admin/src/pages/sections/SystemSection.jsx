@@ -300,7 +300,7 @@ const BASE_TABS = [
 const TOGGLES_TAB = { id: 'toggles', label: '⏻ Выключатели' }
 const BALANCES_TAB = { id: 'balances', label: 'Балансы' }
 
-export default function SystemSection({ panelTabs = null, isProjectCreator = false }) {
+export default function SystemSection({ panelTabs = null, isProjectCreator = false, onOpenGroup }) {
   const tabs = useMemo(() => {
     const base = filterSectionTabs('settings', BASE_TABS, panelTabs)
     if (!isProjectCreator) return base
@@ -408,7 +408,7 @@ export default function SystemSection({ panelTabs = null, isProjectCreator = fal
 
       {!loading && activeTab === 'balances' && isProjectCreator && (
         <div className="sys-content">
-          <BalancesCalm />
+          <BalancesCalm onOpenGroup={onOpenGroup} />
         </div>
       )}
 

@@ -1113,6 +1113,137 @@ async def get_group_detail(chat_id: int) -> Dict[str, Any]:
     }
 
 
+async def group_cute_totals() -> Dict[str, Any]:
+    """Сумма бч всех групп и число людей с кутами в группах, где тоже есть куты."""
+    from group_money import shape_totals
+
+    row = None
+    people = None
+    warning = ""
+    try:
+        row = await db.pool.fetchrow(
+            """
+            SELECT
+              COALESCE(SUM(chatbalance), 0) AS all_chat,
+              COALESCE(SUM(chatbalance) FILTER (WHERE NOT COALESCE(is_technical, FALSE)), 0) AS living_chat,
+              COALESCE(SUM(chatbalance) FILTER (WHERE COALESCE(is_technical, FALSE)), 0) AS technical_chat,
+              COALESCE(SUM(dexbalance), 0) AS all_dex,
+              COUNT(*) FILTER (WHERE COALESCE(chatbalance, 0) >= 1) AS groups_with_cute
+            FROM chat
+            """
+        )
+    except Exception:
+        warning = "Сумма кут по группам сейчас не посчиталась"
+    try:
+        people = await db.pool.fetchval(
+            """
+            SELECT COUNT(DISTINCT user_id)
+            FROM (
+                SELECT m.user_id
+                FROM memberchat m
+                JOIN chat c ON c.chat_id = m.chat_id
+                JOIN users u ON u.user_id = m.user_id
+                WHERE COALESCE(c.chatbalance, 0) >= 1
+                  AND COALESCE(u.balance, 0) >= 1
+                  AND NOT COALESCE(c.is_technical, FALSE)
+                UNION
+                SELECT c.creator_id
+                FROM chat c
+                JOIN users u ON u.user_id = c.creator_id
+                WHERE c.creator_id IS NOT NULL
+                  AND COALESCE(c.chatbalance, 0) >= 1
+                  AND COALESCE(u.balance, 0) >= 1
+                  AND NOT COALESCE(c.is_technical, FALSE)
+            ) people
+            """
+        )
+    except Exception:
+        warning = warning or "Люди с кутами в группах сейчас не посчитались"
+    totals = shape_totals(dict(row) if row else None, people)
+    if warning:
+        totals["warning"] = warning
+    return totals
+
+
+async def group_cute_page(offset: int = 0, limit: int = 40, q: str = "") -> Dict[str, Any]:
+    """Полный список групп с бч от 1 куты, от богатой к бедной."""
+    from balance_search import contains_pattern, plain_query
+    from group_money import page_bounds, shape_group
+
+    start, size = page_bounds(offset, limit)
+    text = plain_query(q)
+    pattern = contains_pattern(text) if text else ""
+    rows = []
+    total = 0
+    warning = ""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT chat_id,
+                   COALESCE(namechat, '') AS name,
+                   COALESCE(usernamechat, '') AS username,
+                   COALESCE(chatlink, '') AS link,
+                   COALESCE(chatbalance, 0) AS chat,
+                   COALESCE(dexbalance, 0) AS dex,
+                   COALESCE(is_technical, FALSE) AS technical,
+                   COALESCE(group_balance_level, 0) AS level,
+                   COUNT(*) OVER () AS total
+            FROM chat
+            WHERE COALESCE(chatbalance, 0) >= 1
+              AND (
+                    $1 = ''
+                    OR COALESCE(namechat, '') ILIKE $1 ESCAPE '\\'
+                    OR COALESCE(usernamechat, '') ILIKE $1 ESCAPE '\\'
+                    OR CAST(chat_id AS text) LIKE $2 ESCAPE '\\'
+                  )
+            ORDER BY chatbalance DESC, chat_id ASC
+            OFFSET $3
+            LIMIT $4
+            """,
+            pattern,
+            pattern if text else "",
+            start,
+            size,
+        )
+        if rows:
+            total = _iint(rows[0]["total"])
+        elif start == 0:
+            total = 0
+        else:
+            total = _iint(await db.pool.fetchval(
+                """
+                SELECT COUNT(*)
+                FROM chat
+                WHERE COALESCE(chatbalance, 0) >= 1
+                  AND (
+                        $1 = ''
+                        OR COALESCE(namechat, '') ILIKE $1 ESCAPE '\\'
+                        OR COALESCE(usernamechat, '') ILIKE $1 ESCAPE '\\'
+                        OR CAST(chat_id AS text) LIKE $2 ESCAPE '\\'
+                      )
+                """,
+                pattern,
+                pattern if text else "",
+            ))
+    except Exception:
+        warning = "Список групп с кутами сейчас не открылся"
+    items = [
+        shape_group(dict(row), start + index + 1)
+        for index, row in enumerate(rows)
+    ]
+    totals = await group_cute_totals()
+    if warning and not totals.get("warning"):
+        totals["warning"] = warning
+    return {
+        "items": items,
+        "offset": start,
+        "limit": size,
+        "total": total,
+        "query": text,
+        "cute": totals,
+    }
+
+
 async def overview() -> Dict[str, Any]:
     """Сводка по всем группам: топы и глобальные цифры."""
     global_totals = {
@@ -1253,9 +1384,11 @@ async def overview() -> Dict[str, Any]:
     except Exception:
         pass
 
+    cute = await group_cute_totals()
     return {
         "chats_total": chats_total,
         "global": global_totals,
+        "cute": cute,
         "top_commission": top_commission,
         "top_balance": top_balance,
         "top_project": top_project,

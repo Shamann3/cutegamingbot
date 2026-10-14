@@ -4899,6 +4899,18 @@ async def admin_groups_studio_overview(
     return await groups_overview()
 
 
+@router.get("/groups-studio/money")
+async def admin_groups_studio_money(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(40, ge=1, le=80),
+    q: str = Query("", max_length=256),
+    admin_id: int = Depends(require_admin_role(ROLE_OWNER)),
+):
+    _require_project_creator(admin_id)
+    from admin_groups import group_cute_page
+    return await group_cute_page(offset, limit, q)
+
+
 @router.get("/groups-studio/search")
 async def admin_groups_studio_search(
     q: str = Query("", max_length=256),

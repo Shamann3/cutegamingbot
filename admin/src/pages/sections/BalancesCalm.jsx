@@ -99,7 +99,65 @@ function PersonLine({ person, detail, onOpen }) {
   )
 }
 
-export default function BalancesCalm() {
+function Wallet({ person, onOpenGroup }) {
+  if (!person) return null
+  const groups = person.groups || []
+  return (
+    <div className="bal-wallet">
+      <div className="bal-wallet-head">
+        <strong>{person.name || 'игрок'}</strong>
+        <em>{person.username ? `@${person.username}` : `#${person.userId}`}</em>
+      </div>
+      <div className="bal-wallet-sums">
+        <p>
+          <span>На личном балансе</span>
+          <strong>{fmt(person.balance)}</strong>
+        </p>
+        <p>
+          <span>На бч групп, где он есть</span>
+          <strong>{fmt(person.groupsChat)}</strong>
+        </p>
+        <p>
+          <span>Заморозка в этих группах</span>
+          <strong>{fmt(person.groupsDex)}</strong>
+        </p>
+      </div>
+      {groups.length === 0 ? (
+        <p className="bal-empty">В группах с кутами его нет.</p>
+      ) : (
+        <ul className="bal-groups">
+          {groups.map((group) => {
+            const Tag = onOpenGroup ? 'button' : 'div'
+            return (
+              <li key={group.chatId}>
+                <Tag
+                  type={onOpenGroup ? 'button' : undefined}
+                  onClick={onOpenGroup ? () => onOpenGroup(group.chatId) : undefined}
+                >
+                  <strong>{group.name || 'группа'}</strong>
+                  <em>
+                    {group.username ? `@${group.username}` : `#${group.chatId}`}
+                    {group.technical ? ' · проект' : ''}
+                    {group.creator ? ' · создатель' : ''}
+                  </em>
+                </Tag>
+                <span>
+                  {fmt(group.chat)} на бч
+                  {group.dex ? ` · ${fmt(group.dex)} заморозка` : ''}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {person.groupsHidden > 0 && (
+        <p className="bal-empty">Ещё {fmt(person.groupsHidden)} групп с кутами. Выше — самые большие.</p>
+      )}
+    </div>
+  )
+}
+
+export default function BalancesCalm({ onOpenGroup } = {}) {
   const [form, setForm] = useState(null)
   const [ledger, setLedger] = useState(null)
   const [error, setError] = useState('')
@@ -240,12 +298,12 @@ export default function BalancesCalm() {
       </div>
 
       <section className="bal-search">
-        <h4>Найти движение</h4>
-        <p>Имя, @username или id. Ниже — переводы и снятия, с группой, если она была.</p>
+        <h4>Найти человека</h4>
+        <p>Имя, @username или id. Личные куты и куты групп показаны отдельно. Нажмите группу, чтобы открыть её карточку.</p>
         <input
           className="sec-input"
           value={q}
-          placeholder="Кого искать"
+          placeholder="Имя, @username или id"
           aria-label="Поиск по игроку"
           onChange={(event) => {
             setQ(event.target.value)
@@ -262,13 +320,19 @@ export default function BalancesCalm() {
                 onClick={() => setFocus(person.userId)}
               >
                 {person.name || 'игрок'}
-                <em>{fmt(person.balance)} кут</em>
+                <em>личные {fmt(person.balance)}</em>
+                <em>группы {fmt(person.groupsChat)}</em>
               </button>
             ))}
           </div>
         )}
+        <Wallet
+          person={search.users.find((person) => person.userId === search.focus) || search.users[0]}
+          onOpenGroup={onOpenGroup}
+        />
         <ul className="bal-feed">
-          {debouncedQ && search.items.length === 0 && <li className="bal-empty">Записей нет</li>}
+          {debouncedQ && search.users.length === 0 && <li className="bal-empty">Такого человека нет</li>}
+          {search.users.length > 0 && search.items.length === 0 && <li className="bal-empty">Движений пока нет</li>}
           {search.items.map((item) => (
             <li key={item.id} className={item.direction === 'in' ? 'is-in' : 'is-out'}>
               <div>
@@ -479,7 +543,49 @@ export default function BalancesCalm() {
           cursor: pointer;
         }
         .bal-chips button.is-on { border-color: #d8c48a; }
-        .bal-chips em { display: block; font-style: normal; opacity: 0.55; font-size: 0.72rem; }
+        .bal-chips em { display: block; font-style: normal; color: rgba(226, 232, 240, 0.78); font-size: 0.72rem; }
+        .bal-wallet { margin: 0.2rem 0 0.9rem; }
+        .bal-wallet-head strong { display: block; font-size: 1.05rem; }
+        .bal-wallet-head em { font-style: normal; color: rgba(226, 232, 240, 0.78); font-size: 0.82rem; }
+        .bal-wallet-sums {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 0.55rem;
+          margin: 0.7rem 0;
+        }
+        .bal-wallet-sums p {
+          margin: 0;
+          padding: 0.7rem 0.75rem;
+          border-radius: 14px;
+          border: 1px solid rgba(125, 211, 252, 0.2);
+          background: rgba(8, 14, 24, 0.35);
+        }
+        .bal-wallet-sums span { display: block; font-size: 0.75rem; color: rgba(226, 232, 240, 0.78); }
+        .bal-wallet-sums strong {
+          display: block;
+          margin-top: 0.25rem;
+          font-size: 1.2rem;
+          font-variant-numeric: tabular-nums;
+          color: #f8fafc;
+        }
+        .bal-groups { list-style: none; margin: 0; padding: 0; }
+        .bal-groups li {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 0.35rem 0.75rem;
+          align-items: center;
+          padding: 0.45rem 0;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .bal-groups button, .bal-groups div { background: none; border: 0; color: inherit; text-align: left; padding: 0; }
+        .bal-groups button { cursor: pointer; }
+        .bal-groups button:focus-visible { outline: 2px solid rgba(125, 211, 252, 0.7); outline-offset: 3px; }
+        .bal-groups strong { display: block; }
+        .bal-groups em { font-style: normal; color: rgba(226, 232, 240, 0.78); font-size: 0.78rem; }
+        .bal-groups span { font-variant-numeric: tabular-nums; }
+        @media (max-width: 700px) {
+          .bal-wallet-sums { grid-template-columns: 1fr; }
+        }
         .bal-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0.9rem 0; }
         .bal-fields label { display: flex; flex-direction: column; gap: 0.3rem; }
         .bal-fields strong { font-size: 0.78rem; font-weight: 600; }

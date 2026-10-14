@@ -1746,6 +1746,15 @@ export async function fetchGroupsStudioOverview() {
   return adminFetch('/groups-studio/overview')
 }
 
+export async function fetchGroupCute({ q = '', offset = 0, limit = 40 } = {}) {
+  const params = new URLSearchParams({
+    q: String(q || ''),
+    offset: String(offset || 0),
+    limit: String(limit || 40),
+  })
+  return adminFetch(`/groups-studio/money?${params}`)
+}
+
 export async function searchGroupsStudio(query) {
   const params = new URLSearchParams({ q: String(query || '') })
   return adminFetch(`/groups-studio/search?${params}`)

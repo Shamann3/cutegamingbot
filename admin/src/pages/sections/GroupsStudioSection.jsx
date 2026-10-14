@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchGroupsStudioOverview,
   fetchGroupsStudioDetail,
+  fetchGroupCute,
   searchGroupsStudio,
   setGroupsStudioBalance,
   setGroupsStudioLevel,
@@ -173,7 +174,11 @@ export default function GroupsStudioSection({
   myUserId = null,
   staffPerms = null,
 } = {}) {
-  const [tab, setTab] = useState('lookup')
+  const [tab, setTab] = useState('money')
+  const [money, setMoney] = useState(null)
+  const [moneyQ, setMoneyQ] = useState('')
+  const [moneyQuery, setMoneyQuery] = useState('')
+  const [moneyLoading, setMoneyLoading] = useState(false)
   const [sub, setSub] = useState('overview')
   const [overview, setOverview] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -225,6 +230,33 @@ export default function GroupsStudioSection({
   }, [])
 
   useEffect(() => { loadOverview() }, [loadOverview])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setMoneyQuery(moneyQ.trim()), 280)
+    return () => clearTimeout(timer)
+  }, [moneyQ])
+
+  const loadMoney = useCallback(async (offset = 0, append = false) => {
+    setMoneyLoading(true)
+    try {
+      const data = await fetchGroupCute({ q: moneyQuery, offset, limit: 40 })
+      setMoney((prev) => (
+        append && prev
+          ? { ...data, items: [...(prev.items || []), ...(data.items || [])] }
+          : data
+      ))
+    } catch (e) {
+      notifyAdmin(String(e?.message || e), { error: true })
+    } finally {
+      setMoneyLoading(false)
+    }
+  }, [moneyQuery])
+
+  useEffect(() => {
+    if (tab !== 'money') return undefined
+    loadMoney(0, false)
+    return undefined
+  }, [tab, loadMoney])
 
   const openChat = useCallback(async (chatId, { preserveView = false } = {}) => {
     setLoadingDetail(true)
@@ -341,12 +373,14 @@ export default function GroupsStudioSection({
   }
 
   const g = overview?.global || {}
+  const cute = money?.cute || overview?.cute || {}
   const chat = detail?.chat
   const fund = detail?.fund
   const bars = detail?.bars || {}
   const balanceMax = Math.max(BALANCE_MAX, Math.ceil((Number(chat?.chatbalance) || 0) * 1.5), Number(balanceDraft) || 0)
 
   const tabs = useMemo(() => ([
+    { id: 'money', label: 'Куты' },
     { id: 'lookup', label: 'Поиск' },
     { id: 'detail', label: 'Карточка' },
     { id: 'captcha', label: 'Капча' },
@@ -376,8 +410,14 @@ export default function GroupsStudioSection({
           Полные данные чата: баланс, участники, комиссии, дом проекта, активность и модерация.
         </p>
         <div className="grp-hero-stats">
-          <Stat label="Чатов в базе" value={fmt(overview?.chats_total)} delay={0} />
-          <Stat label="Комиссии всего" value={fmt(g.commission)} hint="кут" delay={60} />
+          <Stat label="Куты во всех группах" value={fmt(cute.allChat)} hint="на бч, вместе" delay={0} />
+          <Stat label="Живые группы" value={fmt(cute.livingChat)} hint="на бч" delay={40} />
+          <Stat label="Технические" value={fmt(cute.technicalChat)} hint="на бч проекта" delay={80} />
+          <Stat label="Групп с кутами" value={fmt(cute.groupsWithCute)} hint="от 1 куты" delay={120} />
+          <Stat label="Людей с кутами там" value={cute.peopleWithCute == null ? '—' : fmt(cute.peopleWithCute)} hint="личный баланс и живая группа с кутами" delay={160} />
+          <Stat label="Заморозка" value={fmt(cute.allDex)} hint="во всех группах" delay={200} />
+          <Stat label="Чатов в базе" value={fmt(overview?.chats_total)} delay={240} />
+          <Stat label="Комиссии всего" value={fmt(g.commission)} hint="кут" delay={280} />
           <Stat label="В дом проекта" value={fmt(g.to_project)} hint="из комиссий" delay={120} />
           <Stat label="Событий" value={fmt(g.events)} delay={180} />
           <Stat label="Капча пройдена" value={fmt(overview?.captcha?.passed)} hint={overview?.captcha?.passRate != null ? `${overview.captcha.passRate}% доходят` : 'раз'} delay={240} />
@@ -399,6 +439,64 @@ export default function GroupsStudioSection({
       </nav>
 
       <div className="grp-scroll">
+        {tab === 'money' && (
+          <section className="grp-panel grp-enter">
+            <h2 className="grp-panel-title">Где лежат куты</h2>
+            <p className="grp-help">
+              Список идёт от самой богатой группы к самой бедной. Здесь каждая группа, на бч которой есть хотя бы 1 кут.
+              Нажмите строку, чтобы открыть карточку.
+            </p>
+            {cute.warning ? <p className="grp-help">{cute.warning}</p> : null}
+            <form className="grp-search" onSubmit={(event) => event.preventDefault()}>
+              <input
+                value={moneyQ}
+                onChange={(event) => setMoneyQ(event.target.value)}
+                placeholder="Название, @username или id группы"
+                aria-label="Найти группу в списке кут"
+              />
+            </form>
+            {moneyLoading && !money?.items?.length ? <p className="grp-loading">Собираю группы с кутами…</p> : null}
+            {!moneyLoading && money && !(money.items || []).length ? (
+              <p className="grp-help">Групп с кутами на бч нет.</p>
+            ) : null}
+            {(money?.items || []).map((item) => {
+              const Tag = canOpenGroups ? 'button' : 'div'
+              return (
+              <Tag
+                key={item.chatId}
+                type={canOpenGroups ? 'button' : undefined}
+                className={`grp-rank-row${canOpenGroups ? '' : ' is-static'}`}
+                onClick={canOpenGroups ? () => openGroup(item.chatId) : undefined}
+              >
+                <span className="grp-rank-idx grp-money-idx">{item.rank}</span>
+                <span className="grp-rank-body">
+                  <span className="grp-rank-name is-link">{item.name || `Группа ${item.chatId}`}</span>
+                  <span className="grp-rank-meta">
+                    {item.username ? `@${item.username}` : 'без имени входа'}
+                    {item.technical ? ' · проект' : ''}
+                    {` · ${item.chatId}`}
+                  </span>
+                </span>
+                <span className="grp-rank-metric">
+                  {fmt(item.chat)}
+                  <em>{item.dex ? `${fmt(item.dex)} заморозка` : 'на бч'}</em>
+                </span>
+              </Tag>
+              )
+            })}
+            {(money?.items || []).length < Number(money?.total || 0) && (
+              <button
+                type="button"
+                className="elite-btn grp-money-more"
+                disabled={moneyLoading}
+                onClick={() => loadMoney((money?.items || []).length, true)}
+              >
+                {moneyLoading ? 'Открываю…' : `Дальше · ещё ${fmt(Number(money.total) - money.items.length)}`}
+              </button>
+            )}
+          </section>
+        )}
+
         {tab === 'lookup' && (
           <section className="grp-panel grp-enter">
             <h2 className="grp-panel-title">Найти группу</h2>

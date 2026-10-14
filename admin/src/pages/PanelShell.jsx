@@ -783,7 +783,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
             />
           )}
           {isAnalytics && <AnalyticsSection panelTabs={tabsForView} />}
-          {isSettings && <SystemSection panelTabs={tabsForView} isProjectCreator={showCreator} />}
+          {isSettings && (
+            <SystemSection
+              panelTabs={tabsForView}
+              isProjectCreator={showCreator}
+              onOpenGroup={(chatId) => {
+                setGroupsInitialId(chatId)
+                setSection('groupsStudio')
+              }}
+            />
+          )}
           {isEvents && <EventsSection panelTabs={tabsForView} />}
           {isSecurity && <SecuritySection panelTabs={tabsForView} />}
           {isStaff && (
@@ -842,7 +851,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isSoftRestart && showCreator && <SoftRestartSection />}
           {isBalances && showCreator && (
             <section className="grp-page nika-page realm-main bal-page">
-              <BalancesCalm />
+              <BalancesCalm
+                onOpenGroup={(chatId) => {
+                  setGroupsInitialId(chatId)
+                  setSection('groupsStudio')
+                }}
+              />
             </section>
           )}
           {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isWaterGames && !isBalances && !isCases && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (

@@ -8241,6 +8241,12 @@ html.accent-changing::after {
   color: #e8e8e8; font-size: .95rem; font-weight: 650;
   font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap;
 }
+.grp-rank-metric em {
+  display: block; margin-top: .15rem; font-style: normal; font-weight: 500;
+  font-size: .72rem; color: #d5d5d5;
+}
+.grp-money-idx { width: auto; min-width: 2.2rem; padding: 0 .4rem; }
+.grp-money-more { margin-top: .8rem; }
 
 .grp-meters {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; margin-bottom: .95rem;
