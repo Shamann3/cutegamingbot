@@ -317,24 +317,21 @@ async def handle_balance(message: types.Message, db):
         )
         _hb("🔥 [BALANCE][UI] burned")
 
+    calm_row_index: Optional[int] = None
+    calm_played = int(calm_now.get("played") or 0)
+    calm_need = int(calm_now.get("need") or 5)
+    calm_left_start = calm_now.get("left_sec")
+    if calm_left_start is None:
+        calm_left_start = calm_now.get("seconds") or int(calm_now.get("hours") or 24) * 3600
+    calm_left_start = int(calm_left_start or 0)
     if (
         user_balance > 0
         and st_int != BAL_STATUS_BURNED
         and calm_now.get("enabled")
         and not calm_now.get("calm")
     ):
-        from bot.funcs.water_games_design import CALM_BUTTON_ICON, calm_button_text
-        left_sec = calm_now.get("left_sec")
-        if left_sec is None:
-            left_sec = calm_now.get("seconds") or int(calm_now.get("hours") or 24) * 3600
-        kb_rows.append(
-            [InlineKeyboardButton(
-                text=calm_button_text(calm_now["played"], calm_now["need"], left_sec),
-                callback_data=f"bal_calm:{owner_id}",
-                style="default",
-                icon_custom_emoji_id=CALM_BUTTON_ICON,
-            )]
-        )
+        calm_row_index = len(kb_rows)
+        kb_rows.append([_calm_button(owner_id, calm_played, calm_need, calm_left_start)])
 
     if gc_button_row:
         kb_rows.append(gc_button_row)
@@ -395,6 +392,7 @@ async def handle_balance(message: types.Message, db):
             start_ts = time.time()
 
             last_timer_text = None
+            last_calm_text = None
             TICKS = 10
 
             print(f"🟠 [BALANCE][TIMER] start uid={owner_id} key={key} remain_start={remain_start}s ticks={TICKS}")
@@ -453,20 +451,60 @@ async def handle_balance(message: types.Message, db):
                     break
 
                 new_timer_text = f"{_fmt_wait_smart(remain_now)}"
-                if new_timer_text != last_timer_text:
-                    kb_rows[timer_row_index] = [InlineKeyboardButton(
-                        text=new_timer_text, callback_data=f"bal_timer:{owner_id}",
-                        style="default", icon_custom_emoji_id="5294098794969849195")]
+                calm_text = None
+                if calm_row_index is not None:
+                    calm_left = max(0, calm_left_start - passed)
+                    calm_text = _calm_button(owner_id, calm_played, calm_need, calm_left).text
+                timer_moved = new_timer_text != last_timer_text
+                calm_moved = bool(calm_text) and calm_text != last_calm_text
+                if timer_moved or calm_moved:
+                    if timer_moved:
+                        kb_rows[timer_row_index] = [InlineKeyboardButton(
+                            text=new_timer_text, callback_data=f"bal_timer:{owner_id}",
+                            style="default", icon_custom_emoji_id="5294098794969849195")]
+                        last_timer_text = new_timer_text
+                    if calm_moved:
+                        kb_rows[calm_row_index] = [_calm_button(owner_id, calm_played, calm_need, calm_left)]
+                        last_calm_text = calm_text
                     kb_new = InlineKeyboardMarkup(inline_keyboard=kb_rows)
                     try:
                         if not cancel_event.is_set():
                             await sent.edit_reply_markup(reply_markup=kb_new)
                     except Exception:
                         pass
-                    last_timer_text = new_timer_text
 
             balance_cancel_events.pop(key, None)
             print(f"🟠 [BALANCE][TIMER] done uid={owner_id} key={key}")
+
+        elif calm_row_index is not None:
+            chat_id = int(sent.chat.id)
+            mid = int(sent.message_id)
+            key = (chat_id, mid)
+            cancel_event = asyncio.Event()
+            balance_cancel_events[key] = cancel_event
+            start_ts = time.time()
+            last_calm_text = None
+            for _tick in range(10):
+                await asyncio.sleep(1)
+                if cancel_event.is_set():
+                    break
+                passed = int(time.time() - start_ts)
+                calm_left = max(0, calm_left_start - passed)
+                button = _calm_button(owner_id, calm_played, calm_need, calm_left)
+                if button.text == last_calm_text:
+                    continue
+                kb_rows[calm_row_index] = [button]
+                last_calm_text = button.text
+                try:
+                    if not cancel_event.is_set():
+                        await sent.edit_reply_markup(
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
+                        )
+                except Exception:
+                    pass
+            current = balance_cancel_events.get(key)
+            if current is cancel_event:
+                balance_cancel_events.pop(key, None)
 
     except Exception as e:
         print(f"⚠️ [BALANCE][TIMER] err: {e!r}")
@@ -632,6 +670,16 @@ balance_cancel_timers: Dict[int, bool] = {}
 
 # user_id -> last balance message_id (чтобы гасить прошлый таймер при новом балансе)
 
+
+
+def _calm_button(owner_id: int, played: int, need: int, left_sec: int) -> InlineKeyboardButton:
+    from bot.funcs.water_games_design import CALM_BUTTON_ICON, calm_button_text
+    return InlineKeyboardButton(
+        text=calm_button_text(played, need, left_sec),
+        callback_data=f"bal_calm:{int(owner_id)}",
+        style="default",
+        icon_custom_emoji_id=CALM_BUTTON_ICON,
+    )
 
 
 def _fmt_wait_smart(sec: int) -> str:
@@ -5034,6 +5082,29 @@ async def cb_balance_refresh(c: types.CallbackQuery):
             icon_custom_emoji_id="5193209459136045172"
         )])
 
+    calm_row_index: Optional[int] = None
+    calm_played = 0
+    calm_need = 5
+    calm_left_start = 0
+    try:
+        calm_now = await _calm_now(owner_id)
+    except Exception:
+        calm_now = {"enabled": False, "calm": False}
+    if (
+        user_balance > 0
+        and st_int != BAL_STATUS_BURNED
+        and calm_now.get("enabled")
+        and not calm_now.get("calm")
+    ):
+        calm_played = int(calm_now.get("played") or 0)
+        calm_need = int(calm_now.get("need") or 5)
+        calm_left_start = calm_now.get("left_sec")
+        if calm_left_start is None:
+            calm_left_start = calm_now.get("seconds") or int(calm_now.get("hours") or 24) * 3600
+        calm_left_start = int(calm_left_start or 0)
+        calm_row_index = len(kb_rows)
+        kb_rows.append([_calm_button(owner_id, calm_played, calm_need, calm_left_start)])
+
     # челлендж
     if gc_button_row:
         kb_rows.append(gc_button_row)
@@ -5102,6 +5173,7 @@ async def cb_balance_refresh(c: types.CallbackQuery):
             start_ts = time.time()
 
             last_timer_text = None
+            last_calm_text = None
             TICKS = 10
 
             print(f"🟠 [BALANCE_CB][TIMER] start uid={owner_id} key={key} remain_start={remain_start}s ticks={TICKS}")
@@ -5170,22 +5242,33 @@ async def cb_balance_refresh(c: types.CallbackQuery):
                     print(f"🔥 [BALANCE_CB][TIMER] reached 0 burned_now={burned_now2} removed={removed_amount} uid={owner_id} key={key}")
                     break
 
-                # обычное обновление таймера
+                # обычное обновление таймера и срока покоя
                 new_timer_text = f"{_fmt_wait_smart(remain_now)}"
-                if new_timer_text != last_timer_text:
-                    kb_rows[timer_row_index] = [InlineKeyboardButton(
-                        text=new_timer_text,
-                        callback_data=f"bal_timer:{owner_id}",
-                        style="default",
-                        icon_custom_emoji_id="5294098794969849195"
-                    )]
+                calm_text = None
+                calm_left = 0
+                if calm_row_index is not None:
+                    calm_left = max(0, calm_left_start - passed)
+                    calm_text = _calm_button(owner_id, calm_played, calm_need, calm_left).text
+                timer_moved = new_timer_text != last_timer_text
+                calm_moved = bool(calm_text) and calm_text != last_calm_text
+                if timer_moved or calm_moved:
+                    if timer_moved:
+                        kb_rows[timer_row_index] = [InlineKeyboardButton(
+                            text=new_timer_text,
+                            callback_data=f"bal_timer:{owner_id}",
+                            style="default",
+                            icon_custom_emoji_id="5294098794969849195"
+                        )]
+                        last_timer_text = new_timer_text
+                    if calm_moved:
+                        kb_rows[calm_row_index] = [_calm_button(owner_id, calm_played, calm_need, calm_left)]
+                        last_calm_text = calm_text
                     kb_new = InlineKeyboardMarkup(inline_keyboard=kb_rows)
                     try:
                         if not cancel_event.is_set():
                             await c.message.edit_reply_markup(reply_markup=kb_new)
                     except Exception:
                         pass
-                    last_timer_text = new_timer_text
 
             # подчистим event (если он всё ещё наш текущий)
             ev_now = balance_cancel_events.get(key)
@@ -5193,6 +5276,33 @@ async def cb_balance_refresh(c: types.CallbackQuery):
                 balance_cancel_events.pop(key, None)
 
             print(f"🟠 [BALANCE_CB][TIMER] done uid={owner_id} key={key}")
+
+        elif calm_row_index is not None:
+            cancel_event = asyncio.Event()
+            balance_cancel_events[key] = cancel_event
+            start_ts = time.time()
+            last_calm_text = None
+            for _tick in range(10):
+                await asyncio.sleep(1)
+                if cancel_event.is_set():
+                    break
+                passed = int(time.time() - start_ts)
+                calm_left = max(0, calm_left_start - passed)
+                button = _calm_button(owner_id, calm_played, calm_need, calm_left)
+                if button.text == last_calm_text:
+                    continue
+                kb_rows[calm_row_index] = [button]
+                last_calm_text = button.text
+                try:
+                    if not cancel_event.is_set():
+                        await c.message.edit_reply_markup(
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
+                        )
+                except Exception:
+                    pass
+            current = balance_cancel_events.get(key)
+            if current is cancel_event:
+                balance_cancel_events.pop(key, None)
 
     except Exception as e:
         print(f"⚠️ [BALANCE_CB][TIMER] err: {e!r}")

@@ -128,6 +128,14 @@ PANEL_SECTION_DEFS: list[dict] = [
         "creatorOnly": True,
     },
     {
+        "id": "balances",
+        "label": "Балансы",
+        "group": "insights",
+        "permissions": [],
+        "ownerOnly": True,
+        "creatorOnly": True,
+    },
+    {
         "id": "cases",
         "label": "Кейсы",
         "group": "team",

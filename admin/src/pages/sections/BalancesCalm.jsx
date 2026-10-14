@@ -8,6 +8,19 @@ function fmt(value) {
   return Number(value || 0).toLocaleString('ru-RU')
 }
 
+function oneLeft(total) {
+  const safe = Math.max(0, Math.floor(Number(total) || 0))
+  const word = (count, one, few, many) => {
+    const tail = count % 100
+    if (Math.floor(tail / 10) !== 1 && count % 10 === 1) return `${count} ${one}`
+    if (Math.floor(tail / 10) !== 1 && [2, 3, 4].includes(count % 10)) return `${count} ${few}`
+    return `${count} ${many}`
+  }
+  if (safe >= 3600) return word(Math.floor(safe / 3600), 'час', 'часа', 'часов')
+  if (safe >= 60) return word(Math.floor(safe / 60), 'минута', 'минуты', 'минут')
+  return word(safe, 'секунда', 'секунды', 'секунд')
+}
+
 function leftClock(total) {
   const safe = Math.max(0, Math.floor(Number(total) || 0))
   const hours = Math.floor(safe / 3600)
@@ -357,7 +370,7 @@ export default function BalancesCalm() {
           </div>
           <p className="bal-preview">
             {form.enabled
-              ? `0/${games} | осталось ${leftClock(windowSeconds)}`
+              ? `0/${games} | осталось ${oneLeft(windowSeconds)}`
               : 'Сейчас покой выключен.'}
           </p>
           <button type="button" className="sec-btn" disabled={saving} onClick={save}>
@@ -367,26 +380,62 @@ export default function BalancesCalm() {
       )}
 
       <style>{`
-        .bal-ledger { display: flex; flex-direction: column; gap: 1rem; }
-        .bal-hero h3 { margin: 0.15rem 0; font-size: 1.35rem; }
-        .bal-hero p { margin: 0; color: rgba(255,255,255,0.62); max-width: 40rem; }
+        .bal-page { position: relative; }
+        .bal-ledger { display: flex; flex-direction: column; gap: 1rem; position: relative; }
+        .bal-ledger::before {
+          content: "";
+          position: absolute;
+          inset: -12px -8px auto;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.7), transparent);
+          animation: bal-scan 4.8s ease-in-out infinite;
+        }
+        .bal-hero h3 {
+          margin: 0.15rem 0;
+          font-size: 1.45rem;
+          letter-spacing: 0.04em;
+          text-shadow: 0 0 18px rgba(125, 211, 252, 0.28);
+        }
+        .bal-hero p { margin: 0; color: rgba(226, 232, 240, 0.68); max-width: 40rem; }
         .bal-pots {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 0.75rem;
         }
         .bal-pot {
-          padding: 0.9rem 1rem 0.8rem;
-          border-radius: 16px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
-          border: 1px solid rgba(255,255,255,0.08);
+          position: relative;
+          padding: 0.95rem 1rem 0.85rem;
+          border-radius: 18px;
+          background:
+            linear-gradient(180deg, rgba(125, 211, 252, 0.08), rgba(255,255,255,0.02) 42%, rgba(8, 12, 20, 0.2)),
+            rgba(8, 14, 24, 0.35);
+          border: 1px solid rgba(125, 211, 252, 0.22);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), 0 10px 30px rgba(0, 0, 0, 0.18);
           animation: bal-rise 0.6s ease both;
+          overflow: hidden;
         }
-        .bal-pot-label { margin: 0; font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.55; }
-        .bal-pot-value { display: block; margin: 0.35rem 0 0.15rem; font-size: 1.45rem; font-variant-numeric: tabular-nums; }
-        .bal-pot-hint { display: block; font-style: normal; font-size: 0.75rem; opacity: 0.5; }
-        .bal-pot-bar { display: block; height: 3px; margin-top: 0.7rem; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; }
-        .bal-pot-bar i { display: block; height: 100%; border-radius: inherit; background: #d8c48a; transform-origin: left; animation: bal-fill 0.8s ease both; }
+        .bal-pot::after {
+          content: "";
+          position: absolute;
+          top: 0; left: -40%;
+          width: 40%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent);
+          animation: bal-sheen 5.5s ease-in-out infinite;
+        }
+        .bal-pot-label { margin: 0; font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(125, 211, 252, 0.78); }
+        .bal-pot-value {
+          display: block;
+          margin: 0.4rem 0 0.15rem;
+          font-size: 1.55rem;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: 0.02em;
+          color: #f8fafc;
+          text-shadow: 0 0 16px rgba(216, 196, 138, 0.35);
+        }
+        .bal-pot-hint { display: block; font-style: normal; font-size: 0.75rem; opacity: 0.55; }
+        .bal-pot-bar { display: block; height: 3px; margin-top: 0.75rem; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; }
+        .bal-pot-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7dd3fc, #d8c48a); transform-origin: left; animation: bal-fill 0.8s ease both; }
         .bal-split { display: flex; height: 8px; border-radius: 99px; overflow: hidden; gap: 3px; }
         .bal-split i { display: block; border-radius: 99px; transform-origin: left; animation: bal-fill 0.9s ease both; }
         .bal-split .is-users { background: #d8c48a; }
@@ -394,10 +443,11 @@ export default function BalancesCalm() {
         .bal-split .is-project { background: #8aa0c8; }
         .bal-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
         .bal-column, .bal-search, .bal-rule {
-          padding: 1rem;
-          border-radius: 16px;
-          border: 1px solid rgba(255,255,255,0.08);
-          background: rgba(255,255,255,0.025);
+          padding: 1rem 1rem 1.05rem;
+          border-radius: 18px;
+          border: 1px solid rgba(125, 211, 252, 0.16);
+          background: linear-gradient(180deg, rgba(15, 23, 42, 0.45), rgba(255,255,255,0.02));
+          box-shadow: inset 0 0 24px rgba(125, 211, 252, 0.04);
           animation: bal-rise 0.7s ease both;
         }
         .bal-column h4, .bal-search h4, .bal-rule h3 { margin: 0 0 0.25rem; }
@@ -436,10 +486,13 @@ export default function BalancesCalm() {
         .bal-fields .sec-input { width: 100%; }
         .bal-preview {
           font-variant-numeric: tabular-nums;
+          letter-spacing: 0.03em;
           margin: 0 0 0.8rem;
-          padding: 0.55rem 0.75rem;
-          border-radius: 12px;
+          padding: 0.65rem 0.8rem;
+          border-radius: 14px;
+          border: 1px solid rgba(216, 196, 138, 0.28);
           background: rgba(216,196,138,0.08);
+          box-shadow: 0 0 18px rgba(216, 196, 138, 0.08);
         }
         .bal-warn { margin: 0; color: #e0c27a; font-size: 0.85rem; }
         @keyframes bal-rise {
@@ -450,6 +503,15 @@ export default function BalancesCalm() {
           from { transform: scaleX(0); }
           to { transform: scaleX(1); }
         }
+        @keyframes bal-scan {
+          0%, 100% { opacity: 0.25; transform: scaleX(0.6); }
+          50% { opacity: 1; transform: scaleX(1); }
+        }
+        @keyframes bal-sheen {
+          0%, 55% { transform: translateX(0); opacity: 0; }
+          70% { opacity: 1; }
+          100% { transform: translateX(380%); opacity: 0; }
+        }
         @media (max-width: 900px) {
           .bal-pots, .bal-columns, .bal-fields { grid-template-columns: 1fr 1fr; }
         }
@@ -457,7 +519,7 @@ export default function BalancesCalm() {
           .bal-pots, .bal-columns, .bal-fields { grid-template-columns: 1fr; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .bal-pot, .bal-column, .bal-search, .bal-rule, .bal-pot-bar i, .bal-split i { animation: none; }
+          .bal-pot, .bal-column, .bal-search, .bal-rule, .bal-pot-bar i, .bal-split i, .bal-ledger::before, .bal-pot::after { animation: none; }
         }
       `}</style>
     </div>

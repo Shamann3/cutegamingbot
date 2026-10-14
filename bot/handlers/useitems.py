@@ -5,12 +5,9 @@ from aiogram import Bot, Dispatcher, types
 from bot.config.config import *
 from main import dp
 import math
-import aiohttp
-from googletrans import Translator
 from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 from main import *
 from bot.games.games_item import Slots, Bowling,Dart,FootGame,Basketball
-translator = Translator('ru')  # Указываем целевой язык, например, 'ru' для русского
 
 
 
@@ -1241,26 +1238,15 @@ async def chat5(user_id , message):
     await message.reply_sticker(sticker_id)
 
 
-async def get_motivation_quote():
-    url = 'https://api.quotable.io/random?tags=inspirational'
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                data = await response.json()
-                quote = data['content']
-                return quote
-            else:
-                return 'Не удалось получить мотивационную цитату.'
-
-async def translate_text(text, dest_language='ru'):
-    translation = translator.translate(text, dest=dest_language)
-    return translation.text
-
 async def motivation(user_id, message):
-    quote = await get_motivation_quote()
-    translated_quote = await translate_text(quote)
-    full_message = f'<b>{translated_quote}</b>'
-    await message.reply(full_message, parse_mode=ParseMode.HTML)
+    from bot.funcs.motivation_diary import open_diary
+    try:
+        page = await open_diary()
+    except Exception:
+        from bot.funcs.motivation_diary import local_quote, page_html
+        text, author = local_quote()
+        page = page_html(text, author)
+    await message.reply(page, parse_mode=ParseMode.HTML)
 
 async def skidka(user_id, message):
     sticker_id = 'CAACAgIAAxkBAXsLymbLSEqze38y8uBkszv71AUywY_7AAIfUAACW6HwSJ81ejhD44RENQQ'

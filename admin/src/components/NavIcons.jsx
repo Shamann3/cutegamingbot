@@ -192,6 +192,17 @@ const PanelAccess = () => (
   </Icon>
 )
 
+const Balances = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="7.2" />
+    <circle cx="12" cy="12" r="2.2" />
+    <path d="M12 4.8v2.2" />
+    <path d="M12 17v2.2" />
+    <path d="M4.8 12h2.2" />
+    <path d="M17 12h2.2" />
+  </Icon>
+)
+
 const SoftRestart = () => (
   <Icon>
     <path d="M12 3.5v3.2" />
@@ -330,6 +341,7 @@ export const NAV_ICONS = {
   settings: Settings,
   staff: Staff,
   waterGames: Games,
+  balances: Balances,
   cases: Giveaways,
   support: Support,
   security: Security,

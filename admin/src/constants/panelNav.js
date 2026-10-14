@@ -108,6 +108,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Обливания, защита и цены пистолетика. Только создатель.',
   },
   {
+    id: 'balances', label: 'Balances', labelRu: 'Балансы', group: 'insights',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Сколько кут у игроков, у групп и у проекта, и срок покоя. Только создатель.',
+  },
+  {
     id: 'cases', label: 'Cases', labelRu: 'Кейсы', group: 'team',
     ownerOnly: true, creatorOnly: true,
     blurb: 'Касса технических групп, выигрыши, цена и шансы. Только создатель. Комиссии нет.',
@@ -190,6 +195,7 @@ export const SECTION_HINTS = {
   broadcast: 'Сообщение многим людям',
   staff: 'Доступ, должности, заявки и ключи',
   waterGames: 'Обливания и цены защиты',
+  balances: 'Куты игроков, групп и проекта',
   cases: 'Касса, выигрыши, цена и шансы',
   rights: 'Должности групп и сброс входа',
   support: 'Письма от игроков',
@@ -225,7 +231,8 @@ export function visibleSections(
     const staffForced = s.id === 'staff' && (creatorOk || perms.has('manage_panel_access'))
     const creatorWork = s.id === 'work' && creatorOk
     const ownPay = s.id === 'myPay'
-    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !creatorWork && !ownPay && !allowedIds.has(s.id)) return false
+    const creatorBalances = s.id === 'balances' && creatorOk
+    if (allowedIds && !staffForced && s.id !== 'groupGuard' && !creatorWork && !ownPay && !creatorBalances && !allowedIds.has(s.id)) return false
     if (s.permission && !perms.has(s.permission) && !staffForced) return false
     return true
   })

@@ -319,7 +319,7 @@ def calm_seconds(value, fallback=24 * 3600) -> int:
 
 
 def left_clock(seconds) -> str:
-    """Сколько осталось до конца срока: 24ч/15м/10с."""
+    """Полный срок для окна: 22ч/58м/6с."""
     try:
         total = int(seconds)
     except (TypeError, ValueError):
@@ -329,6 +329,33 @@ def left_clock(seconds) -> str:
     hours, rest = divmod(total, 3600)
     minutes, secs = divmod(rest, 60)
     return f"{hours}ч/{minutes}м/{secs}с"
+
+
+def _ru_count(count: int, one: str, few: str, many: str) -> str:
+    number = abs(int(count))
+    tail = number % 100
+    if tail // 10 != 1 and number % 10 == 1:
+        word = one
+    elif tail // 10 != 1 and number % 10 in (2, 3, 4):
+        word = few
+    else:
+        word = many
+    return f"{number} {word}"
+
+
+def calm_one_left(seconds) -> str:
+    """Одно число: часы, или минуты, или секунды."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    if total >= 3600:
+        return _ru_count(total // 3600, "час", "часа", "часов")
+    if total >= 60:
+        return _ru_count(total // 60, "минута", "минуты", "минут")
+    return _ru_count(total, "секунда", "секунды", "секунд")
 
 
 def calm_progress(played, need=CALM_GAMES) -> dict:
@@ -353,7 +380,7 @@ def calm_button_visible(played, need=CALM_GAMES) -> bool:
 
 def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
-    return f"{state['played']}/{state['need']} | осталось {left_clock(left_seconds)}"
+    return f"{state['played']}/{state['need']} | осталось {calm_one_left(left_seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
@@ -370,8 +397,8 @@ def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
             "Обливать нельзя. Куты под защитой."
         )
     return (
-        f"🍁 Вам нужно сыграть {state['played']} / {state['need']} за {clock} :\n"
-        f"🪛 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n"
+        f"🍁 Вам нужно сыграть {state['played']} / {state['need']} игр за {clock} \n\n"
+        f"🪛 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n\n"
         f"📯 Вас не смогут облить с пистолетика и украсть ваши куты"
     )
 

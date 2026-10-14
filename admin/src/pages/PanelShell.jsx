@@ -44,6 +44,7 @@ import EventsSection from './sections/EventsSection'
 import SecuritySection from './sections/SecuritySection'
 import StaffSection from './sections/StaffSection'
 import WaterGames from './sections/WaterGames'
+import BalancesCalm from './sections/BalancesCalm'
 import CasesSection from './sections/CasesSection'
 import SupportSection from './sections/SupportSection'
 import ModerationSection from './sections/ModerationSection'
@@ -446,6 +447,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const isPrGroups = section === 'prGroups'
   const isGames = section === 'games'
   const isWaterGames = section === 'waterGames'
+  const isBalances = section === 'balances'
   const isCases = section === 'cases'
   const isAchievements = section === 'achievements'
   const isBroadcast = section === 'broadcast'
@@ -838,7 +840,12 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isChronicle && <ChronicleSection />}
           {isGroupGuard && showCreator && <GroupGuardDesk />}
           {isSoftRestart && showCreator && <SoftRestartSection />}
-          {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isWaterGames && !isCases && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
+          {isBalances && showCreator && (
+            <section className="grp-page nika-page realm-main bal-page">
+              <BalancesCalm />
+            </section>
+          )}
+          {!isMore && !isDashboard && !isUsers && !isMarriages && !isAccounts && !isEconomy && !isMarket && !isFarm && !isContent && !isGiveaways && !isTiktok && !isBotQuests && !isGroupBalanceLevel && !isGroupsStudio && !isNika && !isPrGroups && !isGames && !isWaterGames && !isBalances && !isCases && !isAchievements && !isBroadcast && !isLogs && !isAnalytics && !isSettings && !isEvents && !isSecurity && !isStaff && !isSupport && !isModeration && !isWork && !isMyPay && !isChronicle && !isGroupGuard && !isSoftRestart && (
             <SectionPlaceholder sectionId={section} />
           )}
         </div>
