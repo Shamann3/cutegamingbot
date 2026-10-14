@@ -8,6 +8,7 @@ vi.mock('../lib/adminClient', async (importOriginal) => {
   return {
     ...actual,
     searchAdminUsers: vi.fn(async () => ({ results: [] })),
+    fetchRightsBoard: vi.fn(async () => ({ groups: [] })),
   }
 })
 
@@ -94,6 +95,46 @@ describe('PositionEditor', () => {
     await waitFor(() => expect(onAppoint).toHaveBeenCalled())
     expect(onAppoint.mock.calls[0][1]).toMatchObject({ userId: 42, prefix: 'мод' })
     expect(await screen.findByText(/key-1/)).toBeTruthy()
+  })
+
+  it('appoints one official group or every official group from the same sheet', async () => {
+    const onAppoint = vi.fn(async () => ({ telegram: 'готово' }))
+    render(
+      <PositionEditor
+        positions={positions}
+        creator
+        chatId={-100}
+        groups={[
+          { chatId: -100, title: 'Дом' },
+          { chatId: -200, title: 'Игры' },
+        ]}
+        onSave={vi.fn()}
+        onDelete={vi.fn()}
+        onAppoint={onAppoint}
+      />,
+    )
+    open('Модератор')
+    fireEvent.change(screen.getByLabelText('Кому'), { target: { value: '42' } })
+    expect(screen.getByRole('button', { name: 'Только эта группа' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Дом' }))
+    fireEvent.click(screen.getByRole('option', { name: /Игры/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить эту должность' }))
+    await waitFor(() => expect(onAppoint).toHaveBeenCalled())
+    expect(onAppoint.mock.calls[0][1]).toMatchObject({
+      userId: 42,
+      everywhere: false,
+      targetChatId: '-200',
+    })
+    fireEvent.change(screen.getByLabelText('Кому'), { target: { value: '43' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Только эта группа' }))
+    expect(screen.getByRole('button', { name: 'Сразу во все официальные группы' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Назначить эту должность' }))
+    await waitFor(() => expect(onAppoint).toHaveBeenCalledTimes(2))
+    expect(onAppoint.mock.calls[1][1]).toMatchObject({
+      userId: 43,
+      everywhere: true,
+      targetChatId: '',
+    })
   })
 
   it('asks for the spam-block end date before appointing', async () => {

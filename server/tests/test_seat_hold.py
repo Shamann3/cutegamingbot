@@ -58,5 +58,8 @@ def test_appoint_can_cover_every_official_group():
 
     one = AppointBody(chat_id=1, user_id=2, position_id=3)
     every = AppointBody(chat_id=1, user_id=2, position_id=3, everywhere=True)
+    aimed = AppointBody(chat_id=1, user_id=2, position_id=3, target_chat_id=-9)
     assert one.everywhere is False
+    assert one.target_chat_id == 0
     assert every.everywhere is True
+    assert aimed.target_chat_id == -9

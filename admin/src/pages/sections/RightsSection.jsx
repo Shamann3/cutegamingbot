@@ -295,12 +295,14 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
   const appointHere = async (row, fields) => {
     const data = await appointGroupAdmin({
       chat_id: Number(chatId),
+      target_chat_id: fields.everywhere ? 0 : Number(fields.targetChatId || chatId),
       user_id: fields.userId,
       position_id: row.id,
       reason: fields.reason || '',
       prefix: fields.prefix || '',
       term_start: fields.termStart || '',
       term_end: fields.termEnd || '',
+      everywhere: Boolean(fields.everywhere),
     })
     setNotice(data?.telegram || `Должность «${row.title}» назначена`)
     try {
@@ -471,6 +473,7 @@ export default function RightsSection({ embedded = false, office = null, onPrevi
             positions={(current.positions || []).filter((row) => String(row.title || '').toLowerCase().includes(posQuery.trim().toLowerCase()))}
             creator
             chatId={current.chatId}
+            groups={groups}
             seats={current.seats || []}
             onSave={save}
             onDelete={removePosition}

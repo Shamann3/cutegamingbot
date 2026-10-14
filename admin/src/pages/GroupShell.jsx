@@ -809,12 +809,14 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   const appointHere = async (row, fields) => {
     const data = await appointGroupAdmin({
       chat_id: Number(chatId),
+      target_chat_id: fields.everywhere ? 0 : Number(fields.targetChatId || chatId),
       user_id: fields.userId,
       position_id: row.id,
       reason: fields.reason || '',
       prefix: fields.prefix || '',
       term_start: fields.termStart || '',
       term_end: fields.termEnd || '',
+      everywhere: Boolean(fields.everywhere),
     })
     if (data?.entryKey) setEntryKey(data.entryKey)
     setNotice(data?.telegram || `Должность «${row.title}» назначена`)

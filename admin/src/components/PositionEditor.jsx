@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, Reorder, motion, useDragControls, useReducedMotion } from 'framer-motion'
-import { searchAdminUsers } from '../lib/adminClient'
+import { fetchRightsBoard, searchAdminUsers } from '../lib/adminClient'
 import { CABINET_PAGE_DEFS, cabinetPagesFor, groupCabinetTabs } from '../lib/panelPreview'
 import { isFloorPost, isOwnerPost, isStaffPost, ladderRanks, positionOrder, ranksDiffer } from '../lib/rankLadder'
 import { PAGE_RIGHTS, PROJECT_RIGHTS, PUNISH_RIGHTS, TELEGRAM_ADMIN_RIGHTS } from '../lib/realmRights'
+import DarkPick from './DarkPick'
+import EverywhereSeat from './EverywhereSeat'
 import FocusWindow from './FocusWindow'
 import RightSwitch from './RightSwitch'
 
@@ -146,6 +148,7 @@ export default function PositionEditor({
   onOrder = null,
   ordering = false,
   canReorder = false,
+  groups = null,
 }) {
   const [drafts, setDrafts] = useState(positions || [])
   const [openId, setOpenId] = useState(null)
@@ -324,6 +327,7 @@ export default function PositionEditor({
           seats={(seats || []).filter((person) => Number(person.positionId) === Number(open.id))}
           onDelete={onDelete}
           onAppoint={onAppoint}
+          officialGroups={groups}
           onClose={() => setOpenId(null)}
           onPatch={patch}
           onSave={onSave}
@@ -484,6 +488,25 @@ function RolePersonField({ text, onText, userId, onUserId }) {
   )
 }
 
+function officialChoices(groups, chatId) {
+  const rows = []
+  const seen = new Set()
+  for (const group of groups || []) {
+    const id = Number(group.chatId)
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    rows.push({
+      value: String(id),
+      label: group.title || String(id),
+      hint: id === Number(chatId) ? 'эта группа' : 'официальная',
+    })
+  }
+  if (chatId && !seen.has(Number(chatId))) {
+    rows.unshift({ value: String(chatId), label: 'Эта группа', hint: 'эта группа' })
+  }
+  return rows
+}
+
 function defaultPrefix(row) {
   if (!row || row.kind === 'member') return ''
   if (row.kind === 'spamblock') return row.prefix || 'спам блок'
@@ -504,6 +527,7 @@ function PositionSheet({
   onPatch,
   onSave,
   onPreview,
+  officialGroups = null,
 }) {
   const owner = Number(row.rank) >= 5
   const rightsLocked = owner
@@ -535,6 +559,9 @@ function PositionSheet({
   const [reason, setReason] = useState('')
   const [termStart, setTermStart] = useState('')
   const [termEnd, setTermEnd] = useState('')
+  const [everywhere, setEverywhere] = useState(false)
+  const [targetChat, setTargetChat] = useState(() => String(chatId || ''))
+  const [fetchedGroups, setFetchedGroups] = useState([])
   const [busy, setBusy] = useState('')
   const [footError, setFootError] = useState('')
   const [footNote, setFootNote] = useState('')
@@ -549,10 +576,30 @@ function PositionSheet({
     setReason('')
     setTermStart('')
     setTermEnd('')
+    setEverywhere(false)
+    setTargetChat(String(chatId || ''))
     setFootError('')
     setFootNote('')
     setEntryKey('')
-  }, [row.id])
+  }, [row.id, chatId])
+
+  useEffect(() => {
+    if (!canManage || !onAppoint || (officialGroups && officialGroups.length)) return undefined
+    let stop = false
+    fetchRightsBoard()
+      .then((data) => {
+        if (!stop) setFetchedGroups(data?.groups || [])
+      })
+      .catch(() => {
+        if (!stop) setFetchedGroups([])
+      })
+    return () => { stop = true }
+  }, [canManage, onAppoint, officialGroups, row.id])
+
+  const groupOptions = officialChoices(
+    (officialGroups && officialGroups.length) ? officialGroups : fetchedGroups,
+    chatId,
+  )
 
   const appoint = async () => {
     if (!onAppoint) return
@@ -562,6 +609,10 @@ function PositionSheet({
     }
     if (spam && !termEnd) {
       setFootError('Укажите, по какое число держать спам-блок')
+      return
+    }
+    if (!everywhere && !Number(targetChat)) {
+      setFootError('Выберите официальную группу')
       return
     }
     setBusy('appoint')
@@ -575,6 +626,8 @@ function PositionSheet({
         reason,
         termStart,
         termEnd,
+        everywhere,
+        targetChatId: everywhere ? '' : targetChat,
       })
       setEntryKey(data?.entryKey || '')
       setFootNote(data?.telegram || `Должность «${row.title}» назначена`)
@@ -676,8 +729,11 @@ function PositionSheet({
         <div className="role-sheet-foot">
           <h3 className="realm-h">Назначить эту должность</h3>
           <p className="realm-copy">
-            Впишите @username, имя или id. Человек сразу получает должность в этой группе
-            {row.kind === 'member' ? ', без префикса в чате.' : ', с префиксом в чате.'}
+            Впишите @username, имя или id.
+            {everywhere
+              ? ' Должность встанет во все официальные группы.'
+              : ' Ниже выберите одну официальную группу: должность встанет только туда.'}
+            {row.kind === 'member' ? ' Префикса в чате не будет.' : ' Префикс в чате ставится сразу.'}
           </p>
           <RolePersonField
             text={personText}
@@ -703,6 +759,18 @@ function PositionSheet({
           <label>Для чего
             <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Можно оставить пустым" />
           </label>
+          <EverywhereSeat on={everywhere} onChange={setEverywhere} />
+          {everywhere ? (
+            <p className="realm-copy">Человек получит эту должность во всех официальных группах. Где такой должности ещё нет, она появится с теми же правами.</p>
+          ) : (
+            <DarkPick
+              label="Официальная группа"
+              value={targetChat}
+              placeholder="Выберите группу"
+              options={groupOptions}
+              onChange={setTargetChat}
+            />
+          )}
           {(seats || []).length > 0 && (
             <>
               <p className="realm-copy">Сейчас её держат</p>

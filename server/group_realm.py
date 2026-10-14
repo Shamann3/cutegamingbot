@@ -2265,6 +2265,7 @@ class AppointBody(BaseModel):
     term_start: str = Field(default="", max_length=10)
     term_end: str = Field(default="", max_length=10)
     everywhere: bool = False
+    target_chat_id: int = 0
     model_config = {"extra": "forbid"}
 
 
@@ -4704,7 +4705,19 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
             """
         )
     else:
-        chats = [{"chat_id": int(body.chat_id)}]
+        destination = int(body.target_chat_id or body.chat_id)
+        if destination != int(body.chat_id):
+            official = await db.pool.fetchval(
+                """
+                SELECT 1
+                FROM epsilon_official_groups
+                WHERE chat_id = $1 AND is_official
+                """,
+                destination,
+            )
+            if not official:
+                raise HTTPException(status_code=400, detail="Это не официальная группа")
+        chats = [{"chat_id": destination}]
     placed = 0
     first_note = ""
     first_prefix = ""
