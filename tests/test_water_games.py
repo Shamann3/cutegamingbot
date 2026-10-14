@@ -257,13 +257,21 @@ def test_five_games_keep_the_day_calm_without_replacing_a_shield():
     assert calm_button_text(5, 5, 21 * 3600) == "5/5 игр | 21ч ⚔️"
     assert calm_button_text(6, 5, 0) == "6/5 игр | 0с ⚔️"
     assert calm_button_text(1, 5, 22 * 3600 + 59 * 60 + 28) == "1/5 игр | 22ч"
-    alert = calm_alert(1, 5, 22 * 3600 + 58 * 60 + 6)
-    assert "Вам нужно сыграть 1 / 5 игр за 22ч/58м/6с" in alert
-    assert "полную защиту вашего баланса" in alert
-    assert "пистолетика" in alert
+    moment = datetime(2026, 10, 14, 20, 0, 0, tzinfo=timezone(timedelta(hours=3)))
+    alert = calm_alert(1, 5, 22 * 3600 + 58 * 60 + 6, now=moment)
+    assert "До конца срока: 22ч 58м 6с" in alert
+    assert "Новый начнётся завтра в 18:58:06" in alert
+    assert "пистолетик" in alert
     assert len(alert) <= 200
-    assert len(calm_alert(0, 100, 7 * 24 * 3600)) <= 200
-    assert "уже есть" in calm_alert(5, 5, 10)
+    fresh = calm_alert(0, 5, 86400, now=moment)
+    assert "Срок ещё не идёт." in fresh
+    assert "первой игры" in fresh
+    assert "1д" in fresh
+    held = calm_alert(5, 5, 10, now=moment)
+    assert "уже есть" in held
+    assert "До конца срока: 10с" in held
+    assert "Новый начнётся сегодня в 20:00:10" in held
+    assert len(calm_alert(0, 100, 7 * 24 * 3600, now=moment)) <= 200
     shot = calm_shot_text("Вася", 6, 5, 21 * 3600)
     assert "<b>Вася нельзя облить</b>" in shot
     assert "Пользователь сыграл 6 из 5 игр." in shot

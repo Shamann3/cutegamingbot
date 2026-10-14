@@ -319,6 +319,56 @@ def calm_seconds(value, fallback=24 * 3600) -> int:
     return min(CALM_MAX_SECONDS, count)
 
 
+_MSK = timezone(timedelta(hours=3))
+_MONTHS = ("янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+
+def calm_live_clock(seconds) -> str:
+    """Срок до секунды: 1д 2ч 3м 4с. Секунды всегда на месте."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    days, rest = divmod(total, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}д")
+    if days or hours:
+        parts.append(f"{hours}ч")
+    if days or hours or minutes:
+        parts.append(f"{minutes}м")
+    parts.append(f"{secs}с")
+    return " ".join(parts)
+
+
+def calm_new_when(left_seconds, now=None) -> str:
+    """Момент по Москве, когда текущий срок кончится и начнётся новый."""
+    try:
+        total = int(left_seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    if total <= 0:
+        return "сейчас"
+    moment = now or datetime.now(_MSK)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=_MSK)
+    else:
+        moment = moment.astimezone(_MSK)
+    start = moment + timedelta(seconds=total)
+    clock = start.strftime("%H:%M:%S")
+    if start.date() == moment.date():
+        return f"сегодня в {clock}"
+    if start.date() == (moment + timedelta(days=1)).date():
+        return f"завтра в {clock}"
+    return f"{start.day} {_MONTHS[start.month - 1]} в {clock}"
+
+
 def left_clock(seconds) -> str:
     """Полный срок для окна: 22ч/58м/6с."""
     try:
@@ -463,19 +513,44 @@ def calm_shot_text(name, played, need, left_seconds) -> str:
     )
 
 
-def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
+def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600, now=None) -> str:
+    """Окно кнопки: сколько осталось до конца срока и когда начнётся новый."""
     state = calm_progress(played, need)
-    clock = left_clock(left_seconds)
-    if state["calm"]:
+    try:
+        seconds = int(left_seconds or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    if seconds < 0:
+        seconds = 0
+    tail = "После {need} игр пистолетик не заберёт куты.".format(need=state["need"])
+    if state["played"] <= 0:
         return (
-            f"🍁 {state['played']} / {state['need']} уже есть.\n"
-            "Обливать нельзя. Куты под защитой."
+            "🍁 {played} / {need} игр\n"
+            "Срок ещё не идёт.\n"
+            "Новый начнётся с первой игры.\n"
+            "Он будет {span}.\n"
+            "{tail}"
+        ).format(
+            played=state["played"],
+            need=state["need"],
+            span=calm_short_left(seconds),
+            tail=tail,
+        )
+    clock = calm_live_clock(seconds)
+    when = calm_new_when(seconds, now)
+    if state["calm"]:
+        head = "🍁 {played} / {need} уже есть. Куты под защитой.".format(
+            played=state["played"], need=state["need"]
+        )
+    else:
+        head = "🍁 {played} / {need} игр".format(
+            played=state["played"], need=state["need"]
         )
     return (
-        f"🍁 Вам нужно сыграть {state['played']} / {state['need']} игр за {clock} \n\n"
-        f"🪎 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n\n"
-        f"📯 Вас не смогут облить с пистолетика и украсть ваши куты"
-    )
+        "{head}\n"
+        "До конца срока : {clock}\n"
+        "{tail}"
+    ).format(head=head, clock=clock, when=when, tail=tail)
 
 
 def shield_mark(kind: str) -> str:
