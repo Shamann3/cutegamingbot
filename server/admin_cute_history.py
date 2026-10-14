@@ -55,6 +55,18 @@ def _iso(ts) -> str | None:
     return ts.isoformat() if ts is not None else None
 
 
+def group_place(direction: str, kind: str, name) -> str:
+    """Короткая строка: откуда пришли куты или куда их положили."""
+    title = name.strip() if isinstance(name, str) and name.strip() else ""
+    if kind == "transfer":
+        head = "Перевод в группе"
+    elif direction == "in":
+        head = "Снято из группы"
+    else:
+        head = "Положено в группу"
+    return f"{head} {title}".strip()
+
+
 def normalize_cute_row(row: Any, name_map: dict) -> dict:
     """Строка cutehistory (+ данные джойнов) → элемент фида."""
     plus = row["plus"]
@@ -63,8 +75,8 @@ def normalize_cute_row(row: Any, name_map: dict) -> dict:
     amount = int((plus if direction == "in" else minus) or 0)
     is_transfer = row["transfer_id"] is not None
     chat_id = row.get("chat_id")
-    is_chat_deposit = (not is_transfer) and chat_id is not None
-    kind = "transfer" if is_transfer else ("chat_deposit" if is_chat_deposit else "cute")
+    is_chat_move = chat_id is not None
+    kind = "transfer" if is_transfer else ("chat_deposit" if is_chat_move else "cute")
     item = {
         "ts": _iso(row["ts"]),
         "cause": row["cause"],
@@ -82,12 +94,14 @@ def normalize_cute_row(row: Any, name_map: dict) -> dict:
                 "name": info.get("name"),
                 "username": info.get("username"),
             }
-    elif is_chat_deposit:
+    if is_chat_move:
+        group_name = row.get("group_name")
         item["group"] = {
             "chatId": int(chat_id),
-            "name": row.get("group_name"),
+            "name": group_name,
             "username": row.get("group_username"),
         }
+        item["groupLine"] = group_place(direction, kind, group_name)
     return item
 
 

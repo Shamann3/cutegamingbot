@@ -538,7 +538,7 @@ async def chatbalance(message: Message):
             await db.update_user_balance(creator_id , new_creator_balance)
             print("[СНЯТИЕ С БАЛАНСА ГРУППЫ] ✅ Баланс создателя обновлён")
 
-            await db.cutehistory_plus(creator_id , amount , "снято с баланса группы")
+            await db.cutehistory_plus(creator_id , amount , "снято с баланса группы" , chat_id=chat_id)
             print("[СНЯТИЕ С БАЛАНСА ГРУППЫ] ✅ История начисления записана")
 
             amount_formatted = "{:,.0f}".format(amount).replace("," , ".")

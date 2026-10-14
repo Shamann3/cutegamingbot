@@ -272,6 +272,8 @@ SHOOT_EMOJI = "5317000922096769303"
 CALM_GAMES = 5
 CALM_ICON_OPEN = SHOOT_EMOJI
 CALM_ICON_HELD = "5359595190807962128"
+CALM_BUTTON_ICON = "5357065356286405053"
+CALM_MAX_SECONDS = 7 * 24 * 3600
 
 
 def hours_label(hours) -> str:
@@ -305,6 +307,30 @@ def calm_hours(hours) -> int:
     return min(168, max(1, count))
 
 
+def calm_seconds(value, fallback=24 * 3600) -> int:
+    """Срок покоя в секундах. Битый или пустой ввод сам встаёт в рабочие границы."""
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        count = int(fallback)
+    if count < 1:
+        count = int(fallback) if int(fallback) >= 1 else 1
+    return min(CALM_MAX_SECONDS, count)
+
+
+def left_clock(seconds) -> str:
+    """Сколько осталось до конца срока: 24ч/15м/10с."""
+    try:
+        total = int(seconds)
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}ч/{minutes}м/{secs}с"
+
+
 def calm_progress(played, need=CALM_GAMES) -> dict:
     """Один баланс. Покой включается числом игр, а не вторым кошельком."""
     try:
@@ -320,48 +346,33 @@ def calm_progress(played, need=CALM_GAMES) -> dict:
     }
 
 
-def calm_button_text(played, need=CALM_GAMES, hours=24) -> str:
+def calm_button_visible(played, need=CALM_GAMES) -> bool:
+    """Кнопка нужна, пока игр ещё не хватает. Когда все сыграны, её нет."""
+    return not calm_progress(played, need)["calm"]
+
+
+def calm_button_text(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
-    span = hours_label(hours)
-    if state["calm"]:
-        return f"Покой · {span}"
-    return f"{state['played']}/{state['need']} · {span}"
+    return f"{state['played']}/{state['need']} | осталось {left_clock(left_seconds)}"
 
 
 def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
-    state = calm_progress(played, need)
-    span = hours_label(hours)
-    if state["calm"]:
-        return (
-            f"<tg-emoji emoji-id='{CALM_ICON_HELD}'>🎮</tg-emoji> "
-            f"<b>Обливать нельзя</b>\n"
-            f"<i>{state['played']} из {state['need']} за {span}. Куты в покое. "
-            f"Зонтик, дождевик, навес и сейф закрывают и без этих игр.</i>"
-        )
-    return (
-        f"<tg-emoji emoji-id='{CALM_ICON_OPEN}'>🔫</tg-emoji> "
-        f"<b>{state['played']} из {state['need']} игр за {span}</b>\n"
-        f"<i>Ещё {state['left']}, и обливать нельзя. "
-        f"До этого пистолетик забирает куты. Купленная защита останавливает его сразу.</i>"
-    )
+    """В теле баланса этой строки больше нет: там остаётся только эмодзи суммы."""
+    return ""
 
 
-def calm_alert(played, need=CALM_GAMES, hours=24) -> str:
+def calm_alert(played, need=CALM_GAMES, left_seconds=24 * 3600) -> str:
     state = calm_progress(played, need)
-    span = hours_label(hours)
+    clock = left_clock(left_seconds)
     if state["calm"]:
         return (
-            f"За {span}: {state['played']} из {state['need']}.\n"
-            "Обливать нельзя. Куты в покое.\n"
-            "Игры считаются в любой группе.\n"
-            "Защита из магазина нужна, если игр ещё нет."
+            f"🍁 {state['played']} / {state['need']} уже есть.\n"
+            "Обливать нельзя. Куты под защитой."
         )
     return (
-        f"За {span}: {state['played']} из {state['need']}.\n"
-        f"Ещё {state['left']} в любой группе, и обливать нельзя.\n"
-        "Куты тогда в покое.\n"
-        "Пока игр мало, пистолетик работает.\n"
-        "Защита из магазина закрывает сразу."
+        f"🍁 Вам нужно сыграть {state['played']} / {state['need']} за {clock} :\n"
+        f"🪛 После {state['need']} в любой группе - вы получите полную защиту вашего баланса \n"
+        f"📯 Вас не смогут облить с пистолетика и украсть ваши куты"
     )
 
 

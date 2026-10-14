@@ -559,6 +559,14 @@ export async function saveBalanceCalm(body) {
   return adminRequest('/balance-calm', { method: 'POST', body })
 }
 
+export async function fetchBalanceLedger({ q = '', focus = null } = {}) {
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  if (focus != null) params.set('focus', String(focus))
+  const tail = params.toString()
+  return adminRequest(`/balance-calm/ledger${tail ? `?${tail}` : ''}`)
+}
+
 export async function saveWaterPrice({ id, price }) {
   return adminRequest('/water-games/price', {
     method: 'POST',

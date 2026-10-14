@@ -20,9 +20,11 @@ from water_games.design import (
     SHOT_CAP,
     btn_join,
     calm_alert,
-    calm_balance_text,
     calm_button_text,
+    calm_button_visible,
     calm_progress,
+    calm_seconds,
+    left_clock,
     can_shoot,
     kept_kind,
     guide_status,
@@ -220,21 +222,23 @@ def test_five_games_keep_the_day_calm_without_replacing_a_shield():
     done = calm_progress(5)
     assert done["calm"] is True
     assert calm_progress(None)["calm"] is False
-    open_text = calm_balance_text(2)
-    held_text = calm_balance_text(5)
-    assert "2 из 5" in open_text
-    assert "пистолетик" in open_text
-    assert "Обливать нельзя" in held_text
-    assert "сейф" in held_text
-    assert "под защитой" not in held_text
-    assert calm_button_text(2) == "2/5 · 24 часа"
-    assert calm_button_text(5) == "Покой · 24 часа"
+    assert calm_button_visible(2) is True
+    assert calm_button_visible(5) is False
+    assert left_clock(24 * 3600 + 15 * 60 + 10) == "24ч/15м/10с"
+    assert calm_seconds(0) == 24 * 3600
+    assert calm_seconds(9 * 24 * 3600) == 7 * 24 * 3600
+    assert calm_button_text(0, 5, 24 * 3600 + 15 * 60 + 10) == "0/5 | осталось 24ч/15м/10с"
+    alert = calm_alert(0, 5, 24 * 3600 + 15 * 60 + 10)
+    assert "Вам нужно сыграть 0 / 5 за 24ч/15м/10с" in alert
+    assert "полную защиту вашего баланса" in alert
+    assert "пистолетика" in alert
+    assert len(alert) <= 200
+    assert len(calm_alert(0, 100, 7 * 24 * 3600)) <= 200
+    assert "уже есть" in calm_alert(5, 5, 10)
     shot = screen_text("shot_calm", played=6, need=5, span="24 часа")
     assert "не облить" in shot
     assert "Вода остаётся" in shot
     assert "под защитой" not in shot
-    assert "игр ещё нет" in calm_alert(5)
-    assert "5" in calm_alert(1)
 
 
 def test_a_water_purchase_advances_only_its_own_message():

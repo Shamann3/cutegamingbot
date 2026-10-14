@@ -202,6 +202,7 @@ def test_normalize_chat_deposit_attaches_group():
     assert item["amount"] == 300
     assert "counterparty" not in item
     assert item["group"] == {"chatId": -1001921925861, "name": "Cute Chat", "username": "LegendaryChat"}
+    assert item["groupLine"] == "Положено в группу Cute Chat"
 
 
 def test_normalize_chat_deposit_unknown_group_keeps_chat_id():
@@ -219,7 +220,8 @@ def test_normalize_transfer_takes_precedence_over_chat_id():
            "chat_id": -100999, "group_name": "X", "group_username": "x"}
     item = normalize_cute_row(row, {222: {"name": "Аня", "username": "anya"}})
     assert item["kind"] == "transfer"
-    assert "group" not in item
+    assert item["group"]["chatId"] == -100999
+    assert item["groupLine"] == "Перевод в группе X"
     assert item["counterparty"]["userId"] == 222
 
 
@@ -250,3 +252,16 @@ def test_donations_summary_failure_degrades_to_none():
     assert result["total"] == 3          # cutehistory only
     assert result["items"] == []
     assert result["donations"] is None
+
+
+def test_withdraw_from_group_names_that_group():
+    row = {"plus": 800, "minus": 0, "cause": "снято с баланса группы",
+           "balance": 2000, "transfer_id": None, "ts": TS_A,
+           "sender_id": None, "receiver_id": None,
+           "chat_id": -1001612636292, "group_name": "Дом игр",
+           "group_username": "gameshouse"}
+    item = normalize_cute_row(row, {})
+    assert item["direction"] == "in"
+    assert item["amount"] == 800
+    assert item["group"]["name"] == "Дом игр"
+    assert item["groupLine"] == "Снято из группы Дом игр"

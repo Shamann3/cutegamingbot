@@ -1370,7 +1370,7 @@ function CuteHistoryFeed({ userId, onOpenUser }) {
             )}
             {it.group && (
               <p className="panel-shelf-muted">
-                → группа {it.group.name || '—'}{' '}
+                {it.groupLine || `${it.direction === 'in' ? 'Снято из группы' : 'Положено в группу'} ${it.group.name || ''}`.trim()}{' '}
                 <IdentityBits chatId={it.group.chatId} chatUsername={it.group.username} />
               </p>
             )}

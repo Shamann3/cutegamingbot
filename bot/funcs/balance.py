@@ -35,7 +35,10 @@ async def _calm_now(user_id: int) -> dict:
         return await calm_state(db, int(user_id))
     except Exception as exc:
         _hb(f"[BALANCE][CALM] read err: {exc!r}")
-        return {"enabled": False, "played": 0, "need": 5, "hours": 24, "calm": False, "left": 5}
+        return {
+            "enabled": False, "played": 0, "need": 5, "hours": 24,
+            "seconds": 86400, "left_sec": 86400, "calm": False, "left": 5,
+        }
 
 
 async def handle_balance(message: types.Message, db):
@@ -314,21 +317,22 @@ async def handle_balance(message: types.Message, db):
         )
         _hb("🔥 [BALANCE][UI] burned")
 
-    calm_html = ""
-    if user_balance > 0 and st_int != BAL_STATUS_BURNED and calm_now.get("enabled"):
-        from bot.funcs.water_games_design import (
-            CALM_ICON_HELD,
-            CALM_ICON_OPEN,
-            calm_balance_text,
-            calm_button_text,
-        )
-        calm_html = calm_balance_text(calm_now["played"], calm_now["need"], calm_now["hours"])
+    if (
+        user_balance > 0
+        and st_int != BAL_STATUS_BURNED
+        and calm_now.get("enabled")
+        and not calm_now.get("calm")
+    ):
+        from bot.funcs.water_games_design import CALM_BUTTON_ICON, calm_button_text
+        left_sec = calm_now.get("left_sec")
+        if left_sec is None:
+            left_sec = calm_now.get("seconds") or int(calm_now.get("hours") or 24) * 3600
         kb_rows.append(
             [InlineKeyboardButton(
-                text=calm_button_text(calm_now["played"], calm_now["need"], calm_now["hours"]),
+                text=calm_button_text(calm_now["played"], calm_now["need"], left_sec),
                 callback_data=f"bal_calm:{owner_id}",
-                style="success" if calm_now.get("calm") else "default",
-                icon_custom_emoji_id=CALM_ICON_HELD if calm_now.get("calm") else CALM_ICON_OPEN,
+                style="default",
+                icon_custom_emoji_id=CALM_BUTTON_ICON,
             )]
         )
 
@@ -362,8 +366,6 @@ async def handle_balance(message: types.Message, db):
     try:
         emoji_id = get_random_emoji_id()
         body = f"<tg-emoji emoji-id='{emoji_id}'>💰</tg-emoji>"
-        if calm_html:
-            body = body + "\n" + calm_html
         sent = await message.reply(
             body, parse_mode="HTML",
             disable_web_page_preview=True, reply_markup=kb)
@@ -5527,7 +5529,10 @@ async def cb_bal_calm(c: types.CallbackQuery):
         return
     from bot.funcs.water_games_design import calm_alert
     state = await _calm_now(owner_id)
-    await c.answer(calm_alert(state["played"], state["need"], state["hours"]), show_alert=True)
+    left_sec = state.get("left_sec")
+    if left_sec is None:
+        left_sec = state.get("seconds") or int(state.get("hours") or 24) * 3600
+    await c.answer(calm_alert(state["played"], state["need"], left_sec), show_alert=True)
 
 
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("bal_sleep_games:"))

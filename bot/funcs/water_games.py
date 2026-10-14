@@ -57,7 +57,7 @@ from bot.funcs.water_games_design import (
     missing_item_text,
     poor_fee_text,
     public_group_name,
-    hours_label,
+    left_clock,
     screen_text,
     settle_umbrella,
     split_take,
@@ -860,7 +860,10 @@ async def _calm_of(user_id: int) -> dict:
         return await calm_state(db, int(user_id))
     except Exception:
         log.exception("water calm")
-        return {"played": 0, "need": 5, "hours": 24, "calm": False, "enabled": False, "left": 5}
+        return {
+            "played": 0, "need": 5, "hours": 24, "seconds": 86400,
+            "left_sec": 86400, "calm": False, "enabled": False, "left": 5,
+        }
 
 
 async def _preview_shot(message, user_id: int, target_id: int, now, day_start, edit_call=None) -> None:
@@ -879,7 +882,7 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
                 "shot_calm",
                 played=calm["played"],
                 need=calm["need"],
-                span=hours_label(calm["hours"]),
+                span=left_clock(calm.get("seconds") or int(calm.get("hours") or 24) * 3600),
             )
             if edit_call is not None:
                 await _edit_call(edit_call, text)
@@ -1036,7 +1039,7 @@ async def _finish_pour(call, offer_id: int) -> None:
             "shot_calm",
             played=calm["played"],
             need=calm["need"],
-            span=hours_label(calm["hours"]),
+            span=left_clock(calm.get("seconds") or int(calm.get("hours") or 24) * 3600),
         ))
         await call.answer()
         return

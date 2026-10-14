@@ -7422,12 +7422,13 @@ class Database:
             return None
 
 
-    async def cutehistory_plus(self , user_id , amount , cause):
+    async def cutehistory_plus(self , user_id , amount , cause , chat_id=None):
         """
         Записывает данные с плюсом в таблицу cutehistory.
         :param user_id: ID пользователя.
         :param amount: Сумма.
         :param cause: Причина.
+        :param chat_id: группа, из которой сняли куты, если начисление пришло оттуда.
         """
         if not self.pool:
             raise RuntimeError("Подключение к базе данных не установлено.")
@@ -7447,13 +7448,28 @@ class Database:
 
         try:
             query = """
-                INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance, chat_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """
             async with self.pool.acquire() as connection:
-                await connection.execute(query , user_id , amount , cause , formatted_date , first_name , username, balance)
+                await connection.execute(
+                    query , user_id , amount , cause , formatted_date , first_name , username, balance, chat_id
+                )
         except Exception as e:
-            print(f"[ERROR] Ошибка при записи данных с плюсом в таблицу cutehistory: {e}")
+            if chat_id is None:
+                print(f"[ERROR] Ошибка при записи данных с плюсом в таблицу cutehistory: {e}")
+            else:
+                try:
+                    query = """
+                        INSERT INTO cutehistory ("user_id", "+", cause, data, first_name, username, balance)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """
+                    async with self.pool.acquire() as connection:
+                        await connection.execute(
+                            query , user_id , amount , cause , formatted_date , first_name , username, balance
+                        )
+                except Exception as retry_error:
+                    print(f"[ERROR] Ошибка при записи данных с плюсом в таблицу cutehistory: {retry_error}")
 
         try:
             from bot.runtime.bot_command_stats import note_game_cause_amount
