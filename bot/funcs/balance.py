@@ -29,6 +29,15 @@ def _hb(*a):
         print(*a)
 
 
+async def _calm_now(user_id: int) -> dict:
+    from bot.funcs.calm_hold import calm_state
+    try:
+        return await calm_state(db, int(user_id))
+    except Exception as exc:
+        _hb(f"[BALANCE][CALM] read err: {exc!r}")
+        return {"enabled": False, "played": 0, "need": 5, "hours": 24, "calm": False, "left": 5}
+
+
 async def handle_balance(message: types.Message, db):
     """
     Вызывается, когда пользователь пишет «баланс» (или аналогичную команду).
@@ -59,9 +68,10 @@ async def handle_balance(message: types.Message, db):
     bal_task = asyncio.ensure_future(db.get_user_balance(owner_id))
     engine_task = asyncio.ensure_future(db.ensure_balance_status_engine(owner_id))
     gc_task = asyncio.ensure_future(db.get_active_gc_assignment(owner_id))
+    games_task = asyncio.ensure_future(_calm_now(owner_id))
 
-    bal_res, engine_res, gc_res = await asyncio.gather(
-        bal_task, engine_task, gc_task, return_exceptions=True
+    bal_res, engine_res, gc_res, games_res = await asyncio.gather(
+        bal_task, engine_task, gc_task, games_task, return_exceptions=True
     )
 
     # ---- баланс ----
@@ -105,6 +115,12 @@ async def handle_balance(message: types.Message, db):
         except Exception as e:
             _hb(f"❌ [BALANCE][ENGINE] parse err: {e!r}")
             burned_now = False
+
+    calm_now = {"enabled": False, "played": 0, "need": 5, "hours": 24, "calm": False, "left": 5}
+    if isinstance(games_res, Exception):
+        _hb(f"⚠️ [BALANCE][CALM] games err: {games_res!r}")
+    elif isinstance(games_res, dict):
+        calm_now = games_res
 
     # ============================================================
     # 3.1) СПИСЫВАЕМ ТОЛЬКО ЕСЛИ burned_now=True
@@ -298,6 +314,24 @@ async def handle_balance(message: types.Message, db):
         )
         _hb("🔥 [BALANCE][UI] burned")
 
+    calm_html = ""
+    if user_balance > 0 and st_int != BAL_STATUS_BURNED and calm_now.get("enabled"):
+        from bot.funcs.water_games_design import (
+            CALM_ICON_HELD,
+            CALM_ICON_OPEN,
+            calm_balance_text,
+            calm_button_text,
+        )
+        calm_html = calm_balance_text(calm_now["played"], calm_now["need"], calm_now["hours"])
+        kb_rows.append(
+            [InlineKeyboardButton(
+                text=calm_button_text(calm_now["played"], calm_now["need"], calm_now["hours"]),
+                callback_data=f"bal_calm:{owner_id}",
+                style="success" if calm_now.get("calm") else "default",
+                icon_custom_emoji_id=CALM_ICON_HELD if calm_now.get("calm") else CALM_ICON_OPEN,
+            )]
+        )
+
     if gc_button_row:
         kb_rows.append(gc_button_row)
 
@@ -327,8 +361,11 @@ async def handle_balance(message: types.Message, db):
     # ============================================================
     try:
         emoji_id = get_random_emoji_id()
+        body = f"<tg-emoji emoji-id='{emoji_id}'>💰</tg-emoji>"
+        if calm_html:
+            body = body + "\n" + calm_html
         sent = await message.reply(
-            f"<tg-emoji emoji-id='{emoji_id}'>💰</tg-emoji>", parse_mode="HTML",
+            body, parse_mode="HTML",
             disable_web_page_preview=True, reply_markup=kb)
 
         balance_message_owner[(sent.chat.id, sent.message_id)] = owner_id
@@ -5476,6 +5513,21 @@ async def cb_balance_timer_info(c: types.CallbackQuery):
         return
 
     await c.answer("❓ Неизвестный статус кошелька.", show_alert=True)
+
+
+@dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("bal_calm:"))
+async def cb_bal_calm(c: types.CallbackQuery):
+    try:
+        owner_id = _parse_owner_id(c.data, "bal_calm")
+    except Exception:
+        await c.answer("Ошибка данных кнопки.", show_alert=True)
+        return
+    if int(c.from_user.id) != int(owner_id):
+        await c.answer("Это кнопка чужого баланса.", show_alert=True)
+        return
+    from bot.funcs.water_games_design import calm_alert
+    state = await _calm_now(owner_id)
+    await c.answer(calm_alert(state["played"], state["need"], state["hours"]), show_alert=True)
 
 
 @dp.callback_query(lambda c: isinstance(c.data, str) and c.data.startswith("bal_sleep_games:"))

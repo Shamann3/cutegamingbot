@@ -8,6 +8,7 @@ import {
 import { notifyAdmin } from '../../lib/notify'
 import { filterSectionTabs } from '../../constants/panelAccessTree'
 import MemeSettings from '../../components/MemeSettings'
+import BalancesCalm from './BalancesCalm'
 
 // Экономика, ферма и семена редактируются в EconomySection / FarmSection.
 // Лейблы ниже — для вкладки «История».
@@ -297,14 +298,15 @@ const BASE_TABS = [
 ]
 
 const TOGGLES_TAB = { id: 'toggles', label: '⏻ Выключатели' }
+const BALANCES_TAB = { id: 'balances', label: 'Балансы' }
 
 export default function SystemSection({ panelTabs = null, isProjectCreator = false }) {
   const tabs = useMemo(() => {
     const base = filterSectionTabs('settings', BASE_TABS, panelTabs)
     if (!isProjectCreator) return base
     // Creator toggles always available to project creator (not role-tab gated).
-    const withoutDup = base.filter((t) => t.id !== 'toggles')
-    return [TOGGLES_TAB, ...withoutDup]
+    const withoutDup = base.filter((t) => t.id !== 'toggles' && t.id !== 'balances')
+    return [BALANCES_TAB, TOGGLES_TAB, ...withoutDup]
   }, [panelTabs, isProjectCreator])
 
   const [tab, setTab] = useState(tabs[0]?.id || 'system')
@@ -404,6 +406,12 @@ export default function SystemSection({ panelTabs = null, isProjectCreator = fal
 
       {loading && <p className="panel-shelf-muted" style={{ padding: '1rem' }}>Загрузка…</p>}
 
+      {!loading && activeTab === 'balances' && isProjectCreator && (
+        <div className="sys-content">
+          <BalancesCalm />
+        </div>
+      )}
+
       {!loading && settings && activeTab === 'toggles' && isProjectCreator && (
         <div className="sys-content">
           <CreatorTogglesPanel
@@ -415,7 +423,7 @@ export default function SystemSection({ panelTabs = null, isProjectCreator = fal
         </div>
       )}
 
-      {!loading && settings && activeTab && activeTab !== 'history' && activeTab !== 'toggles' && (
+      {!loading && settings && activeTab && activeTab !== 'history' && activeTab !== 'toggles' && activeTab !== 'balances' && (
         <div className="sys-content">
           {SETTING_GROUPS.filter((g) => g.id === activeTab).map((group) => (
             <SettingGroup

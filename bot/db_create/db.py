@@ -8562,6 +8562,40 @@ class Database:
         except Exception as e:
             print(f"[user_games_day] не записал игру user_id={user_id}: {e}")
 
+    async def _note_game_tick(self, connection, user_id: int, increment) -> None:
+        """Игра зашла в срок покоя. Любая группа. Ошибка не ломает саму игру."""
+        try:
+            games = int(increment)
+        except (TypeError, ValueError):
+            return
+        if games <= 0:
+            return
+        try:
+            await connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_game_ticks (
+                    user_id BIGINT NOT NULL,
+                    played_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    games INT NOT NULL
+                )
+                """
+            )
+            await connection.execute(
+                "INSERT INTO user_game_ticks (user_id, games) VALUES ($1, $2)",
+                int(user_id),
+                games,
+            )
+            await connection.execute(
+                """
+                DELETE FROM user_game_ticks
+                WHERE user_id = $1
+                  AND played_at < NOW() - INTERVAL '8 days'
+                """,
+                int(user_id),
+            )
+        except Exception as e:
+            print(f"[user_game_ticks] не записал игру user_id={user_id}: {e}")
+
     async def get_best_players_board(
         self,
         *,
@@ -8910,6 +8944,7 @@ class Database:
                         else:
                             print(
                                 f"[update_user_wins] копия игр: +{increment} в отдельный счётчик user_id={user_id}")
+                        await self._note_game_tick(connection, user_id, increment)
                     recorded = True
                 except Exception as e:
                     print(f"[update_user_wins] отдельный счётчик не записался, пишу в основную статистику: {e}")
@@ -9163,6 +9198,7 @@ class Database:
                         else:
                             print(
                                 f"[update_user_loose] копия игр: +{increment} в отдельный счётчик user_id={user_id}")
+                        await self._note_game_tick(connection, user_id, increment)
                     recorded = True
                 except Exception as e:
                     print(f"[update_user_loose] отдельный счётчик не записался, пишу в основную статистику: {e}")

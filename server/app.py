@@ -29,6 +29,7 @@ from error_codes import ERROR_CATALOG, error_meaning, error_title
 from error_reporter import schedule_error_report, schedule_http_error, schedule_security_alert, schedule_server_exception
 from admin_routes import router as admin_router
 from water_games_api import router as water_games_router
+from balance_calm_api import router as balance_calm_router
 from cases_api import router as cases_router
 from support_routes import router as support_router
 from maintenance import MAINTENANCE_MESSAGE, is_maintenance, maintenance_http_error
@@ -316,6 +317,7 @@ app.add_middleware(
 
 app.include_router(admin_router)
 app.include_router(water_games_router)
+app.include_router(balance_calm_router)
 app.include_router(cases_router)
 app.include_router(support_router)
 

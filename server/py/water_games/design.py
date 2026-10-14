@@ -266,6 +266,104 @@ SHIELD_PREMIUM = {
 }
 SHOOT_EMOJI = "5317000922096769303"
 
+# Игр за московский день, после которых обливать нельзя до полуночи.
+# Мало, чтобы вечер это закрывал, и мало относительно сна кошелька:
+# утром пистолетик ещё работает, а зонтик и сейф нужны тем, кто не доиграл.
+CALM_GAMES = 5
+CALM_ICON_OPEN = SHOOT_EMOJI
+CALM_ICON_HELD = "5359595190807962128"
+
+
+def hours_label(hours) -> str:
+    try:
+        count = max(1, int(hours))
+    except (TypeError, ValueError):
+        count = 24
+    tail = count % 100
+    if tail // 10 != 1 and count % 10 == 1:
+        word = "час"
+    elif tail // 10 != 1 and count % 10 in (2, 3, 4):
+        word = "часа"
+    else:
+        word = "часов"
+    return f"{count} {word}"
+
+
+def calm_need(need) -> int:
+    try:
+        count = int(need)
+    except (TypeError, ValueError):
+        count = CALM_GAMES
+    return min(100, max(1, count))
+
+
+def calm_hours(hours) -> int:
+    try:
+        count = int(hours)
+    except (TypeError, ValueError):
+        count = 24
+    return min(168, max(1, count))
+
+
+def calm_progress(played, need=CALM_GAMES) -> dict:
+    """Один баланс. Покой включается числом игр, а не вторым кошельком."""
+    try:
+        done = max(0, int(played or 0))
+    except (TypeError, ValueError):
+        done = 0
+    required = calm_need(need)
+    return {
+        "played": done,
+        "need": required,
+        "left": max(0, required - done),
+        "calm": done >= required,
+    }
+
+
+def calm_button_text(played, need=CALM_GAMES, hours=24) -> str:
+    state = calm_progress(played, need)
+    span = hours_label(hours)
+    if state["calm"]:
+        return f"Покой · {span}"
+    return f"{state['played']}/{state['need']} · {span}"
+
+
+def calm_balance_text(played, need=CALM_GAMES, hours=24) -> str:
+    state = calm_progress(played, need)
+    span = hours_label(hours)
+    if state["calm"]:
+        return (
+            f"<tg-emoji emoji-id='{CALM_ICON_HELD}'>🎮</tg-emoji> "
+            f"<b>Обливать нельзя</b>\n"
+            f"<i>{state['played']} из {state['need']} за {span}. Куты в покое. "
+            f"Зонтик, дождевик, навес и сейф закрывают и без этих игр.</i>"
+        )
+    return (
+        f"<tg-emoji emoji-id='{CALM_ICON_OPEN}'>🔫</tg-emoji> "
+        f"<b>{state['played']} из {state['need']} игр за {span}</b>\n"
+        f"<i>Ещё {state['left']}, и обливать нельзя. "
+        f"До этого пистолетик забирает куты. Купленная защита останавливает его сразу.</i>"
+    )
+
+
+def calm_alert(played, need=CALM_GAMES, hours=24) -> str:
+    state = calm_progress(played, need)
+    span = hours_label(hours)
+    if state["calm"]:
+        return (
+            f"За {span}: {state['played']} из {state['need']}.\n"
+            "Обливать нельзя. Куты в покое.\n"
+            "Игры считаются в любой группе.\n"
+            "Защита из магазина нужна, если игр ещё нет."
+        )
+    return (
+        f"За {span}: {state['played']} из {state['need']}.\n"
+        f"Ещё {state['left']} в любой группе, и обливать нельзя.\n"
+        "Куты тогда в покое.\n"
+        "Пока игр мало, пистолетик работает.\n"
+        "Защита из магазина закрывает сразу."
+    )
+
 
 def shield_mark(kind: str) -> str:
     """Значок защиты: премиум-эмодзи в тексте, у навеса обычный символ."""
@@ -597,6 +695,14 @@ screen(
     """
     <b>Пистолетик на сегодня закончился</b>
     <i>{used} из {limit}. Завтра снова можно.</i>
+    """,
+)
+
+screen(
+    "shot_calm",
+    """
+    <b>Сейчас его не облить</b>
+    <i>{played} из {need} за {span}. Вода остаётся у вас.</i>
     """,
 )
 

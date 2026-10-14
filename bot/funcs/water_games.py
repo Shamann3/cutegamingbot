@@ -57,6 +57,7 @@ from bot.funcs.water_games_design import (
     missing_item_text,
     poor_fee_text,
     public_group_name,
+    hours_label,
     screen_text,
     settle_umbrella,
     split_take,
@@ -853,6 +854,15 @@ def _guard_span(row) -> str:
     return "ещё " + _left_of(row["until"], datetime.now(timezone.utc))
 
 
+async def _calm_of(user_id: int) -> dict:
+    from bot.funcs.calm_hold import calm_state
+    try:
+        return await calm_state(db, int(user_id))
+    except Exception:
+        log.exception("water calm")
+        return {"played": 0, "need": 5, "hours": 24, "calm": False, "enabled": False, "left": 5}
+
+
 async def _preview_shot(message, user_id: int, target_id: int, now, day_start, edit_call=None) -> None:
     """Показывает сумму или срок защиты. Вода списывается только после «Облить»."""
     rules = await _shot_rules()
@@ -863,6 +873,19 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
     if _still(target_shield):
         kind = "shield"
     else:
+        calm = await _calm_of(target_id)
+        if calm["calm"]:
+            text = screen_text(
+                "shot_calm",
+                played=calm["played"],
+                need=calm["need"],
+                span=hours_label(calm["hours"]),
+            )
+            if edit_call is not None:
+                await _edit_call(edit_call, text)
+                return
+            await message.reply(text, parse_mode="HTML")
+            return
         enemy = await _inventory(target_id)
         if enemy["row"] is None:
             await message.reply(screen_text("shot_unknown"), parse_mode="HTML")
@@ -1004,6 +1027,16 @@ async def _finish_pour(call, offer_id: int) -> None:
         await _edit_call(call, screen_text(
             "shot_bounce",
             title=f"{view['name']}: под защитой {_guard_span(shield)}",
+        ))
+        await call.answer()
+        return
+    calm = await _calm_of(target_id)
+    if calm["calm"]:
+        await _edit_call(call, screen_text(
+            "shot_calm",
+            played=calm["played"],
+            need=calm["need"],
+            span=hours_label(calm["hours"]),
         ))
         await call.answer()
         return

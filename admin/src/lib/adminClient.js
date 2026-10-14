@@ -551,6 +551,14 @@ export async function fetchWaterBoard() {
   return adminRequest('/water-games')
 }
 
+export async function fetchBalanceCalm() {
+  return adminRequest('/balance-calm')
+}
+
+export async function saveBalanceCalm(body) {
+  return adminRequest('/balance-calm', { method: 'POST', body })
+}
+
 export async function saveWaterPrice({ id, price }) {
   return adminRequest('/water-games/price', {
     method: 'POST',

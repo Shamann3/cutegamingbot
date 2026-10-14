@@ -151,6 +151,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     '2tart_set_board:': ('bot.design.inlinetictac2', 'inline_tic_tac_set_board_start_size'),
     '9help_deletehelp': ('main', 'callback_top'),
     'bal_sleep_games:': ('bot.funcs.balance', 'cb_bal_sleep_games'),
+    'bal_calm:': ('bot.funcs.balance', 'cb_bal_calm'),
     'demotion_cancel_': ('bot.buisnesses.clan_filter', 'cancel_demotion'),
     'donaters34123412': ('bot.funcs.top', 'callbiahsdofhasodfhoasack_top'),
     'errorslotspedro_': ('bot.tggames.slots', 'slots_chatbank_alert'),
