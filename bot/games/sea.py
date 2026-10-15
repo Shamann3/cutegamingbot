@@ -32,12 +32,21 @@ from aiogram.types import (
 
 SIZE = 8
 COLS = "ABCDEFGH"            # не короче SIZE. Буквы слева направо, верх поля
-FLEET = (3, 2, 2, 1, 1, 1)   # на 8×8. Между кораблями остаётся пустая клетка
-PLACE_SECONDS = 180          # расстановка. Кто не успел — партия снимается, куты на месте
+# Наборы выбирает создатель до старта. Число в названии — клетки кораблей, поле остаётся 8×8.
+# Лёгкий 8: 1×3, 2×2, 1×1. Средний 10: 1×4, 1×3, 1×2, 1×1. Сложный 12: 2×3, 2×2, 2×1.
+LEVELS = (
+    ("easy", "Лёгкий 8", (3, 2, 2, 1), "Лёгкий. Один корабль на 3 клетки, два на 2 и один на 1."),
+    ("mid", "Средний 10", (4, 3, 2, 1), "Средний. Корабли на 4, на 3, на 2 и на 1 клетку."),
+    ("hard", "Сложный 12", (3, 3, 2, 2, 1, 1), "Сложный. Два корабля на 3 клетки, два на 2 и два на 1."),
+)
+_LEVEL = {item[0]: item for item in LEVELS}
+FLEET = _LEVEL["easy"][2]
+PLACE_SECONDS = 300          # расстановка. Кто не успел — партия снимается, куты на месте
+LOBBY_SECONDS = 600          # стол без старта сам закрывается и не остаётся в памяти
 TURN_SECONDS = 60            # минута на выстрел
 MISS_LIMIT = 3               # столько пропущенных минут — и игрок сдаётся
 PAGE = 5                     # столбцов на экране кнопок. Слева ещё цифра, в ряду не больше 8
-CLICK_GAP = 0.0              # пауза выключена: отклик важнее, повторный тап сам по себе безопасен
+CLICK_GAP = 2.0              # пауза между кнопками. Ответ уходит сразу, правка сообщения — нет
 WORDS = ("морскойбой", "battleship")
 PHRASES = ("морской бой", "морская битва")
 
@@ -55,9 +64,9 @@ _PLACE_WHY = {
     "length": "Нет такого корабля.",
 }
 _TOAST = {
-    "miss": "Мимо. Ход друга.",
-    "hit": "Попал. Стреляй ещё.",
-    "sunk": "Потопил. Стреляй ещё.",
+    "miss": "Мимо. Ход соперника.",
+    "hit": "Попадание. Стреляйте ещё.",
+    "sunk": "Корабль потоплен. Стреляйте ещё.",
     "win": "Победа.",
     "repeat": "Уже стрелял.",
     "halo": "Тут пусто.",
@@ -80,6 +89,7 @@ FACE = {
     "halo": "5350475991691052862",        # пусто вокруг потопленного
     "wound": "5469785308386041323",       # попадание
     "sunk": "5276032951342088188",        # все клетки потопленного корабля
+    "zone": "5381975814415866082",        # монета: ставка и клетки вокруг выбранного корабля
 
     # --- целый корабль. Пусто = рисунок корабля из знаков ниже ---
     "ship_one": "",
@@ -103,7 +113,7 @@ FACE = {
     "title": "6001395499628762723",
 
     # --- кнопки ---
-    "again": "5882207227997066107",       # Ещё
+    "again": "5882207227997066107",       # Авто
     "ready": "6114060708075277880",       # Готово, кнопка зелёная
     "join": "",                           # Присоединиться, без эмодзи
     "start": "",                          # Начать, без эмодзи
@@ -115,14 +125,15 @@ FACE = {
     "up": "5807601906603792598",
     "turn": "5807492110059838726",
     "give": "5408921017596781520",        # Сдаться
-    "leave": "",                          # Выйти и Отмена, без эмодзи
+    "leave": "",                          # Выйти, без эмодзи
 }
 _WATER = "\u3164"
 _GUIDE = {
-    "lobby": "«Присоединиться», потом «Начать».",
-    "place": "«Ещё» ставит само. «Выставить вручную» — сам. Потом «Готово».",
-    "fight": "Жми клетку. «Мои корабли» — твои.",
+    "lobby": "«Присоединиться», затем «Начать». Сложность выбирает создатель.",
+    "place": "«Авто» ставит корабли. «Выставить вручную» — вы ставите сами. Затем «Готово».",
+    "fight": "Нажмите клетку. «Мои корабли» — ваши.",
 }
+_PACE = "Пожалуйста, не торопитесь"
 _LEFT_WORD = {
     1: "один",
     2: "два",
@@ -235,9 +246,13 @@ def button_char(glyph: str) -> str:
     }.get(glyph, "·")
 
 
-def place_ship(ships, length: int, r: int, c: int, across: bool):
+def _spec(fleet=None):
+    return Counter(tuple(int(n) for n in (FLEET if fleet is None else fleet)))
+
+
+def place_ship(ships, length: int, r: int, c: int, across: bool, fleet=None):
     """Нос в (r, c), дальше вправо или вниз. Касание даже углом не проходит."""
-    need = Counter(FLEET)
+    need = _spec(fleet)
     if int(length) not in need:
         return False, ships, "length"
     cells = []
@@ -260,8 +275,20 @@ def place_ship(ships, length: int, r: int, c: int, across: bool):
     return True, [*ships, tuple(cells)], ""
 
 
-def fleet_ready(ships) -> bool:
-    return Counter(len(ship) for ship in ships) == Counter(FLEET)
+def fleet_ready(ships, fleet=None) -> bool:
+    return Counter(len(ship) for ship in ships) == _spec(fleet)
+
+
+def game_fleet(game) -> tuple:
+    """Набор этой партии. У старого стола без записи берём то, что уже стоит."""
+    raw = (game or {}).get("fleet")
+    if raw:
+        return tuple(int(n) for n in raw)
+    for board in ((game or {}).get("boards") or {}).values():
+        ships = (board or {}).get("ships") or []
+        if ships:
+            return tuple(sorted((len(ship) for ship in ships), reverse=True))
+    return tuple(int(n) for n in FLEET)
 
 
 def _fits(others, cells) -> bool:
@@ -327,27 +354,45 @@ def turn_ship(ships, index: int):
     return False, ships
 
 
-def _fallback_fleet() -> list:
-    ships = []
-    plan = (
+_PLANS = {
+    (3, 2, 2, 1): (
         (3, 0, 0, True),
         (2, 2, 0, True),
         (2, 2, 3, True),
         (1, 4, 0, True),
+    ),
+    (4, 3, 2, 1): (
+        (4, 0, 0, True),
+        (3, 2, 0, True),
+        (2, 2, 4, True),
+        (1, 4, 0, True),
+    ),
+    (3, 3, 2, 2, 1, 1): (
+        (3, 0, 0, True),
+        (3, 0, 4, True),
+        (2, 2, 0, True),
+        (2, 2, 3, True),
+        (1, 4, 0, True),
         (1, 4, 2, True),
-        (1, 4, 4, True),
-    )
-    for length, r, c, across in plan:
-        ok, ships, _code = place_ship(ships, length, r, c, across)
+    ),
+}
+
+
+def _fallback_fleet(fleet=None) -> list:
+    spec = tuple(int(n) for n in (FLEET if fleet is None else fleet))
+    ships = []
+    for length, r, c, across in _PLANS.get(spec, ()):
+        ok, ships, _code = place_ship(ships, length, r, c, across, spec)
         if not ok:
             return []
     return ships
 
 
-def scatter(rng=None) -> list:
+def scatter(rng=None, fleet=None) -> list:
     """Новая случайная расстановка. Каждый вызов — другой рисунок."""
     rng = rng or random.Random()
-    fleet = list(FLEET)
+    spec = tuple(int(n) for n in (FLEET if fleet is None else fleet))
+    fleet = list(spec)
     for _ in range(40):
         blocked = set()
         ships = []
@@ -377,15 +422,15 @@ def scatter(rng=None) -> list:
                 for dr in (-1, 0, 1):
                     for dc in (-1, 0, 1):
                         blocked.add((sr + dr, sc + dc))
-        if not failed and fleet_ready(ships):
+        if not failed and fleet_ready(ships, spec):
             return ships
-    return _fallback_fleet()
+    return _fallback_fleet(spec)
 
 
-def next_length(ships, prefer=None):
+def next_length(ships, prefer=None, fleet=None):
     """Какой корабль ставить дальше. Текущий остаётся, пока такие ещё есть."""
     have = Counter(len(ship) for ship in ships)
-    need = Counter(FLEET)
+    need = _spec(fleet)
     if prefer is not None and need[int(prefer)] - have[int(prefer)] > 0:
         return int(prefer)
     for length in sorted(need, reverse=True):
@@ -404,7 +449,7 @@ def label_hint(kind: str) -> str:
     if kind == "n":
         return "Это номер ряда. Клетки — справа от цифры."
     if kind == "d":
-        return "Нажми корабль. Стрелки его двигают, ↻ поворачивает."
+        return "Нажмите на корабль. Стрелки его двигают, поворот разворачивает."
     return "Буквы сверху, цифры слева."
 
 
@@ -420,9 +465,9 @@ def ship_face(length: int, left: int, chosen: bool) -> str:
     return core
 
 
-def remain_line(ships) -> str:
+def remain_line(ships, fleet=None) -> str:
     have = Counter(len(ship) for ship in ships)
-    need = Counter(FLEET)
+    need = _spec(fleet)
     bits = []
     for length in sorted(need, reverse=True):
         left = need[length] - have[length]
@@ -587,13 +632,13 @@ _PART_OF = {
     "v": "bot",
 }
 _PART_TEXT = {
-    "one": "🚢",
-    "left": "◀",
-    "mid_h": "⬛",
-    "right": "▶",
-    "top": "▲",
-    "mid_v": "⬛",
-    "bot": "▼",
+    "one": "◻️",
+    "left": "◻️",
+    "mid_h": "◻️",
+    "right": "◻️",
+    "top": "◻️",
+    "mid_v": "◻️",
+    "bot": "◻️",
 }
 
 
@@ -643,7 +688,7 @@ def _cell_button(
         icon = _icon(f"ship_{part}")
         return _btn(text, data, icon=icon, icon_only=bool(icon))
     if cell in blocked:
-        return _btn("✖️", data)
+        return _mark(data, "🪙", "zone")
     if cell in misses:
         return _mark(data, "👎", "miss")
     if cell in halo:
@@ -691,9 +736,9 @@ def _page_buttons(prefix: str, gid: int, page: int) -> list:
     return buttons
 
 
-def _length_buttons(prefix: str, gid: int, ships, pick) -> list:
+def _length_buttons(prefix: str, gid: int, ships, pick, fleet=None) -> list:
     have = Counter(len(ship) for ship in ships)
-    need = Counter(FLEET)
+    need = _spec(fleet)
     buttons = []
     for length in sorted(need, reverse=True):
         left = need[length] - have[length]
@@ -725,15 +770,16 @@ def _nav_row(prefix: str, gid: int) -> list:
     ]
 
 
-def _tool_row(prefix: str, gid: int, ships, tool) -> list:
+def _tool_row(prefix: str, gid: int, ships, tool, fleet=None) -> list:
     have = Counter(len(ship) for ship in ships)
-    need = Counter(FLEET)
+    need = _spec(fleet)
     buttons = []
     for length in sorted(need, reverse=True):
         left = need[length] - have[length]
+        face = "◻️" * int(length)
         for _ in range(max(0, left)):
             buttons.append(_btn(
-                str(int(length)),
+                face,
                 f"{prefix}l:{gid}:{int(length)}",
                 "primary" if int(tool or 0) == int(length) else None,
             ))
@@ -741,20 +787,20 @@ def _tool_row(prefix: str, gid: int, ships, tool) -> list:
     return _pack(buttons, 8)
 
 
-def place_markup(prefix: str, gid: int, ships, page: int, hold=None, hand: bool = False, tool=None) -> InlineKeyboardMarkup:
+def place_markup(prefix: str, gid: int, ships, page: int, hold=None, hand: bool = False, tool=None, fleet=None) -> InlineKeyboardMarkup:
     chosen = ()
     if not hand and hold is not None and 0 <= int(hold) < len(ships):
         chosen = ships[int(hold)]
     ready_row = [
-        _btn("Ещё", f"{prefix}a:{gid}", icon="again"),
+        _btn("Авто", f"{prefix}a:{gid}", icon="again"),
         _btn("Готово", f"{prefix}r:{gid}", "success", icon="ready"),
     ]
     if hand:
-        rows = [*_tool_row(prefix, gid, ships, tool), ready_row]
+        rows = [*_tool_row(prefix, gid, ships, tool, fleet), ready_row]
         blocked = _keepout(ships)
     else:
         rows = [ready_row, _nav_row(prefix, gid)]
-        blocked = None
+        blocked = _keepout([chosen]) if chosen else None
     rows.extend(_grid(
         prefix, gid, page, ships, chosen=chosen, reveal=True, blocked=blocked,
     ))
@@ -784,11 +830,14 @@ def fleet_markup(prefix: str, gid: int) -> InlineKeyboardMarkup:
 def lobby_markup(game) -> InlineKeyboardMarkup:
     prefix = game["prefix"]
     gid = game["id"]
-    full = len(game["participants"]) >= 2
-    rows = [[_btn("Присоединиться", f"{prefix}j:{gid}", "primary")]]
-    if full:
+    current = str(game.get("level") or "easy")
+    levels = [
+        _btn(title, f"{prefix}k:{gid}:{key}", "primary" if key == current else None)
+        for key, title, _fleet, _note in LEVELS
+    ]
+    rows = [levels, [_btn("Присоединиться", f"{prefix}j:{gid}", "primary")]]
+    if len(game["participants"]) >= 2:
         rows.append([_btn("Начать", f"{prefix}s:{gid}", "success")])
-    rows.append([_btn("Отмена", f"{prefix}g:{gid}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -801,34 +850,43 @@ def place_public_markup(game) -> InlineKeyboardMarkup:
     ])
 
 
+def _bold(name) -> str:
+    text = str(name or "Игрок")
+    if "<b>" in text:
+        return text
+    return f"<b>{text}</b>"
+
+
 def stake_line(bet: int) -> str:
     if int(bet) <= 0:
-        return "Без ставки"
-    return f"Ставка {_num(int(bet))}"
+        return ""
+    eid = html.escape(_face("zone") or "5381975814415866082", quote=True)
+    return f"<tg-emoji emoji-id='{eid}'>🪙</tg-emoji> Ставка - {_num(int(bet))} кут"
 
 
 def lobby_text(game) -> str:
-    lines = [
-        f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        stake_line(int(game["bet"])),
-    ]
+    lines = [f"{_tag('title', '🛥')} <b>Морской бой</b>"]
+    stake = stake_line(int(game["bet"]))
+    if stake:
+        lines.append(stake)
     for uid in game["participants"]:
-        lines.append(game["links"].get(uid, "Игрок"))
+        lines.append(_bold(game["links"].get(uid, "Игрок")))
     return "\n".join(lines)
 
 
 def invite_text(bet: int) -> str:
-    return "\n".join([
-        f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        stake_line(int(bet)),
-    ])
+    lines = [f"{_tag('title', '🛥')} <b>Морской бой</b>"]
+    stake = stake_line(int(bet))
+    if stake:
+        lines.append(stake)
+    return "\n".join(lines)
 
 
 def place_text(game) -> str:
     lines = [f"{_tag('title', '🛥')} <b>Морской бой</b>"]
     for uid in game["players"]:
         state = "готов" if game["boards"][uid]["ready"] else "расставляет"
-        lines.append(f"{game['links'].get(uid, 'Игрок')} — {state}")
+        lines.append(f"{_bold(game['links'].get(uid, 'Игрок'))} — {state}")
     return "\n".join(lines)
 
 
@@ -860,7 +918,7 @@ def fight_text(game) -> str:
     turn = int(game["turn"])
     lines = [
         f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        f"Ход: {links.get(turn, 'игрок')}",
+        f"Ход: {_bold(links.get(turn, 'игрок'))}",
     ]
     if game.get("note"):
         lines.append(str(game["note"]))
@@ -868,11 +926,11 @@ def fight_text(game) -> str:
 
 
 def secret_place_text(board) -> str:
-    return f"{_tag('title', '🛥')} <b>Твоё море</b>"
+    return f"{_tag('title', '🛥')} <b>Ваше море</b>"
 
 
 def secret_fight_text(ships, hits, misses) -> str:
-    return f"{_tag('title', '🛥')} <b>Твои корабли</b>"
+    return f"{_tag('title', '🛥')} <b>Ваши корабли</b>"
 
 
 def _secret_view(game, uid: int):
@@ -882,7 +940,7 @@ def _secret_view(game, uid: int):
     if game["phase"] == "place":
         return secret_place_text(board), place_markup(
             prefix, gid, board["ships"], board["page"], board.get("hold"),
-            hand=bool(board.get("hand")), tool=board.get("tool"),
+            hand=bool(board.get("hand")), tool=board.get("tool"), fleet=game_fleet(game),
         )
     hits, misses = _incoming(game, uid)
     text = secret_fight_text(board["ships"], hits, misses)
@@ -897,7 +955,7 @@ def end_text(game, winner: int, how: str, net: int) -> str:
     links = game["links"]
     lines = [
         f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        f"{links.get(winner, 'Игрок')} победил.",
+        f"{_bold(links.get(winner, 'Игрок'))} победил.",
         how,
     ]
     if int(game["bet"]) > 0:
@@ -945,6 +1003,8 @@ def _fresh(gid: int, chat_id: int, message_id: int, owner: int, bet: int, prefix
         "message_id": int(message_id),
         "bet": int(bet),
         "creator": int(owner),
+        "level": "easy",
+        "fleet": tuple(int(n) for n in FLEET),
         "prefix": prefix,
         "participants": [int(owner)],
         "players": [],
@@ -961,11 +1021,14 @@ def _fresh(gid: int, chat_id: int, message_id: int, owner: int, bet: int, prefix
         "confirm": None,
         "place_deadline": 0,
         "turn_deadline": 0,
+        "lobby_deadline": 0,
         "inline_id": "",
         "place_token": 0,
         "turn_token": 0,
+        "lobby_token": 0,
         "place_task": None,
         "turn_task": None,
+        "lobby_task": None,
         "bot": None,
     }
 
@@ -1002,9 +1065,19 @@ def _drop_task(game, key: str) -> None:
     game[key] = None
 
 
+def _too_soon(game, uid: int, *, stamp: bool) -> bool:
+    now = time.monotonic()
+    box = game.setdefault("touch", {})
+    last = float(box.get(int(uid), 0.0) or 0.0)
+    if now - last < float(CLICK_GAP):
+        return True
+    if stamp:
+        box[int(uid)] = now
+    return False
+
+
 def _ready_touch(game, uid: int) -> bool:
-    game["touch"][int(uid)] = time.monotonic()
-    return True
+    return not _too_soon(game, uid, stamp=True)
 
 
 def _surface(query, game) -> str:
@@ -1312,16 +1385,16 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
         await _ack(query, toast)
         if await _edit_hidden(bot, board, uid, text, markup, only_markup):
             return
-        await _ack(query, "Нажми ещё раз.")
+        await _ack(query, "Нажмите ещё раз.")
         return
 
     if surface == "public" and query is not None:
-        if _queue(("eph_new", bot, query, uid, text, markup, board, toast or "Твоё море")):
+        if _queue(("eph_new", bot, query, uid, text, markup, board, toast or "Ваше море")):
             return
         sent = await _ephemeral(bot, query, uid, text, markup)
         if sent is not None:
             _remember_hidden(board, sent)
-            await _ack(query, toast or "Твоё море")
+            await _ack(query, toast or "Ваше море")
             return
 
     if board.get("mode") == "ephemeral" and board.get("ephemeral_id"):
@@ -1495,6 +1568,22 @@ def _arm_place(store, game, fresh: bool = True) -> None:
     game["place_task"] = asyncio.create_task(_place_deadline(store, game["id"], token))
 
 
+def _arm_lobby(store, game, fresh: bool = True) -> None:
+    current = None
+    try:
+        current = asyncio.current_task()
+    except RuntimeError:
+        current = None
+    old = game.get("lobby_task")
+    if old is not None and old is not current and not old.done():
+        old.cancel()
+    if fresh or not game.get("lobby_deadline"):
+        game["lobby_deadline"] = time.time() + LOBBY_SECONDS
+    game["lobby_token"] = int(game.get("lobby_token", 0)) + 1
+    token = game["lobby_token"]
+    game["lobby_task"] = asyncio.create_task(_lobby_deadline(store, game["id"], token))
+
+
 def _arm_turn(store, game, fresh: bool = True) -> None:
     current = None
     try:
@@ -1515,6 +1604,7 @@ async def _close_quiet(store, game, text: str) -> None:
     if game.get("phase") == "over":
         return
     game["phase"] = "over"
+    _drop_task(game, "lobby_task")
     _drop_task(game, "place_task")
     _drop_task(game, "turn_task")
     bot = game.get("bot")
@@ -1535,6 +1625,7 @@ async def _finish(store, game, winner: int, reason: str) -> None:
     if game.get("phase") == "over":
         return
     game["phase"] = "over"
+    _drop_task(game, "lobby_task")
     _drop_task(game, "place_task")
     _drop_task(game, "turn_task")
     loser = _other(game, winner)
@@ -1555,13 +1646,15 @@ async def _finish(store, game, winner: int, reason: str) -> None:
 
 
 async def _begin_place(store, game) -> None:
+    _drop_task(game, "lobby_task")
     players = [int(item) for item in game["participants"][:2]]
     game["players"] = players
     game["phase"] = "place"
     game["boards"] = {}
+    spec = game_fleet(game)
     for uid in players:
         board = _blank_board()
-        board["ships"] = scatter()
+        board["ships"] = scatter(fleet=spec)
         game["boards"][uid] = board
     game["shots"] = {uid: {"hit": set(), "miss": set()} for uid in players}
     game["skips"] = {uid: 0 for uid in players}
@@ -1589,6 +1682,29 @@ async def _begin_fight(store, game) -> None:
         for uid in players:
             await _paint_secret(bot, game, uid, query=None)
     _arm_turn(store, game)
+
+
+async def _lobby_deadline(store, gid: int, token: int) -> None:
+    try:
+        game = store.get(gid)
+        left = float(game.get("lobby_deadline") or 0) - time.time() if game else 0
+        if left > 0:
+            await asyncio.sleep(left)
+    except asyncio.CancelledError:
+        return
+    try:
+        async with _lock(gid):
+            game = store.get(gid)
+            if not game or game.get("phase") != "lobby" or int(game.get("lobby_token", 0)) != int(token):
+                return
+            await _close_quiet(
+                store, game,
+                "🚢 <b>Морской бой</b>\nВремя ожидания вышло.\nПартия закрыта, куты на месте.",
+            )
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:
+        print(f"[SEA] lobby timer {type(exc).__name__}")
 
 
 async def _place_deadline(store, gid: int, token: int) -> None:
@@ -1672,9 +1788,6 @@ async def _join(query, game, uid: int) -> None:
     if reason:
         await _ack(query, reason, alert=True)
         return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     game["participants"].append(uid)
     game["links"][uid] = _plain_name(getattr(query, "from_user", None))
     await _ack(query, "Вы в партии")
@@ -1708,9 +1821,6 @@ async def _start(query, store, game, uid: int) -> None:
             if int(have or 0) < bet:
                 await _ack(query, "У кого-то из игроков не хватает кут.", alert=True)
                 return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     await _ack(query)
     await _begin_place(store, game)
 
@@ -1730,12 +1840,9 @@ async def _give_up(query, store, game, uid: int) -> None:
             game["confirm"] = ("g", uid)
             game.setdefault("touch", {})[uid] = time.monotonic()
             if uid == int(game["creator"]):
-                await _ack(query, "Стол закроется, куты останутся. Нажмите «Отмена» ещё раз.", alert=True)
+                await _ack(query, "Стол закроется, куты останутся. Нажмите ещё раз.", alert=True)
             else:
-                await _ack(query, "Вы выйдете из стола. Нажмите «Отмена» ещё раз.", alert=True)
-            return
-        if not _ready_touch(game, uid):
-            await _ack(query, "Нажмите ещё раз.")
+                await _ack(query, "Вы выйдете из стола. Нажмите ещё раз.", alert=True)
             return
         game["confirm"] = None
         if uid == int(game["creator"]):
@@ -1759,13 +1866,10 @@ async def _give_up(query, store, game, uid: int) -> None:
         else:
             await _ack(query, "Партия снимется, куты останутся. Нажмите «Выйти» ещё раз.", alert=True)
         return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Нажмите ещё раз.")
-        return
     game["confirm"] = None
     if phase == "place":
         await _ack(query, "Партия снята")
-        who = game["links"].get(uid, "Игрок")
+        who = _bold(game["links"].get(uid, "Игрок"))
         await _close_quiet(store, game, f"🚢 <b>Морской бой</b>\n{who} вышел.\nПартия снята, куты на месте.")
         return
     if phase == "fight":
@@ -1782,9 +1886,6 @@ async def _open_sea(query, game, uid: int) -> None:
     if game.get("phase") not in {"place", "fight"}:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     await _paint_secret(game.get("bot"), game, uid, query)
 
 
@@ -1797,9 +1898,6 @@ async def _turn_page(query, game, uid: int, page: int) -> None:
         if page == int(game["aim_page"]):
             await _ack(query)
             return
-        if not _ready_touch(game, uid):
-            await _ack(query, "Секунду")
-            return
         game["aim_page"] = page
         await _ack(query)
         bot = game.get("bot")
@@ -1810,9 +1908,6 @@ async def _turn_page(query, game, uid: int, page: int) -> None:
         board = game["boards"][uid]
         if page == int(board["page"]):
             await _ack(query)
-            return
-        if not _ready_touch(game, uid):
-            await _ack(query, "Секунду")
             return
         board["page"] = page
         await _paint_secret(game.get("bot"), game, uid, query, only_markup=True)
@@ -1827,15 +1922,12 @@ async def _pick_length(query, game, uid: int, length: int) -> None:
     if _surface(query, game) == "public":
         await _ack(query, "Нажмите «Моё море» в общем сообщении.", alert=True)
         return
-    if int(length) not in Counter(FLEET):
+    if int(length) not in _spec(game_fleet(game)):
         await _ack(query, "Нет такого корабля.")
         return
     board = game["boards"][uid]
     if board["ready"]:
-        await _ack(query, "Ждём соперника. «Убрать» снимет последний корабль.", alert=True)
-        return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
+        await _ack(query, "Корабли уже готовы. Ожидаем соперника.", alert=True)
         return
     board["hand"] = True
     board["tool"] = int(length)
@@ -1852,9 +1944,6 @@ async def _flip(query, game, uid: int) -> None:
         await _ack(query, "Нажмите «Моё море» в общем сообщении.", alert=True)
         return
     board = game["boards"][uid]
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     board["across"] = not board["across"]
     way = "вправо" if board["across"] else "вниз"
     await _paint_secret(game.get("bot"), game, uid, query, toast=f"Нос пойдёт {way}.")
@@ -1871,13 +1960,10 @@ async def _undo(query, game, uid: int) -> None:
     if not board["ships"]:
         await _ack(query, "Убирать нечего.")
         return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     was = board["ready"]
     board["ships"] = board["ships"][:-1]
     board["ready"] = False
-    board["pick"] = next_length(board["ships"], board["pick"])
+    board["pick"] = next_length(board["ships"], board["pick"], game_fleet(game))
     await _paint_secret(game.get("bot"), game, uid, query, toast="Последний корабль убран.")
     if was:
         bot = game.get("bot")
@@ -1893,11 +1979,8 @@ async def _ready(query, store, game, uid: int) -> None:
         await _ack(query, "Нажмите «Моё море» в общем сообщении.", alert=True)
         return
     board = game["boards"][uid]
-    if not fleet_ready(board["ships"]):
-        await _ack(query, "Ещё не все.", alert=True)
-        return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
+    if not fleet_ready(board["ships"], game_fleet(game)):
+        await _ack(query, "Кораблей ещё не хватает.", alert=True)
         return
     board["ready"] = True
     if all(game["boards"][person]["ready"] for person in game["players"]):
@@ -1920,25 +2003,22 @@ async def _place_cell(query, game, uid: int, r: int, c: int) -> None:
         await _ack(query, "Сейчас корабли не ставят.")
         return
     if _surface(query, game) == "public":
-        await _ack(query, "Нажми «Моё море».", alert=True)
+        await _ack(query, "Нажмите «Моё море».", alert=True)
         return
     board = game["boards"][uid]
     if board["ready"]:
-        await _ack(query, "Ждём друга.")
+        await _ack(query, "Ожидаем соперника.")
         return
     if board.get("hand"):
         await _place_hand(query, game, uid, r, c)
         return
     index = ship_index(board["ships"], r, c)
     if index is None:
-        await _ack(query, "Нажми на корабль.")
-        return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
+        await _ack(query, "Нажмите на корабль.")
         return
     board["hold"] = index
     board["ready"] = False
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Двигай стрелками.")
+    await _paint_secret(game.get("bot"), game, uid, query, toast="Двигайте стрелками. Монета — сюда нельзя.")
 
 
 async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
@@ -1947,23 +2027,25 @@ async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
     if index is not None:
         board["ships"] = _without(board["ships"], index)
         board["ready"] = False
-        board["tool"] = next_length(board["ships"], board.get("tool"))
-        await _paint_secret(game.get("bot"), game, uid, query, toast="Убрал")
+        spec = game_fleet(game)
+        board["tool"] = next_length(board["ships"], board.get("tool"), spec)
+        await _paint_secret(game.get("bot"), game, uid, query, toast="Корабль убран.")
         return
     tool = board.get("tool")
+    spec = game_fleet(game)
     if not tool:
-        await _ack(query, "Сначала выбери корабль." if not fleet_ready(board["ships"]) else "Нажми корабль, чтобы убрать.")
+        await _ack(query, "Сначала выберите корабль." if not fleet_ready(board["ships"], spec) else "Нажмите на корабль, чтобы убрать.")
         return
     if (r, c) in _keepout(board["ships"]):
         await _ack(query, "Сюда нельзя")
         return
-    ok, ships, _code = place_ship(board["ships"], int(tool), r, c, bool(board.get("across", True)))
+    ok, ships, _code = place_ship(board["ships"], int(tool), r, c, bool(board.get("across", True)), spec)
     if not ok:
         await _ack(query, "Сюда нельзя")
         return
     board["ships"] = ships
     board["ready"] = False
-    board["tool"] = next_length(ships, int(tool))
+    board["tool"] = next_length(ships, int(tool), spec)
     await _paint_secret(game.get("bot"), game, uid, query)
 
 
@@ -1972,13 +2054,10 @@ async def _auto(query, game, uid: int) -> None:
         await _ack(query)
         return
     if _surface(query, game) == "public":
-        await _ack(query, "Нажми «Моё море».", alert=True)
-        return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
+        await _ack(query, "Нажмите «Моё море».", alert=True)
         return
     board = game["boards"][uid]
-    board["ships"] = scatter()
+    board["ships"] = scatter(fleet=game_fleet(game))
     board["hold"] = None
     board["hand"] = False
     board["tool"] = None
@@ -1991,17 +2070,17 @@ async def _by_hand(query, game, uid: int) -> None:
         await _ack(query)
         return
     if _surface(query, game) == "public":
-        await _ack(query, "Нажми «Моё море».", alert=True)
+        await _ack(query, "Нажмите «Моё море».", alert=True)
         return
     board = game["boards"][uid]
     if board["ready"]:
-        await _ack(query, "Ждём друга.")
+        await _ack(query, "Ожидаем соперника.")
         return
     board["hand"] = True
     board["hold"] = None
     board["ready"] = False
-    board["tool"] = next_length(board["ships"])
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Крестик — сюда нельзя")
+    board["tool"] = next_length(board["ships"], fleet=game_fleet(game))
+    await _paint_secret(game.get("bot"), game, uid, query, toast="Монета — сюда ставить нельзя.")
 
 
 _STEPS = {"u": (-1, 0), "d": (1, 0), "l": (0, -1), "r": (0, 1)}
@@ -2012,7 +2091,7 @@ async def _nudge(query, game, uid: int, way: str) -> None:
         await _ack(query)
         return
     if _surface(query, game) == "public":
-        await _ack(query, "Нажми «Моё море».", alert=True)
+        await _ack(query, "Нажмите «Моё море».", alert=True)
         return
     board = game["boards"][uid]
     if board.get("hand") and way == "t":
@@ -2021,14 +2100,11 @@ async def _nudge(query, game, uid: int, way: str) -> None:
         return
     hold = board.get("hold")
     if hold is None:
-        await _ack(query, "Сначала нажми корабль.")
-        return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
+        await _ack(query, "Сначала нажмите на корабль.")
         return
     if way == "t":
         ok, ships = turn_ship(board["ships"], int(hold))
-        toast = "Повернул." if ok else "Так не поворачивается."
+        toast = "Корабль повёрнут." if ok else "Так не поворачивается."
     else:
         step = _STEPS.get(way)
         if step is None:
@@ -2061,9 +2137,6 @@ async def _shoot(query, store, game, uid: int, r: int, c: int) -> None:
     if kind in {"repeat", "halo"}:
         await _ack(query, _TOAST[kind])
         return
-    if not _ready_touch(game, uid):
-        await _ack(query, "Секунду")
-        return
     box["hit"] = hits
     box["miss"] = misses
     game["note"] = ""
@@ -2080,9 +2153,35 @@ async def _shoot(query, store, game, uid: int, r: int, c: int) -> None:
     _arm_turn(store, game)
 
 
+async def _level(query, game, uid: int, key: str) -> None:
+    if game.get("phase") != "lobby":
+        await _ack(query, "Сложность выбирается до начала партии.")
+        return
+    spec = _LEVEL.get(str(key or ""))
+    if not spec:
+        await _ack(query, "Кнопка устарела")
+        return
+    _key, _title, fleet, note = spec
+    if uid != int(game.get("creator") or 0):
+        await _ack(query, "Сложность выбирает создатель партии.", alert=True)
+        return
+    game["level"] = _key
+    game["fleet"] = tuple(int(n) for n in fleet)
+    await _ack(query, note, alert=True)
+    bot = game.get("bot")
+    if bot is not None:
+        await _show(bot, game, lobby_text(game), lobby_markup(game))
+
+
 async def _route(query, store, game, action: str, parts, uid: int) -> None:
+    if not _ready_touch(game, uid):
+        await _ack(query, _PACE)
+        return
     if action not in {"g", "q"}:
         game["confirm"] = None
+    if action == "k":
+        await _level(query, game, uid, parts[1] if len(parts) > 1 else "")
+        return
     if action == "q":
         await _ack(query, guide_text(str(game.get("phase") or "")), alert=True)
         return
@@ -2162,7 +2261,7 @@ async def _inline_new(query, store, uid: int, parts) -> None:
         return
     now = time.monotonic()
     if now - float(_OPEN_AT.get(uid, 0.0)) < 2:
-        await _ack(query, "Секунду")
+        await _ack(query, _PACE)
         return
     _OPEN_AT[uid] = now
     msg = getattr(query, "message", None)
@@ -2208,6 +2307,7 @@ async def _inline_new(query, store, uid: int, parts) -> None:
         _OPEN_AT.pop(uid, None)
         await _ack(query, "Не вышло открыть партию. Нажмите ещё раз.", alert=True)
         return
+    _arm_lobby(store, game)
     await _ack(query, "Партия открыта")
 
 
@@ -2245,7 +2345,7 @@ async def _apply(job) -> None:
                 _remember_hidden(board, sent)
                 await _ack_now(query, "Море в личке")
                 return
-            await _ack_now(query, "Напиши боту /start", alert=True)
+            await _ack_now(query, "Напишите боту /start", alert=True)
     except Exception as exc:
         print(f"[SEA] apply {type(exc).__name__}")
 
@@ -2302,6 +2402,10 @@ async def _press(query, store) -> None:
     except (IndexError, ValueError):
         await _ack(query, "Кнопка устарела")
         return
+    peek = store.get(gid)
+    if peek and peek.get("phase") not in {"over", "dead"} and _too_soon(peek, uid, stamp=False):
+        await _ack_now(query, _PACE)
+        return
     jobs = []
     token = _JOBS.set(jobs)
     try:
@@ -2354,7 +2458,7 @@ def _revive(value):
 
 
 def _pack_game(game) -> dict:
-    skip = {"bot", "place_task", "turn_task"}
+    skip = {"bot", "place_task", "turn_task", "lobby_task"}
     return {key: _jsonify(value) for key, value in game.items() if key not in skip}
 
 
@@ -2420,6 +2524,7 @@ def _load() -> None:
             game["bot"] = None
             game["place_task"] = None
             game["turn_task"] = None
+            game["lobby_task"] = None
             store[int(key)] = game
     used = [*TABLES.keys(), *INLINE.keys()]
     _IDS = count((max(used) + 1) if used else 1)
@@ -2438,7 +2543,9 @@ def _wake(store) -> None:
     _AWAKE.add(id(store))
     for game in list(store.values()):
         phase = game.get("phase")
-        if phase == "place" and (game.get("place_task") is None or game["place_task"].done()):
+        if phase == "lobby" and (game.get("lobby_task") is None or game["lobby_task"].done()):
+            _arm_lobby(store, game, fresh=False)
+        elif phase == "place" and (game.get("place_task") is None or game["place_task"].done()):
             _arm_place(store, game, fresh=False)
         elif phase == "fight" and (game.get("turn_task") is None or game["turn_task"].done()):
             _arm_turn(store, game, fresh=False)
@@ -2518,6 +2625,7 @@ async def sea_open(message: Message) -> None:
         return
     game["chat_id"] = int(sent.chat.id)
     game["message_id"] = int(sent.message_id)
+    _arm_lobby(TABLES, game)
     _keep()
 
 

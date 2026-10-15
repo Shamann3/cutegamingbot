@@ -75,8 +75,6 @@ def test_a_full_fleet_can_stand_without_touching():
         (2, 2, 0, True),
         (2, 2, 3, True),
         (1, 4, 0, True),
-        (1, 4, 2, True),
-        (1, 4, 4, True),
     ]
     for length, r, c, across in plan:
         ok, ships, code = place_ship(ships, length, r, c, across)
@@ -163,7 +161,7 @@ def test_button_rows_stay_within_eight_and_keep_coordinates():
         assert len(row) <= 8
     place = place_markup("sea:", 1, [], 0)
     assert any(button.text == "Готово" for row in place.inline_keyboard for button in row)
-    assert any(button.text == "Ещё" for row in place.inline_keyboard for button in row)
+    assert any(button.text == "Авто" for row in place.inline_keyboard for button in row)
     assert any(button.text == "Выставить вручную" for row in place.inline_keyboard for button in row)
     assert any(
         getattr(button, "icon_custom_emoji_id", None) == "5805509901048356965"
@@ -199,15 +197,17 @@ def test_the_table_shows_the_next_step():
     assert ship_face(4, 1, True).startswith("✓")
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
-    assert "Без ставки" in lobby
+    assert "Ставка" not in lobby
+    assert "<b>A</b>" in lobby
     paid = lobby_text({"bet": 10, "creator": 1, "participants": [1, 2], "links": {1: "A", 2: "B"}})
-    assert "Ставка 10" in paid
+    assert "5381975814415866082" in paid
+    assert "Ставка - 10 кут" in paid
     board = aim_markup("sea:", 3, 0, {})
     names = [button.text for row in board.inline_keyboard for button in row]
     assert "Мои корабли" in names and "Сдаться" in names
     sea_board = place_markup("sea:", 3, [((0, 0), (0, 1), (0, 2))], 0, 0)
     sea_names = [button.text for row in sea_board.inline_keyboard for button in row]
-    assert "Готово" in sea_names and "Ещё" in sea_names and "Выставить вручную" in sea_names
+    assert "Готово" in sea_names and "Авто" in sea_names and "Выставить вручную" in sea_names
     icons = [getattr(button, "icon_custom_emoji_id", None) for row in sea_board.inline_keyboard for button in row]
     assert "5807601906603792598" in icons and "5805509901048356965" in icons
     assert "5807492110059838726" in icons
@@ -254,7 +254,8 @@ def test_inline_card_is_the_shared_table():
     card = catalog_article(7)
     button = card.reply_markup.inline_keyboard[0][0]
     assert button.callback_data == "seai:n:7:0"
-    assert "Без ставки" in card.input_message_content.message_text
+    assert "Ставка" not in card.input_message_content.message_text
+    assert "Морской бой" in card.input_message_content.message_text
 
 
 def test_auto_place_is_random_and_a_ship_can_move():
@@ -278,7 +279,7 @@ def test_premium_slot_sits_on_the_button(monkeypatch):
     monkeypatch.setitem(sea.FACE, "again", "100")
     board = sea.place_markup("sea:", 1, [], 0)
     again = board.inline_keyboard[0][0]
-    assert again.text == "Ещё"
+    assert again.text == "Авто"
     assert again.icon_custom_emoji_id == "100"
     monkeypatch.setitem(sea.FACE, "ship_one", "200")
     monkeypatch.setitem(sea.FACE, "ship_left", "201")
@@ -297,8 +298,44 @@ def test_premium_slot_sits_on_the_button(monkeypatch):
     assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == "5276032951342088188"
     hand = sea.place_markup("sea:", 1, [((3, 3),)], 0, hand=True, tool=2)
     blocked = next(button for row in hand.inline_keyboard for button in row if button.callback_data == "sea:c:1:28")
-    assert blocked.text == "✖️"
+    assert blocked.icon_custom_emoji_id == "5381975814415866082"
     assert "Выставить вручную" not in [button.text for row in hand.inline_keyboard for button in row]
+
+
+def test_levels_squares_and_the_coin_ring():
+    from bot.games.sea import LEVELS, lobby_markup, stake_line
+
+    assert stake_line(0) == ""
+    easy, mid, hard = (item[2] for item in LEVELS)
+    assert sum(easy) == 8 and sum(mid) == 10 and sum(hard) == 12
+    for fleet in (easy, mid, hard):
+        ships = sea._fallback_fleet(fleet)
+        assert sea.fleet_ready(ships, fleet)
+        assert sea.fleet_ready(sea.scatter(fleet=fleet), fleet)
+    game = {
+        "prefix": "sea:",
+        "id": 4,
+        "participants": [1],
+        "creator": 1,
+        "level": "easy",
+        "bet": 0,
+    }
+    names = [button.text for row in lobby_markup(game).inline_keyboard for button in row]
+    assert names[:3] == ["Лёгкий 8", "Средний 10", "Сложный 12"]
+    assert "Отмена" not in names
+    assert "Присоединиться" in names
+    hand = place_markup("sea:", 1, [], 0, hand=True, tool=4, fleet=(4, 3, 2, 1))
+    hand_names = [button.text for row in hand.inline_keyboard for button in row]
+    assert "◻️" in hand_names and "◻️◻️" in hand_names
+    assert "◻️◻️◻️" in hand_names and "◻️◻️◻️◻️" in hand_names
+    board = place_markup("sea:", 1, [((0, 0), (0, 1))], 0)
+    square = sea._PART_TEXT["one"]
+    assert board.inline_keyboard[2][0].text == square
+    assert board.inline_keyboard[2][1].text == square
+    assert square == "◻️"
+    held = place_markup("sea:", 1, [((0, 0),)], 0, hold=0)
+    ring = next(button for row in held.inline_keyboard for button in row if button.callback_data == "sea:c:1:1")
+    assert ring.icon_custom_emoji_id == "5381975814415866082"
 
 
 def test_help_knows_the_game():
