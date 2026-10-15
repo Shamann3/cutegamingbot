@@ -97,6 +97,13 @@ GAMES: List[Dict[str, Any]] = [
         fields=[_sec("turnRest", "Пауза между ходами", "Сколько секунд игрок ждёт, прежде чем может сходить снова.", 0.4, 8.0)],
     ),
     _game(
+        "sea", "Морской бой", "pvp", "🚢",
+        "Двое. Корабли скрыты, в чате только выстрелы.",
+        min_bet=0, max_bet=PVP_MAX, commission=1.0, command="морской бой",
+        mood="Тёмная вода и тихие корабли.",
+        theme=_theme("#7eb6d6", "#1d4e89", "#071018", "rgba(126,182,214,.2)", "sea"),
+    ),
+    _game(
         "memory", "Мемори", "pvp", "🪵",
         "Найди пару. Кто собрал больше — забирает банк.",
         min_bet=0, max_bet=PVP_MAX, commission=1.0, command="мемори",
@@ -448,6 +455,7 @@ GROUP_LABELS = {
 
 HELP_MARKERS = {
     "scah": "Шашки",
+    "sea": "Морской бой",
     "memory": "Найди пару",
     "bingo": "Бинго",
     "fortuna_lobby": "Фортуна",

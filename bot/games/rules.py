@@ -108,6 +108,39 @@ def _important(table: Table, *, duo: bool, inline: str = "") -> List[str]:
     return lines
 
 
+def _sea(t: Table) -> List[str]:
+    from bot.games.sea import (
+        MISS_LIMIT, PLACE_SECONDS, SIZE, TURN_SECONDS, fleet_phrase, letters, span_text,
+    )
+    side = letters()
+    return [
+        *_head("🚢", "Морской бой"),
+        *_start(
+            (
+                "<code>морской бой (ставка)</code>",
+                "<code>морская битва (ставка)</code>",
+                "<code>battleship (ставка)</code>",
+            ),
+            t,
+            free="<code>морской бой</code> - без ставки, просто так",
+            join=_DUO_JOIN,
+        ),
+        f"{_PLANE} <b>Суть игры</b>",
+        f"Море <b>{SIZE} × {SIZE}</b>. Сверху буквы <b>{side[0]}–{side[-1]}</b>, слева цифры <b>1–{SIZE}</b>.",
+        f"Корабли по клеткам: <b>{fleet_phrase()}</b>. Только прямо, вдоль или вниз.",
+        "Корабли не касаются даже углом.",
+        "На поле всё на кнопках: корабль, сторона носа, клетка, «Готово», потом выстрел.",
+        f"На расстановку <b>{span_text(PLACE_SECONDS)}</b>. Море открывается только вам: в личке или скрытым сообщением.",
+        "В общем чате кораблей нет. Там только выстрелы.",
+        "Кто стреляет первым, решает жребий. Попадание — стреляете ещё. Мимо — ход соперника.",
+        "Потопленный корабль виден целиком, и вокруг него обводка.",
+        f"На ход <b>{span_text(TURN_SECONDS)}</b>. Кто пропустит ход <b>{MISS_LIMIT}</b> раза — сдаётся.",
+        "",
+        *_duo_payout(draw=False),
+        *_important(t, duo=True, inline="морской бой"),
+    ]
+
+
 def _scah(t: Table) -> List[str]:
     return [
         *_head(_icon("5424687267014801006", "♟"), "Шашки"),
@@ -322,6 +355,7 @@ def _words(t: Table) -> List[str]:
 
 
 _BUILDERS: Dict[str, Callable[[Table], List[str]]] = {
+    "sea": _sea,
     "scah": _scah,
     "memory": _memory,
     "tic_tac_toe": _tic_tac_toe,

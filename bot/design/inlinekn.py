@@ -1218,6 +1218,12 @@ async def inline_help_game(inline_query: types.InlineQuery):
                     parse_mode="HTML") , thumb_url="https://i.imgur.com/kfxeqQn.png")
             results.append(error_result)
 
+    try:
+        from bot.design.sea_inline import offer_sea
+        await offer_sea(query_text , user_id , results)
+    except Exception as _sea_exc:
+        print(f"[SEA] inline {_sea_exc.__class__.__name__}")
+
     if any(query_text.startswith(keyword) for keyword in [ "шашки" ]):
         # Обработка команды "шашки"
         try:

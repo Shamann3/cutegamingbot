@@ -38308,6 +38308,18 @@ async def add_firstname_to_usercheck_balance(message: Message):
             task1 = asyncio.create_task(measure_time(sha(message) , "шашки"))
             await task1
 
+        # Морской бой
+        if "морск" in text_lower or "battleship" in text_lower:
+            from bot.games.sea import sea_command, sea_open
+            if sea_command(text_lower):
+                try:
+                    await update(bot1 , chat_id , db)
+                except GroupBanned:
+                    return
+
+                task1 = asyncio.create_task(measure_time(sea_open(message) , "морской бой"))
+                await task1
+
         # Обновить группу
         obnovagrouptext = {"обновить группу" , "обновить группы" , "обновить чат" , "обновить чаты" ,
                            "обновить информацию чатов" , "обновить информацию групп" , "обновление групп" ,

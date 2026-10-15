@@ -278,6 +278,9 @@ gamehelp = f'''
 <tg-emoji emoji-id='5424687267014801006'>♟</tg-emoji> Шашки
 <blockquote><code>Шашки [ставка]</code></blockquote>
 
+🚢 <b>Морской бой</b>
+<blockquote><code>Морской бой [ставка]</code></blockquote>
+
 <tg-emoji emoji-id='5188239353045868629'>🪵</tg-emoji> Найди пару
 <blockquote><code>Мемори [ставка]</code></blockquote>
 
