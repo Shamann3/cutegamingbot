@@ -768,9 +768,27 @@ def _keepout(ships) -> set:
     return ring
 
 
+def _foe_shot_mark(
+    data: str, foe_ships, aim_hits: set, foe_halo: set, r: int, c: int,
+) -> InlineKeyboardButton | None:
+    """Попадание по чужому морю — те же знаки, что на общем поле прицела."""
+    cell = (r, c)
+    foe = ship_at(foe_ships, r, c)
+    if foe is not None and cell in aim_hits:
+        if all(part in aim_hits for part in foe):
+            return _mark(data, "🔥", "sunk")
+        return _mark(data, "💥", "wound")
+    if cell in aim_hits:
+        return _mark(data, "💥", "wound")
+    if cell in foe_halo:
+        return _mark(data, "✨", "halo")
+    return None
+
+
 def _cell_button(
     data: str, ships, hits: set, misses: set, halo: set, picked: set,
     blocked: set, r: int, c: int, reveal: bool, aim_hits: set = frozenset(),
+    foe_ships=(), foe_halo: set = frozenset(),
 ) -> InlineKeyboardButton:
     cell = (r, c)
     ship = ship_at(ships, r, c)
@@ -791,8 +809,9 @@ def _cell_button(
         return _mark(data, "✨", "halo")
     if cell in misses:
         return _mark(data, "👎", "miss")
-    if cell in aim_hits:
-        return _mark(data, "💥", "wound")
+    foe_mark = _foe_shot_mark(data, foe_ships, aim_hits, foe_halo, r, c)
+    if foe_mark is not None:
+        return foe_mark
     if cell in halo:
         return _mark(data, "✨", "halo")
     return _mark(data, _WATER, "water")
@@ -801,12 +820,15 @@ def _cell_button(
 def _grid(
     prefix: str, gid: int, page: int, ships, hits=(), misses=(), chosen=(),
     reveal: bool = False, frozen: bool = False, blocked=None, aim_hits=(),
+    foe_ships=(),
 ) -> list:
     hits = set(hits or ())
     misses = set(misses or ())
     aim_hits = set(aim_hits or ())
+    foe_ships = list(foe_ships or ())
     picked = set(chosen or ())
     halo = halo_cells(ships, hits)
+    foe_halo = halo_cells(foe_ships, aim_hits) if foe_ships and aim_hits else set()
     blocked = set(blocked or ())
     if SIZE <= 8:
         cols = list(range(SIZE))
@@ -819,7 +841,7 @@ def _grid(
             data = "sea:x:0" if frozen else f"{prefix}c:{gid}:{r * SIZE + c}"
             row.append(_cell_button(
                 data, ships, hits, misses, halo, picked, blocked, r, c, reveal,
-                aim_hits=aim_hits,
+                aim_hits=aim_hits, foe_ships=foe_ships, foe_halo=foe_halo,
             ))
         rows.append(row)
     return rows
@@ -1070,11 +1092,14 @@ def _secret_view(game, uid: int):
         ), EMPTY
     hits, misses = _incoming(game, uid)
     aim_hits, aim_misses = _outgoing(game, uid)
-    # На скрытом поле сразу видны и повреждения своих кораблей, и свои промахи.
+    foe = _other(game, uid)
+    foe_ships = (game.get("boards") or {}).get(foe, {}).get("ships") or []
+    # Свои корабли + чужие попадания/потопленные тем же знаком, что на общем поле.
     text = secret_fight_text(board["ships"], hits, misses)
     rows = _grid(
         prefix, gid, board.get("page", 0), board["ships"], hits,
         set(misses) | set(aim_misses), reveal=True, aim_hits=aim_hits,
+        foe_ships=foe_ships,
     )
     if game["phase"] == "fight":
         rows.append([_btn("Сдаться", f"{prefix}g:{gid}", icon="give")])

@@ -475,7 +475,7 @@ def test_secret_fight_shows_own_miss_right_away():
         "turn": 1,
         "boards": {
             1: {"ships": [((0, 0),)], "page": 0},
-            2: {"ships": [((4, 4),)], "page": 0},
+            2: {"ships": [((4, 4), (4, 5))], "page": 0},
         },
         "shots": {
             1: {"hit": set(), "miss": {(5, 5)}},
@@ -497,3 +497,25 @@ def test_secret_fight_shows_own_miss_right_away():
     _text, hit_markup = sea._secret_view(hit_game, 1)
     wound = hit_markup.inline_keyboard[4][4]
     assert getattr(wound, "icon_custom_emoji_id", None) == sea.FACE["wound"]
+    # Непробитая клетка того же корабля на скрытом поле не светится.
+    assert getattr(hit_markup.inline_keyboard[4][5], "icon_custom_emoji_id", None) in {
+        None, "", sea.FACE["water"],
+    } or hit_markup.inline_keyboard[4][5].text in {"\u3164", " ", sea._WATER}
+    sunk_game = {
+        **game,
+        "shots": {
+            1: {"hit": {(4, 4), (4, 5)}, "miss": set()},
+            2: {"hit": set(), "miss": set()},
+        },
+    }
+    _text, sunk_markup = sea._secret_view(sunk_game, 1)
+    assert getattr(sunk_markup.inline_keyboard[4][4], "icon_custom_emoji_id", None) == sea.FACE["sunk"]
+    assert getattr(sunk_markup.inline_keyboard[4][5], "icon_custom_emoji_id", None) == sea.FACE["sunk"]
+    # Обводка вокруг потопленного — как на общем поле.
+    ring = sunk_markup.inline_keyboard[3][4]
+    assert getattr(ring, "icon_custom_emoji_id", None) == sea.FACE["halo"]
+    public = sea.aim_markup("sea:", 9, 0, game["boards"][2]["ships"], {(4, 4)}, set())
+    secret_wound = hit_markup.inline_keyboard[4][4]
+    assert getattr(secret_wound, "icon_custom_emoji_id", None) == getattr(
+        public.inline_keyboard[4][4], "icon_custom_emoji_id", None,
+    )
