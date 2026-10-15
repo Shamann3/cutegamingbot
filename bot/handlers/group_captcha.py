@@ -22,8 +22,8 @@ captcha_router = Router(name="group_captcha")
 _attached = False
 _locks: Dict[Tuple[int, int], asyncio.Lock] = {}
 _last_prompt: Dict[Tuple[int, int], float] = {}
-_PROMPT_GAP = 8.0
-_MESSAGE_RESEND_GAP = 1.1
+_PROMPT_GAP = 4.0
+_MESSAGE_RESEND_GAP = 0.8
 
 _OPEN = ChatPermissions(
     can_send_messages=True,
@@ -794,21 +794,21 @@ class CaptchaCallbackGateMiddleware(BaseMiddleware):
             return await handler(event, data)
         if getattr(user, "is_bot", False) and await _bot_is_chat_admin(bot, int(chat.id), int(user.id)):
             return await handler(event, data)
-        cached = gc.cached_passed(int(chat.id), int(user.id))
-        if cached is True:
+        # Выключенная капча — всегда пропускаем. Нельзя опираться только на
+        # cached_passed=False: он живёт отдельно и переживает disable.
+        if gc.cached_disabled(int(chat.id)) is True:
             return await handler(event, data)
-        if cached is False:
-            needed = True
-        else:
-            try:
-                needed = await asyncio.wait_for(
-                    _user_needs_captcha(int(chat.id), int(user.id)),
-                    timeout=_GATE_TIMEOUT,
-                )
-            except asyncio.TimeoutError:
-                return await handler(event, data)
-            except Exception:
-                return await handler(event, data)
+        if gc.cached_passed(int(chat.id), int(user.id)) is True:
+            return await handler(event, data)
+        try:
+            needed = await asyncio.wait_for(
+                _user_needs_captcha(int(chat.id), int(user.id)),
+                timeout=_GATE_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return await handler(event, data)
+        except Exception:
+            return await handler(event, data)
         if not needed:
             return await handler(event, data)
         bot = data.get("bot") or getattr(callback, "bot", None)

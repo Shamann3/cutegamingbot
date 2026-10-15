@@ -98,8 +98,8 @@ def is_free_callback(data: str) -> bool:
     return raw.startswith(_FREE_CALLBACK_PREFIXES)
 
 
-CAPTCHA_INTRO_LINE1 = "Это капча."
-CAPTCHA_INTRO_LINE2 = "Чтобы писать в группе, пожалуйста, выполните задание ниже."
+CAPTCHA_INTRO_LINE1 = "Капча — одно нажатие."
+CAPTCHA_INTRO_LINE2 = "Нажмите нужную кнопку. После этого писать и играть можно сразу."
 CAPTCHA_INTRO = f"{CAPTCHA_INTRO_LINE1}\n{CAPTCHA_INTRO_LINE2}"
 INTRO_EYE_ID = "5389099803655305880"
 INTRO_WARN_ID = "6025996269141364975"
@@ -117,6 +117,8 @@ VARIANT_LABELS = {
     5: "Сторона",
 }
 ACTIVE_VARIANTS = (1, 2, 4, 5)
+# Чаще всего — сторона (2 кнопки) и цвет: быстрее пройти с первого раза.
+_VARIANT_WEIGHTS = ((5, 5), (2, 3), (1, 2), (4, 1))
 
 # Канон в кавычках подсказки. Алиасы — всё, что код принимает как этот ответ.
 CHAT_OPTION = {
@@ -367,7 +369,12 @@ def mention_html(user: Any) -> str:
 
 
 def pick_variant(rng: Optional[random.Random] = None) -> int:
-    return (rng or random).choice(list(ACTIVE_VARIANTS))
+    r = rng or random
+    keys = [key for key, _weight in _VARIANT_WEIGHTS if key in ACTIVE_VARIANTS]
+    weights = [weight for key, weight in _VARIANT_WEIGHTS if key in ACTIVE_VARIANTS]
+    if not keys:
+        return 5
+    return r.choices(keys, weights=weights, k=1)[0]
 
 
 def _mark(answer: str) -> str:
@@ -1247,6 +1254,13 @@ def forget_chat_live(chat_id: int) -> None:
         forget_live(key)
 
 
+def forget_chat_not_passed(chat_id: int) -> None:
+    """Сбрасывает «не прошёл» после выключения капчи в чате."""
+    cid = int(chat_id)
+    for key in [k for k in _not_passed_cache if k[0] == cid]:
+        _not_passed_cache.pop(key, None)
+
+
 def note_passed(chat_id: int, user_id: int) -> None:
     _cache_pass(int(chat_id), int(user_id))
 
@@ -1403,10 +1417,12 @@ async def user_needs_captcha(pool, chat_id: int, user_id: int) -> bool:
         return False
     if await _guard_exception(pool, int(user_id)):
         return False
+    # Сначала статус чата: выключенная капча никогда не блокирует игры.
     if cached_disabled(chat_id) is True:
         return False
     if cached_passed(chat_id, user_id) is True:
         return False
+    # Нужны оба кэша: «капча точно включена» и «человек точно не прошёл».
     if cached_disabled(chat_id) is False and cached_passed(chat_id, user_id) is False:
         return True
     await ensure_tables(pool)
@@ -1457,6 +1473,9 @@ async def seed_new_group(pool, chat: Any = None, user: Any = None, *, chat_id: O
     _seeded_chats[cid] = now
     await ensure_tables(pool)
     try:
+        # Только строка по умолчанию для новой группы. Кэш enabled не трогаем:
+        # иначе после истечения TTL выключенной капчи сюда снова записался бы
+        # enabled=TRUE и игры снова требовали бы прохождение.
         await pool.execute(
             """
             INSERT INTO group_captcha_settings (chat_id, enabled)
@@ -1465,8 +1484,6 @@ async def seed_new_group(pool, chat: Any = None, user: Any = None, *, chat_id: O
             """,
             cid,
         )
-        if cached_disabled(cid) is None:
-            _disabled_cache[cid] = (True, time.monotonic())
     except Exception:
         log.exception("captcha seed settings failed chat=%s", cid)
     title = _chat_title(chat) if chat is not None else "Группа"
@@ -1693,6 +1710,7 @@ async def disable_chat(pool, chat_id: int, by_user_id: int) -> None:
     )
     _disabled_cache[int(chat_id)] = (False, time.monotonic())
     forget_chat_live(chat_id)
+    forget_chat_not_passed(chat_id)
     await pool.execute(
         "DELETE FROM group_captcha_challenges WHERE chat_id = $1",
         int(chat_id),

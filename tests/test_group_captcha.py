@@ -50,7 +50,8 @@ def test_schema_is_one_statement_each():
     for stmt in SCHEMA_SQL:
         body = stmt.strip().rstrip(";")
         assert body.count(";") == 0
-        assert body.upper().startswith("CREATE")
+        head = body.upper()
+        assert head.startswith("CREATE") or head.startswith("ALTER")
 
 
 def test_parse_premium_emoji_from_tag():
@@ -116,9 +117,9 @@ def test_answers_are_underlined_and_card_is_bold():
     card = build_challenge(2, rng=random.Random(2))
     assert f"<u>{card['color']}</u>" in card["text"]
     html = card_html(card, SimpleNamespace(id=1, full_name="Анна", first_name="Анна", is_bot=False))
-    assert "Это " in html and "капча" in html
-    assert "писать в группе" in html
-    assert "выполните задание ниже" in html
+    assert "Капча — одно нажатие." in html
+    assert "нужную кнопку" in html
+    assert "играть можно сразу" in html
     assert "5389099803655305880" in html
     assert "6025996269141364975" in html
     intro = html.split("\n\n", 1)[0]
@@ -208,9 +209,9 @@ def test_card_entities_carry_custom_emoji():
     user = SimpleNamespace(id=7, full_name="Иэрихон Cute", first_name="Иэрихон", is_bot=False)
     card = build_challenge(5, rng=random.Random(5))
     text, ents = card_plain_and_entities(card, user)
-    assert "Это капча." in text
-    assert "писать в группе" in text
-    assert "выполните задание ниже" in text
+    assert "Капча — одно нажатие." in text
+    assert "нужную кнопку" in text
+    assert "играть можно сразу" in text
     kinds = [str(getattr(e, "type", "")) for e in ents]
     assert "custom_emoji" in kinds
     assert "underline" in kinds
@@ -314,11 +315,14 @@ def test_button_dump_keeps_icon_and_space():
 
 def test_active_variants_are_only_match_color_object_side():
     rng = random.Random(2026)
-    picks = [pick_variant(rng) for _ in range(400)]
+    picks = [pick_variant(rng) for _ in range(800)]
     assert set(picks) == {1, 2, 4, 5}
     assert 3 not in picks
     assert 6 not in picks
     assert 7 not in picks
+    # Сторона и цвет должны встречаться чаще тяжёлых заданий.
+    assert picks.count(5) > picks.count(4)
+    assert picks.count(2) > picks.count(4)
 
 
 def test_help_and_farm_callbacks_are_free_before_captcha():
@@ -566,7 +570,7 @@ def test_wrong_word_writes_a_new_captcha_and_pass_posts_html():
     assert bot.deleted == [(-100, 12)]
     assert len(bot.sent) == 1
     assert row["message_id"] == 77
-    assert "Это капча" in bot.sent[0]["text"] or bot.sent[0].get("entities")
+    assert "Капча" in (bot.sent[0].get("text") or "") or bot.sent[0].get("entities")
 
     notice = Bot()
     asyncio.run(handler._announce_passed(notice, -100, 9))
@@ -594,4 +598,27 @@ def test_captcha_holds_a_bot_that_writes():
     assert "captcha_applies_to" in gate
     assert "_bot_is_chat_admin" in gate
     assert "is_bot" in gate
+
+
+def test_callback_gate_respects_disabled_captcha_even_if_not_passed_cached():
+    """Баг: cached_passed=False раньше форсил капчу даже при disable в группе."""
+    import pathlib
+
+    from bot.funcs import group_captcha as gc
+
+    source = pathlib.Path("bot/handlers/group_captcha.py").read_text(encoding="utf-8")
+    cb = source.split("class CaptchaCallbackGateMiddleware", 1)[1]
+    assert "cached_disabled" in cb
+    assert "if cached is False:" not in cb
+    assert "needed = True" not in cb.split("if not needed:", 1)[0]
+
+    chat_id, user_id = -100555, 42
+    gc._clear_pass_memory()
+    gc._disabled_cache.clear()
+    gc._cache_not_passed(chat_id, user_id)
+    gc._disabled_cache[chat_id] = (False, __import__("time").monotonic())
+    assert gc.cached_passed(chat_id, user_id) is False
+    assert gc.cached_disabled(chat_id) is True
+    gc.forget_chat_not_passed(chat_id)
+    assert gc.cached_passed(chat_id, user_id) is None
 

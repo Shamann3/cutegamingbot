@@ -412,3 +412,36 @@ def test_help_knows_the_game():
     assert "Морской бой" in text
     assert "8" in text
     assert "не касаются" in text
+
+
+def test_secret_fight_shows_own_miss_right_away():
+    game = {
+        "phase": "fight",
+        "prefix": "sea:",
+        "id": 9,
+        "players": [1, 2],
+        "turn": 1,
+        "boards": {
+            1: {"ships": [((0, 0),)], "page": 0},
+            2: {"ships": [((4, 4),)], "page": 0},
+        },
+        "shots": {
+            1: {"hit": set(), "miss": {(5, 5)}},
+            2: {"hit": set(), "miss": set()},
+        },
+        "links": {1: "A", 2: "B"},
+    }
+    _text, markup = sea._secret_view(game, 1)
+    miss = markup.inline_keyboard[5][5]
+    assert miss.callback_data == "sea:c:9:45"
+    assert getattr(miss, "icon_custom_emoji_id", None) == sea.FACE["miss"]
+    hit_game = {
+        **game,
+        "shots": {
+            1: {"hit": {(4, 4)}, "miss": set()},
+            2: {"hit": set(), "miss": set()},
+        },
+    }
+    _text, hit_markup = sea._secret_view(hit_game, 1)
+    wound = hit_markup.inline_keyboard[4][4]
+    assert getattr(wound, "icon_custom_emoji_id", None) == sea.FACE["wound"]

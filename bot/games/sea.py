@@ -770,7 +770,7 @@ def _keepout(ships) -> set:
 
 def _cell_button(
     data: str, ships, hits: set, misses: set, halo: set, picked: set,
-    blocked: set, r: int, c: int, reveal: bool,
+    blocked: set, r: int, c: int, reveal: bool, aim_hits: set = frozenset(),
 ) -> InlineKeyboardButton:
     cell = (r, c)
     ship = ship_at(ships, r, c)
@@ -791,6 +791,8 @@ def _cell_button(
         return _mark(data, "✨", "halo")
     if cell in misses:
         return _mark(data, "👎", "miss")
+    if cell in aim_hits:
+        return _mark(data, "💥", "wound")
     if cell in halo:
         return _mark(data, "✨", "halo")
     return _mark(data, _WATER, "water")
@@ -798,10 +800,11 @@ def _cell_button(
 
 def _grid(
     prefix: str, gid: int, page: int, ships, hits=(), misses=(), chosen=(),
-    reveal: bool = False, frozen: bool = False, blocked=None,
+    reveal: bool = False, frozen: bool = False, blocked=None, aim_hits=(),
 ) -> list:
     hits = set(hits or ())
     misses = set(misses or ())
+    aim_hits = set(aim_hits or ())
     picked = set(chosen or ())
     halo = halo_cells(ships, hits)
     blocked = set(blocked or ())
@@ -816,6 +819,7 @@ def _grid(
             data = "sea:x:0" if frozen else f"{prefix}c:{gid}:{r * SIZE + c}"
             row.append(_cell_button(
                 data, ships, hits, misses, halo, picked, blocked, r, c, reveal,
+                aim_hits=aim_hits,
             ))
         rows.append(row)
     return rows
@@ -1003,6 +1007,12 @@ def _incoming(game, uid: int):
     return set(box.get("hit") or ()), set(box.get("miss") or ())
 
 
+def _outgoing(game, uid: int):
+    """Выстрелы самого игрока по чужому морю — для скрытого поля."""
+    box = (game.get("shots") or {}).get(int(uid)) or {}
+    return set(box.get("hit") or ()), set(box.get("miss") or ())
+
+
 def _public_chart(game, uid: int) -> str:
     hits, misses = _incoming(game, uid)
     return chart_html(public_marks(game["boards"][uid]["ships"], hits, misses))
@@ -1059,8 +1069,13 @@ def _secret_view(game, uid: int):
             int(game.get("net") or 0),
         ), EMPTY
     hits, misses = _incoming(game, uid)
+    aim_hits, aim_misses = _outgoing(game, uid)
+    # На скрытом поле сразу видны и повреждения своих кораблей, и свои промахи.
     text = secret_fight_text(board["ships"], hits, misses)
-    rows = _grid(prefix, gid, board.get("page", 0), board["ships"], hits, misses, reveal=True)
+    rows = _grid(
+        prefix, gid, board.get("page", 0), board["ships"], hits,
+        set(misses) | set(aim_misses), reveal=True, aim_hits=aim_hits,
+    )
     if game["phase"] == "fight":
         rows.append([_btn("Сдаться", f"{prefix}g:{gid}", icon="give")])
         return text, InlineKeyboardMarkup(inline_keyboard=rows)
@@ -2347,7 +2362,10 @@ async def _shoot(query, store, game, uid: int, r: int, c: int) -> None:
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, fight_text(game), _aim(game))
+        # Соперник видит попадание/мимо по своим кораблям;
+        # стрелявший — сразу то же «мимо» на своём скрытом поле.
         await _paint_secret(bot, game, foe, query=None)
+        await _paint_secret(bot, game, uid, query=None)
     _arm_turn(store, game)
 
 
