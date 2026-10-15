@@ -1460,6 +1460,48 @@ async def _edit_hidden(bot, board, uid: int, text: str, markup, only_markup: boo
     return await _eph_edit_now(bot, chat_id, int(uid), eid, text, markup, bool(only_markup))
 
 
+def _clear_board_link(board) -> None:
+    if not isinstance(board, dict):
+        return
+    board["mode"] = "none"
+    board["ephemeral_id"] = 0
+    board["message_id"] = 0
+
+
+async def _drop_hidden(bot, game, uid: int) -> None:
+    """Убирает скрытое море одного игрока: ephemeral или запасная личка."""
+    board = (game.get("boards") or {}).get(int(uid))
+    if not isinstance(board, dict):
+        return
+    mode = str(board.get("mode") or "")
+    chat_id = int(board.get("chat_id") or 0)
+    if bot is not None and mode == "ephemeral":
+        eid = int(board.get("ephemeral_id") or 0)
+        if eid and chat_id:
+            try:
+                await bot.delete_ephemeral_message(
+                    chat_id=chat_id,
+                    receiver_user_id=int(uid),
+                    ephemeral_message_id=eid,
+                )
+            except Exception as exc:
+                print(f"[SEA] eph del {type(exc).__name__}")
+    elif bot is not None and mode == "dm":
+        mid = int(board.get("message_id") or 0)
+        if mid and chat_id and not _is_public_target(chat_id, mid, game):
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=mid)
+            except Exception as exc:
+                print(f"[SEA] dm del {type(exc).__name__}")
+    _clear_board_link(board)
+
+
+async def _drop_all_hidden(bot, game) -> None:
+    """Скрытые моря всех игроков. Нужно при выходе и при снятии партии."""
+    for uid in list((game.get("boards") or {}).keys()):
+        await _drop_hidden(bot, game, int(uid))
+
+
 async def _ephemeral(bot, query, uid: int, text: str, markup, bind_callback: bool = True):
     """Первое скрытое море. Правки потом идут через editEphemeralMessageText."""
     msg = getattr(query, "message", None)
@@ -1754,12 +1796,7 @@ async def _close_quiet(store, game, text: str) -> None:
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, text, EMPTY)
-        for board in list(game.get("boards", {}).values()):
-            if board.get("mode") != "dm" or not board.get("message_id"):
-                continue
-            if _is_public_target(board["chat_id"], board["message_id"], game):
-                continue
-            await _edit(bot, board["chat_id"], board["message_id"], "🚢 Партия снята.", EMPTY)
+    await _drop_all_hidden(bot, game)
     gid = int(game["id"])
     store.pop(gid, None)
     _LOCKS.pop(gid, None)
@@ -1787,8 +1824,7 @@ async def _finish(store, game, winner: int, reason: str) -> None:
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, end_text(game, winner, how, net), end_markup(game, winner, gfund))
-        for uid in list(game.get("players") or []):
-            await _paint_secret(bot, game, int(uid), query=None)
+    await _drop_all_hidden(bot, game)
     gid = int(game["id"])
     store.pop(gid, None)
     _LOCKS.pop(gid, None)

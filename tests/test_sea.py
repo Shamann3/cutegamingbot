@@ -367,6 +367,19 @@ def test_levels_squares_and_the_coin_ring():
     assert len(sea.end_markup({"boards": {}}, 1, None).inline_keyboard) == 0
 
 
+def test_hidden_sea_links_are_cleared_after_leave():
+    board = {
+        "mode": "ephemeral",
+        "ephemeral_id": 17,
+        "message_id": 9,
+        "chat_id": -100,
+    }
+    sea._clear_board_link(board)
+    assert board["mode"] == "none"
+    assert board["ephemeral_id"] == 0
+    assert board["message_id"] == 0
+
+
 def test_a_fast_repeat_asks_once_to_wait():
     sea._PACE_AT.clear()
     sea._WARN_AT.clear()
