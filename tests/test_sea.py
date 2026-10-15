@@ -36,6 +36,10 @@ def test_command_accepts_the_game_and_refuses_a_bare_mb():
     assert sea_command("морской бой") is True
     assert sea_command("мб 10") is False
     assert sea_command("морской бой хелп") is False
+    assert sea.sea_mine_command("мои корабли") is True
+    assert sea.sea_mine_command("Моё море") is True
+    assert sea.sea_mine_command("мое море") is True
+    assert sea.sea_mine_command("морской бой") is False
 
 
 def test_chart_puts_letters_on_top_and_numbers_down_the_side():
@@ -229,8 +233,9 @@ def test_plain_command_is_a_game_command():
     start = source.find("custom_commands = {")
     end = source.find("_custom_cmds_by_first_char", start)
     body = source[start:end]
-    for phrase in ("морской бой", "морская битва", "морскойбой", "battleship"):
+    for phrase in ("морской бой", "морская битва", "морскойбой", "battleship", "мои корабли", "моё море"):
         assert phrase in body
+    assert "sea_show_mine" in source
 
 
 def test_inline_card_is_the_shared_table():
@@ -464,6 +469,42 @@ def test_keep_roundtrip_restores_live_party(tmp_path, monkeypatch):
     assert sea.TABLES[gid]["lobby_deadline"] > 1.0
     sea.TABLES.clear()
     sea.INLINE.clear()
+
+
+def test_secret_view_has_link_to_the_game_message():
+    game = {
+        "phase": "fight",
+        "prefix": "sea:",
+        "id": 3,
+        "chat_id": -1001234567890,
+        "message_id": 42,
+        "chat_username": "",
+        "players": [1, 2],
+        "turn": 1,
+        "boards": {
+            1: {"ships": [((0, 0),)], "page": 0},
+            2: {"ships": [((1, 1),)], "page": 0},
+        },
+        "shots": {
+            1: {"hit": set(), "miss": set()},
+            2: {"hit": set(), "miss": set()},
+        },
+        "links": {1: "A", 2: "B"},
+    }
+    assert sea.game_message_url(game) == "https://t.me/c/1234567890/42"
+    _text, markup = sea._secret_view(game, 1)
+    urls = [getattr(button, "url", None) for row in markup.inline_keyboard for button in row]
+    assert "https://t.me/c/1234567890/42" in urls
+    game["chat_username"] = "CuteChat3"
+    assert sea.game_message_url(game) == "https://t.me/CuteChat3/42"
+    place = {
+        **game,
+        "phase": "place",
+        "boards": {1: {"ships": [((0, 0),)], "page": 0, "hand": False, "hold": None, "tool": None}},
+    }
+    _text, place_markup = sea._secret_view(place, 1)
+    place_urls = [getattr(button, "url", None) for row in place_markup.inline_keyboard for button in row]
+    assert "https://t.me/CuteChat3/42" in place_urls
 
 
 def test_secret_fight_shows_own_miss_right_away():

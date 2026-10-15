@@ -689,6 +689,16 @@ def sea_command(text: str) -> bool:
     return parse_sea(text)[0] in {"play", "bad"}
 
 
+def _fold_mine(text: str) -> str:
+    return " ".join(str(text or "").lower().replace("ё", "е").split())
+
+
+def sea_mine_command(text: str) -> bool:
+    """Сообщение «мои корабли» / «моё море» — открыть скрытое поле."""
+    folded = _fold_mine(text)
+    return folded in {"мои корабли", "мое море", "моикорабли", "моеморе"}
+
+
 def _face(key: str) -> str:
     return str(FACE.get(key) or "").strip()
 
@@ -716,6 +726,44 @@ def _btn(text: str, data: str, style: str | None = None, icon: str = "", icon_on
             return InlineKeyboardButton(**kwargs)
         except TypeError:
             return InlineKeyboardButton(text=text or " ", callback_data=data)
+
+
+def game_message_url(game) -> str:
+    """Ссылка на общее сообщение партии (t.me/…/id или t.me/c/…/id)."""
+    mid = int((game or {}).get("message_id") or 0)
+    chat_id = int((game or {}).get("chat_id") or 0)
+    if mid <= 0 or not chat_id:
+        return ""
+    uname = str((game or {}).get("chat_username") or "").strip().lstrip("@")
+    if uname and all(ch.isalnum() or ch == "_" for ch in uname):
+        return f"https://t.me/{uname}/{mid}"
+    s = str(chat_id)
+    if s.startswith("-100"):
+        return f"https://t.me/c/{s[4:]}/{mid}"
+    if chat_id < 0:
+        return f"https://t.me/c/{abs(chat_id)}/{mid}"
+    return ""
+
+
+def _url_btn(text: str, url: str, icon: str = "") -> InlineKeyboardButton:
+    eid = _face(icon) if icon else ""
+    label = " " if eid else (text or "К партии")
+    kwargs = {"text": label, "url": str(url)}
+    if eid:
+        kwargs["icon_custom_emoji_id"] = eid
+    try:
+        return InlineKeyboardButton(**kwargs)
+    except TypeError:
+        kwargs.pop("icon_custom_emoji_id", None)
+        return InlineKeyboardButton(text=text or "К партии", url=str(url))
+
+
+def _with_game_link(rows: list, game) -> InlineKeyboardMarkup:
+    link = game_message_url(game)
+    out = [list(row) for row in (rows or [])]
+    if link:
+        out.append([_url_btn("К партии", link, icon="title")])
+    return InlineKeyboardMarkup(inline_keyboard=out)
 
 
 def _pack(buttons, width: int = 8) -> list:
@@ -1079,10 +1127,12 @@ def _secret_view(game, uid: int):
     prefix = game["prefix"]
     gid = game["id"]
     if game["phase"] == "place":
-        return secret_place_text(board, hand_budget(game_fleet(game))), place_markup(
+        text = secret_place_text(board, hand_budget(game_fleet(game)))
+        markup = place_markup(
             prefix, gid, board["ships"], board["page"], board.get("hold"),
             hand=bool(board.get("hand")), tool=board.get("tool"), fleet=game_fleet(game),
         )
+        return text, _with_game_link(markup.inline_keyboard, game)
     if game.get("phase") == "over":
         return end_text(
             game,
@@ -1103,7 +1153,7 @@ def _secret_view(game, uid: int):
     )
     if game["phase"] == "fight":
         rows.append([_btn("Сдаться", f"{prefix}g:{gid}", icon="give")])
-        return text, InlineKeyboardMarkup(inline_keyboard=rows)
+        return text, _with_game_link(rows, game)
     return text, EMPTY
 
 
@@ -1168,6 +1218,7 @@ def _fresh(gid: int, chat_id: int, message_id: int, owner: int, bet: int, prefix
         "turn_deadline": 0,
         "lobby_deadline": 0,
         "inline_id": "",
+        "chat_username": "",
         "place_token": 0,
         "turn_token": 0,
         "lobby_token": 0,
@@ -2103,7 +2154,7 @@ async def _give_up(query, store, game, uid: int) -> None:
     await _ack(query, "Партия уже закрыта")
 
 
-_FLEET_ALERT = "Карта с вашими кораблями отправлена в этот чат"
+_FLEET_ALERT = "Ваши корабли"
 
 
 async def _open_sea(query, game, uid: int) -> None:
@@ -2113,7 +2164,7 @@ async def _open_sea(query, game, uid: int) -> None:
     if game.get("phase") not in {"place", "fight"}:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
-    await _paint_secret(game.get("bot"), game, uid, query)
+    await _paint_secret(game.get("bot"), game, uid, query, toast="Ваше море", bind_callback=True)
 
 
 async def _open_fleet(query, game, uid: int) -> None:
@@ -2123,10 +2174,10 @@ async def _open_fleet(query, game, uid: int) -> None:
     if game.get("phase") not in {"place", "fight"}:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
-    await _ack(query, _FLEET_ALERT, alert=True)
+    # bind_callback обязателен: без него скрытое сообщение после алерта не уходит.
     await _paint_secret(
         game.get("bot"), game, uid, query,
-        quiet=True, bind_callback=False,
+        toast=_FLEET_ALERT, bind_callback=True,
     )
 
 
@@ -2976,6 +3027,102 @@ async def _need_funds(message, uid: int, bet: int) -> None:
     asyncio.create_task(_later())
 
 
+def _find_player_game(chat_id: int, uid: int):
+    found = None
+    for game in TABLES.values():
+        if int(game.get("chat_id") or 0) != int(chat_id):
+            continue
+        if game.get("phase") not in {"place", "fight"}:
+            continue
+        boards = game.get("boards") or {}
+        players = {int(item) for item in (game.get("players") or [])}
+        if int(uid) not in boards and int(uid) not in players:
+            continue
+        if found is None or int(game.get("message_id") or 0) >= int(found.get("message_id") or 0):
+            found = game
+    return found
+
+
+async def _ephemeral_from_chat(bot, chat_id: int, uid: int, text: str, markup):
+    if bot is None or not chat_id:
+        return None
+    try:
+        return await bot.send_message(
+            chat_id=int(chat_id),
+            text=text,
+            reply_markup=markup,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            ephemeral_message_parameters=EphemeralMessageParameters(
+                receiver_user_id=int(uid),
+            ),
+        )
+    except Exception as exc:
+        print(f"[SEA] ephemeral chat {type(exc).__name__}")
+        return None
+
+
+async def sea_show_mine(message: Message) -> None:
+    """Текст «мои корабли» / «моё море» — показать скрытое поле игрока."""
+    if not sea_mine_command(getattr(message, "text", "") or ""):
+        return
+    user = getattr(message, "from_user", None)
+    chat = getattr(message, "chat", None)
+    if user is None or not getattr(user, "id", None):
+        return
+    chat_type = str(getattr(getattr(chat, "type", None), "value", getattr(chat, "type", "")) or "")
+    if chat is None or chat_type not in {"group", "supergroup"}:
+        try:
+            await message.reply("Напишите это в группе, где идёт ваша партия.")
+        except Exception:
+            pass
+        return
+    uid = int(user.id)
+    game = _find_player_game(int(chat.id), uid)
+    if game is None:
+        try:
+            await message.reply("В этом чате нет вашей активной партии морского боя.")
+        except Exception:
+            pass
+        return
+    bot = getattr(message, "bot", None) or game.get("bot")
+    game["bot"] = bot
+    uname = str(getattr(chat, "username", None) or "").strip()
+    if uname:
+        game["chat_username"] = uname
+    _wake(TABLES)
+    text, markup = _secret_view(game, uid)
+    board = game["boards"].setdefault(uid, _blank_board())
+    if board.get("mode") == "ephemeral" and board.get("ephemeral_id"):
+        if await _edit_hidden(bot, board, uid, text, markup):
+            _keep()
+            return
+        board["mode"] = "none"
+    if board.get("mode") == "dm" and board.get("message_id"):
+        if await _edit(bot, board["chat_id"], board["message_id"], text, markup):
+            _keep()
+            return
+        board["mode"] = "none"
+    sent = await _ephemeral_from_chat(bot, int(chat.id), uid, text, markup)
+    if sent is not None:
+        _remember_hidden(board, sent)
+        _keep()
+        return
+    sent = await _dm(bot, uid, text, markup)
+    if sent is not None and not _is_public_target(sent.chat.id, sent.message_id, game):
+        _remember_hidden(board, sent)
+        try:
+            await message.reply("Карта кораблей открыта в личке с ботом.")
+        except Exception:
+            pass
+        _keep()
+        return
+    try:
+        await message.reply("Не удалось открыть море. Нажмите «Моё море» на сообщении партии.")
+    except Exception:
+        pass
+
+
 async def sea_open(message: Message) -> None:
     kind, bet = parse_sea(getattr(message, "text", "") or "")
     if kind in {"ignore", "help"}:
@@ -3020,6 +3167,7 @@ async def sea_open(message: Message) -> None:
     game = _fresh(gid, getattr(chat, "id", 0) or 0, 0, uid, bet, "sea:")
     game["bot"] = getattr(message, "bot", None)
     game["links"][uid] = _plain_name(user)
+    game["chat_username"] = str(getattr(chat, "username", None) or "").strip()
     TABLES[gid] = game
     try:
         sent = await message.reply(
@@ -3038,6 +3186,8 @@ async def sea_open(message: Message) -> None:
         return
     game["chat_id"] = int(sent.chat.id)
     game["message_id"] = int(sent.message_id)
+    if getattr(sent.chat, "username", None):
+        game["chat_username"] = str(sent.chat.username)
     _arm_lobby(TABLES, game)
     _keep()
 
