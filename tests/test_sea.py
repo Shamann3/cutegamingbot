@@ -298,7 +298,7 @@ def test_premium_slot_sits_on_the_button(monkeypatch):
     assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == "5276032951342088188"
     hand = sea.place_markup("sea:", 1, [((3, 3),)], 0, hand=True, tool=2)
     blocked = next(button for row in hand.inline_keyboard for button in row if button.callback_data == "sea:c:1:28")
-    assert blocked.icon_custom_emoji_id == "5381975814415866082"
+    assert blocked.icon_custom_emoji_id == "5350475991691052862"
     assert "Выставить вручную" not in [button.text for row in hand.inline_keyboard for button in row]
 
 
@@ -324,10 +324,18 @@ def test_levels_squares_and_the_coin_ring():
     assert names[:3] == ["Лёгкий 8", "Средний 10", "Сложный 12"]
     assert "Отмена" not in names
     assert "Присоединиться" in names
-    hand = place_markup("sea:", 1, [], 0, hand=True, tool=4, fleet=(4, 3, 2, 1))
-    hand_names = [button.text for row in hand.inline_keyboard for button in row]
-    assert "◻️" in hand_names and "◻️◻️" in hand_names
-    assert "◻️◻️◻️" in hand_names and "◻️◻️◻️◻️" in hand_names
+    note = sea.secret_place_text({"hand": True, "ships": [((0, 0),)]}, 8)
+    assert "Клеток ещё можно занять" in note and "<b>7</b>" in note
+    ok, grown, code = sea.hand_put([], 0, 0, 8)
+    assert ok and code == "new" and grown == [((0, 0),)]
+    ok, grown, code = sea.hand_put(grown, 0, 1, 8)
+    assert ok and code == "grow" and len(grown[0]) == 2
+    ok, _, code = sea.hand_put(grown, 1, 1, 8)
+    assert not ok and code == "diag"
+    ok, grown, code = sea.hand_put(grown, 0, 2, 8)
+    assert ok and len(grown[0]) == 3
+    ok, _, code = sea.hand_put(grown, 0, 3, 8)
+    assert not ok and code == "long"
     board = place_markup("sea:", 1, [((0, 0), (0, 1))], 0)
     square = sea._PART_TEXT["one"]
     assert board.inline_keyboard[2][0].text == square
@@ -335,7 +343,15 @@ def test_levels_squares_and_the_coin_ring():
     assert square == "◻️"
     held = place_markup("sea:", 1, [((0, 0),)], 0, hold=0)
     ring = next(button for row in held.inline_keyboard for button in row if button.callback_data == "sea:c:1:1")
-    assert ring.icon_custom_emoji_id == "5381975814415866082"
+    assert ring.icon_custom_emoji_id == "5350475991691052862"
+    page = sea.end_text(
+        {"bet": 10, "links": {1: "A"}},
+        1,
+        "Все корабли соперника потоплены.",
+        9,
+    )
+    assert "Победа" in page and "<b>A</b>" in page and "+9 кут" in page
+    assert len(sea.end_markup({"boards": {}}, 1, None).inline_keyboard) == 0
 
 
 def test_help_knows_the_game():

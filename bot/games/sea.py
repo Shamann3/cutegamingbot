@@ -86,10 +86,10 @@ FACE = {
     # --- море ---
     "water": "",                          # пустая клетка, знак ㅤ
     "miss": "5348132683304156113",        # мимо
-    "halo": "5350475991691052862",        # пусто вокруг потопленного
+    "halo": "5350475991691052862",        # обводка вокруг корабля
     "wound": "5469785308386041323",       # попадание
     "sunk": "5276032951342088188",        # все клетки потопленного корабля
-    "zone": "5381975814415866082",        # монета: ставка и клетки вокруг выбранного корабля
+    "zone": "5381975814415866082",        # монета в строке ставки
 
     # --- целый корабль. Пусто = рисунок корабля из знаков ниже ---
     "ship_one": "",
@@ -130,7 +130,7 @@ FACE = {
 _WATER = "\u3164"
 _GUIDE = {
     "lobby": "«Присоединиться», затем «Начать». Сложность выбирает создатель.",
-    "place": "«Авто» ставит корабли. «Выставить вручную» — вы ставите сами. Затем «Готово».",
+    "place": "«Авто» ставит само. «Выставить вручную» — клетка за клеткой, до 3. Затем «Готово».",
     "fight": "Нажмите клетку. «Мои корабли» — ваши.",
 }
 _PACE = "Пожалуйста, не торопитесь"
@@ -273,6 +273,104 @@ def place_ship(ships, length: int, r: int, c: int, across: bool, fleet=None):
     if have[int(length)] >= need[int(length)]:
         return False, ships, "count"
     return True, [*ships, tuple(cells)], ""
+
+
+HAND_CAP = 3
+
+
+def cells_used(ships) -> int:
+    return sum(len(ship) for ship in ships)
+
+
+def hand_budget(fleet=None) -> int:
+    return sum(_spec(fleet).elements())
+
+
+def _straight(ship) -> bool:
+    cells = tuple(ship)
+    if len(cells) <= 1:
+        return True
+    rows = {r for r, _ in cells}
+    cols = {c for _, c in cells}
+    if len(rows) == 1:
+        line = sorted(c for _, c in cells)
+        return line[-1] - line[0] == len(cells) - 1 and len(line) == len(cells)
+    if len(cols) == 1:
+        line = sorted(r for r, _ in cells)
+        return line[-1] - line[0] == len(cells) - 1 and len(line) == len(cells)
+    return False
+
+
+def _ends(ship):
+    cells = tuple(ship)
+    if not cells or not _straight(cells):
+        return []
+    if len(cells) == 1:
+        r, c = cells[0]
+        return [(r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)]
+    rows = {r for r, _ in cells}
+    if len(rows) == 1:
+        r = next(iter(rows))
+        line = sorted(c for _, c in cells)
+        return [(r, line[0] - 1), (r, line[-1] + 1)]
+    c = next(c for _, c in cells)
+    line = sorted(r for r, _ in cells)
+    return [(line[0] - 1, c), (line[-1] + 1, c)]
+
+
+def _order_ship(cells):
+    cells = list(cells)
+    cells.sort(key=lambda item: (item[0], item[1]))
+    return tuple(cells)
+
+
+def _diagonal(ships, r: int, c: int) -> bool:
+    for ship in ships:
+        for sr, sc in ship:
+            if abs(sr - r) == 1 and abs(sc - c) == 1:
+                return True
+    return False
+
+
+def hand_put(ships, r: int, c: int, budget: int):
+    """Клетка становится кораблём или удлиняет его по прямой. Диагональ не проходит."""
+    cell = (int(r), int(c))
+    if not (0 <= cell[0] < SIZE and 0 <= cell[1] < SIZE):
+        return False, ships, "edge"
+    if ship_at(ships, cell[0], cell[1]) is not None:
+        return False, ships, "ship"
+    if cells_used(ships) >= int(budget):
+        return False, ships, "full"
+    growers = [index for index, ship in enumerate(ships) if cell in _ends(ship)]
+    if len(growers) > 1:
+        return False, ships, "touch"
+    if len(growers) == 1:
+        index = growers[0]
+        ship = ships[index]
+        if len(ship) >= HAND_CAP:
+            return False, ships, "long"
+        nxt = _order_ship([*ship, cell])
+        if not _straight(nxt) or not _fits(_without(ships, index), nxt):
+            return False, ships, "touch"
+        out = list(ships)
+        out[index] = nxt
+        return True, out, "grow"
+    if _diagonal(ships, cell[0], cell[1]):
+        return False, ships, "diag"
+    if not _fits(ships, (cell,)):
+        return False, ships, "touch"
+    return True, [*ships, (cell,)], "new"
+
+
+def hand_ready(ships, budget: int) -> bool:
+    if cells_used(ships) != int(budget):
+        return False
+    if any(len(ship) < 1 or len(ship) > HAND_CAP or not _straight(ship) for ship in ships):
+        return False
+    for index, ship in enumerate(ships):
+        if not _fits(_without(ships, index), ship):
+            return False
+    return True
 
 
 def fleet_ready(ships, fleet=None) -> bool:
@@ -688,11 +786,11 @@ def _cell_button(
         icon = _icon(f"ship_{part}")
         return _btn(text, data, icon=icon, icon_only=bool(icon))
     if cell in blocked:
-        return _mark(data, "🪙", "zone")
+        return _mark(data, "✨", "halo")
     if cell in misses:
         return _mark(data, "👎", "miss")
     if cell in halo:
-        return _mark(data, "🫧", "halo")
+        return _mark(data, "✨", "halo")
     return _mark(data, _WATER, "water")
 
 
@@ -796,11 +894,11 @@ def place_markup(prefix: str, gid: int, ships, page: int, hold=None, hand: bool 
         _btn("Готово", f"{prefix}r:{gid}", "success", icon="ready"),
     ]
     if hand:
-        rows = [*_tool_row(prefix, gid, ships, tool, fleet), ready_row]
+        rows = [ready_row]
         blocked = _keepout(ships)
     else:
         rows = [ready_row, _nav_row(prefix, gid)]
-        blocked = _keepout([chosen]) if chosen else None
+        blocked = _keepout(ships) if ships else (_keepout([chosen]) if chosen else None)
     rows.extend(_grid(
         prefix, gid, page, ships, chosen=chosen, reveal=True, blocked=blocked,
     ))
@@ -925,8 +1023,16 @@ def fight_text(game) -> str:
     return "\n".join(lines)
 
 
-def secret_place_text(board) -> str:
-    return f"{_tag('title', '🛥')} <b>Ваше море</b>"
+def secret_place_text(board, budget: int = 0) -> str:
+    title = f"{_tag('title', '🛥')} <b>Ваше море</b>"
+    if not board.get("hand"):
+        return title
+    left = max(0, int(budget) - cells_used(board.get("ships") or []))
+    return (
+        f"{title}\n"
+        f"Клеток ещё можно занять: <b>{left}</b>\n"
+        "Нажмите клетку. Корабль растёт по прямой и не длиннее 3 клеток."
+    )
 
 
 def secret_fight_text(ships, hits, misses) -> str:
@@ -938,10 +1044,17 @@ def _secret_view(game, uid: int):
     prefix = game["prefix"]
     gid = game["id"]
     if game["phase"] == "place":
-        return secret_place_text(board), place_markup(
+        return secret_place_text(board, hand_budget(game_fleet(game))), place_markup(
             prefix, gid, board["ships"], board["page"], board.get("hold"),
             hand=bool(board.get("hand")), tool=board.get("tool"), fleet=game_fleet(game),
         )
+    if game.get("phase") == "over":
+        return end_text(
+            game,
+            int(game.get("winner") or 0),
+            str(game.get("end_how") or "Партия закончена."),
+            int(game.get("net") or 0),
+        ), EMPTY
     hits, misses = _incoming(game, uid)
     text = secret_fight_text(board["ships"], hits, misses)
     rows = _grid(prefix, gid, board.get("page", 0), board["ships"], hits, misses, reveal=True)
@@ -952,31 +1065,19 @@ def _secret_view(game, uid: int):
 
 
 def end_text(game, winner: int, how: str, net: int) -> str:
-    links = game["links"]
     lines = [
         f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        f"{_bold(links.get(winner, 'Игрок'))} победил.",
+        f"{_tag('halo', '✨')} <b>Победа</b>",
+        _bold((game.get("links") or {}).get(winner, "Игрок")),
         how,
     ]
-    if int(game["bet"]) > 0:
-        lines.append(f"+{_num(net)}")
+    if int(game.get("bet") or 0) > 0:
+        lines.append(f"{_tag('zone', '🪙')} +{_num(net)} кут")
     return "\n".join(lines)
 
 
 def end_markup(game, winner: int, gfund):
-    loser = _other(game, winner)
-    links = game["links"]
-    rows = []
-    for uid in (loser, winner):
-        rows.append([_btn(str(links.get(uid, "Игрок")), "sea:x:0")])
-        hits, misses = _incoming(game, uid)
-        rows.extend(_grid(
-            game["prefix"], game["id"], 0,
-            game["boards"][uid]["ships"], hits, misses,
-            reveal=True, frozen=True,
-        ))
-    rows.extend(_commission_markup(gfund).inline_keyboard)
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return _commission_markup(gfund)
 
 
 def _blank_board() -> dict:
@@ -1630,11 +1731,14 @@ async def _finish(store, game, winner: int, reason: str) -> None:
     _drop_task(game, "turn_task")
     loser = _other(game, winner)
     how = {
-        "ships": "Все корабли потоплены.",
-        "give": "Сдача.",
-        "skip": "Пропуски.",
+        "ships": "Все корабли соперника потоплены.",
+        "give": "Соперник сдался.",
+        "skip": "Соперник пропустил три хода.",
     }.get(reason, "Партия закончена.")
     net, gfund = await _pay(winner, loser, int(game["bet"]))
+    game["winner"] = int(winner)
+    game["end_how"] = how
+    game["net"] = int(net)
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, end_text(game, winner, how, net), end_markup(game, winner, gfund))
@@ -1979,7 +2083,14 @@ async def _ready(query, store, game, uid: int) -> None:
         await _ack(query, "Нажмите «Моё море» в общем сообщении.", alert=True)
         return
     board = game["boards"][uid]
-    if not fleet_ready(board["ships"], game_fleet(game)):
+    budget = hand_budget(game_fleet(game))
+    if board.get("hand"):
+        if not hand_ready(board["ships"], budget):
+            left = budget - cells_used(board["ships"])
+            note = f"Осталось занять клеток: {max(0, left)}." if left > 0 else "Проверьте корабли."
+            await _ack(query, note, alert=True)
+            return
+    elif not fleet_ready(board["ships"], game_fleet(game)):
         await _ack(query, "Кораблей ещё не хватает.", alert=True)
         return
     board["ready"] = True
@@ -2018,7 +2129,18 @@ async def _place_cell(query, game, uid: int, r: int, c: int) -> None:
         return
     board["hold"] = index
     board["ready"] = False
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Двигайте стрелками. Монета — сюда нельзя.")
+    await _paint_secret(game.get("bot"), game, uid, query, toast="Двигайте стрелками.")
+
+
+_HAND_NOTE = {
+    "full": "Клетки уже заняты.",
+    "long": "Корабль не длиннее 3 клеток.",
+    "diag": "По диагонали нельзя.",
+    "touch": "Сюда нельзя.",
+    "edge": "Сюда нельзя.",
+    "grow": "Корабль стал длиннее.",
+    "new": "Корабль поставлен.",
+}
 
 
 async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
@@ -2027,26 +2149,15 @@ async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
     if index is not None:
         board["ships"] = _without(board["ships"], index)
         board["ready"] = False
-        spec = game_fleet(game)
-        board["tool"] = next_length(board["ships"], board.get("tool"), spec)
         await _paint_secret(game.get("bot"), game, uid, query, toast="Корабль убран.")
         return
-    tool = board.get("tool")
-    spec = game_fleet(game)
-    if not tool:
-        await _ack(query, "Сначала выберите корабль." if not fleet_ready(board["ships"], spec) else "Нажмите на корабль, чтобы убрать.")
-        return
-    if (r, c) in _keepout(board["ships"]):
-        await _ack(query, "Сюда нельзя")
-        return
-    ok, ships, _code = place_ship(board["ships"], int(tool), r, c, bool(board.get("across", True)), spec)
+    ok, ships, code = hand_put(board["ships"], r, c, hand_budget(game_fleet(game)))
     if not ok:
-        await _ack(query, "Сюда нельзя")
+        await _ack(query, _HAND_NOTE.get(code, "Сюда нельзя"))
         return
     board["ships"] = ships
     board["ready"] = False
-    board["tool"] = next_length(ships, int(tool), spec)
-    await _paint_secret(game.get("bot"), game, uid, query)
+    await _paint_secret(game.get("bot"), game, uid, query, toast=_HAND_NOTE.get(code, "Корабль поставлен."))
 
 
 async def _auto(query, game, uid: int) -> None:
@@ -2076,11 +2187,13 @@ async def _by_hand(query, game, uid: int) -> None:
     if board["ready"]:
         await _ack(query, "Ожидаем соперника.")
         return
+    if not board.get("hand"):
+        board["ships"] = []
     board["hand"] = True
     board["hold"] = None
+    board["tool"] = None
     board["ready"] = False
-    board["tool"] = next_length(board["ships"], fleet=game_fleet(game))
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Монета — сюда ставить нельзя.")
+    await _paint_secret(game.get("bot"), game, uid, query, toast="Нажмите свободную клетку.")
 
 
 _STEPS = {"u": (-1, 0), "d": (1, 0), "l": (0, -1), "r": (0, 1)}
