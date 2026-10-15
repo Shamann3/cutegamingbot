@@ -1658,7 +1658,8 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
     elif query_text.startswith(("игры" , "играть" , "игрульки" , "игрушки")):
         # Отображаем все игры, если пользователь ищет "игры"
-        results = [ create_game_result(game) for game in games.values() ]
+        from bot.design.sea_inline import catalog_article
+        results = [ catalog_article(user_id) ] + [ create_game_result(game) for game in games.values() ]
     elif query_text.startswith("баланс"):
         results.append(balance_result)
 
@@ -1904,7 +1905,8 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
     # ===== ФИНАЛЬНАЯ ОТПРАВКА =====
     if not results:
-        results = [ create_game_result(game) for game in games.values() ] + [ help_result ] + [ balance_result ] + [
+        from bot.design.sea_inline import catalog_article
+        results = [ catalog_article(user_id) ] + [ create_game_result(game) for game in games.values() ] + [ help_result ] + [ balance_result ] + [
             referral_result ]
 
     await bot1.answer_inline_query(inline_query.id , results=results , cache_time=0 , is_personal=True)

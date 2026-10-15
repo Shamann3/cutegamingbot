@@ -31,6 +31,17 @@ def _article(title: str, description: str, text: str, markup=None) -> InlineQuer
     )
 
 
+def catalog_article(user_id: int) -> InlineQueryResultArticle:
+    """Карточка без ставки для общего списка игр."""
+    button = InlineKeyboardButton(text="Создать игру", callback_data=f"seai:n:{int(user_id)}:0")
+    return _article(
+        "Морской бой",
+        "Без ставки. Со ставкой: морской бой 10",
+        invite_text(0),
+        InlineKeyboardMarkup(inline_keyboard=[[button]]),
+    )
+
+
 async def offer_sea(query_text: str, user_id: int, results: list) -> None:
     try:
         await _offer(query_text, int(user_id), results)

@@ -497,13 +497,16 @@ def place_public_markup(game) -> InlineKeyboardMarkup:
     ])
 
 
+def stake_line(bet: int) -> str:
+    if int(bet) <= 0:
+        return "Без ставки. Куты не списываются."
+    return f"Ставка {_num(int(bet))} кут. Спишется в конце у проигравшего."
+
+
 def lobby_text(game) -> str:
-    bet = int(game["bet"])
-    stake = "Без ставки." if bet <= 0 else f"Ставка {_num(bet)} кут."
     lines = [
         "🚢 <b>Морской бой</b>",
-        stake,
-        "Куты спишутся в конце у проигравшего.",
+        stake_line(int(game["bet"])),
         "",
         "1. Второй жмёт «Присоединиться»",
         "2. Первый жмёт «Начать игру»",
@@ -521,10 +524,9 @@ def lobby_text(game) -> str:
 
 
 def invite_text(bet: int) -> str:
-    stake = "Без ставки." if int(bet) <= 0 else f"Ставка {_num(bet)} кут."
     return "\n".join([
         "🚢 <b>Морской бой</b>",
-        stake,
+        stake_line(int(bet)),
         "Нажмите «Создать игру».",
         "Соперник жмёт «Присоединиться», вы — «Начать».",
         "Корабли будут видны только вам.",
@@ -691,6 +693,7 @@ def _fresh(gid: int, chat_id: int, message_id: int, owner: int, bet: int, prefix
         "touch": {},
         "note": "",
         "confirm": None,
+        "inline_id": "",
         "place_token": 0,
         "turn_token": 0,
         "place_task": None,
@@ -741,6 +744,10 @@ def _ready_touch(game, uid: int) -> bool:
 
 
 def _surface(query, game) -> str:
+    inline_id = str(getattr(query, "inline_message_id", "") or "")
+    game_inline = str(game.get("inline_id") or "")
+    if inline_id and game_inline and inline_id == game_inline:
+        return "public"
     msg = getattr(query, "message", None)
     if msg is None or getattr(msg, "chat", None) is None:
         return "none"
@@ -754,6 +761,8 @@ def _surface(query, game) -> str:
 
 
 def _is_public_target(chat_id, message_id, game) -> bool:
+    if not int(chat_id) or not int(message_id):
+        return False
     return int(chat_id) == int(game["chat_id"]) and int(message_id) == int(game["message_id"])
 
 
@@ -802,6 +811,71 @@ async def _markup_only(bot, chat_id, message_id, markup) -> bool:
             return True
         print(f"[SEA] markup {type(exc).__name__}")
         return False
+
+
+def public_channel(game) -> str:
+    """Куда писать общий стол: инлайн-карточка или обычное сообщение."""
+    if str(game.get("inline_id") or ""):
+        return "inline"
+    if int(game.get("chat_id") or 0) and int(game.get("message_id") or 0):
+        return "chat"
+    return "none"
+
+
+def _public_targets(game) -> list:
+    targets = []
+    inline_id = str(game.get("inline_id") or "")
+    if inline_id:
+        targets.append({"inline_message_id": inline_id})
+    chat_id = int(game.get("chat_id") or 0)
+    message_id = int(game.get("message_id") or 0)
+    if chat_id and message_id:
+        targets.append({"chat_id": chat_id, "message_id": message_id})
+    return targets
+
+
+async def _touch_public(bot, game, **kwargs) -> bool:
+    if bot is None:
+        return False
+    targets = _public_targets(game)
+    if not targets:
+        return False
+    last = None
+    for target in targets:
+        try:
+            await bot.edit_message_text(**target, **kwargs)
+            return True
+        except Exception as exc:
+            if "not modified" in str(exc).lower():
+                return True
+            last = exc
+    print(f"[SEA] edit {type(last).__name__ if last else 'none'}")
+    return False
+
+
+async def _show(bot, game, text, markup) -> bool:
+    return await _touch_public(
+        bot, game, text=text, reply_markup=markup, parse_mode="HTML",
+    )
+
+
+async def _show_markup(bot, game, markup) -> bool:
+    if bot is None:
+        return False
+    targets = _public_targets(game)
+    if not targets:
+        return False
+    last = None
+    for target in targets:
+        try:
+            await bot.edit_message_reply_markup(**target, reply_markup=markup)
+            return True
+        except Exception as exc:
+            if "not modified" in str(exc).lower():
+                return True
+            last = exc
+    print(f"[SEA] markup {type(last).__name__ if last else 'none'}")
+    return False
 
 
 async def _dm(bot, uid: int, text: str, markup):
@@ -1071,7 +1145,7 @@ async def _close_quiet(store, game, text: str) -> None:
     _drop_task(game, "turn_task")
     bot = game.get("bot")
     if bot is not None:
-        await _edit(bot, game["chat_id"], game["message_id"], text, EMPTY)
+        await _show(bot, game, text, EMPTY)
         for board in list(game.get("boards", {}).values()):
             if board.get("mode") != "dm" or not board.get("message_id"):
                 continue
@@ -1097,10 +1171,7 @@ async def _finish(store, game, winner: int, reason: str) -> None:
     net, gfund = await _pay(winner, loser, int(game["bet"]))
     bot = game.get("bot")
     if bot is not None:
-        await _edit(
-            bot, game["chat_id"], game["message_id"],
-            end_text(game, winner, how, net), _commission_markup(gfund),
-        )
+        await _show(bot, game, end_text(game, winner, how, net), _commission_markup(gfund))
         for uid in list(game.get("players") or []):
             await _paint_secret(bot, game, int(uid), query=None)
     store.pop(game["id"], None)
@@ -1116,7 +1187,7 @@ async def _begin_place(store, game) -> None:
     game["skips"] = {uid: 0 for uid in players}
     bot = game.get("bot")
     if bot is not None:
-        await _edit(bot, game["chat_id"], game["message_id"], place_text(game), place_public_markup(game))
+        await _show(bot, game, place_text(game), place_public_markup(game))
         for uid in players:
             await _paint_secret(bot, game, uid, query=None)
     _arm_place(store, game)
@@ -1135,8 +1206,8 @@ async def _begin_fight(store, game) -> None:
     game["skips"] = {uid: 0 for uid in players}
     bot = game.get("bot")
     if bot is not None:
-        if not await _edit(bot, game["chat_id"], game["message_id"], fight_text(game), _aim(game)):
-            await _edit(bot, game["chat_id"], game["message_id"], fight_text(game), _aim(game))
+        if not await _show(bot, game, fight_text(game), _aim(game)):
+            await _show(bot, game, fight_text(game), _aim(game))
         for uid in players:
             await _paint_secret(bot, game, uid, query=None)
     _arm_turn(store, game)
@@ -1184,7 +1255,7 @@ async def _turn_deadline(store, gid: int, token: int) -> None:
             game["note"] = "Прошлый ход пропущен."
             bot = game.get("bot")
             if bot is not None:
-                await _edit(bot, game["chat_id"], game["message_id"], fight_text(game), _aim(game))
+                await _show(bot, game, fight_text(game), _aim(game))
             _arm_turn(store, game)
     except asyncio.CancelledError:
         return
@@ -1224,7 +1295,7 @@ async def _join(query, game, uid: int) -> None:
     await _ack(query, "Вы в партии")
     bot = game.get("bot")
     if bot is not None:
-        await _edit(bot, game["chat_id"], game["message_id"], lobby_text(game), lobby_markup(game))
+        await _show(bot, game, lobby_text(game), lobby_markup(game))
 
 
 async def _start(query, store, game, uid: int) -> None:
@@ -1290,7 +1361,7 @@ async def _give_up(query, store, game, uid: int) -> None:
         await _ack(query, "Вы вышли из стола")
         bot = game.get("bot")
         if bot is not None:
-            await _edit(bot, game["chat_id"], game["message_id"], lobby_text(game), lobby_markup(game))
+            await _show(bot, game, lobby_text(game), lobby_markup(game))
         return
     if uid not in [int(item) for item in game.get("players") or []]:
         await _ack(query, "Вы не в этой партии.")
@@ -1347,8 +1418,8 @@ async def _turn_page(query, game, uid: int, page: int) -> None:
         game["aim_page"] = page
         await _ack(query)
         bot = game.get("bot")
-        if bot is not None and not await _markup_only(bot, game["chat_id"], game["message_id"], _aim(game)):
-            await _edit(bot, game["chat_id"], game["message_id"], fight_text(game), _aim(game))
+        if bot is not None and not await _show_markup(bot, game, _aim(game)):
+            await _show(bot, game, fight_text(game), _aim(game))
         return
     if game.get("phase") == "place" and uid in game.get("boards", {}) and surface != "public":
         board = game["boards"][uid]
@@ -1423,7 +1494,7 @@ async def _undo(query, game, uid: int) -> None:
     if was:
         bot = game.get("bot")
         if bot is not None:
-            await _edit(bot, game["chat_id"], game["message_id"], place_text(game), place_public_markup(game))
+            await _show(bot, game, place_text(game), place_public_markup(game))
 
 
 async def _ready(query, store, game, uid: int) -> None:
@@ -1453,7 +1524,7 @@ async def _ready(query, store, game, uid: int) -> None:
     await _paint_secret(game.get("bot"), game, uid, query, toast="Ждём соперника")
     bot = game.get("bot")
     if bot is not None:
-        await _edit(bot, game["chat_id"], game["message_id"], place_text(game), place_public_markup(game))
+        await _show(bot, game, place_text(game), place_public_markup(game))
 
 
 async def _place_cell(query, game, uid: int, r: int, c: int) -> None:
@@ -1523,7 +1594,7 @@ async def _shoot(query, store, game, uid: int, r: int, c: int) -> None:
         game["turn"] = foe
     bot = game.get("bot")
     if bot is not None:
-        await _edit(bot, game["chat_id"], game["message_id"], fight_text(game), _aim(game))
+        await _show(bot, game, fight_text(game), _aim(game))
         await _paint_secret(bot, game, foe, query=None)
     _arm_turn(store, game)
 
@@ -1605,7 +1676,13 @@ async def _inline_new(query, store, uid: int, parts) -> None:
         return
     _OPEN_AT[uid] = now
     msg = getattr(query, "message", None)
-    if msg is None or getattr(msg, "chat", None) is None:
+    inline_id = str(getattr(query, "inline_message_id", "") or "")
+    chat_id = 0
+    message_id = 0
+    if msg is not None and getattr(msg, "chat", None) is not None:
+        chat_id = int(msg.chat.id)
+        message_id = int(getattr(msg, "message_id", 0) or 0)
+    if not inline_id and not message_id:
         _OPEN_AT.pop(uid, None)
         await _ack(query, "Сообщение уже не найти.", alert=True)
         return
@@ -1614,7 +1691,7 @@ async def _inline_new(query, store, uid: int, parts) -> None:
         _OPEN_AT.pop(uid, None)
         await _ack(query, reason, alert=True)
         return
-    if await _door_blocks(msg):
+    if msg is not None and await _door_blocks(msg):
         _OPEN_AT.pop(uid, None)
         await _ack(query)
         return
@@ -1630,13 +1707,12 @@ async def _inline_new(query, store, uid: int, parts) -> None:
             await _ack(query, "Недостаточно кут.", alert=True)
             return
     gid = next(_IDS)
-    game = _fresh(gid, msg.chat.id, msg.message_id, uid, bet, "seai:")
+    game = _fresh(gid, chat_id, message_id, uid, bet, "seai:")
+    game["inline_id"] = inline_id
     game["bot"] = getattr(query, "bot", None)
     game["links"][uid] = await _link(uid)
     store[gid] = game
-    ok = False
-    if game["bot"] is not None:
-        ok = await _edit(game["bot"], msg.chat.id, msg.message_id, lobby_text(game), lobby_markup(game))
+    ok = await _show(game["bot"], game, lobby_text(game), lobby_markup(game))
     if not ok:
         store.pop(gid, None)
         _OPEN_AT.pop(uid, None)
@@ -1695,9 +1771,13 @@ async def sea_open(message: Message) -> None:
     if kind in {"ignore", "help"}:
         return
     if kind == "bad":
-        from bot.games.invoke import format_line
         try:
-            await message.reply(format_line("морской бой [ставка]"), parse_mode="HTML")
+            await message.reply(
+                "🚢 <b>Морской бой</b>\n"
+                "Без ставки: <code>морской бой</code>\n"
+                "Со ставкой: <code>морской бой 10</code>",
+                parse_mode="HTML",
+            )
         except Exception as exc:
             print(f"[SEA] format {type(exc).__name__}")
         return
@@ -1744,6 +1824,10 @@ async def sea_open(message: Message) -> None:
     except Exception as exc:
         TABLES.pop(gid, None)
         print(f"[SEA] open {type(exc).__name__}")
+        try:
+            await message.reply("Стол не открылся. Напишите «морской бой» ещё раз.")
+        except Exception:
+            pass
         return
     game["chat_id"] = int(sent.chat.id)
     game["message_id"] = int(sent.message_id)

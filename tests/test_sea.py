@@ -204,6 +204,9 @@ def test_the_table_shows_the_next_step():
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
     assert "Присоединиться" in lobby and "Начать игру" in lobby
+    assert "Без ставки" in lobby and "не списываются" in lobby
+    paid = lobby_text({"bet": 10, "creator": 1, "participants": [1, 2], "links": {1: "A", 2: "B"}})
+    assert "Ставка 10 кут" in paid and "проигравшего" in paid
     board = aim_markup("sea:", 3, 0, {})
     names = [button.text for row in board.inline_keyboard for button in row]
     assert "Как играть" in names and "Мои корабли" in names and "Сдаться" in names
@@ -212,6 +215,49 @@ def test_the_table_shows_the_next_step():
     assert "Как играть" in sea_names and "Готово" in sea_names
     assert any("Вправо" in name for name in sea_names)
     assert any(button.callback_data.startswith("sea:h:") for row in sea_board.inline_keyboard for button in row)
+
+
+def test_plain_command_is_a_game_command():
+    from pathlib import Path
+
+    from bot.games.invoke import looks_like_game_command
+
+    assert looks_like_game_command("морской бой")
+    assert looks_like_game_command("морской бой 10")
+    assert looks_like_game_command("морскойбой")
+    assert looks_like_game_command("battleship")
+    assert looks_like_game_command("морская битва")
+    assert not looks_like_game_command("морской")
+    source = Path(__file__).resolve().parents[1].joinpath("main.py").read_text(encoding="utf-8")
+    start = source.find("custom_commands = {")
+    end = source.find("_custom_cmds_by_first_char", start)
+    body = source[start:end]
+    for phrase in ("морской бой", "морская битва", "морскойбой", "battleship"):
+        assert phrase in body
+
+
+def test_inline_card_is_the_shared_table():
+    from bot.design.sea_inline import catalog_article
+    from bot.games.sea import _surface, public_channel
+
+    game = {"inline_id": "abc", "chat_id": 0, "message_id": 0}
+    assert public_channel(game) == "inline"
+    assert public_channel({"inline_id": "", "chat_id": 5, "message_id": 9}) == "chat"
+
+    class InlineClick:
+        inline_message_id = "abc"
+        message = None
+
+    class PrivateClick:
+        inline_message_id = ""
+        message = None
+
+    assert _surface(InlineClick(), game) == "public"
+    assert _surface(PrivateClick(), game) == "none"
+    card = catalog_article(7)
+    button = card.reply_markup.inline_keyboard[0][0]
+    assert button.callback_data == "seai:n:7:0"
+    assert "Без ставки" in card.input_message_content.message_text
 
 
 def test_help_knows_the_game():
