@@ -2,7 +2,7 @@
 """Морской бой в группе.
 
 Вызов тот же: сообщение «морской бой» или «морской бой 10».
-Сроки, поле и флот — в блоке ниже. Инлайн: bot/design/sea_inline.py.
+Сроки, поле и флот — в блоке ниже. Вызов только сообщением в группе.
 
 Общий стол видят все: только выстрелы. Корабли открываются скрытым
 сообщением в этом же чате и только тому, кто нажал «Моё море».
@@ -42,7 +42,7 @@ LEVELS = (
 _LEVEL = {item[0]: item for item in LEVELS}
 FLEET = _LEVEL["easy"][2]
 PLACE_SECONDS = 300          # расстановка. Кто не успел — партия снимается, куты на месте
-LOBBY_SECONDS = 600          # стол без старта сам закрывается и не остаётся в памяти
+LOBBY_SECONDS = 7200         # стол без старта сам закрывается через 2 часа
 TURN_SECONDS = 60            # минута на выстрел
 MISS_LIMIT = 3               # столько пропущенных минут — и игрок сдаётся
 PAGE = 5                     # столбцов на экране кнопок. Слева ещё цифра, в ряду не больше 8
@@ -935,8 +935,10 @@ def lobby_markup(game) -> InlineKeyboardMarkup:
         _btn(title, f"{prefix}k:{gid}:{key}", "primary" if key == current else None)
         for key, title, _fleet, _note in LEVELS
     ]
-    rows = [levels, [_btn("Присоединиться", f"{prefix}j:{gid}", "primary")]]
-    if len(game["participants"]) >= 2:
+    rows = [levels]
+    if len(game["participants"]) < 2:
+        rows.append([_btn("Присоединиться", f"{prefix}j:{gid}", "primary")])
+    else:
         rows.append([_btn("Начать", f"{prefix}s:{gid}", "success")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -946,7 +948,6 @@ def place_public_markup(game) -> InlineKeyboardMarkup:
     gid = game["id"]
     return InlineKeyboardMarkup(inline_keyboard=[
         [_btn("Моё море", f"{prefix}d:{gid}", "primary", icon="sea")],
-        [_btn("Выйти", f"{prefix}g:{gid}")],
     ])
 
 

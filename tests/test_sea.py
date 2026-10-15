@@ -235,7 +235,7 @@ def test_plain_command_is_a_game_command():
 
 def test_inline_card_is_the_shared_table():
     from bot.design.sea_inline import catalog_article
-    from bot.games.sea import _surface, public_channel
+    from bot.games.sea import LOBBY_SECONDS, _surface, lobby_markup, place_public_markup, public_channel
 
     game = {"inline_id": "abc", "chat_id": 0, "message_id": 0}
     assert public_channel(game) == "inline"
@@ -251,12 +251,21 @@ def test_inline_card_is_the_shared_table():
 
     assert _surface(InlineClick(), game) == "public"
     assert _surface(PrivateClick(), game) == "none"
-    card = catalog_article(7)
-    button = card.reply_markup.inline_keyboard[0][0]
-    assert button.callback_data == "seai:n:7:0"
-    assert card.thumb_url == "https://i.imgur.com/E7MJClp.png"
-    assert "Ставка" not in card.input_message_content.message_text
-    assert "Морской бой" in card.input_message_content.message_text
+    assert catalog_article(7) is None
+    assert LOBBY_SECONDS == 7200
+    full = {
+        "prefix": "sea:",
+        "id": 4,
+        "participants": [1, 2],
+        "creator": 1,
+        "level": "easy",
+    }
+    names = [button.text for row in lobby_markup(full).inline_keyboard for button in row]
+    assert "Присоединиться" not in names
+    assert "Начать" in names
+    public = place_public_markup(full)
+    assert [button.text for row in public.inline_keyboard for button in row] == ["Моё море"]
+    assert "Выйти" not in [button.text for row in public.inline_keyboard for button in row]
 
 
 def test_auto_place_is_random_and_a_ship_can_move():

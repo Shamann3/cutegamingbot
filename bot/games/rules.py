@@ -137,7 +137,7 @@ def _sea(t: Table) -> List[str]:
         f"На ход <b>{span_text(TURN_SECONDS)}</b>. Кто пропустит ход <b>{MISS_LIMIT}</b> раза — сдаётся.",
         "",
         *_duo_payout(draw=False),
-        *_important(t, duo=True, inline="морской бой"),
+        *_important(t, duo=True),
     ]
 
 

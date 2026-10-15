@@ -1218,12 +1218,6 @@ async def inline_help_game(inline_query: types.InlineQuery):
                     parse_mode="HTML") , thumb_url="https://i.imgur.com/kfxeqQn.png")
             results.append(error_result)
 
-    try:
-        from bot.design.sea_inline import offer_sea
-        await offer_sea(query_text , user_id , results)
-    except Exception as _sea_exc:
-        print(f"[SEA] inline {_sea_exc.__class__.__name__}")
-
     if any(query_text.startswith(keyword) for keyword in [ "шашки" ]):
         # Обработка команды "шашки"
         try:
@@ -1658,8 +1652,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
     elif query_text.startswith(("игры" , "играть" , "игрульки" , "игрушки")):
         # Отображаем все игры, если пользователь ищет "игры"
-        from bot.design.sea_inline import catalog_article
-        results = [ catalog_article(user_id) ] + [ create_game_result(game) for game in games.values() ]
+        results = [ create_game_result(game) for game in games.values() ]
     elif query_text.startswith("баланс"):
         results.append(balance_result)
 
@@ -1905,8 +1898,7 @@ async def inline_help_game(inline_query: types.InlineQuery):
 
     # ===== ФИНАЛЬНАЯ ОТПРАВКА =====
     if not results:
-        from bot.design.sea_inline import catalog_article
-        results = [ catalog_article(user_id) ] + [ create_game_result(game) for game in games.values() ] + [ help_result ] + [ balance_result ] + [
+        results = [ create_game_result(game) for game in games.values() ] + [ help_result ] + [ balance_result ] + [
             referral_result ]
 
     await bot1.answer_inline_query(inline_query.id , results=results , cache_time=0 , is_personal=True)
