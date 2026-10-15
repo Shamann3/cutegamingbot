@@ -87,10 +87,11 @@ _TOAST = {
 FACE = {
     # --- море ---
     "water": "",                          # пустая клетка, знак ㅤ
-    "miss": "5348132683304156113",        # мимо
+    "miss": "5348132683304156113",        # ваше мимо по чужому морю
+    "foe_miss": "5341779022219059533",    # мимо соперника по вам
     "halo": "5350475991691052862",        # обводка вокруг корабля
-    "wound": "5469785308386041323",       # попадание
-    "sunk": "5276032951342088188",        # все клетки потопленного корабля
+    "wound": "5228784961011607179",       # попадание по противнику
+    "sunk": "5458539816989760062",        # уничтожение корабля
     "zone": "5381975814415866082",        # монета в строке ставки
 
     # --- целый корабль. Пусто = рисунок корабля из знаков ниже ---
@@ -728,21 +729,40 @@ def _btn(text: str, data: str, style: str | None = None, icon: str = "", icon_on
             return InlineKeyboardButton(text=text or " ", callback_data=data)
 
 
-def game_message_url(game) -> str:
-    """Ссылка на общее сообщение партии (t.me/…/id или t.me/c/…/id)."""
-    mid = int((game or {}).get("message_id") or 0)
-    chat_id = int((game or {}).get("chat_id") or 0)
-    if mid <= 0 or not chat_id:
+def chat_message_url(chat_id: int, message_id: int, username: str = "") -> str:
+    """Ссылка на сообщение в группе/канале."""
+    mid = int(message_id or 0)
+    cid = int(chat_id or 0)
+    if mid <= 0 or not cid:
         return ""
-    uname = str((game or {}).get("chat_username") or "").strip().lstrip("@")
+    uname = str(username or "").strip().lstrip("@")
     if uname and all(ch.isalnum() or ch == "_" for ch in uname):
         return f"https://t.me/{uname}/{mid}"
-    s = str(chat_id)
+    s = str(cid)
     if s.startswith("-100"):
         return f"https://t.me/c/{s[4:]}/{mid}"
-    if chat_id < 0:
-        return f"https://t.me/c/{abs(chat_id)}/{mid}"
+    if cid < 0:
+        return f"https://t.me/c/{abs(cid)}/{mid}"
     return ""
+
+
+def game_message_url(game) -> str:
+    """Ссылка на общее сообщение партии (t.me/…/id или t.me/c/…/id)."""
+    return chat_message_url(
+        int((game or {}).get("chat_id") or 0),
+        int((game or {}).get("message_id") or 0),
+        str((game or {}).get("chat_username") or ""),
+    )
+
+
+def hidden_message_url(game, uid: int) -> str:
+    """Ссылка на скрытое поле кораблей этого игрока."""
+    board = ((game or {}).get("boards") or {}).get(int(uid)) or {}
+    mid = int(board.get("message_id") or 0)
+    chat_id = int(board.get("chat_id") or 0) or int((game or {}).get("chat_id") or 0)
+    if mid <= 0:
+        return ""
+    return chat_message_url(chat_id, mid, str((game or {}).get("chat_username") or ""))
 
 
 def _url_btn(text: str, url: str, icon: str = "") -> InlineKeyboardButton:
@@ -819,15 +839,15 @@ def _keepout(ships) -> set:
 def _foe_shot_mark(
     data: str, foe_ships, aim_hits: set, foe_halo: set, r: int, c: int,
 ) -> InlineKeyboardButton | None:
-    """Попадание по чужому морю — те же знаки, что на общем поле прицела."""
+    """Попадание / потопление по чужому морю на скрытом поле."""
     cell = (r, c)
     foe = ship_at(foe_ships, r, c)
     if foe is not None and cell in aim_hits:
         if all(part in aim_hits for part in foe):
             return _mark(data, "🔥", "sunk")
-        return _mark(data, "💥", "wound")
+        return _mark(data, "🎇", "wound")
     if cell in aim_hits:
-        return _mark(data, "💥", "wound")
+        return _mark(data, "🎇", "wound")
     if cell in foe_halo:
         return _mark(data, "✨", "halo")
     return None
@@ -836,7 +856,7 @@ def _foe_shot_mark(
 def _cell_button(
     data: str, ships, hits: set, misses: set, halo: set, picked: set,
     blocked: set, r: int, c: int, reveal: bool, aim_hits: set = frozenset(),
-    foe_ships=(), foe_halo: set = frozenset(),
+    foe_ships=(), foe_halo: set = frozenset(), foe_misses: set = frozenset(),
 ) -> InlineKeyboardButton:
     cell = (r, c)
     ship = ship_at(ships, r, c)
@@ -847,7 +867,7 @@ def _cell_button(
         if sunk:
             return _mark(data, "🔥", "sunk")
         if cell in hits:
-            return _mark(data, "💥", "wound")
+            return _mark(data, "🎇", "wound")
         if cell in picked:
             icon = _icon(f"pick_{part}", f"ship_{part}")
             return _btn(text, data, "primary", icon=icon, icon_only=bool(icon))
@@ -855,6 +875,8 @@ def _cell_button(
         return _btn(text, data, icon=icon, icon_only=bool(icon))
     if cell in blocked:
         return _mark(data, "✨", "halo")
+    if cell in foe_misses:
+        return _mark(data, "🤷‍♂️", "foe_miss")
     if cell in misses:
         return _mark(data, "👎", "miss")
     foe_mark = _foe_shot_mark(data, foe_ships, aim_hits, foe_halo, r, c)
@@ -868,11 +890,12 @@ def _cell_button(
 def _grid(
     prefix: str, gid: int, page: int, ships, hits=(), misses=(), chosen=(),
     reveal: bool = False, frozen: bool = False, blocked=None, aim_hits=(),
-    foe_ships=(),
+    foe_ships=(), foe_misses=(),
 ) -> list:
     hits = set(hits or ())
     misses = set(misses or ())
     aim_hits = set(aim_hits or ())
+    foe_misses = set(foe_misses or ())
     foe_ships = list(foe_ships or ())
     picked = set(chosen or ())
     halo = halo_cells(ships, hits)
@@ -890,6 +913,7 @@ def _grid(
             row.append(_cell_button(
                 data, ships, hits, misses, halo, picked, blocked, r, c, reveal,
                 aim_hits=aim_hits, foe_ships=foe_ships, foe_halo=foe_halo,
+                foe_misses=foe_misses,
             ))
         rows.append(row)
     return rows
@@ -1144,12 +1168,12 @@ def _secret_view(game, uid: int):
     aim_hits, aim_misses = _outgoing(game, uid)
     foe = _other(game, uid)
     foe_ships = (game.get("boards") or {}).get(foe, {}).get("ships") or []
-    # Свои корабли + чужие попадания/потопленные тем же знаком, что на общем поле.
+    # Попадание/потоп по противнику и мимо соперника — отдельные premium-эмодзи.
     text = secret_fight_text(board["ships"], hits, misses)
     rows = _grid(
         prefix, gid, board.get("page", 0), board["ships"], hits,
-        set(misses) | set(aim_misses), reveal=True, aim_hits=aim_hits,
-        foe_ships=foe_ships,
+        aim_misses, reveal=True, aim_hits=aim_hits,
+        foe_ships=foe_ships, foe_misses=misses,
     )
     if game["phase"] == "fight":
         rows.append([_btn("Сдаться", f"{prefix}g:{gid}", icon="give")])
@@ -1353,6 +1377,18 @@ async def _ack_now(query, text: str = "", alert: bool = False) -> None:
         pass
 
 
+async def _ack_jump(query, url: str) -> bool:
+    """Перекинуть клиента на сообщение по ссылке. True — url принят."""
+    if query is None or not url:
+        return False
+    try:
+        await query.answer(url=str(url))
+        return True
+    except Exception as exc:
+        print(f"[SEA] jump {type(exc).__name__}")
+        return False
+
+
 async def _ack(query, text: str = "", alert: bool = False) -> None:
     if query is None:
         return
@@ -1484,17 +1520,21 @@ def _remember_hidden(board, sent) -> None:
     if sent is None:
         return
     eid = int(getattr(sent, "ephemeral_message_id", 0) or 0)
+    mid = int(getattr(sent, "message_id", 0) or 0)
     chat = getattr(sent, "chat", None)
     if eid and chat is not None:
         board["mode"] = "ephemeral"
         board["ephemeral_id"] = eid
         board["chat_id"] = int(chat.id)
+        # message_id нужен для ссылки «перейти к кораблям»
+        if mid:
+            board["message_id"] = mid
         return
-    mid = int(getattr(sent, "message_id", 0) or 0)
     if mid and chat is not None:
         board["mode"] = "dm"
         board["chat_id"] = int(chat.id)
         board["message_id"] = mid
+        board["ephemeral_id"] = 0
 
 
 async def _eph_edit_now(bot, chat_id: int, uid: int, eid: int, text: str, markup, only_markup: bool) -> bool:
@@ -2157,6 +2197,73 @@ async def _give_up(query, store, game, uid: int) -> None:
 _FLEET_ALERT = "Ваши корабли"
 
 
+async def _refresh_hidden_content(bot, game, uid: int) -> bool:
+    """Обновить текст/кнопки уже открытого скрытого моря."""
+    board = (game.get("boards") or {}).get(int(uid))
+    if not isinstance(board, dict) or bot is None:
+        return False
+    text, markup = _secret_view(game, uid)
+    if board.get("mode") == "ephemeral" and board.get("ephemeral_id"):
+        return await _edit_hidden(bot, board, uid, text, markup)
+    if board.get("mode") == "dm" and board.get("message_id"):
+        return await _edit(bot, board["chat_id"], board["message_id"], text, markup)
+    return False
+
+
+async def _reveal_and_jump(query, game, uid: int, *, toast: str) -> None:
+    """Показать корабли и перекинуть на их сообщение по ссылке."""
+    bot = game.get("bot")
+    board = game["boards"].setdefault(uid, _blank_board())
+    text, markup = _secret_view(game, uid)
+
+    jump = hidden_message_url(game, uid)
+    if jump:
+        await _refresh_hidden_content(bot, game, uid)
+        if await _ack_jump(query, jump):
+            _keep()
+            return
+
+    # Ссылки ещё нет или клиент не принял url — создаём скрытое заново
+    # и сразу прыгаем на него (или показываем через bind).
+    await _drop_hidden(bot, game, uid)
+
+    sent = await _ephemeral(bot, query, uid, text, markup, bind_callback=False)
+    if sent is not None:
+        _remember_hidden(board, sent)
+        jump = hidden_message_url(game, uid)
+        if jump and await _ack_jump(query, jump):
+            _keep()
+            return
+        # url не приняли — дошлём с bind, клиент сам откроет скрытое
+        await _drop_hidden(bot, game, uid)
+        sent = await _ephemeral(bot, query, uid, text, markup, bind_callback=True)
+        if sent is not None:
+            _remember_hidden(board, sent)
+            _keep()
+            return
+        await _ack_now(query, toast)
+        _keep()
+        return
+
+    sent = await _ephemeral(bot, query, uid, text, markup, bind_callback=True)
+    if sent is not None:
+        _remember_hidden(board, sent)
+        _keep()
+        return
+
+    sent = await _dm(bot, uid, text, markup)
+    if sent is not None and not _is_public_target(sent.chat.id, sent.message_id, game):
+        _remember_hidden(board, sent)
+        jump = hidden_message_url(game, uid)
+        if jump and await _ack_jump(query, jump):
+            _keep()
+            return
+        await _ack_now(query, "Корабли открыты в личке")
+        _keep()
+        return
+    await _ack_now(query, "Напишите боту /start и нажмите ещё раз.", alert=True)
+
+
 async def _open_sea(query, game, uid: int) -> None:
     if uid not in game.get("boards", {}):
         await _ack(query, "Вы не в этой партии.")
@@ -2164,7 +2271,7 @@ async def _open_sea(query, game, uid: int) -> None:
     if game.get("phase") not in {"place", "fight"}:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Ваше море", bind_callback=True)
+    await _reveal_and_jump(query, game, uid, toast="Ваше море")
 
 
 async def _open_fleet(query, game, uid: int) -> None:
@@ -2174,11 +2281,7 @@ async def _open_fleet(query, game, uid: int) -> None:
     if game.get("phase") not in {"place", "fight"}:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
-    # bind_callback обязателен: без него скрытое сообщение после алерта не уходит.
-    await _paint_secret(
-        game.get("bot"), game, uid, query,
-        toast=_FLEET_ALERT, bind_callback=True,
-    )
+    await _reveal_and_jump(query, game, uid, toast=_FLEET_ALERT)
 
 
 async def _turn_page(query, game, uid: int, page: int) -> None:

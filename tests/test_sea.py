@@ -306,11 +306,11 @@ def test_premium_slot_sits_on_the_button(monkeypatch):
     row = cells.inline_keyboard[3]
     assert [button.icon_custom_emoji_id for button in row[:3]] == ["201", "202", "203"]
     hidden = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1), (0, 2))], {(0, 0)}, set())
-    assert hidden.inline_keyboard[0][0].icon_custom_emoji_id == "5469785308386041323"
+    assert hidden.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["wound"]
     assert hidden.inline_keyboard[0][1].text == "\u3164"
     sunk = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1))], {(0, 0), (0, 1)}, set())
-    assert sunk.inline_keyboard[0][0].icon_custom_emoji_id == "5276032951342088188"
-    assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == "5276032951342088188"
+    assert sunk.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["sunk"]
+    assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == sea.FACE["sunk"]
     hand = sea.place_markup("sea:", 1, [((3, 3),)], 0, hand=True, tool=2)
     blocked = next(button for row in hand.inline_keyboard for button in row if button.callback_data == "sea:c:1:28")
     assert blocked.icon_custom_emoji_id == "5350475991691052862"
@@ -482,7 +482,11 @@ def test_secret_view_has_link_to_the_game_message():
         "players": [1, 2],
         "turn": 1,
         "boards": {
-            1: {"ships": [((0, 0),)], "page": 0},
+            1: {
+                "ships": [((0, 0),)], "page": 0,
+                "mode": "ephemeral", "ephemeral_id": 9,
+                "chat_id": -1001234567890, "message_id": 77,
+            },
             2: {"ships": [((1, 1),)], "page": 0},
         },
         "shots": {
@@ -492,11 +496,13 @@ def test_secret_view_has_link_to_the_game_message():
         "links": {1: "A", 2: "B"},
     }
     assert sea.game_message_url(game) == "https://t.me/c/1234567890/42"
+    assert sea.hidden_message_url(game, 1) == "https://t.me/c/1234567890/77"
     _text, markup = sea._secret_view(game, 1)
     urls = [getattr(button, "url", None) for row in markup.inline_keyboard for button in row]
     assert "https://t.me/c/1234567890/42" in urls
     game["chat_username"] = "CuteChat3"
     assert sea.game_message_url(game) == "https://t.me/CuteChat3/42"
+    assert sea.hidden_message_url(game, 1) == "https://t.me/CuteChat3/77"
     place = {
         **game,
         "phase": "place",
@@ -505,6 +511,20 @@ def test_secret_view_has_link_to_the_game_message():
     _text, place_markup = sea._secret_view(place, 1)
     place_urls = [getattr(button, "url", None) for row in place_markup.inline_keyboard for button in row]
     assert "https://t.me/CuteChat3/42" in place_urls
+
+
+def test_remember_hidden_keeps_message_id_for_jump_link():
+    board = sea._blank_board()
+    sent = type("S", (), {
+        "ephemeral_message_id": 15,
+        "message_id": 88,
+        "chat": type("C", (), {"id": -10055})(),
+    })()
+    sea._remember_hidden(board, sent)
+    assert board["mode"] == "ephemeral"
+    assert board["ephemeral_id"] == 15
+    assert board["message_id"] == 88
+    assert board["chat_id"] == -10055
 
 
 def test_secret_fight_shows_own_miss_right_away():
@@ -528,6 +548,9 @@ def test_secret_fight_shows_own_miss_right_away():
     miss = markup.inline_keyboard[5][5]
     assert miss.callback_data == "sea:c:9:45"
     assert getattr(miss, "icon_custom_emoji_id", None) == sea.FACE["miss"]
+    assert sea.FACE["wound"] == "5228784961011607179"
+    assert sea.FACE["sunk"] == "5458539816989760062"
+    assert sea.FACE["foe_miss"] == "5341779022219059533"
     hit_game = {
         **game,
         "shots": {
@@ -560,3 +583,14 @@ def test_secret_fight_shows_own_miss_right_away():
     assert getattr(secret_wound, "icon_custom_emoji_id", None) == getattr(
         public.inline_keyboard[4][4], "icon_custom_emoji_id", None,
     )
+    # Мимо соперника по вашему полю — отдельный значок.
+    foe_miss_game = {
+        **game,
+        "shots": {
+            1: {"hit": set(), "miss": set()},
+            2: {"hit": set(), "miss": {(2, 3)}},
+        },
+    }
+    _text, foe_markup = sea._secret_view(foe_miss_game, 1)
+    foe_miss = foe_markup.inline_keyboard[2][3]
+    assert getattr(foe_miss, "icon_custom_emoji_id", None) == sea.FACE["foe_miss"]
