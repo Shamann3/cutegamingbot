@@ -19,7 +19,7 @@ from aiogram.types import (
 from bot.games.sea import INLINE, invite_text, parse_sea, press
 
 router = Router(name="sea_inline")
-_THUMB = "https://i.imgur.com/E7MJClp.png"
+_THUMB = "https://postimg.cc/tYLyWncT"
 
 
 def _article(title: str, description: str, text: str, markup=None) -> InlineQueryResultArticle:
