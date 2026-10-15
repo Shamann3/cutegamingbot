@@ -1737,6 +1737,21 @@ def _commission_markup(gfund):
         return EMPTY
 
 
+def _soften_deadline(game, key: str, seconds: float, *, fresh: bool) -> None:
+    """После рестарта не закрываем стол из‑за простоя бота."""
+    now = time.time()
+    if fresh:
+        game[key] = now + float(seconds)
+        return
+    try:
+        deadline = float(game.get(key) or 0)
+    except (TypeError, ValueError):
+        deadline = 0.0
+    # Просроченный или почти истёкший срок — полный интервал заново.
+    if deadline <= now + 3.0:
+        game[key] = now + float(seconds)
+
+
 def _arm_place(store, game, fresh: bool = True) -> None:
     current = None
     try:
@@ -1746,8 +1761,7 @@ def _arm_place(store, game, fresh: bool = True) -> None:
     old = game.get("place_task")
     if old is not None and old is not current and not old.done():
         old.cancel()
-    if fresh or not game.get("place_deadline"):
-        game["place_deadline"] = time.time() + PLACE_SECONDS
+    _soften_deadline(game, "place_deadline", PLACE_SECONDS, fresh=fresh)
     game["place_token"] = int(game.get("place_token", 0)) + 1
     token = game["place_token"]
     game["place_task"] = asyncio.create_task(_place_deadline(store, game["id"], token))
@@ -1762,8 +1776,7 @@ def _arm_lobby(store, game, fresh: bool = True) -> None:
     old = game.get("lobby_task")
     if old is not None and old is not current and not old.done():
         old.cancel()
-    if fresh or not game.get("lobby_deadline"):
-        game["lobby_deadline"] = time.time() + LOBBY_SECONDS
+    _soften_deadline(game, "lobby_deadline", LOBBY_SECONDS, fresh=fresh)
     game["lobby_token"] = int(game.get("lobby_token", 0)) + 1
     token = game["lobby_token"]
     game["lobby_task"] = asyncio.create_task(_lobby_deadline(store, game["id"], token))
@@ -1778,8 +1791,7 @@ def _arm_turn(store, game, fresh: bool = True) -> None:
     old = game.get("turn_task")
     if old is not None and old is not current and not old.done():
         old.cancel()
-    if fresh or not game.get("turn_deadline"):
-        game["turn_deadline"] = time.time() + TURN_SECONDS
+    _soften_deadline(game, "turn_deadline", TURN_SECONDS, fresh=fresh)
     game["turn_token"] = int(game.get("turn_token", 0)) + 1
     token = game["turn_token"]
     game["turn_task"] = asyncio.create_task(_turn_deadline(store, game["id"], token))
@@ -2694,7 +2706,43 @@ def _pack_game(game) -> dict:
     return {key: _jsonify(value) for key, value in game.items() if key not in skip}
 
 
+def _prepare_restored(game) -> dict:
+    game["bot"] = None
+    game["place_task"] = None
+    game["turn_task"] = None
+    game["lobby_task"] = None
+    phase = str(game.get("phase") or "")
+    if phase == "lobby":
+        _soften_deadline(game, "lobby_deadline", LOBBY_SECONDS, fresh=False)
+    elif phase == "place":
+        _soften_deadline(game, "place_deadline", PLACE_SECONDS, fresh=False)
+    elif phase == "fight":
+        _soften_deadline(game, "turn_deadline", TURN_SECONDS, fresh=False)
+    return game
+
+
+_SEA_TABLES_STORE = None
+_SEA_INLINE_STORE = None
+_SEA_STORE_FAIL = False
 _SAVE_TASK = None
+
+
+def _redis_stores():
+    """Redis GameStore — тот же слой, что у шашек; переживает рестарт процесса."""
+    global _SEA_TABLES_STORE, _SEA_INLINE_STORE, _SEA_STORE_FAIL
+    if _SEA_STORE_FAIL:
+        return None, None
+    if _SEA_TABLES_STORE is not None and _SEA_INLINE_STORE is not None:
+        return _SEA_TABLES_STORE, _SEA_INLINE_STORE
+    try:
+        from bot.db_create.pklcode import LazyGameStore
+        _SEA_TABLES_STORE = LazyGameStore("games_sea")
+        _SEA_INLINE_STORE = LazyGameStore("inline_games_sea")
+    except Exception as exc:
+        _SEA_STORE_FAIL = True
+        print(f"[SEA] redis store {type(exc).__name__}")
+        return None, None
+    return _SEA_TABLES_STORE, _SEA_INLINE_STORE
 
 
 def _touch_save() -> None:
@@ -2711,55 +2759,109 @@ def _touch_save() -> None:
 
 async def _save_later() -> None:
     try:
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.15)
         _keep()
     except Exception as exc:
         print(f"[SEA] save {type(exc).__name__}")
 
 
+def _live_map(store: dict) -> dict:
+    return {
+        int(key): game
+        for key, game in store.items()
+        if isinstance(game, dict) and game.get("phase") not in {"over", "dead"}
+    }
+
+
+def _sync_redis(store, live: dict) -> None:
+    if store is None:
+        return
+    keep = {str(gid) for gid in live}
+    try:
+        for key in list(store.keys()):
+            if str(key) not in keep:
+                try:
+                    del store[key]
+                except Exception:
+                    pass
+        for gid, game in live.items():
+            store[str(gid)] = _pack_game(game)
+        store.save()
+    except Exception as exc:
+        print(f"[SEA] redis save {type(exc).__name__}")
+
+
 def _keep() -> None:
+    tables = _live_map(TABLES)
+    inline = _live_map(INLINE)
+    redis_tables, redis_inline = _redis_stores()
+    _sync_redis(redis_tables, tables)
+    _sync_redis(redis_inline, inline)
     try:
         blob = {
-            "tables": {
-                str(key): _pack_game(game)
-                for key, game in TABLES.items()
-                if game.get("phase") not in {"over", "dead"}
-            },
-            "inline": {
-                str(key): _pack_game(game)
-                for key, game in INLINE.items()
-                if game.get("phase") not in {"over", "dead"}
-            },
+            "tables": {str(key): _pack_game(game) for key, game in tables.items()},
+            "inline": {str(key): _pack_game(game) for key, game in inline.items()},
         }
         raw = json.dumps(blob, ensure_ascii=False, separators=(",", ":"))
         tmp = _LIVE.with_suffix(".tmp")
         tmp.write_text(raw, encoding="utf-8")
         tmp.replace(_LIVE)
     except Exception as exc:
-        print(f"[SEA] save {type(exc).__name__}")
+        print(f"[SEA] file save {type(exc).__name__}")
+
+
+def _ingest(raw_store, target: dict) -> int:
+    count = 0
+    if raw_store is None:
+        return 0
+    try:
+        items = list(raw_store.items())
+    except Exception:
+        return 0
+    for key, raw in items:
+        game = _revive(raw)
+        if not isinstance(game, dict):
+            continue
+        if game.get("phase") in {"over", "dead"}:
+            continue
+        try:
+            gid = int(game.get("id") or key)
+        except (TypeError, ValueError):
+            continue
+        game["id"] = gid
+        target[gid] = _prepare_restored(game)
+        count += 1
+    return count
+
+
+def _load_file_blob() -> dict:
+    if not _LIVE.exists():
+        return {}
+    try:
+        blob = json.loads(_LIVE.read_text(encoding="utf-8"))
+        return blob if isinstance(blob, dict) else {}
+    except Exception as exc:
+        print(f"[SEA] file load {type(exc).__name__}")
+        return {}
 
 
 def _load() -> None:
     global _IDS
-    if not _LIVE.exists():
-        return
-    try:
-        blob = json.loads(_LIVE.read_text(encoding="utf-8"))
-    except Exception as exc:
-        print(f"[SEA] load {type(exc).__name__}")
-        return
-    for name, store in (("tables", TABLES), ("inline", INLINE)):
-        for key, raw in (blob.get(name) or {}).items():
-            game = _revive(raw)
-            if not isinstance(game, dict):
-                continue
-            game["bot"] = None
-            game["place_task"] = None
-            game["turn_task"] = None
-            game["lobby_task"] = None
-            store[int(key)] = game
+    redis_tables, redis_inline = _redis_stores()
+    got = 0
+    got += _ingest(redis_tables, TABLES)
+    got += _ingest(redis_inline, INLINE)
+    if not TABLES and not INLINE:
+        blob = _load_file_blob()
+        got += _ingest(blob.get("tables") or {}, TABLES)
+        got += _ingest(blob.get("inline") or {}, INLINE)
+        if TABLES or INLINE:
+            # Старый JSON переносим в Redis, чтобы следующий рестарт уже шёл оттуда.
+            _keep()
     used = [*TABLES.keys(), *INLINE.keys()]
     _IDS = count((max(used) + 1) if used else 1)
+    if got:
+        print(f"[SEA] restored {got} live game(s)")
 
 
 _AWAKE: set = set()
@@ -2781,6 +2883,7 @@ def _wake(store) -> None:
             _arm_place(store, game, fresh=False)
         elif phase == "fight" and (game.get("turn_task") is None or game["turn_task"].done()):
             _arm_turn(store, game, fresh=False)
+    _keep()
 
 
 async def press(query, store) -> None:

@@ -207,6 +207,7 @@ STORE_EXPIRY_OVERRIDES: Dict[str, float] = {
 LIVE_BOARD_TTL = 7 * 24 * 3600.0
 LIVE_BOARD_STORES = {
     "gamessha", "button_gamessha", "inline_game_scah",
+    "games_sea", "inline_games_sea",
     "games_memory", "button_memory", "games_memory_inline",
     "gamesbingo", "button_bingo", "temp_bingo_data",
     "gameskosti", "button_kosti", "temp_kosti_data",

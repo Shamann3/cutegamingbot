@@ -414,6 +414,58 @@ def test_help_knows_the_game():
     assert "не касаются" in text
 
 
+def test_restart_extends_expired_deadlines_and_keeps_party():
+    import time as _time
+
+    now = 1_700_000_000.0
+    real = _time.time
+    try:
+        _time.time = lambda: now
+        restored = sea._prepare_restored({
+            "phase": "place",
+            "place_deadline": now - 10,
+            "bot": 1,
+            "place_task": 1,
+            "turn_task": 1,
+            "lobby_task": 1,
+        })
+        assert restored["bot"] is None
+        assert restored["place_task"] is None
+        assert restored["place_deadline"] == now + sea.PLACE_SECONDS
+        lobby = sea._prepare_restored({"phase": "lobby", "lobby_deadline": now - 1})
+        assert lobby["lobby_deadline"] == now + sea.LOBBY_SECONDS
+        fight = sea._prepare_restored({"phase": "fight", "turn_deadline": now - 120})
+        assert fight["turn_deadline"] == now + sea.TURN_SECONDS
+        fresh = {"phase": "fight", "turn_deadline": now + 40}
+        sea._soften_deadline(fresh, "turn_deadline", sea.TURN_SECONDS, fresh=False)
+        assert fresh["turn_deadline"] == now + 40
+    finally:
+        _time.time = real
+
+
+def test_keep_roundtrip_restores_live_party(tmp_path, monkeypatch):
+    monkeypatch.setattr(sea, "_LIVE", tmp_path / "sea_live.json")
+    monkeypatch.setattr(sea, "_SEA_TABLES_STORE", None)
+    monkeypatch.setattr(sea, "_SEA_INLINE_STORE", None)
+    monkeypatch.setattr(sea, "_SEA_STORE_FAIL", True)
+    sea.TABLES.clear()
+    sea.INLINE.clear()
+    gid = 77
+    sea.TABLES[gid] = sea._fresh(gid, -100, 5, 1, 0, "sea:")
+    sea.TABLES[gid]["phase"] = "lobby"
+    sea.TABLES[gid]["lobby_deadline"] = 1.0
+    sea.TABLES[gid]["links"][1] = "A"
+    sea._keep()
+    sea.TABLES.clear()
+    sea._load()
+    assert gid in sea.TABLES
+    assert sea.TABLES[gid]["phase"] == "lobby"
+    assert sea.TABLES[gid]["links"][1] == "A"
+    assert sea.TABLES[gid]["lobby_deadline"] > 1.0
+    sea.TABLES.clear()
+    sea.INLINE.clear()
+
+
 def test_secret_fight_shows_own_miss_right_away():
     game = {
         "phase": "fight",
