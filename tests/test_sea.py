@@ -41,8 +41,8 @@ def test_command_accepts_the_game_and_refuses_a_bare_mb():
 def test_chart_puts_letters_on_top_and_numbers_down_the_side():
     text = chart({})
     lines = text.splitlines()
-    assert lines[0].split() == list("ABCDEFGHIJ")
-    assert [line.split()[0] for line in lines[1:]] == [str(i) for i in range(1, 11)]
+    assert lines[0].split() == list("ABCDEFGH")
+    assert [line.split()[0] for line in lines[1:]] == [str(i) for i in range(1, 9)]
     assert lines[0].index("A") == lines[1].index(".")
     assert lines[-1].index(".") == lines[0].index("A")
 
@@ -54,14 +54,14 @@ def test_chart_escapes_ship_bows_inside_pre():
 
 
 def test_ships_stay_straight_and_do_not_touch_even_by_a_corner():
-    ok, ships, code = place_ship([], 4, 0, 0, True)
+    ok, ships, code = place_ship([], 3, 0, 0, True)
     assert ok and code == ""
-    assert ships[0] == ((0, 0), (0, 1), (0, 2), (0, 3))
-    ok, _, code = place_ship(ships, 1, 1, 4, True)
+    assert ships[0] == ((0, 0), (0, 1), (0, 2))
+    ok, _, code = place_ship(ships, 1, 1, 3, True)
     assert not ok and code == "touch"
-    ok, _, code = place_ship(ships, 4, 0, 7, True)
+    ok, _, code = place_ship(ships, 3, 0, 6, True)
     assert not ok and code == "edge"
-    ok, _, code = place_ship(ships, 4, 2, 0, True)
+    ok, _, code = place_ship(ships, 3, 2, 0, True)
     assert not ok and code == "count"
     ok, down, code = place_ship([], 3, 0, 0, False)
     assert ok and code == ""
@@ -71,16 +71,12 @@ def test_ships_stay_straight_and_do_not_touch_even_by_a_corner():
 def test_a_full_fleet_can_stand_without_touching():
     ships = []
     plan = [
-        (4, 0, 0, True),
-        (3, 2, 0, True),
-        (3, 2, 4, True),
-        (2, 4, 0, True),
-        (2, 4, 3, True),
-        (2, 4, 6, True),
-        (1, 6, 0, True),
-        (1, 6, 2, True),
-        (1, 6, 4, True),
-        (1, 6, 6, True),
+        (3, 0, 0, True),
+        (2, 2, 0, True),
+        (2, 2, 3, True),
+        (1, 4, 0, True),
+        (1, 4, 2, True),
+        (1, 4, 4, True),
     ]
     for length, r, c, across in plan:
         ok, ships, code = place_ship(ships, length, r, c, across)
@@ -161,18 +157,16 @@ def test_public_place_has_no_map_and_the_fight_hides_a_live_fleet():
 
 def test_button_rows_stay_within_eight_and_keep_coordinates():
     kb = aim_markup("sea:", 7, 0, {})
-    assert [button.text for button in kb.inline_keyboard[0]] == ["◎", *"ABCDE"]
-    assert [row[0].text for row in kb.inline_keyboard[1:11]] == [str(i) for i in range(1, 11)]
-    assert kb.inline_keyboard[1][1].callback_data == "sea:c:7:0"
+    assert [button.text for button in kb.inline_keyboard[0]] == list("ABCDEFGH")
+    assert len(kb.inline_keyboard[1]) == 8
+    assert kb.inline_keyboard[1][0].callback_data == "sea:c:7:0"
+    assert kb.inline_keyboard[1][5].callback_data == "sea:c:7:5"
     for row in kb.inline_keyboard:
         assert len(row) <= 8
-    other = aim_markup("sea:", 7, 1, {})
-    assert other.inline_keyboard[0][1].text == "F"
-    assert other.inline_keyboard[1][1].callback_data == "sea:c:7:5"
-    place = place_markup("sea:", 1, [], 0, True, 3)
+    place = place_markup("sea:", 1, [], 0)
     assert any(button.text == "Готово" for row in place.inline_keyboard for button in row)
     assert any(button.text == "A" for row in place.inline_keyboard for button in row)
-    assert any(button.text == "1" for row in place.inline_keyboard for button in row)
+    assert any(button.text == "H" for row in place.inline_keyboard for button in row)
     for row in place.inline_keyboard:
         assert len(row) <= 8
 
@@ -196,10 +190,10 @@ def test_the_table_shows_the_next_step():
     assert "Мои корабли" in guide_text("fight")
     assert "столбца" in label_hint("a")
     assert "ряда" in label_hint("n")
-    assert next_length([]) == 4
-    four = [((0, 0), (0, 1), (0, 2), (0, 3))]
-    assert next_length(four) == 3
-    assert next_length(four, 4) == 3
+    assert next_length([]) == 3
+    three = [((0, 0), (0, 1), (0, 2))]
+    assert next_length(three) == 2
+    assert next_length(three, 3) == 2
     assert ship_face(4, 1, True).startswith("✓")
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
@@ -210,10 +204,10 @@ def test_the_table_shows_the_next_step():
     board = aim_markup("sea:", 3, 0, {})
     names = [button.text for row in board.inline_keyboard for button in row]
     assert "Как играть" in names and "Мои корабли" in names and "Сдаться" in names
-    sea_board = place_markup("sea:", 3, [], 0, True, 4)
+    sea_board = place_markup("sea:", 3, [((0, 0), (0, 1), (0, 2))], 0, 0)
     sea_names = [button.text for row in sea_board.inline_keyboard for button in row]
     assert "Как играть" in sea_names and "Готово" in sea_names
-    assert any("Вправо" in name for name in sea_names)
+    assert "🎲 Ещё" in sea_names and "↻" in sea_names and "⬆️" in sea_names
     assert any(button.callback_data.startswith("sea:h:") for row in sea_board.inline_keyboard for button in row)
 
 
@@ -260,6 +254,23 @@ def test_inline_card_is_the_shared_table():
     assert "Без ставки" in card.input_message_content.message_text
 
 
+def test_auto_place_is_random_and_a_ship_can_move():
+    from bot.games.sea import _jsonify, _revive, scatter, shift_ship, turn_ship
+
+    layouts = {tuple(tuple(ship) for ship in scatter()) for _ in range(12)}
+    assert len(layouts) > 1
+    for ships in layouts:
+        assert fleet_ready(ships)
+    base = [((0, 0), (0, 1))]
+    ok, moved = shift_ship(base, 0, 1, 0)
+    assert ok and moved[0] == ((1, 0), (1, 1))
+    ok, spun = turn_ship(base, 0)
+    assert ok and spun[0][0][1] == spun[0][1][1]
+    packed = _revive(_jsonify({"ships": base, "hits": {(0, 0)}}))
+    assert packed["ships"][0] == ((0, 0), (0, 1))
+    assert (0, 0) in packed["hits"]
+
+
 def test_help_knows_the_game():
     from bot.games.howto import read_howto
     from bot.games.rules import rules_html
@@ -269,5 +280,5 @@ def test_help_knows_the_game():
     text = rules_html("sea")
     assert text is not None
     assert "Морской бой" in text
-    assert "10" in text
+    assert "8" in text
     assert "не касаются" in text

@@ -10,6 +10,8 @@ dist
 
 # Runtime soft-restart settings (локальный fallback; на проде — Redis)
 data/sr_runtime.json
+bot/games/sea_live.json
+bot/games/sea_live.tmp
 
 # Python
 server/.venv
