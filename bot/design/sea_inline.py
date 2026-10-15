@@ -19,6 +19,7 @@ from aiogram.types import (
 from bot.games.sea import INLINE, invite_text, parse_sea, press
 
 router = Router(name="sea_inline")
+_THUMB = "https://i.imgur.com/E7MJClp.png"
 
 
 def _article(title: str, description: str, text: str, markup=None) -> InlineQueryResultArticle:
@@ -28,6 +29,7 @@ def _article(title: str, description: str, text: str, markup=None) -> InlineQuer
         description=description,
         input_message_content=InputTextMessageContent(message_text=text, parse_mode="HTML"),
         reply_markup=markup,
+        thumb_url=_THUMB,
     )
 
 
@@ -36,7 +38,7 @@ def catalog_article(user_id: int) -> InlineQueryResultArticle:
     button = InlineKeyboardButton(text="Создать игру", callback_data=f"seai:n:{int(user_id)}:0")
     return _article(
         "Морской бой",
-        "Без ставки. Со ставкой: морской бой 10",
+        "🛥 Начать игру в морской бой",
         invite_text(0),
         InlineKeyboardMarkup(inline_keyboard=[[button]]),
     )
@@ -56,8 +58,8 @@ async def _offer(query_text: str, user_id: int, results: list) -> None:
     if kind != "play":
         results.append(_article(
             "Морской бой",
-            "морской бой или морской бой 10",
-            "🚢 <b>Морской бой</b>\nНапишите: <code>морской бой</code> или <code>морской бой 10</code>",
+            "🛥 Начать игру в морской бой",
+            "<tg-emoji emoji-id='6001395499628762723'>🎁</tg-emoji> <b>Морской бой</b>\nНапишите : <code>@CuteGamingBot морской бой</code> или <code>@CuteGamingBot морской бой 10</code>",
         ))
         return
     bet = int(bet or 0)
@@ -67,9 +69,9 @@ async def _offer(query_text: str, user_id: int, results: list) -> None:
         if have < bet:
             have_text = f"{have:,}".replace(",", ".")
             results.append(_article(
-                "Не хватает кут",
+                "💰 Не хватает кут",
                 f"На балансе {have_text}",
-                "🚢 <b>Морской бой</b>\nНа балансе меньше ставки.",
+                "<tg-emoji emoji-id='6001395499628762723'>🎁</tg-emoji> <b>Морской бой</b>\n<i>На балансе меньше ставки.</i>",
             ))
             return
     shown = "Без ставки" if bet <= 0 else "Ставка " + f"{bet:,}".replace(",", ".") + " кут"

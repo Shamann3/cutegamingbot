@@ -198,7 +198,7 @@ def test_the_table_shows_the_next_step():
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
     assert "Ставка" not in lobby
-    assert "<b>A</b>" in lobby
+    assert "• <b>A</b>" in lobby
     paid = lobby_text({"bet": 10, "creator": 1, "participants": [1, 2], "links": {1: "A", 2: "B"}})
     assert "5381975814415866082" in paid
     assert "Ставка - 10 кут" in paid
@@ -254,6 +254,7 @@ def test_inline_card_is_the_shared_table():
     card = catalog_article(7)
     button = card.reply_markup.inline_keyboard[0][0]
     assert button.callback_data == "seai:n:7:0"
+    assert card.thumb_url == "https://i.imgur.com/E7MJClp.png"
     assert "Ставка" not in card.input_message_content.message_text
     assert "Морской бой" in card.input_message_content.message_text
 
@@ -350,8 +351,23 @@ def test_levels_squares_and_the_coin_ring():
         "Все корабли соперника потоплены.",
         9,
     )
-    assert "Победа" in page and "<b>A</b>" in page and "+9 кут" in page
+    assert "5469967260380612012" in page
+    assert "<b>A - победитель!</b>" in page
+    assert "<b>Выигрыш - 9 кут</b>" in page
+    assert "<i>Все корабли соперника потоплены.</i>" in page
     assert len(sea.end_markup({"boards": {}}, 1, None).inline_keyboard) == 0
+
+
+def test_a_fast_repeat_asks_once_to_wait():
+    sea._PACE_AT.clear()
+    sea._WARN_AT.clear()
+    assert sea._pace(9, 3, stamp=True) == ""
+    assert sea._pace(9, 3, stamp=False) == "alert"
+    assert sea._pace(9, 3, stamp=False) == "quiet"
+    sea._PACE_AT[(9, 3)] = 0.0
+    assert sea._pace(9, 3, stamp=True) == ""
+    sea._drop_pace(9)
+    assert (9, 3) not in sea._PACE_AT
 
 
 def test_help_knows_the_game():

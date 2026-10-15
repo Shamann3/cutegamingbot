@@ -46,7 +46,7 @@ LOBBY_SECONDS = 600          # стол без старта сам закрыв�
 TURN_SECONDS = 60            # минута на выстрел
 MISS_LIMIT = 3               # столько пропущенных минут — и игрок сдаётся
 PAGE = 5                     # столбцов на экране кнопок. Слева ещё цифра, в ряду не больше 8
-CLICK_GAP = 2.0              # пауза между кнопками. Ответ уходит сразу, правка сообщения — нет
+CLICK_GAP = 1.0              # слишком быстрый повтор: окно сразу, поле не трогаем
 WORDS = ("морскойбой", "battleship")
 PHRASES = ("морской бой", "морская битва")
 
@@ -55,6 +55,8 @@ TABLES: dict[int, dict] = {}
 INLINE: dict[int, dict] = {}
 _LOCKS: dict[int, asyncio.Lock] = {}
 _OPEN_AT: dict[int, float] = {}
+_PACE_AT: dict[tuple[int, int], float] = {}
+_WARN_AT: dict[tuple[int, int], float] = {}
 _LIVE = Path(__file__).with_name("sea_live.json")
 EMPTY = InlineKeyboardMarkup(inline_keyboard=[])
 _PLACE_WHY = {
@@ -968,7 +970,7 @@ def lobby_text(game) -> str:
     if stake:
         lines.append(stake)
     for uid in game["participants"]:
-        lines.append(_bold(game["links"].get(uid, "Игрок")))
+        lines.append("• " + _bold(game["links"].get(uid, "Игрок")))
     return "\n".join(lines)
 
 
@@ -1065,14 +1067,15 @@ def _secret_view(game, uid: int):
 
 
 def end_text(game, winner: int, how: str, net: int) -> str:
+    raw = str((game.get("links") or {}).get(winner, "Игрок"))
+    name = raw.replace("<b>", "").replace("</b>", "")
     lines = [
-        f"{_tag('title', '🛥')} <b>Морской бой</b>",
-        f"{_tag('halo', '✨')} <b>Победа</b>",
-        _bold((game.get("links") or {}).get(winner, "Игрок")),
-        how,
+        f"{_tag('title', '🛥')} Морской бой",
+        f"<tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji> <b>{name} - победитель!</b>",
     ]
     if int(game.get("bet") or 0) > 0:
-        lines.append(f"{_tag('zone', '🪙')} +{_num(net)} кут")
+        lines.append(f"{_tag('zone', '🪙')} <b>Выигрыш - {_num(net)} кут</b>")
+    lines.append(f"<i>{how}</i>")
     return "\n".join(lines)
 
 
@@ -1164,6 +1167,39 @@ def _drop_task(game, key: str) -> None:
     if task is not None and task is not current and not task.done():
         task.cancel()
     game[key] = None
+
+
+def _pace(gid: int, uid: int, *, stamp: bool) -> str:
+    """Пусто — нажатие можно принять. alert — одно окно. quiet — кружок гаснет без второго окна."""
+    now = time.monotonic()
+    key = (int(gid), int(uid))
+    if now - _PACE_AT.get(key, 0.0) < float(CLICK_GAP):
+        if now - _WARN_AT.get(key, 0.0) >= float(CLICK_GAP):
+            _WARN_AT[key] = now
+            return "alert"
+        return "quiet"
+    if stamp:
+        _PACE_AT[key] = now
+        _WARN_AT.pop(key, None)
+    return ""
+
+
+def _drop_pace(gid: int) -> None:
+    prefix = int(gid)
+    for box in (_PACE_AT, _WARN_AT):
+        for key in [item for item in box if item[0] == prefix]:
+            box.pop(key, None)
+
+
+async def _hold_pace(query, gid: int, uid: int) -> bool:
+    kind = _pace(gid, uid, stamp=False)
+    if not kind:
+        return False
+    if kind == "alert":
+        await _ack_now(query, _PACE, alert=True)
+    else:
+        await _ack_now(query)
+    return True
 
 
 def _too_soon(game, uid: int, *, stamp: bool) -> bool:
@@ -1423,13 +1459,16 @@ async def _edit_hidden(bot, board, uid: int, text: str, markup, only_markup: boo
     return await _eph_edit_now(bot, chat_id, int(uid), eid, text, markup, bool(only_markup))
 
 
-async def _ephemeral(bot, query, uid: int, text: str, markup):
+async def _ephemeral(bot, query, uid: int, text: str, markup, bind_callback: bool = True):
     """Первое скрытое море. Правки потом идут через editEphemeralMessageText."""
     msg = getattr(query, "message", None)
     if msg is None or getattr(msg, "chat", None) is None:
         return None
     if getattr(msg, "ephemeral_message_id", None):
         return None
+    params = {"receiver_user_id": int(uid), "replace_callback_query_message": False}
+    if bind_callback:
+        params["callback_query_id"] = str(query.id)
     try:
         return await bot.send_message(
             chat_id=msg.chat.id,
@@ -1437,18 +1476,14 @@ async def _ephemeral(bot, query, uid: int, text: str, markup):
             reply_markup=markup,
             parse_mode="HTML",
             disable_web_page_preview=True,
-            ephemeral_message_parameters=EphemeralMessageParameters(
-                receiver_user_id=int(uid),
-                callback_query_id=str(query.id),
-                replace_callback_query_message=False,
-            ),
+            ephemeral_message_parameters=EphemeralMessageParameters(**params),
         )
     except Exception as exc:
         print(f"[SEA] ephemeral {type(exc).__name__}")
         return None
 
 
-async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_markup: bool = False) -> None:
+async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_markup: bool = False, quiet: bool = False, bind_callback: bool = True) -> None:
     """Море с кораблями. В общее сообщение партии оно не пишется."""
     text, markup = _secret_view(game, uid)
     board = game["boards"].setdefault(uid, _blank_board())
@@ -1461,9 +1496,14 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
             return await _markup_only(bot, chat_id, message_id, markup)
         return await _edit(bot, chat_id, message_id, text, markup)
 
+    async def _tell(text: str = "", alert: bool = False) -> None:
+        if quiet or query is None:
+            return
+        await _ack(query, text, alert=alert)
+
     if surface == "dm":
         msg = query.message
-        await _ack(query, toast)
+        await _tell(toast)
         if await _save(msg.chat.id, msg.message_id):
             board["mode"] = "dm"
             board["chat_id"] = int(msg.chat.id)
@@ -1483,32 +1523,34 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
             board["mode"] = "ephemeral"
             board["ephemeral_id"] = eid
             board["chat_id"] = int(msg.chat.id)
-        await _ack(query, toast)
+        await _tell(toast)
         if await _edit_hidden(bot, board, uid, text, markup, only_markup):
             return
-        await _ack(query, "Нажмите ещё раз.")
+        await _tell("Нажмите ещё раз.")
         return
 
     if surface == "public" and query is not None:
-        if _queue(("eph_new", bot, query, uid, text, markup, board, toast or "Ваше море")):
+        if board.get("mode") == "ephemeral" and board.get("ephemeral_id"):
+            await _tell(toast)
+            await _edit_hidden(bot, board, uid, text, markup, only_markup)
             return
-        sent = await _ephemeral(bot, query, uid, text, markup)
+        if _queue(("eph_new", bot, query, uid, text, markup, board, toast or "Ваше море", bind_callback)):
+            return
+        sent = await _ephemeral(bot, query, uid, text, markup, bind_callback)
         if sent is not None:
             _remember_hidden(board, sent)
-            await _ack(query, toast or "Ваше море")
+            await _tell(toast or "Ваше море")
             return
 
     if board.get("mode") == "ephemeral" and board.get("ephemeral_id"):
         if await _edit_hidden(bot, board, uid, text, markup, only_markup):
-            if query is not None:
-                await _ack(query, toast)
+            await _tell(toast)
             return
         board["mode"] = "none"
 
     if board.get("mode") == "dm" and board.get("message_id"):
         if await _save(board["chat_id"], board["message_id"]):
-            if query is not None:
-                await _ack(query, toast or "Море обновлено")
+            await _tell(toast or "Море обновлено")
             return
         board["mode"] = "none"
 
@@ -1520,9 +1562,9 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
         board["mode"] = "dm"
         board["chat_id"] = int(sent.chat.id)
         board["message_id"] = int(sent.message_id)
-        await _ack(query, "Море открыто в личке: в этом чате скрытое сообщение не ушло.")
+        await _tell("Море открыто в личке: в этом чате скрытое сообщение не ушло.")
         return
-    await _ack(query, "Напишите боту /start и нажмите «Моё море» ещё раз.", alert=True)
+    await _tell("Напишите боту /start и нажмите «Моё море» ещё раз.", alert=True)
 
 
 def _plain_name(user) -> str:
@@ -1717,8 +1759,10 @@ async def _close_quiet(store, game, text: str) -> None:
             if _is_public_target(board["chat_id"], board["message_id"], game):
                 continue
             await _edit(bot, board["chat_id"], board["message_id"], "🚢 Партия снята.", EMPTY)
-    store.pop(game["id"], None)
-    _LOCKS.pop(game["id"], None)
+    gid = int(game["id"])
+    store.pop(gid, None)
+    _LOCKS.pop(gid, None)
+    _drop_pace(gid)
     _keep()
 
 
@@ -1744,8 +1788,10 @@ async def _finish(store, game, winner: int, reason: str) -> None:
         await _show(bot, game, end_text(game, winner, how, net), end_markup(game, winner, gfund))
         for uid in list(game.get("players") or []):
             await _paint_secret(bot, game, int(uid), query=None)
-    store.pop(game["id"], None)
-    _LOCKS.pop(game["id"], None)
+    gid = int(game["id"])
+    store.pop(gid, None)
+    _LOCKS.pop(gid, None)
+    _drop_pace(gid)
     _keep()
 
 
@@ -1983,6 +2029,9 @@ async def _give_up(query, store, game, uid: int) -> None:
     await _ack(query, "Партия уже закрыта")
 
 
+_FLEET_ALERT = "Карта с вашими кораблями отправлена в этот чат"
+
+
 async def _open_sea(query, game, uid: int) -> None:
     if uid not in game.get("boards", {}):
         await _ack(query, "Вы не в этой партии.")
@@ -1991,6 +2040,20 @@ async def _open_sea(query, game, uid: int) -> None:
         await _ack(query, "Море откроется, когда партия начнётся.")
         return
     await _paint_secret(game.get("bot"), game, uid, query)
+
+
+async def _open_fleet(query, game, uid: int) -> None:
+    if uid not in game.get("boards", {}):
+        await _ack(query, "Вы не в этой партии.")
+        return
+    if game.get("phase") not in {"place", "fight"}:
+        await _ack(query, "Море откроется, когда партия начнётся.")
+        return
+    await _ack(query, _FLEET_ALERT, alert=True)
+    await _paint_secret(
+        game.get("bot"), game, uid, query,
+        quiet=True, bind_callback=False,
+    )
 
 
 async def _turn_page(query, game, uid: int, page: int) -> None:
@@ -2153,7 +2216,7 @@ async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
         return
     ok, ships, code = hand_put(board["ships"], r, c, hand_budget(game_fleet(game)))
     if not ok:
-        await _ack(query, _HAND_NOTE.get(code, "Сюда нельзя"))
+        await _ack(query, _HAND_NOTE.get(code, "Сюда нельзя"), alert=True)
         return
     board["ships"] = ships
     board["ready"] = False
@@ -2287,8 +2350,9 @@ async def _level(query, game, uid: int, key: str) -> None:
 
 
 async def _route(query, store, game, action: str, parts, uid: int) -> None:
-    if not _ready_touch(game, uid):
-        await _ack(query, _PACE)
+    kind = _pace(int(game["id"]), uid, stamp=True)
+    if kind:
+        await _ack(query, _PACE if kind == "alert" else "", alert=kind == "alert")
         return
     if action not in {"g", "q"}:
         game["confirm"] = None
@@ -2307,7 +2371,10 @@ async def _route(query, store, game, action: str, parts, uid: int) -> None:
     if action == "g":
         await _give_up(query, store, game, uid)
         return
-    if action in {"d", "f"}:
+    if action == "f":
+        await _open_fleet(query, game, uid)
+        return
+    if action == "d":
         await _open_sea(query, game, uid)
         return
     if action == "p":
@@ -2372,11 +2439,6 @@ async def _inline_new(query, store, uid: int, parts) -> None:
     if uid != owner or bet < 0:
         await _ack(query, "Эту партию открывает тот, кто её вызвал.", alert=True)
         return
-    now = time.monotonic()
-    if now - float(_OPEN_AT.get(uid, 0.0)) < 2:
-        await _ack(query, _PACE)
-        return
-    _OPEN_AT[uid] = now
     msg = getattr(query, "message", None)
     inline_id = str(getattr(query, "inline_message_id", "") or "")
     chat_id = 0
@@ -2406,7 +2468,11 @@ async def _inline_new(query, store, uid: int, parts) -> None:
         have = await read_stake_balance(uid)
         if int(have or 0) < bet:
             _OPEN_AT.pop(uid, None)
-            await _ack(query, "Недостаточно кут.", alert=True)
+            if msg is not None:
+                await _need_funds(msg, uid, bet)
+                await _ack(query)
+            else:
+                await _ack(query, "Недостаточно кут.", alert=True)
             return
     gid = next(_IDS)
     game = _fresh(gid, chat_id, message_id, uid, bet, "seai:")
@@ -2447,11 +2513,13 @@ async def _apply(job) -> None:
         elif kind == "eph_edit":
             await _eph_edit_now(job[1], job[2], job[3], job[4], job[5], job[6], job[7])
         elif kind == "eph_new":
-            _bot, query, uid, text, markup, board, toast = job[1:]
-            sent = await _ephemeral(_bot, query, uid, text, markup)
+            _bot, query, uid, text, markup, board, toast = job[1:8]
+            bind = job[8] if len(job) > 8 else True
+            sent = await _ephemeral(_bot, query, uid, text, markup, bind)
             if sent is not None:
                 _remember_hidden(board, sent)
-                await _ack_now(query, toast)
+                if toast:
+                    await _ack_now(query, toast)
                 return
             sent = await _dm(_bot, uid, text, markup)
             if sent is not None:
@@ -2469,9 +2537,12 @@ def _follow(gid: int, jobs: list):
     prev = _TAILS.get(int(gid))
 
     async def run():
-        opening = [job for job in jobs if job[0] == "eph_new"]
+        opening = [
+            job for job in jobs
+            if job[0] == "eph_new" and (len(job) < 9 or job[8])
+        ]
         acks = [job for job in jobs if job[0] == "ack"]
-        rest = [job for job in jobs if job[0] not in {"eph_new", "ack"}]
+        rest = [job for job in jobs if job not in opening and job[0] != "ack"]
         for job in opening:
             await _apply(job)
         for job in acks:
@@ -2508,6 +2579,9 @@ async def _press(query, store) -> None:
         if not data.startswith("seai:"):
             await _ack(query)
             return
+        if await _hold_pace(query, 0, uid):
+            return
+        _pace(0, uid, stamp=True)
         await _inline_new(query, store, uid, parts)
         return
     try:
@@ -2516,8 +2590,7 @@ async def _press(query, store) -> None:
         await _ack(query, "Кнопка устарела")
         return
     peek = store.get(gid)
-    if peek and peek.get("phase") not in {"over", "dead"} and _too_soon(peek, uid, stamp=False):
-        await _ack_now(query, _PACE)
+    if peek and peek.get("phase") not in {"over", "dead"} and await _hold_pace(query, gid, uid):
         return
     jobs = []
     token = _JOBS.set(jobs)
@@ -2535,9 +2608,7 @@ async def _press(query, store) -> None:
                     _touch_save()
     finally:
         _JOBS.reset(token)
-    task = _follow(gid, jobs)
-    if task is not None:
-        await task
+    _follow(gid, jobs)
 
 
 def _jsonify(value):
@@ -2673,6 +2744,62 @@ async def press(query, store) -> None:
         await _ack(query, "Не вышло. Нажмите ещё раз.")
 
 
+async def _need_funds(message, uid: int, bet: int) -> None:
+    """То же окно, что у шашек: купить куты или узнать, как их заработать."""
+    try:
+        from bot.config.config import TOKEN, donate_bet, timeoutdonate
+        from main import get_bot_username_by_token, pending_context, send_invoice_to_user
+    except Exception as exc:
+        print(f"[SEA] funds import {type(exc).__name__}")
+        try:
+            await message.reply("Недостаточно кут для этой ставки.")
+        except Exception:
+            pass
+        return
+    try:
+        bot_username = await get_bot_username_by_token(TOKEN)
+    except Exception:
+        bot_username = None
+    bot_username = bot_username or "CuteGamingBot"
+    result = int(bet) * donate_bet
+    if isinstance(result, float) and result.is_integer():
+        stars = str(int(result))
+    else:
+        stars = str(int(result)) if isinstance(result, int) else str(result)
+    pending_context[int(uid)] = {"stars_amount": stars, "sent": False}
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💫 Купить {_num(int(bet))} кут 💰",
+            url=f"https://t.me/{bot_username}?start=insert_{stars}_+",
+        )],
+        [InlineKeyboardButton(text="Как заработать кут?", callback_data="9help_btn22")],
+    ])
+    try:
+        await message.reply(
+            "<tg-emoji emoji-id='5458574017814337878'>💰</tg-emoji>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:
+        print(f"[SEA] funds {type(exc).__name__}")
+        return
+
+    async def _later() -> None:
+        try:
+            await asyncio.sleep(float(timeoutdonate))
+            ctx = pending_context.get(int(uid))
+            if not ctx or ctx.get("sent"):
+                return
+            invoice = await send_invoice_to_user(message, stars)
+            if invoice is not None:
+                ctx["manual_message_id"] = invoice.message_id
+        except Exception as exc:
+            print(f"[SEA] invoice {type(exc).__name__}")
+
+    asyncio.create_task(_later())
+
+
 async def sea_open(message: Message) -> None:
     kind, bet = parse_sea(getattr(message, "text", "") or "")
     if kind in {"ignore", "help"}:
@@ -2710,10 +2837,7 @@ async def sea_open(message: Message) -> None:
         from bot.funcs.stake_gate import read_stake_balance
         have = await read_stake_balance(uid)
         if int(have or 0) < bet:
-            try:
-                await message.reply("Недостаточно кут для этой ставки.")
-            except Exception:
-                pass
+            await _need_funds(message, uid, bet)
             return
     gid = next(_IDS)
     chat = getattr(message, "chat", None)
