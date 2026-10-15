@@ -5,6 +5,8 @@ import random
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.types import Message, ContentType
+import html
+import re
 import uuid
 import time
 from bot.funcs.help import wordhelp,brak,ffunc,other,gamehelp,textstore,textglobhelp,textzabhelp,clanss
@@ -62,6 +64,13 @@ async def create_user_link(user_id: int, first_name: str, username: str = None) 
     if not str(first_name or "").strip() and not str(username or "").strip():
         return "У пользователя нет имени."
     return person_name_html(first_name, username, empty="У пользователя нет имени.")
+
+
+def _rps_safe_name(name) -> str:
+    """Имя для HTML в КНБ: без тегов, чтобы Telegram не ломал разметку."""
+    text = re.sub(r'[<>/{}"]', "", str(name or ""))
+    text = " ".join(text.split()) or "Игрок"
+    return html.escape(text)
 
 inline_temp_whispers: Dict[int, Dict] = {}
 
@@ -2773,7 +2782,7 @@ async def inline_knb_create_game_callback(callback_query: types.CallbackQuery):
     game_id = str(uuid.uuid4())
     game_style = random.choice(game_style1)  # Выбираем случайный стиль для игры
     user_id = callback_query.from_user.id
-    first_name = re.sub(r'[<>/{}"]' , '' , callback_query.from_user.first_name)
+    first_name = _rps_safe_name(callback_query.from_user.first_name)
     username = callback_query.from_user.username
     await inline_add_or_update_user_info(bot1 , user_id , first_name , username,db, start_balance)
     data_parts = callback_query.data.split(":")
@@ -2797,7 +2806,7 @@ async def inline_knb_create_game_callback(callback_query: types.CallbackQuery):
         "choices": {},
         'opponent': None,  # Противник ещё не присоединился
         'style': game_style,  # Сохраняем стиль игры
-        'creator_name': callback_query.from_user.first_name,  # Имя создателя
+        'creator_name': first_name,  # Имя создателя уже безопасно для HTML
         'opponent_id' : None,
         'opponent_name': None,
         'opponent_username' : None,# Имя противника (пока нет)
@@ -2816,14 +2825,20 @@ async def inline_knb_create_game_callback(callback_query: types.CallbackQuery):
     if "inline_message_id" not in rps_games [ game_id ]:
         rps_games [ game_id ] [ "inline_message_id" ] = callback_query.inline_message_id
     inline_message_id = rps_games [ game_id ] [ "inline_message_id" ]
-    await bot1.edit_message_text(
-        f"<b><tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji> Играем в Камень-Ножницы-Бумага</b>\n"
-        f"<b>{bet_message}</b>"
-        f"<b>{game_style[0]} {callback_query.from_user.first_name}</b>",
-        inline_message_id=inline_message_id,
-        reply_markup=keyboard,
-        parse_mode='HTML'
-    )
+    try:
+        await bot1.edit_message_text(
+            f"<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji> <b>Играем в Камень-Ножницы-Бумага</b>\n"
+            f"{bet_message}"
+            f"<b>{game_style[0]} {first_name}</b>",
+            inline_message_id=inline_message_id,
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+    except Exception as exc:
+        print(f"[RPS] create edit {type(exc).__name__}: {exc}")
+        await callback_query.answer("Не вышло открыть партию. Нажмите ещё раз.", show_alert=True)
+        rps_games.pop(game_id, None)
+        return
     await callback_query.answer("❕ Игра создана!", show_alert=True)
     rps_games.save()
 
@@ -2975,17 +2990,17 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
 
             # сохраняем данные второго игрока
             game['opponent_id'] = user_id
-            game['opponent_name'] = callback_query.from_user.first_name
+            game['opponent_name'] = _rps_safe_name(callback_query.from_user.first_name)
             game['opponent_username'] = callback_query.from_user.username
             rps_games.save()
 
             # ---- UI ----
             style = game.get('style', ["<tg-emoji emoji-id='5472404692975753822'>✊</tg-emoji>", "<tg-emoji emoji-id='5472354553527541051'>✋</tg-emoji>"])
-            creator_name = game.get('creator_name') or (await db.get_firstname_by_user_id(creator_id))
-            opponent_name = game.get('opponent_name') or (await db.get_firstname_by_user_id(user_id))
+            creator_name = _rps_safe_name(game.get('creator_name') or (await db.get_firstname_by_user_id(creator_id)))
+            opponent_name = _rps_safe_name(game.get('opponent_name') or (await db.get_firstname_by_user_id(user_id)))
 
             bet_msg = f"<tg-emoji emoji-id='5195369389599265575'>💰</tg-emoji> Ставка : {bet_amount:,.0f} кут\n".replace(",", ".") if bet_amount > 0 else ""
-            participants_text = f"<b>{style[0]} {creator_name}\n{style[1]} {opponent_name}</b>"
+            participants_text = f"{style[0]} {creator_name}\n{style[1]} {opponent_name}"
 
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text="Начать игру", callback_data=f"start_rps:{game_id}")]]
@@ -2993,7 +3008,7 @@ async def inline_knb_join_game_callback(callback_query: types.CallbackQuery):
 
             try:
                 await bot1.edit_message_text(
-                    text=f"<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji> <b>Играем в камень-ножницы-бумага</b>\n<b>{bet_msg}{participants_text}</b>",
+                    text=f"<tg-emoji emoji-id='5237808360882977239'>✂️</tg-emoji> <b>Играем в камень-ножницы-бумага</b>\n{bet_msg}<b>{participants_text}</b>",
                     inline_message_id=inline_message_id,
                     reply_markup=keyboard,
                     parse_mode='HTML'

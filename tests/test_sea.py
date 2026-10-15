@@ -383,13 +383,22 @@ def test_hidden_sea_links_are_cleared_after_leave():
 def test_a_fast_repeat_asks_once_to_wait():
     sea._PACE_AT.clear()
     sea._WARN_AT.clear()
+    assert sea.CLICK_GAP == 0.0
     assert sea._pace(9, 3, stamp=True) == ""
-    assert sea._pace(9, 3, stamp=False) == "alert"
-    assert sea._pace(9, 3, stamp=False) == "quiet"
-    sea._PACE_AT[(9, 3)] = 0.0
-    assert sea._pace(9, 3, stamp=True) == ""
-    sea._drop_pace(9)
-    assert (9, 3) not in sea._PACE_AT
+    assert sea._pace(9, 3, stamp=False) == ""
+    sea.CLICK_GAP = 1.0
+    try:
+        assert sea._pace(9, 3, stamp=True) == ""
+        assert sea._pace(9, 3, stamp=False) == "alert"
+        assert sea._pace(9, 3, stamp=False) == "quiet"
+        sea._PACE_AT[(9, 3)] = 0.0
+        assert sea._pace(9, 3, stamp=True) == ""
+        sea._drop_pace(9)
+        assert (9, 3) not in sea._PACE_AT
+    finally:
+        sea.CLICK_GAP = 0.0
+        sea._PACE_AT.clear()
+        sea._WARN_AT.clear()
 
 
 def test_help_knows_the_game():

@@ -46,7 +46,7 @@ LOBBY_SECONDS = 7200         # стол без старта сам закрыв�
 TURN_SECONDS = 60            # минута на выстрел
 MISS_LIMIT = 3               # столько пропущенных минут — и игрок сдаётся
 PAGE = 5                     # столбцов на экране кнопок. Слева ещё цифра, в ряду не больше 8
-CLICK_GAP = 1.0              # слишком быстрый повтор: окно сразу, поле не трогаем
+CLICK_GAP = 0.0              # без паузы: кнопки отвечают сразу
 WORDS = ("морскойбой", "battleship")
 PHRASES = ("морской бой", "морская битва")
 
@@ -1171,7 +1171,9 @@ def _drop_task(game, key: str) -> None:
 
 
 def _pace(gid: int, uid: int, *, stamp: bool) -> str:
-    """Пусто — нажатие можно принять. alert — одно окно. quiet — кружок гаснет без второго окна."""
+    """Пусто — нажатие принято. При CLICK_GAP > 0: alert / quiet для слишком быстрых тапов."""
+    if float(CLICK_GAP) <= 0:
+        return ""
     now = time.monotonic()
     key = (int(gid), int(uid))
     if now - _PACE_AT.get(key, 0.0) < float(CLICK_GAP):
@@ -1192,30 +1194,12 @@ def _drop_pace(gid: int) -> None:
             box.pop(key, None)
 
 
-async def _hold_pace(query, gid: int, uid: int) -> bool:
-    kind = _pace(gid, uid, stamp=False)
-    if not kind:
-        return False
-    if kind == "alert":
-        await _ack_now(query, _PACE, alert=True)
-    else:
-        await _ack_now(query)
-    return True
-
-
 def _too_soon(game, uid: int, *, stamp: bool) -> bool:
-    now = time.monotonic()
-    box = game.setdefault("touch", {})
-    last = float(box.get(int(uid), 0.0) or 0.0)
-    if now - last < float(CLICK_GAP):
-        return True
-    if stamp:
-        box[int(uid)] = now
     return False
 
 
 def _ready_touch(game, uid: int) -> bool:
-    return not _too_soon(game, uid, stamp=True)
+    return True
 
 
 def _surface(query, game) -> str:
@@ -1866,8 +1850,9 @@ async def _begin_fight(store, game) -> None:
     if bot is not None:
         if not await _show(bot, game, fight_text(game), _aim(game)):
             await _show(bot, game, fight_text(game), _aim(game))
-        for uid in players:
-            await _paint_secret(bot, game, uid, query=None)
+        await asyncio.gather(*(
+            _paint_secret(bot, game, uid, query=None) for uid in players
+        ))
     _arm_turn(store, game)
 
 
@@ -2387,10 +2372,6 @@ async def _level(query, game, uid: int, key: str) -> None:
 
 
 async def _route(query, store, game, action: str, parts, uid: int) -> None:
-    kind = _pace(int(game["id"]), uid, stamp=True)
-    if kind:
-        await _ack(query, _PACE if kind == "alert" else "", alert=kind == "alert")
-        return
     if action not in {"g", "q"}:
         game["confirm"] = None
     if action == "k":
@@ -2571,7 +2552,9 @@ async def _apply(job) -> None:
 def _follow(gid: int, jobs: list):
     if not jobs:
         return None
-    prev = _TAILS.get(int(gid))
+    prev = _TAILS.pop(int(gid), None)
+    if prev is not None and not prev.done():
+        prev.cancel()
 
     async def run():
         opening = [
@@ -2580,54 +2563,64 @@ def _follow(gid: int, jobs: list):
         ]
         acks = [job for job in jobs if job[0] == "ack"]
         rest = [job for job in jobs if job not in opening and job[0] != "ack"]
-        for job in opening:
-            await _apply(job)
-        for job in acks:
-            await _apply(job)
-        if prev is not None:
-            try:
-                await prev
-            except Exception:
-                pass
-        for job in rest:
-            await _apply(job)
+        try:
+            for job in opening:
+                await _apply(job)
+            for job in acks:
+                await _apply(job)
+            for job in rest:
+                await _apply(job)
+        except asyncio.CancelledError:
+            return
 
     task = asyncio.create_task(run())
     _TAILS[int(gid)] = task
     return task
 
 
+async def _flush_jobs(gid: int, jobs: list) -> None:
+    """Кружок на кнопке гаснет сразу. Правки поля уходят следом отдельной задачей."""
+    if not jobs:
+        return
+    bind_open = [
+        job for job in jobs
+        if job[0] == "eph_new" and (len(job) < 9 or job[8])
+    ]
+    if bind_open:
+        _follow(gid, jobs)
+        return
+    for job in jobs:
+        if job[0] == "ack":
+            await _ack_now(job[1], job[2], job[3])
+    rest = [job for job in jobs if job[0] != "ack"]
+    _follow(gid, rest)
+
+
 async def _press(query, store) -> None:
     data = str(getattr(query, "data", "") or "")
     action, parts = _split(data)
     if not action or action == "x":
-        await _ack(query)
+        await _ack_now(query)
         return
     if action == "h":
         kind = parts[1] if len(parts) > 1 else ""
-        await _ack(query, label_hint(kind))
+        await _ack_now(query, label_hint(kind))
         return
     user = getattr(query, "from_user", None)
     if user is None or not getattr(user, "id", None):
-        await _ack(query, "Напишите от своего имени.")
+        await _ack_now(query, "Напишите от своего имени.")
         return
     uid = int(user.id)
     if action == "n":
         if not data.startswith("seai:"):
-            await _ack(query)
+            await _ack_now(query)
             return
-        if await _hold_pace(query, 0, uid):
-            return
-        _pace(0, uid, stamp=True)
         await _inline_new(query, store, uid, parts)
         return
     try:
         gid = int(parts[0])
     except (IndexError, ValueError):
-        await _ack(query, "Кнопка устарела")
-        return
-    peek = store.get(gid)
-    if peek and peek.get("phase") not in {"over", "dead"} and await _hold_pace(query, gid, uid):
+        await _ack_now(query, "Кнопка устарела")
         return
     jobs = []
     token = _JOBS.set(jobs)
@@ -2645,7 +2638,7 @@ async def _press(query, store) -> None:
                     _touch_save()
     finally:
         _JOBS.reset(token)
-    _follow(gid, jobs)
+    await _flush_jobs(gid, jobs)
 
 
 def _jsonify(value):
