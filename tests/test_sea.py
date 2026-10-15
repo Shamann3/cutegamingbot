@@ -150,23 +150,25 @@ def test_public_place_has_no_map_and_the_fight_hides_a_live_fleet():
         "links": {1: "A", 2: "B"},
     }
     page = fight_text(fight)
-    bodies = re.findall(r"<pre>(.*?)</pre>", page, flags=re.S)
-    assert bodies
-    assert all("&lt;" not in body and "<" not in body for body in bodies)
+    assert "<pre>" not in page
+    assert "Ход" in page
 
 
 def test_button_rows_stay_within_eight_and_keep_coordinates():
     kb = aim_markup("sea:", 7, 0, {})
-    assert [button.text for button in kb.inline_keyboard[0]] == list("ABCDEFGH")
-    assert len(kb.inline_keyboard[1]) == 8
-    assert kb.inline_keyboard[1][0].callback_data == "sea:c:7:0"
-    assert kb.inline_keyboard[1][5].callback_data == "sea:c:7:5"
+    assert len(kb.inline_keyboard[0]) == 8
+    assert kb.inline_keyboard[0][0].callback_data == "sea:c:7:0"
+    assert kb.inline_keyboard[0][5].callback_data == "sea:c:7:5"
     for row in kb.inline_keyboard:
         assert len(row) <= 8
     place = place_markup("sea:", 1, [], 0)
     assert any(button.text == "Готово" for row in place.inline_keyboard for button in row)
-    assert any(button.text == "A" for row in place.inline_keyboard for button in row)
-    assert any(button.text == "H" for row in place.inline_keyboard for button in row)
+    assert any(button.text == "Ещё" for row in place.inline_keyboard for button in row)
+    assert any(button.text == "Выставить вручную" for row in place.inline_keyboard for button in row)
+    assert any(
+        getattr(button, "icon_custom_emoji_id", None) == "5805509901048356965"
+        for row in place.inline_keyboard for button in row
+    )
     for row in place.inline_keyboard:
         assert len(row) <= 8
 
@@ -197,18 +199,19 @@ def test_the_table_shows_the_next_step():
     assert ship_face(4, 1, True).startswith("✓")
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
-    assert "Присоединиться" in lobby and "Начать игру" in lobby
-    assert "Без ставки" in lobby and "не списываются" in lobby
+    assert "Без ставки" in lobby
     paid = lobby_text({"bet": 10, "creator": 1, "participants": [1, 2], "links": {1: "A", 2: "B"}})
-    assert "Ставка 10 кут" in paid and "проигравшего" in paid
+    assert "Ставка 10" in paid
     board = aim_markup("sea:", 3, 0, {})
     names = [button.text for row in board.inline_keyboard for button in row]
-    assert "Как играть" in names and "Мои корабли" in names and "Сдаться" in names
+    assert "Мои корабли" in names and "Сдаться" in names
     sea_board = place_markup("sea:", 3, [((0, 0), (0, 1), (0, 2))], 0, 0)
     sea_names = [button.text for row in sea_board.inline_keyboard for button in row]
-    assert "Как играть" in sea_names and "Готово" in sea_names
-    assert "🎲 Ещё" in sea_names and "↻" in sea_names and "⬆️" in sea_names
-    assert any(button.callback_data.startswith("sea:h:") for row in sea_board.inline_keyboard for button in row)
+    assert "Готово" in sea_names and "Ещё" in sea_names and "Выставить вручную" in sea_names
+    icons = [getattr(button, "icon_custom_emoji_id", None) for row in sea_board.inline_keyboard for button in row]
+    assert "5807601906603792598" in icons and "5805509901048356965" in icons
+    assert "5807492110059838726" in icons
+    assert any(button.callback_data.startswith("sea:m:") for row in sea_board.inline_keyboard for button in row)
 
 
 def test_plain_command_is_a_game_command():
@@ -269,6 +272,33 @@ def test_auto_place_is_random_and_a_ship_can_move():
     packed = _revive(_jsonify({"ships": base, "hits": {(0, 0)}}))
     assert packed["ships"][0] == ((0, 0), (0, 1))
     assert (0, 0) in packed["hits"]
+
+
+def test_premium_slot_sits_on_the_button(monkeypatch):
+    monkeypatch.setitem(sea.FACE, "again", "100")
+    board = sea.place_markup("sea:", 1, [], 0)
+    again = board.inline_keyboard[0][0]
+    assert again.text == "Ещё"
+    assert again.icon_custom_emoji_id == "100"
+    monkeypatch.setitem(sea.FACE, "ship_one", "200")
+    monkeypatch.setitem(sea.FACE, "ship_left", "201")
+    monkeypatch.setitem(sea.FACE, "ship_mid_h", "202")
+    monkeypatch.setitem(sea.FACE, "ship_right", "203")
+    cells = sea.place_markup("sea:", 1, [((0, 0),), ((1, 0), (1, 1), (1, 2))], 0)
+    assert cells.inline_keyboard[2][0].icon_custom_emoji_id == "200"
+    assert cells.inline_keyboard[2][0].text == " "
+    row = cells.inline_keyboard[3]
+    assert [button.icon_custom_emoji_id for button in row[:3]] == ["201", "202", "203"]
+    hidden = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1), (0, 2))], {(0, 0)}, set())
+    assert hidden.inline_keyboard[0][0].icon_custom_emoji_id == "5469785308386041323"
+    assert hidden.inline_keyboard[0][1].text == "\u3164"
+    sunk = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1))], {(0, 0), (0, 1)}, set())
+    assert sunk.inline_keyboard[0][0].icon_custom_emoji_id == "5276032951342088188"
+    assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == "5276032951342088188"
+    hand = sea.place_markup("sea:", 1, [((3, 3),)], 0, hand=True, tool=2)
+    blocked = next(button for row in hand.inline_keyboard for button in row if button.callback_data == "sea:c:1:28")
+    assert blocked.text == "✖️"
+    assert "Выставить вручную" not in [button.text for row in hand.inline_keyboard for button in row]
 
 
 def test_help_knows_the_game():

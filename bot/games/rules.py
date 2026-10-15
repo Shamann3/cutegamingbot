@@ -110,9 +110,8 @@ def _important(table: Table, *, duo: bool, inline: str = "") -> List[str]:
 
 def _sea(t: Table) -> List[str]:
     from bot.games.sea import (
-        MISS_LIMIT, PLACE_SECONDS, SIZE, TURN_SECONDS, fleet_phrase, letters, span_text,
+        MISS_LIMIT, PLACE_SECONDS, SIZE, TURN_SECONDS, fleet_phrase, span_text,
     )
-    side = letters()
     return [
         *_head("🚢", "Морской бой"),
         *_start(
@@ -126,10 +125,9 @@ def _sea(t: Table) -> List[str]:
             join=_DUO_JOIN,
         ),
         f"{_PLANE} <b>Суть игры</b>",
-        f"Море <b>{SIZE} × {SIZE}</b>. Сверху буквы <b>{side[0]}–{side[-1]}</b>, слева цифры <b>1–{SIZE}</b>.",
-        f"Корабли по клеткам: <b>{fleet_phrase()}</b>. Только прямо, вдоль или вниз.",
+        f"Море <b>{SIZE} × {SIZE}</b>. Корабли: <b>{fleet_phrase()}</b>.",
         "Корабли не касаются даже углом.",
-        "«Ещё» ставит корабли само. Нажми корабль — стрелки его двигают, ↻ поворачивает. Потом «Готово».",
+        "Сначала корабли стоят сами. «Выставить вручную» открывает поле: крестик — сюда нельзя.",
         f"На расстановку <b>{span_text(PLACE_SECONDS)}</b>. «Моё море» открывается скрытым сообщением в этом чате и видно только вам.",
         "В общем чате кораблей нет. Там только выстрелы.",
         "Кто стреляет первым, решает жребий. Попадание — стреляете ещё. Мимо — ход соперника.",
