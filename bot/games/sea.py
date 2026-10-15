@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """Морской бой в группе.
 
-Все сроки, поле, флот и пауза кнопок — в блоке ниже.
-Инлайн живёт отдельно: bot/design/sea_inline.py, правила отсюда не копирует.
+Вызов тот же: сообщение «морской бой» или «морской бой 10».
+Сроки, поле и флот — в блоке ниже. Инлайн: bot/design/sea_inline.py.
 
-Корабли не пишутся в общее сообщение. Игрок ставит их в личке с ботом.
-Если бот не может написать первым, то же море уходит скрытым сообщением,
-как шёпот: его видит только тот, кто нажал кнопку.
+Общий стол видят все: только выстрелы. Корабли открываются скрытым
+сообщением в этом же чате и только тому, кто нажал «Моё море».
+Личка — запасной путь, если скрытое сообщение не ушло.
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ _TOAST = {
 _GUIDE = {
     "lobby": (
         "Второй жмёт «Присоединиться», первый — «Начать». "
-        "Корабли ставите у себя, в чат они не попадают. "
+        "«Моё море» видно только вам, в общий чат корабли не попадают. "
         "Потом жмите клетки: попали — ход ваш, мимо — ход другого."
     ),
     "place": (
@@ -536,7 +536,7 @@ def invite_text(bet: int) -> str:
 def place_text(game) -> str:
     lines = [
         "🚢 <b>Морской бой</b>",
-        "Нажмите «Моё море». Его видите только вы.",
+        "Нажмите «Моё море». Оно откроется здесь, и его видите только вы.",
         f"На расстановку {span_text(PLACE_SECONDS)}.",
     ]
     for uid in game["players"]:
@@ -561,6 +561,12 @@ def _incoming(game, uid: int):
 def _public_chart(game, uid: int) -> str:
     hits, misses = _incoming(game, uid)
     return chart_html(public_marks(game["boards"][uid]["ships"], hits, misses))
+
+
+def _final_chart(game, uid: int) -> str:
+    """После конца партии море можно показать целиком."""
+    hits, misses = _incoming(game, uid)
+    return chart_html(own_marks(game["boards"][uid]["ships"], hits, misses))
 
 
 def fight_text(game) -> str:
@@ -651,10 +657,10 @@ def end_text(game, winner: int, how: str, net: int) -> str:
     lines.extend([
         "",
         f"Море {links.get(loser, 'соперника')}",
-        _public_chart(game, loser),
+        _final_chart(game, loser),
         "",
         f"Море {links.get(winner, 'победителя')}",
-        _public_chart(game, winner),
+        _final_chart(game, winner),
     ])
     return "\n".join(lines)
 
@@ -947,33 +953,36 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
 
     if surface == "ephemeral":
         if await _ephemeral(bot, query, game, uid, text, markup, True):
+            board["mode"] = "ephemeral"
             await _ack(query, toast)
         else:
             await _ack(query, "Не вышло обновить море. Нажмите ещё раз.", alert=True)
         return
 
+    if surface == "public" and query is not None:
+        if await _ephemeral(bot, query, game, uid, text, markup, False):
+            board["mode"] = "ephemeral"
+            await _ack(query, toast or "Это море видите только вы")
+            return
+
     if board.get("mode") == "dm" and board.get("message_id"):
         if await _save(board["chat_id"], board["message_id"]):
             if query is not None:
-                await _ack(query, toast or "Море в личке с ботом")
+                await _ack(query, toast or "Море обновлено")
             return
         board["mode"] = "none"
+
+    if query is None:
+        return
 
     sent = await _dm(bot, uid, text, markup)
     if sent is not None and not _is_public_target(sent.chat.id, sent.message_id, game):
         board["mode"] = "dm"
         board["chat_id"] = int(sent.chat.id)
         board["message_id"] = int(sent.message_id)
-        if query is not None:
-            await _ack(query, "Море открыто в личке")
+        await _ack(query, "Море открыто в личке: в этом чате скрытое сообщение не ушло.")
         return
-
-    if query is None:
-        return
-    if await _ephemeral(bot, query, game, uid, text, markup, False):
-        await _ack(query, toast)
-        return
-    await _ack(query, "Напишите боту в личку /start и откройте море ещё раз.", alert=True)
+    await _ack(query, "Напишите боту /start и нажмите «Моё море» ещё раз.", alert=True)
 
 
 async def _link(uid: int) -> str:
@@ -1188,8 +1197,6 @@ async def _begin_place(store, game) -> None:
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, place_text(game), place_public_markup(game))
-        for uid in players:
-            await _paint_secret(bot, game, uid, query=None)
     _arm_place(store, game)
 
 
