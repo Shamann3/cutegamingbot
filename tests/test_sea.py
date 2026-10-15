@@ -306,11 +306,11 @@ def test_premium_slot_sits_on_the_button(monkeypatch):
     row = cells.inline_keyboard[3]
     assert [button.icon_custom_emoji_id for button in row[:3]] == ["201", "202", "203"]
     hidden = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1), (0, 2))], {(0, 0)}, set())
-    assert hidden.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["wound"]
+    assert hidden.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["aim_hit"]
     assert hidden.inline_keyboard[0][1].text == "\u3164"
     sunk = sea.aim_markup("sea:", 1, 0, [((0, 0), (0, 1))], {(0, 0), (0, 1)}, set())
-    assert sunk.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["sunk"]
-    assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == sea.FACE["sunk"]
+    assert sunk.inline_keyboard[0][0].icon_custom_emoji_id == sea.FACE["aim_kill"]
+    assert sunk.inline_keyboard[0][1].icon_custom_emoji_id == sea.FACE["aim_kill"]
     hand = sea.place_markup("sea:", 1, [((3, 3),)], 0, hand=True, tool=2)
     blocked = next(button for row in hand.inline_keyboard for button in row if button.callback_data == "sea:c:1:28")
     assert blocked.icon_custom_emoji_id == "5350475991691052862"
@@ -527,7 +527,15 @@ def test_remember_hidden_keeps_message_id_for_jump_link():
     assert board["chat_id"] == -10055
 
 
-def test_secret_fight_shows_own_miss_right_away():
+def test_secret_fight_combines_own_and_foe_marks():
+    """На скрытом поле урон по мне и мои выстрелы — разными эмодзи."""
+    assert sea.FACE["hit"] == "5469785308386041323"
+    assert sea.FACE["kill"] == "5276032951342088188"
+    assert sea.FACE["aim_hit"] == "5228784961011607179"
+    assert sea.FACE["aim_kill"] == "5458539816989760062"
+    assert sea.FACE["miss"] == "5348132683304156113"
+    assert sea.FACE["foe_miss"] == "5341779022219059533"
+
     game = {
         "phase": "fight",
         "prefix": "sea:",
@@ -535,7 +543,7 @@ def test_secret_fight_shows_own_miss_right_away():
         "players": [1, 2],
         "turn": 1,
         "boards": {
-            1: {"ships": [((0, 0),)], "page": 0},
+            1: {"ships": [((0, 0), (0, 1))], "page": 0},
             2: {"ships": [((4, 4), (4, 5))], "page": 0},
         },
         "shots": {
@@ -545,12 +553,10 @@ def test_secret_fight_shows_own_miss_right_away():
         "links": {1: "A", 2: "B"},
     }
     _text, markup = sea._secret_view(game, 1)
-    miss = markup.inline_keyboard[5][5]
-    assert miss.callback_data == "sea:c:9:45"
-    assert getattr(miss, "icon_custom_emoji_id", None) == sea.FACE["miss"]
-    assert sea.FACE["wound"] == "5228784961011607179"
-    assert sea.FACE["sunk"] == "5458539816989760062"
-    assert sea.FACE["foe_miss"] == "5341779022219059533"
+    # моё мимо
+    assert getattr(markup.inline_keyboard[5][5], "icon_custom_emoji_id", None) == sea.FACE["miss"]
+
+    # я попал / потопил противника
     hit_game = {
         **game,
         "shots": {
@@ -559,31 +565,41 @@ def test_secret_fight_shows_own_miss_right_away():
         },
     }
     _text, hit_markup = sea._secret_view(hit_game, 1)
-    wound = hit_markup.inline_keyboard[4][4]
-    assert getattr(wound, "icon_custom_emoji_id", None) == sea.FACE["wound"]
-    # Непробитая клетка того же корабля на скрытом поле не светится.
-    assert getattr(hit_markup.inline_keyboard[4][5], "icon_custom_emoji_id", None) in {
-        None, "", sea.FACE["water"],
-    } or hit_markup.inline_keyboard[4][5].text in {"\u3164", " ", sea._WATER}
-    sunk_game = {
+    assert getattr(hit_markup.inline_keyboard[4][4], "icon_custom_emoji_id", None) == sea.FACE["aim_hit"]
+    sunk_foe = {
         **game,
         "shots": {
             1: {"hit": {(4, 4), (4, 5)}, "miss": set()},
             2: {"hit": set(), "miss": set()},
         },
     }
-    _text, sunk_markup = sea._secret_view(sunk_game, 1)
-    assert getattr(sunk_markup.inline_keyboard[4][4], "icon_custom_emoji_id", None) == sea.FACE["sunk"]
-    assert getattr(sunk_markup.inline_keyboard[4][5], "icon_custom_emoji_id", None) == sea.FACE["sunk"]
-    # Обводка вокруг потопленного — как на общем поле.
-    ring = sunk_markup.inline_keyboard[3][4]
-    assert getattr(ring, "icon_custom_emoji_id", None) == sea.FACE["halo"]
-    public = sea.aim_markup("sea:", 9, 0, game["boards"][2]["ships"], {(4, 4)}, set())
-    secret_wound = hit_markup.inline_keyboard[4][4]
-    assert getattr(secret_wound, "icon_custom_emoji_id", None) == getattr(
-        public.inline_keyboard[4][4], "icon_custom_emoji_id", None,
-    )
-    # Мимо соперника по вашему полю — отдельный значок.
+    _text, sunk_markup = sea._secret_view(sunk_foe, 1)
+    assert getattr(sunk_markup.inline_keyboard[4][4], "icon_custom_emoji_id", None) == sea.FACE["aim_kill"]
+    assert getattr(sunk_markup.inline_keyboard[4][5], "icon_custom_emoji_id", None) == sea.FACE["aim_kill"]
+    assert getattr(sunk_markup.inline_keyboard[3][4], "icon_custom_emoji_id", None) == sea.FACE["halo"]
+
+    # соперник пробил / потопил мой корабль
+    hurt_me = {
+        **game,
+        "shots": {
+            1: {"hit": set(), "miss": set()},
+            2: {"hit": {(0, 0)}, "miss": set()},
+        },
+    }
+    _text, hurt_markup = sea._secret_view(hurt_me, 1)
+    assert getattr(hurt_markup.inline_keyboard[0][0], "icon_custom_emoji_id", None) == sea.FACE["hit"]
+    kill_me = {
+        **game,
+        "shots": {
+            1: {"hit": set(), "miss": set()},
+            2: {"hit": {(0, 0), (0, 1)}, "miss": set()},
+        },
+    }
+    _text, kill_markup = sea._secret_view(kill_me, 1)
+    assert getattr(kill_markup.inline_keyboard[0][0], "icon_custom_emoji_id", None) == sea.FACE["kill"]
+    assert getattr(kill_markup.inline_keyboard[0][1], "icon_custom_emoji_id", None) == sea.FACE["kill"]
+
+    # мимо соперника по мне
     foe_miss_game = {
         **game,
         "shots": {
@@ -592,5 +608,18 @@ def test_secret_fight_shows_own_miss_right_away():
         },
     }
     _text, foe_markup = sea._secret_view(foe_miss_game, 1)
-    foe_miss = foe_markup.inline_keyboard[2][3]
-    assert getattr(foe_miss, "icon_custom_emoji_id", None) == sea.FACE["foe_miss"]
+    assert getattr(foe_markup.inline_keyboard[2][3], "icon_custom_emoji_id", None) == sea.FACE["foe_miss"]
+
+    # всё вместе на одном скрытом поле
+    combo = {
+        **game,
+        "shots": {
+            1: {"hit": {(4, 4)}, "miss": {(5, 5)}},
+            2: {"hit": {(0, 0)}, "miss": {(2, 3)}},
+        },
+    }
+    _text, combo_markup = sea._secret_view(combo, 1)
+    assert getattr(combo_markup.inline_keyboard[0][0], "icon_custom_emoji_id", None) == sea.FACE["hit"]
+    assert getattr(combo_markup.inline_keyboard[4][4], "icon_custom_emoji_id", None) == sea.FACE["aim_hit"]
+    assert getattr(combo_markup.inline_keyboard[5][5], "icon_custom_emoji_id", None) == sea.FACE["miss"]
+    assert getattr(combo_markup.inline_keyboard[2][3], "icon_custom_emoji_id", None) == sea.FACE["foe_miss"]
