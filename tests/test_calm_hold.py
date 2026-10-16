@@ -36,3 +36,15 @@ def test_enough_games_keep_the_balance_calm():
 def test_too_few_games_leave_the_balance_open():
     state, _db = _state(4)
     assert state["calm"] is False
+
+
+def test_creator_may_set_any_game_count():
+    from water_games.design import CALM_MAX_GAMES, calm_need
+
+    assert calm_need(1) == 1
+    assert calm_need(500) == 500
+    assert calm_need("50 000") == 50000
+    assert calm_need(CALM_MAX_GAMES) == CALM_MAX_GAMES
+    assert calm_need(CALM_MAX_GAMES + 9) == CALM_MAX_GAMES
+    assert calm_need(0) == 1
+    assert calm_need("нет") == 5

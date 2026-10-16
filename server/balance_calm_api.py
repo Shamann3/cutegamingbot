@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from admin_auth import get_signed_in_user_id
 from admin_soft_restart import is_project_creator
@@ -24,7 +24,7 @@ _py = Path(__file__).resolve().parent / "py"
 if str(_py) not in sys.path:
     sys.path.insert(0, str(_py))
 
-from water_games.design import calm_need, calm_seconds
+from water_games.design import CALM_MAX_GAMES, CALM_MAX_SECONDS, calm_need, calm_seconds
 
 router = APIRouter(prefix="/admin/api/balance-calm", tags=["balance-calm"])
 
@@ -37,10 +37,22 @@ def _creator(user_id: int = Depends(get_signed_in_user_id)) -> int:
 
 class CalmBody(BaseModel):
     enabled: bool
-    games: int = Field(ge=1, le=100)
-    seconds: int | None = Field(default=None, ge=1, le=7 * 24 * 3600)
+    games: int = Field(default=5, ge=1, le=CALM_MAX_GAMES)
+    seconds: int | None = Field(default=None, ge=1, le=CALM_MAX_SECONDS)
     hours: int | None = Field(default=None, ge=1, le=168)
     model_config = {"extra": "forbid"}
+
+    @field_validator("games", mode="before")
+    @classmethod
+    def _coerce_games(cls, value):
+        return calm_need(value)
+
+    @field_validator("seconds", mode="before")
+    @classmethod
+    def _coerce_seconds(cls, value):
+        if value is None or value == "":
+            return None
+        return calm_seconds(value)
 
 
 def _pool():

@@ -3,9 +3,20 @@ import { fetchBalanceCalm, fetchBalanceLedger, saveBalanceCalm } from '../../lib
 import { notifyAdmin } from '../../lib/notify'
 
 const MAX_SECONDS = 7 * 24 * 3600
+const MAX_GAMES = 10_000_000
 
 function fmt(value) {
   return Number(value || 0).toLocaleString('ru-RU')
+}
+
+function parseGames(raw) {
+  const text = String(raw ?? '').trim().replace(/\s|\u00a0/g, '')
+  if (!text) return null
+  const n = Math.floor(Number(text))
+  if (!Number.isFinite(n)) return null
+  if (n < 1) return 1
+  if (n > MAX_GAMES) return MAX_GAMES
+  return n
 }
 
 function leftPhrase(total) {
@@ -194,22 +205,28 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
 
   const parts = useMemo(() => splitSeconds(form?.seconds ?? 86400), [form?.seconds])
   const windowSeconds = joinSeconds(parts.hours, parts.minutes, parts.seconds)
-  const games = Number(form?.games) || 5
+  const games = parseGames(form?.games) ?? 5
   const pots = ledger?.pots || {}
   const system = Number(pots.system) || 0
   const share = (key) => (system > 0 ? (Number(pots[key]) || 0) / system : 0)
 
   async function save() {
     if (!form) return
+    const nextGames = parseGames(form.games)
+    if (nextGames == null) {
+      notifyAdmin('Укажите, сколько игр нужно для покоя', { error: true })
+      return
+    }
+    const nextSeconds = joinSeconds(parts.hours, parts.minutes, parts.seconds)
     setSaving(true)
     try {
       const next = await saveBalanceCalm({
         enabled: Boolean(form.enabled),
-        games: Number(form.games),
-        seconds: joinSeconds(parts.hours, parts.minutes, parts.seconds),
+        games: nextGames,
+        seconds: nextSeconds,
       })
       setForm(next)
-      notifyAdmin('Балансы сохранены')
+      notifyAdmin(`Покой: ${fmt(next.games)} игр · ${leftClock(next.seconds)}`)
     } catch (err) {
       notifyAdmin(err.message || 'Не сохранилось', { error: true })
     } finally {
@@ -370,6 +387,7 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
           <p className="panel-shelf-muted">
             Игры считаются в любой группе. Пока за этот срок их набрано достаточно,
             обливать нельзя. Зонтик, дождевик, навес и сейф закрывают сразу, даже без этих игр.
+            Число игр можно поставить любое — хоть 3, хоть 50&nbsp;000.
           </p>
           <div className={`sys-toggle-row${form.enabled ? ' is-on' : ''}`}>
             <div className="sys-toggle-copy">
@@ -388,17 +406,27 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
             </button>
           </div>
           <div className="bal-fields">
-            <label>
-              <strong>Игр</strong>
+            <label className="bal-games-field">
+              <strong>Сколько игр нужно</strong>
               <input
                 className="sec-input"
-                type="number"
-                min="1"
-                max="100"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
                 value={form.games}
-                aria-label="Игр за срок"
-                onChange={(event) => setForm((row) => ({ ...row, games: event.target.value }))}
+                aria-label="Сколько игр нужно для покоя"
+                placeholder="например 5 или 500"
+                onChange={(event) => {
+                  const raw = event.target.value.replace(/[^\d\s]/g, '')
+                  setForm((row) => ({ ...row, games: raw }))
+                }}
+                onBlur={() => {
+                  const next = parseGames(form.games)
+                  if (next != null) setForm((row) => ({ ...row, games: next }))
+                }}
               />
+              <em className="bal-field-hint">От 1 до {fmt(MAX_GAMES)}. Без потолка «100».</em>
             </label>
             <label>
               <strong>Часы</strong>
@@ -439,7 +467,7 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
           </div>
           <p className="bal-preview">
             {form.enabled
-              ? `0/${games} игр | ${leftPhrase(windowSeconds)}`
+              ? `0/${fmt(games)} игр | ${leftPhrase(windowSeconds)} · ${leftClock(windowSeconds)}`
               : 'Сейчас покой выключен.'}
           </p>
           <button type="button" className="sec-btn" disabled={saving} onClick={save}>
@@ -591,10 +619,15 @@ export default function BalancesCalm({ onOpenGroup } = {}) {
         @media (max-width: 700px) {
           .bal-wallet-sums { grid-template-columns: 1fr; }
         }
-        .bal-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin: 0.9rem 0; }
+        .bal-fields { display: grid; grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr)); gap: 0.6rem; margin: 0.9rem 0; }
         .bal-fields label { display: flex; flex-direction: column; gap: 0.3rem; }
         .bal-fields strong { font-size: 0.78rem; font-weight: 600; }
         .bal-fields .sec-input { width: 100%; }
+        .bal-games-field { grid-column: 1 / -1; }
+        @media (min-width: 901px) {
+          .bal-games-field { grid-column: auto; }
+        }
+        .bal-field-hint { font-style: normal; font-size: 0.72rem; color: rgba(226, 232, 240, 0.5); }
         .bal-preview {
           font-variant-numeric: tabular-nums;
           letter-spacing: 0.03em;

@@ -267,10 +267,11 @@ SHIELD_PREMIUM = {
 }
 SHOOT_EMOJI = "5317000922096769303"
 
-# Игр за московский день, после которых обливать нельзя до полуночи.
-# Мало, чтобы вечер это закрывал, и мало относительно сна кошелька:
-# утром пистолетик ещё работает, а зонтик и сейф нужны тем, кто не доиграл.
+# Игр за срок, после которых обливать нельзя.
+# Мало по умолчанию, чтобы вечер это закрывал; создатель в панели
+# «Балансы» может поставить любое число до CALM_MAX_GAMES.
 CALM_GAMES = 5
+CALM_MAX_GAMES = 10_000_000
 CALM_ICON_OPEN = SHOOT_EMOJI
 CALM_ICON_HELD = "5359595190807962128"
 CALM_BUTTON_ICON = "5357065356286405053"
@@ -293,11 +294,14 @@ def hours_label(hours) -> str:
 
 
 def calm_need(need) -> int:
+    """Сколько игр нужно для покоя. Создатель задаёт любое целое от 1."""
     try:
-        count = int(need)
+        if isinstance(need, str):
+            need = need.strip().replace(" ", "").replace("\u00a0", "")
+        count = int(float(need)) if need is not None and need != "" else CALM_GAMES
     except (TypeError, ValueError):
         count = CALM_GAMES
-    return min(100, max(1, count))
+    return min(CALM_MAX_GAMES, max(1, count))
 
 
 def calm_hours(hours) -> int:
