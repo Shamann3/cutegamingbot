@@ -1178,42 +1178,58 @@ async def _realm_log(chat_id: int, user_id: int | None, action: str, detail: str
     )
 
 
-async def sweep_expired_spamblocks() -> int:
-    """Снимает спам-блок, когда срок вышел, и пишет это в журнал группы."""
+async def sweep_expired_seats() -> int:
+    """Снимает любую должность с истёкшим сроком: место, админку, префикс и тег."""
     try:
         await ensure_tables()
     except Exception:
         return 0
     rows = await db.pool.fetch(
         """
-        SELECT s.user_id, s.chat_id, p.title, s.term_end
+        SELECT s.user_id, s.chat_id, p.title, p.kind, s.term_end
         FROM epsilon_seats s
         JOIN epsilon_positions p ON p.id = s.position_id
-        WHERE p.kind = $1
-          AND s.term_end IS NOT NULL
+        WHERE s.term_end IS NOT NULL
           AND s.term_end <= NOW()
-        """,
-        KIND_SPAMBLOCK,
+        """
     )
     removed = 0
     for row in rows:
+        uid = int(row["user_id"])
+        cid = int(row["chat_id"])
         await db.pool.execute(
             "DELETE FROM epsilon_seats WHERE user_id = $1 AND chat_id = $2",
-            int(row["user_id"]),
-            int(row["chat_id"]),
+            uid,
+            cid,
         )
-        note = await _apply_chat_title(int(row["chat_id"]), int(row["user_id"]), "", rights=None)
+        try:
+            await db.pool.execute(
+                "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+                uid,
+                cid,
+            )
+        except Exception:
+            pass
+        note = await _strip_to_member(cid, uid)
         end = row["term_end"]
         end_label = end.date().isoformat() if end else ""
+        kind = str(row["kind"] or "")
+        action = "spamblock_expired" if kind == KIND_SPAMBLOCK else "seat_expired"
+        label = "спам-блока" if kind == KIND_SPAMBLOCK else "должности"
         await _realm_log(
-            int(row["chat_id"]),
-            int(row["user_id"]),
-            "spamblock_expired",
-            f"Срок спам-блока кончился {end_label}. Должность «{row['title']}» снята. {note}".strip(),
+            cid,
+            uid,
+            action,
+            f"Срок {label} кончился {end_label}. Должность «{row['title']}» снята. {note}".strip(),
             None,
         )
         removed += 1
     return removed
+
+
+async def sweep_expired_spamblocks() -> int:
+    """Совместимость: раньше снимал только спам-блок. Теперь — все истёкшие сроки."""
+    return await sweep_expired_seats()
 
 
 def send_permissions(rights: list[str] | None) -> dict[str, bool]:
@@ -4585,17 +4601,114 @@ async def delete_position(position_id: int, user_id: int = Depends(get_any_teleg
     }
 
 
-async def drop_group_access(user_id: int) -> dict:
-    """Снимает места и личный ключ. Следующий вход потребует новый ключ."""
+async def strip_user_chat_titles(user_id: int, chat_ids: list[int] | None = None) -> dict:
+    """Снимает в Telegram админку, префикс и тег во всех указанных (или известных) группах."""
     await ensure_tables()
+    uid = int(user_id)
+    targets: list[int] = []
+    if chat_ids is not None:
+        targets = sorted({int(cid) for cid in chat_ids if int(cid)})
+    else:
+        try:
+            rows = await db.pool.fetch(
+                """
+                SELECT DISTINCT chat_id FROM (
+                    SELECT chat_id FROM epsilon_seats WHERE user_id = $1
+                    UNION
+                    SELECT chat_id FROM epsilon_seat_pause WHERE user_id = $1
+                    UNION
+                    SELECT chat_id FROM epsilon_official_groups WHERE COALESCE(is_official, TRUE)
+                ) chats
+                """,
+                uid,
+            )
+            targets = [int(row["chat_id"]) for row in rows]
+        except Exception:
+            _log.exception("список групп для снятия префикса %s", uid)
+            targets = []
+    stripped = 0
+    faults: list[str] = []
+    for cid in targets:
+        try:
+            member = await _telegram_member(cid, uid)
+        except Exception:
+            member = None
+        if member is not None and not _member_still_admin(member):
+            continue
+        if member is None and chat_ids is None:
+            # В официальной группе без ответа Telegram не долбим наугад.
+            seated_here = False
+            try:
+                seated_here = bool(
+                    await db.pool.fetchval(
+                        """
+                        SELECT 1 FROM epsilon_seats
+                        WHERE user_id = $1 AND chat_id = $2
+                        """,
+                        uid,
+                        cid,
+                    )
+                )
+            except Exception:
+                seated_here = False
+            if not seated_here:
+                continue
+        note = await _strip_to_member(cid, uid)
+        if "могл" in note.lower() or "не настроен" in note.lower() or "отказал" in note.lower():
+            faults.append(f"{cid}: {note}")
+            continue
+        stripped += 1
+        try:
+            await _realm_log(
+                cid,
+                uid,
+                "title_stripped",
+                f"Префикс и тег сняты автоматически. {note}".strip()[:500],
+                None,
+            )
+        except Exception:
+            pass
+    return {"chats": len(targets), "stripped": stripped, "faults": faults[:12]}
+
+
+async def drop_group_access(user_id: int) -> dict:
+    """Снимает места, личный ключ и в Telegram — админку, префикс и тег."""
+    await ensure_tables()
+    uid = int(user_id)
+    seat_rows = await db.pool.fetch(
+        "SELECT chat_id FROM epsilon_seats WHERE user_id = $1",
+        uid,
+    )
+    chat_ids = [int(row["chat_id"]) for row in seat_rows]
+    try:
+        pause_rows = await db.pool.fetch(
+            "SELECT chat_id FROM epsilon_seat_pause WHERE user_id = $1",
+            uid,
+        )
+        for row in pause_rows:
+            cid = int(row["chat_id"])
+            if cid not in chat_ids:
+                chat_ids.append(cid)
+    except Exception:
+        pass
     seats = await db.pool.execute(
         "DELETE FROM epsilon_seats WHERE user_id = $1",
-        int(user_id),
+        uid,
     )
+    try:
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_pause WHERE user_id = $1",
+            uid,
+        )
+    except Exception:
+        pass
     keys = await db.pool.execute(
         "DELETE FROM epsilon_group_keys WHERE user_id = $1",
-        int(user_id),
+        uid,
     )
+    # Сначала известные места, затем любые «висячие» админки в официальных группах.
+    cleared = await strip_user_chat_titles(uid, chat_ids)
+    orphaned = await strip_orphaned_titles_for_user(uid)
 
     def _count(result: str) -> int:
         try:
@@ -4603,7 +4716,138 @@ async def drop_group_access(user_id: int) -> dict:
         except (ValueError, IndexError):
             return 0
 
-    return {"seats": _count(seats), "keys": _count(keys)}
+    return {
+        "seats": _count(seats),
+        "keys": _count(keys),
+        "stripped": int(cleared.get("stripped") or 0) + int(orphaned.get("stripped") or 0),
+        "stripFaults": list(cleared.get("faults") or []) + list(orphaned.get("faults") or []),
+    }
+
+
+async def strip_orphaned_titles_for_user(user_id: int) -> dict:
+    """Если человек уже не сотрудник и без должности — снимает префикс/тег в официальных группах."""
+    uid = int(user_id)
+    staff = await _project_staff_ids([uid])
+    if uid in staff:
+        return {"stripped": 0, "faults": [], "skipped": "still_staff"}
+    try:
+        seated = {
+            int(row["chat_id"])
+            for row in await db.pool.fetch(
+                """
+                SELECT chat_id FROM epsilon_seats
+                WHERE user_id = $1
+                  AND (term_end IS NULL OR term_end > NOW())
+                """,
+                uid,
+            )
+        }
+    except Exception:
+        seated = set()
+    try:
+        official = await db.pool.fetch(
+            """
+            SELECT chat_id
+            FROM epsilon_official_groups
+            WHERE COALESCE(is_official, TRUE)
+            """
+        )
+    except Exception:
+        return {"stripped": 0, "faults": ["official_list"]}
+    stripped = 0
+    faults: list[str] = []
+    for row in official:
+        cid = int(row["chat_id"])
+        if cid in seated:
+            continue
+        member = await _telegram_member(cid, uid)
+        if member is None or not _member_still_admin(member):
+            continue
+        if str(member.get("status") or "") == "creator":
+            continue
+        note = await _strip_to_member(cid, uid)
+        if "могл" in note.lower() or "не настроен" in note.lower():
+            faults.append(f"{cid}: {note}")
+            continue
+        stripped += 1
+        try:
+            await _realm_log(
+                cid,
+                uid,
+                "title_stripped",
+                f"Снят устаревший префикс: человек больше не админ/сотрудник. {note}"[:500],
+                None,
+            )
+        except Exception:
+            pass
+    return {"stripped": stripped, "faults": faults[:12]}
+
+
+async def reconcile_stale_admin_titles(*, limit_chats: int = 60) -> dict:
+    """В официальных группах снимает префикс/тег у тех, кто уже не админ и не сотрудник."""
+    try:
+        await ensure_tables()
+    except Exception:
+        return {"chats": 0, "stripped": 0, "stuck": 0}
+    expired = await sweep_expired_seats()
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT chat_id
+            FROM epsilon_official_groups
+            WHERE COALESCE(is_official, TRUE)
+            ORDER BY chat_id
+            LIMIT $1
+            """,
+            max(1, int(limit_chats)),
+        )
+    except Exception:
+        _log.exception("список официальных групп для сверки префиксов")
+        return {"chats": 0, "stripped": expired, "stuck": 0, "expired": expired}
+    stripped = 0
+    stuck = 0
+    for row in rows:
+        cid = int(row["chat_id"])
+        admins, error = await _chat_admin_rows(cid)
+        if error and not admins:
+            continue
+        seated = await _registered_admin_ids(cid)
+        staff = await _project_staff_ids([item["userId"] for item in admins])
+        for item in admins:
+            kind = classify_chat_admin(
+                item,
+                seated=item["userId"] in seated,
+                staff=item["userId"] in staff,
+            )
+            if kind != "strip":
+                continue
+            # Сначала через кэш неудач, затем полный сброс прав писать.
+            fault = await _demote_outsider(cid, int(item["userId"]))
+            if fault:
+                stuck += 1
+                continue
+            await _apply_send_limits(cid, int(item["userId"]), None)
+            stripped += 1
+            try:
+                await _realm_log(
+                    cid,
+                    int(item["userId"]),
+                    "chat_admin_unregistered",
+                    (
+                        f"Снял устаревшую админку/префикс: {item.get('name') or ''}"
+                        f"{(' @' + item['username']) if item.get('username') else ''}"
+                        f" · {item['userId']}"
+                    )[:500],
+                    None,
+                )
+            except Exception:
+                pass
+    return {
+        "chats": len(rows),
+        "stripped": stripped,
+        "stuck": stuck,
+        "expired": expired,
+    }
 
 
 def _json_cell(value: Any) -> str | None:
@@ -4869,11 +5113,14 @@ async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegr
         int(body.user_id),
         int(body.chat_id),
     )
-    await db.pool.execute(
-        "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
-        int(body.user_id),
-        int(body.chat_id),
-    )
+    try:
+        await db.pool.execute(
+            "DELETE FROM epsilon_seat_pause WHERE user_id = $1 AND chat_id = $2",
+            int(body.user_id),
+            int(body.chat_id),
+        )
+    except Exception:
+        pass
     left = await db.pool.fetchval(
         "SELECT COUNT(*) FROM epsilon_seats WHERE user_id = $1",
         int(body.user_id),
@@ -4884,6 +5131,12 @@ async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegr
             int(body.user_id),
         )
     note = await _strip_to_member(int(body.chat_id), int(body.user_id))
+    # Если мест больше нет и человек не сотрудник — подчистить висячие префиксы в других группах.
+    if not int(left or 0):
+        try:
+            await strip_orphaned_titles_for_user(int(body.user_id))
+        except Exception:
+            _log.exception("orphan titles after dismiss %s", body.user_id)
     await _realm_log(
         int(body.chat_id),
         int(body.user_id),

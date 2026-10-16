@@ -358,6 +358,35 @@ def test_delete_position_unseats_before_drop_and_keeps_creator():
     assert "rights=None" in source
 
 
+def test_drop_group_access_strips_telegram_titles():
+    import inspect
+
+    from group_realm import drop_group_access, strip_orphaned_titles_for_user, sweep_expired_seats
+
+    drop = inspect.getsource(drop_group_access)
+    assert "strip_user_chat_titles" in drop
+    assert "strip_orphaned_titles_for_user" in drop
+    assert "DELETE FROM epsilon_seats" in drop
+    orphan = inspect.getsource(strip_orphaned_titles_for_user)
+    assert "_strip_to_member" in orphan
+    assert "still_staff" in orphan
+    sweep = inspect.getsource(sweep_expired_seats)
+    assert "_strip_to_member" in sweep
+    assert "term_end" in sweep
+    assert "KIND_SPAMBLOCK" in sweep or "spamblock" in sweep
+
+
+def test_dismiss_clears_prefix_and_orphan_titles():
+    import inspect
+
+    from group_realm import group_dismiss
+
+    source = inspect.getsource(group_dismiss)
+    assert "_strip_to_member" in source
+    assert "strip_orphaned_titles_for_user" in source
+    assert "DELETE FROM epsilon_seats" in source
+
+
 def test_templates_wait_until_asked_and_voice_admin_is_only_the_voice_chat():
     import inspect
 

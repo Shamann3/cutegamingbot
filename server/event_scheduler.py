@@ -84,10 +84,10 @@ async def _tick() -> None:
         logger.exception("morning shift skipped")
 
     try:
-        from group_realm import sweep_expired_spamblocks
-        await sweep_expired_spamblocks()
+        from group_realm import reconcile_stale_admin_titles
+        await reconcile_stale_admin_titles()
     except Exception:
-        logger.exception("spamblock sweep skipped")
+        logger.exception("admin title reconcile skipped")
 
     await _advance_recurring_quests()
 

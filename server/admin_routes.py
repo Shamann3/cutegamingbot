@@ -1918,14 +1918,21 @@ async def staff_delete_member(
     ok = await delete_suspended_member(member_id)
     if not ok:
         raise HTTPException(status_code=409, detail="Сотрудник не найден или не отстранён")
+    from group_realm import drop_group_access
+
+    cleared = await drop_group_access(int(member_id))
     await log_admin_action(
         user_id, "staff_delete",
         target_type="staff",
         target_id=str(member_id),
         target_label="Аккаунт удалён",
+        details={
+            "seats": cleared.get("seats"),
+            "stripped": cleared.get("stripped"),
+        },
         ip=_get_client_ip(request),
     )
-    return {"ok": True}
+    return {"ok": True, "groups": cleared}
 
 
 @router.post("/staff/members/{member_id}/role")

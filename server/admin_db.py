@@ -2088,6 +2088,13 @@ async def strip_plain_user_access() -> None:
             continue
         except Exception as exc:
             _log.warning("plain user access strip skipped: %s", type(exc).__name__)
+    try:
+        from group_realm import strip_orphaned_titles_for_user
+
+        for uid in ids:
+            await strip_orphaned_titles_for_user(int(uid))
+    except Exception as exc:
+        _log.warning("plain user title strip skipped: %s", type(exc).__name__)
 
 
 async def bootstrap_owner_accounts() -> int:
