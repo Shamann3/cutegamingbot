@@ -23,9 +23,12 @@ COMMENT_REWARD_MIN = 1
 COMMENT_REWARD_MAX = 500
 VIDEO_REWARD_MIN = 1
 VIDEO_REWARD_MAX = 5000
-HASH_THRESHOLD = 4
-# Скрины одного приложения часто похожи. Подсвечиваем только почти точный дубль,
-# иначе админ тонет в ложных «похоже 90%» на одинаковом интерфейсе.
+# Между разными заявками: дубль, если ≥2 перцептивных хеша близки,
+# либо один хеш почти точный (≤ HASH_STRONG). md5 — всегда точный дубль.
+HASH_THRESHOLD = 6
+HASH_STRONG = 2
+HASH_CONSENSUS = 2
+# Скрины одного приложения часто похожи. Внутри серии — только почти точный дубль.
 HASH_INTRA_THRESHOLD = 1
 VIDEO_CANONICAL_RE = re.compile(r"/(?:video|v)/(\d+)", re.I)
 SHARE_VIDEO_RE = re.compile(r"/share/video/(\d+)", re.I)
@@ -669,19 +672,39 @@ def hamming_hex(a: str, b: str) -> int:
     return bin(int(a, 16) ^ int(b, 16)).count("1")
 
 
+def perceptual_scores(left: dict[str, str], right: dict[str, str]) -> list[int]:
+    scores: list[int] = []
+    for key in ("ahash", "dhash", "phash"):
+        a, b = str(left.get(key) or ""), str(right.get(key) or "")
+        if a and b:
+            scores.append(hamming_hex(a, b))
+    return scores
+
+
 def hash_distance(left: dict[str, str], right: dict[str, str]) -> int:
+    """Расстояние 0..64. Чем меньше — тем ближе кадры.
+
+    md5 совпал → 0.
+    Иначе нужны либо ≥2 перцептивных хеша в пределах HASH_THRESHOLD,
+    либо один почти точный (≤ HASH_STRONG). Один слабый сигнал
+    (типичный UI TikTok) не считается копией.
+    """
     left_md5 = str(left.get("md5") or "")
     right_md5 = str(right.get("md5") or "")
     if left_md5 and right_md5 and left_md5 == right_md5:
         return 0
-    scores = []
-    for key in ("ahash", "dhash", "phash"):
-        a, b = left.get(key) or "", right.get(key) or ""
-        if a and b:
-            scores.append(hamming_hex(a, b))
+    scores = perceptual_scores(left, right)
     if not scores:
         return 64
-    return min(scores)
+    scores.sort()
+    within = [s for s in scores if s <= HASH_THRESHOLD]
+    if len(within) >= HASH_CONSENSUS:
+        return min(within)
+    if scores[0] <= HASH_STRONG:
+        return scores[0]
+    if len(scores) == 1:
+        return scores[0]
+    return 64
 
 
 def similarity_percent(distance: int) -> int:
@@ -693,8 +716,76 @@ def hashes_similar(left: dict[str, str], right: dict[str, str], threshold: int =
     return hash_distance(left, right) <= int(threshold)
 
 
+def hashes_usable(photo: dict[str, Any] | None) -> bool:
+    data = photo or {}
+    if str(data.get("md5") or "").strip():
+        return True
+    return any(str(data.get(k) or "").strip() for k in ("ahash", "dhash", "phash"))
+
+
 def pair_key(a: str, b: str) -> tuple[str, str]:
     return (a, b) if a <= b else (b, a)
+
+
+def photo_file_ids(photo: Any) -> tuple[str, str]:
+    if isinstance(photo, str):
+        raw = photo.strip()
+        return raw, ""
+    if not isinstance(photo, dict):
+        return "", ""
+    data = photo
+    nested = data.get("hashes") if isinstance(data.get("hashes"), dict) else {}
+    file_id = str(
+        data.get("fileId")
+        or data.get("file_id")
+        or data.get("fileID")
+        or data.get("telegramFileId")
+        or nested.get("fileId")
+        or nested.get("file_id")
+        or ""
+    ).strip()
+    thumb = str(
+        data.get("thumbFileId")
+        or data.get("thumb_file_id")
+        or data.get("thumbFileID")
+        or nested.get("thumbFileId")
+        or nested.get("thumb_file_id")
+        or ""
+    ).strip()
+    return file_id, thumb
+
+
+def photo_records_from_case(
+    case_id: int,
+    user_id: int,
+    photos: Iterable[Any] | None,
+    created_at: Any = None,
+    *,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    created = created_at.isoformat() if hasattr(created_at, "isoformat") else created_at
+    for i, photo in enumerate(list(photos or [])):
+        data = photo if isinstance(photo, dict) else {}
+        nested = data.get("hashes") if isinstance(data.get("hashes"), dict) else {}
+        file_id, thumb = photo_file_ids(photo)
+        rec = {
+            "id": f"{case_id}:{i}",
+            "caseId": int(case_id),
+            "userId": int(user_id),
+            "index": i,
+            "fileId": file_id,
+            "thumbFileId": thumb,
+            "ahash": data.get("ahash") or nested.get("ahash") or "",
+            "dhash": data.get("dhash") or nested.get("dhash") or "",
+            "phash": data.get("phash") or nested.get("phash") or "",
+            "md5": data.get("md5") or nested.get("md5") or "",
+            "createdAt": created,
+        }
+        if status is not None:
+            rec["status"] = status
+        out.append(rec)
+    return out
 
 
 def find_matches(
@@ -704,11 +795,13 @@ def find_matches(
     verdicts: dict[tuple[str, str], str] | None = None,
     threshold: int = HASH_THRESHOLD,
     intra_threshold: int = HASH_INTRA_THRESHOLD,
+    limit: int = 48,
 ) -> list[dict[str, Any]]:
     """Похожие пары: другие заявки по threshold, внутри серии только почти точные дубли."""
     verdicts = verdicts or {}
     found: list[dict[str, Any]] = []
     seen_pairs: set[tuple[Any, Any, Any, Any]] = set()
+    cap = max(1, int(limit or 48))
     for src in photos:
         for other in library:
             if src is other:
@@ -722,9 +815,15 @@ def find_matches(
             )
             if same_case and src.get("index") == other.get("index"):
                 continue
-            distance = hash_distance(src, other)
-            limit = int(intra_threshold if same_case else threshold)
-            if distance > limit:
+            # Точный file_id Telegram — тоже копия, даже без хешей.
+            src_fid = str(src.get("fileId") or "").strip()
+            other_fid = str(other.get("fileId") or "").strip()
+            if src_fid and other_fid and src_fid == other_fid:
+                distance = 0
+            else:
+                distance = hash_distance(src, other)
+            limit_dist = int(intra_threshold if same_case else threshold)
+            if distance > limit_dist:
                 continue
             key = pair_key(src.get("phash") or src.get("ahash") or "", other.get("phash") or other.get("ahash") or "")
             if verdicts.get(key) == "unique":
@@ -751,7 +850,26 @@ def find_matches(
                 }
             )
     found.sort(key=lambda x: (x["sameCase"], x["distance"]))
-    return found[:48]
+    return found[:cap]
+
+
+def find_first_duplicate(
+    photo: dict[str, Any],
+    library: list[dict[str, Any]],
+    *,
+    verdicts: dict[tuple[str, str], str] | None = None,
+    threshold: int = HASH_THRESHOLD,
+    intra_threshold: int = HASH_INTRA_THRESHOLD,
+) -> dict[str, Any] | None:
+    matches = find_matches(
+        [photo],
+        library,
+        verdicts=verdicts,
+        threshold=threshold,
+        intra_threshold=intra_threshold,
+        limit=1,
+    )
+    return matches[0] if matches else None
 
 
 def _avg_hash(pixels: list[int], width: int, height: int) -> str:

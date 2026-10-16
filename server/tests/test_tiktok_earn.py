@@ -143,6 +143,25 @@ def test_hash_similarity_same_image():
     assert hashes_similar(left, right)
 
 
+def test_hash_distance_needs_consensus_for_weak_signal():
+    from tiktok_earn_logic import hash_distance
+
+    left = {"ahash": "0" * 16, "dhash": "f" * 16, "phash": "a" * 16}
+    # Только ahash умеренно близок (4 бита) — типичный ложный «похож UI».
+    right = {"ahash": "000000000000000f", "dhash": "0123456789abcdef", "phash": "fedcba9876543210"}
+    assert hash_distance(left, right) == 64
+    # Два хеша почти совпали — реальная копия.
+    twin = {"ahash": "0000000000000001", "dhash": "0000000000000001", "phash": "fedcba9876543210"}
+    assert hash_distance({"ahash": "0" * 16, "dhash": "0" * 16, "phash": "a" * 16}, twin) <= 2
+    # Один почти точный хеш — тоже копия.
+    assert hash_distance(
+        {"ahash": "0" * 16, "dhash": "f" * 16, "phash": "a" * 16},
+        {"ahash": "0000000000000001", "dhash": "0123456789abcdef", "phash": "fedcba9876543210"},
+    ) <= 2
+    # md5 — мгновенный дубль.
+    assert hash_distance({"md5": "abc"}, {"md5": "abc"}) == 0
+
+
 def test_find_matches_marks_near_duplicates():
     from PIL import Image
     import io
@@ -175,6 +194,17 @@ def test_find_matches_skips_same_series_lookalikes():
     assert "1:2" in ids
     cross = [m for m in matches if not m["sameCase"]]
     assert all(m["similarity"] >= 94 for m in cross)
+
+
+def test_find_matches_file_id_is_exact_copy():
+    from tiktok_earn_logic import find_first_duplicate
+
+    src = {"id": "1:0", "caseId": 1, "index": 0, "fileId": "AgAD111", "ahash": "", "dhash": "", "phash": ""}
+    other = {"id": "9:3", "caseId": 9, "index": 3, "fileId": "AgAD111", "ahash": "", "dhash": "", "phash": ""}
+    hit = find_first_duplicate(src, [other])
+    assert hit is not None
+    assert hit["distance"] == 0
+    assert hit["match"]["caseId"] == 9
 
 
 def test_payout_messages_name_the_job():

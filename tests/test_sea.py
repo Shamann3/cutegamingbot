@@ -206,6 +206,23 @@ def test_the_table_shows_the_next_step():
     paid = lobby_text({"bet": 10, "creator": 1, "participants": [1, 2], "links": {1: "A", 2: "B"}})
     assert "5381975814415866082" in paid
     assert "Ставка - 10 кут" in paid
+
+
+def test_sea_player_names_are_clickable_like_top():
+    from types import SimpleNamespace
+
+    from bot.games.sea import _plain_name, end_text, lobby_text
+
+    linked = _plain_name(SimpleNamespace(first_name="Вася", username="vasya_sea"))
+    assert linked == '<a href="https://t.me/vasya_sea">Вася</a>'
+    plain = _plain_name(SimpleNamespace(first_name="Гость", username=None))
+    assert plain == "Гость"
+    lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: linked}})
+    assert "https://t.me/vasya_sea" in lobby
+    assert "• <b><a href=" in lobby
+    win = end_text({"bet": 0, "links": {1: linked}}, 1, "Победа", 0)
+    assert "https://t.me/vasya_sea" in win
+    assert "победитель" in win
     board = aim_markup("sea:", 3, 0, {})
     names = [button.text for row in board.inline_keyboard for button in row]
     assert "Мои корабли" in names and "Сдаться" in names

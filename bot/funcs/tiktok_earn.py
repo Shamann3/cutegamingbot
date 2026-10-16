@@ -32,11 +32,14 @@ from tiktok_earn_logic import (  # noqa: E402
     clip_button_text,
     comment_progress,
     display_tiktok_url,
+    find_first_duplicate,
     format_int_dot,
     hashes_from_image_bytes,
+    hashes_usable,
     kut_for_views,
     looks_like_tiktok_url_text,
     normalize_nick,
+    photo_records_from_case,
     recheck_wait_text,
     ru_gone_verb,
     ru_screenshot_word,
@@ -1327,6 +1330,89 @@ async def _ensure_pending_case(user_id: int) -> dict[str, Any]:
     return _case_from_row(row, int(settings["photosRequired"]))
 
 
+_PHOTO_LIB_CACHE: tuple[float, list[dict[str, Any]]] | None = None
+_PHOTO_LIB_TTL = 45.0
+
+
+def _invalidate_photo_library_cache() -> None:
+    global _PHOTO_LIB_CACHE
+    _PHOTO_LIB_CACHE = None
+
+
+async def load_comment_photo_library(*, exclude_case_id: int | None = None) -> list[dict[str, Any]]:
+    """Все скрины комментариев в системе (pending/approved/rejected/withdrawn)."""
+    global _PHOTO_LIB_CACHE
+    import time
+
+    await ensure_schema()
+    pool = _pool()
+    if not pool:
+        return []
+    now = time.monotonic()
+    cached = _PHOTO_LIB_CACHE
+    if cached is None or (now - cached[0]) > _PHOTO_LIB_TTL:
+        rows = await pool.fetch(
+            """
+            SELECT id, user_id, photos, created_at, status
+            FROM tiktok_comment_cases
+            WHERE status IN ('pending', 'approved', 'rejected', 'withdrawn')
+              AND jsonb_typeof(photos) = 'array'
+              AND jsonb_array_length(photos) > 0
+            ORDER BY id DESC
+            """
+        )
+        lib: list[dict[str, Any]] = []
+        for row in rows:
+            photos = _json(row["photos"]) or []
+            if not photos:
+                continue
+            lib.extend(
+                photo_records_from_case(
+                    int(row["id"]),
+                    int(row["user_id"]),
+                    photos,
+                    row["created_at"],
+                    status=str(row["status"] or ""),
+                )
+            )
+        _PHOTO_LIB_CACHE = (now, lib)
+        cached = _PHOTO_LIB_CACHE
+    if not exclude_case_id:
+        return list(cached[1])
+    eid = int(exclude_case_id)
+    return [item for item in cached[1] if int(item.get("caseId") or 0) != eid]
+
+
+async def assert_photo_not_duplicate(
+    user_id: int,
+    case_id: int,
+    case_photos: list[dict[str, Any]],
+    photo: dict[str, Any],
+) -> None:
+    """Блокирует копии: внутри серии и против всей библиотеки скринов."""
+    if not hashes_usable(photo) and not str(photo.get("fileId") or "").strip():
+        return
+    candidate = {
+        "id": f"{case_id}:new",
+        "caseId": int(case_id),
+        "userId": int(user_id),
+        "index": -1,
+        "fileId": str(photo.get("fileId") or "").strip(),
+        "ahash": photo.get("ahash") or "",
+        "dhash": photo.get("dhash") or "",
+        "phash": photo.get("phash") or "",
+        "md5": photo.get("md5") or "",
+    }
+    intra = photo_records_from_case(case_id, user_id, case_photos)
+    library = await load_comment_photo_library(exclude_case_id=case_id)
+    match = find_first_duplicate(candidate, intra + library)
+    if not match:
+        return
+    if match.get("sameCase"):
+        raise ValueError("Этот кадр почти как другой в вашей серии. Пришлите другой скрин.")
+    raise ValueError("Этот скрин уже есть в системе. Пришлите другой кадр комментария.")
+
+
 async def add_photo(user_id: int, file_id: str, hashes: dict[str, Any] | None, thumb_id: str = "") -> dict[str, Any]:
     if not str(file_id or "").strip():
         raise ValueError("Не удалось прочитать фото. Пришлите скрин ещё раз.")
@@ -1342,6 +1428,9 @@ async def add_photo(user_id: int, file_id: str, hashes: dict[str, Any] | None, t
         "phash": (hashes or {}).get("phash") or "",
         "md5": (hashes or {}).get("md5") or "",
     }
+    if not hashes_usable(photo):
+        raise ValueError("Не удалось проверить скрин на копии. Пришлите фото ещё раз.")
+    await assert_photo_not_duplicate(user_id, int(case["id"]), list(case["photos"] or []), photo)
     result = append_case_photos(case["photos"], [photo], needed)
     pool = _pool()
     if not pool:
@@ -1351,6 +1440,7 @@ async def add_photo(user_id: int, file_id: str, hashes: dict[str, Any] | None, t
         case["id"],
         json.dumps(result["photos"], ensure_ascii=False),
     )
+    _invalidate_photo_library_cache()
     return {
         "added": int(result["added"]),
         "count": int(result["received"]),
@@ -1380,12 +1470,14 @@ async def undo_photo(user_id: int) -> dict[str, Any]:
             "DELETE FROM tiktok_comment_cases WHERE id = $1 AND status = 'pending'",
             case["id"],
         )
+        _invalidate_photo_library_cache()
         return {"count": 0, "needed": needed, "complete": False, "caseId": None}
     await pool.execute(
         "UPDATE tiktok_comment_cases SET photos = $2::jsonb WHERE id = $1",
         case["id"],
         json.dumps(photos, ensure_ascii=False),
     )
+    _invalidate_photo_library_cache()
     progress = comment_progress(photos, needed)
     return {"count": int(progress["received"]), "needed": needed, "complete": False, "caseId": case["id"]}
 
@@ -1400,6 +1492,7 @@ async def withdraw_comment_case(user_id: int) -> None:
         case["id"],
         int(user_id),
     )
+    _invalidate_photo_library_cache()
 
 
 async def withdraw_pending_video(user_id: int) -> dict[str, Any]:

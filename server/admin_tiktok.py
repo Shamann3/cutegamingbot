@@ -41,6 +41,8 @@ from tiktok_earn_logic import (
     format_video_payout_html,
     format_video_reject_html,
     parse_views_input,
+    photo_file_ids,
+    photo_records_from_case,
     reviewer_mention_html,
     next_queue_item,
     validate_comment_reward,
@@ -68,6 +70,8 @@ TIKTOK_TABS = (
 )
 
 _SCHEMA_READY = False
+_LIBRARY_CACHE: tuple[float, list[dict]] | None = None
+_LIBRARY_TTL_SEC = 60.0
 
 
 async def ensure_tiktok_schema() -> None:
@@ -395,72 +399,56 @@ async def _load_verdicts() -> dict[tuple[str, str], str]:
 
 
 def _photo_file_ids(photo: Any) -> tuple[str, str]:
-    if isinstance(photo, str):
-        raw = photo.strip()
-        return raw, ""
-    if not isinstance(photo, dict):
-        return "", ""
-    nested = photo.get("hashes") if isinstance(photo.get("hashes"), dict) else {}
-    file_id = str(
-        photo.get("fileId")
-        or photo.get("file_id")
-        or photo.get("telegramFileId")
-        or nested.get("fileId")
-        or nested.get("file_id")
-        or ""
-    ).strip()
-    thumb = str(
-        photo.get("thumbFileId")
-        or photo.get("thumb_file_id")
-        or photo.get("thumbFileID")
-        or nested.get("thumbFileId")
-        or nested.get("thumb_file_id")
-        or ""
-    ).strip()
-    return file_id, thumb
+    return photo_file_ids(photo)
 
 
 def _photo_records(case_id: int, user_id: int, photos: list[dict], created_at: Any) -> list[dict]:
-    out = []
-    for i, photo in enumerate(photos):
-        data = photo if isinstance(photo, dict) else {}
-        nested = data.get("hashes") if isinstance(data.get("hashes"), dict) else {}
-        file_id, thumb = _photo_file_ids(photo)
-        out.append(
-            {
-                "id": f"{case_id}:{i}",
-                "caseId": case_id,
-                "userId": user_id,
-                "index": i,
-                "fileId": file_id,
-                "thumbFileId": thumb,
-                "ahash": data.get("ahash") or nested.get("ahash") or "",
-                "dhash": data.get("dhash") or nested.get("dhash") or "",
-                "phash": data.get("phash") or nested.get("phash") or "",
-                "md5": data.get("md5") or nested.get("md5") or "",
-                "createdAt": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
-            }
-        )
-    return out
+    return photo_records_from_case(case_id, user_id, photos, created_at)
+
+
+def _invalidate_photo_library_cache() -> None:
+    global _LIBRARY_CACHE
+    _LIBRARY_CACHE = None
 
 
 async def _library_photos(exclude_case_id: int | None = None) -> list[dict]:
-    rows = await db.pool.fetch(
-        """
-        SELECT id, user_id, photos, created_at, status
-        FROM tiktok_comment_cases
-        WHERE status IN ('pending', 'approved', 'rejected', 'withdrawn')
-        ORDER BY id DESC
-        LIMIT 200
-        """
-    )
-    lib: list[dict] = []
-    for row in rows:
-        if exclude_case_id and int(row["id"]) == int(exclude_case_id):
-            continue
-        photos = _json(row["photos"]) or []
-        lib.extend(_photo_records(int(row["id"]), int(row["user_id"]), photos, row["created_at"]))
-    return lib
+    """Все скрины комментариев в системе — без лимита «последние 200»."""
+    global _LIBRARY_CACHE
+    import time
+
+    now = time.monotonic()
+    cached = _LIBRARY_CACHE
+    if cached is None or (now - cached[0]) > _LIBRARY_TTL_SEC:
+        rows = await db.pool.fetch(
+            """
+            SELECT id, user_id, photos, created_at, status
+            FROM tiktok_comment_cases
+            WHERE status IN ('pending', 'approved', 'rejected', 'withdrawn')
+              AND jsonb_typeof(photos) = 'array'
+              AND jsonb_array_length(photos) > 0
+            ORDER BY id DESC
+            """
+        )
+        lib: list[dict] = []
+        for row in rows:
+            photos = _json(row["photos"]) or []
+            if not photos:
+                continue
+            lib.extend(
+                photo_records_from_case(
+                    int(row["id"]),
+                    int(row["user_id"]),
+                    photos,
+                    row["created_at"],
+                    status=str(row["status"] or ""),
+                )
+            )
+        _LIBRARY_CACHE = (now, lib)
+        cached = _LIBRARY_CACHE
+    if not exclude_case_id:
+        return list(cached[1])
+    eid = int(exclude_case_id)
+    return [item for item in cached[1] if int(item.get("caseId") or 0) != eid]
 
 
 def _nick_breakdown(photos: list[dict], nicks: list[str]) -> list[dict[str, Any]]:
@@ -519,6 +507,7 @@ async def submit_comment_case(user_id: int, photos: list[dict[str, Any]]) -> dic
         json.dumps(clean, ensure_ascii=False),
         json.dumps(nicks, ensure_ascii=False),
     )
+    _invalidate_photo_library_cache()
     await clear_session(user_id)
     return {"id": int(row["id"]), "createdAt": row["created_at"].isoformat()}
 
@@ -830,6 +819,7 @@ async def approve_comment_case(case_id: int, admin_id: int) -> dict:
                 int(case_id),
                 int(admin_id),
             )
+    _invalidate_photo_library_cache()
     amount = int(settings["commentReward"])
     after = await _credit(int(row["user_id"]), amount, "+ tiktok комментарии")
     text = format_comment_payout_html(
@@ -889,6 +879,7 @@ async def reject_comment_case(
                 int(admin_id),
                 text,
             )
+    _invalidate_photo_library_cache()
     _notify(
         int(row["user_id"]),
         f"<tg-emoji emoji-id='5314346928660554905'>⚠️</tg-emoji> {text}",

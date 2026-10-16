@@ -1066,8 +1066,9 @@ def place_public_markup(game) -> InlineKeyboardMarkup:
 
 
 def _bold(name) -> str:
+    """Имя уже может быть ссылкой t.me — как в топе, оборачиваем целиком в <b>."""
     text = str(name or "Игрок")
-    if "<b>" in text:
+    if text.startswith("<b>") and text.endswith("</b>"):
         return text
     return f"<b>{text}</b>"
 
@@ -1198,8 +1199,7 @@ def _secret_view(game, uid: int):
 
 
 def end_text(game, winner: int, how: str, net: int) -> str:
-    raw = str((game.get("links") or {}).get(winner, "Игрок"))
-    name = raw.replace("<b>", "").replace("</b>", "")
+    name = str((game.get("links") or {}).get(winner, "Игрок"))
     lines = [
         f"{_tag('title', '🛥')} Морской бой",
         f"<tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji> <b>{name} - победитель!</b>",
@@ -1493,7 +1493,12 @@ async def _touch_public(bot, game, **kwargs) -> bool:
 
 async def _show(bot, game, text, markup) -> bool:
     return await _touch_public(
-        bot, game, text=text, reply_markup=markup, parse_mode="HTML",
+        bot,
+        game,
+        text=text,
+        reply_markup=markup,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
     )
 
 
@@ -1742,9 +1747,12 @@ async def _paint_secret(bot, game, uid: int, query=None, toast: str = "", only_m
 
 
 def _plain_name(user) -> str:
+    """Имя как в топе: кликабельная ссылка t.me при наличии username."""
+    from bot.funcs.person_html import person_name_html
+
     first = getattr(user, "first_name", None) if user is not None else None
-    name = " ".join(str(first or "Игрок").split()) or "Игрок"
-    return html.escape(name)
+    username = getattr(user, "username", None) if user is not None else None
+    return person_name_html(first, username, empty="Игрок")
 
 
 async def _banned(uid: int) -> bool:
