@@ -703,41 +703,54 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
                         >
                           <div className="gad-person-main">
                             <strong>{personName(seat)}</strong>
-                            <span>
-                              {seat.username ? `@${seat.username} · ` : ''}
+                            <span className="gad-person-meta">
+                              {seat.username ? `@${String(seat.username).replace(/^@/, '')}` : ''}
+                              {seat.username ? ' · ' : ''}
                               {seat.position || 'должность'}
                               {seat.rank != null ? ` · ранг ${seat.rank}` : ''}
                               {paused ? ' · на паузе' : ''}
                               {spam && seat.termEnd ? ` · до ${seat.termEnd}` : ''}
                             </span>
-                            <span className="gad-chips">
-                              {spam && <span className="gad-chip gad-chip-spam">Спам-блок</span>}
-                              {paused && <span className="gad-chip">Пауза</span>}
-                            </span>
-                          </div>
-                          <div className="gad-person-actions">
-                            {canRank && (
-                              <div className="gad-rank" role="group" aria-label="Изменить должность">
-                                <button
-                                  type="button"
-                                  className="gad-btn gad-btn-rank"
-                                  title={neighbors.up ? `Повысить до «${neighbors.up.title}»` : 'Выше должности нет'}
-                                  disabled={!neighbors.up || Boolean(busyKey)}
-                                  onClick={() => reassign(group, seat, neighbors.up, 'up')}
-                                >
-                                  {busyKey === upKey ? '…' : '↑ Выше'}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="gad-btn gad-btn-rank"
-                                  title={neighbors.down ? `Понизить до «${neighbors.down.title}»` : 'Ниже должности нет'}
-                                  disabled={!neighbors.down || Boolean(busyKey)}
-                                  onClick={() => reassign(group, seat, neighbors.down, 'down')}
-                                >
-                                  {busyKey === downKey ? '…' : '↓ Ниже'}
-                                </button>
-                              </div>
+                            {(spam || paused) && (
+                              <span className="gad-chips">
+                                {spam && <span className="gad-chip gad-chip-spam">Спам-блок</span>}
+                                {paused && <span className="gad-chip">Пауза</span>}
+                              </span>
                             )}
+                          </div>
+
+                          {canRank && (
+                            <div className="gad-rank" role="group" aria-label="Изменить должность">
+                              <button
+                                type="button"
+                                className="gad-btn gad-btn-rank"
+                                title={neighbors.up ? `Повысить до «${neighbors.up.title}»` : 'Выше должности нет'}
+                                disabled={!neighbors.up || Boolean(busyKey)}
+                                onClick={() => reassign(group, seat, neighbors.up, 'up')}
+                              >
+                                <span className="gad-rank-arrow" aria-hidden="true">↑</span>
+                                <span className="gad-rank-copy">
+                                  <strong>{busyKey === upKey ? '…' : 'Выше'}</strong>
+                                  <em>{neighbors.up ? neighbors.up.title : 'нет'}</em>
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="gad-btn gad-btn-rank"
+                                title={neighbors.down ? `Понизить до «${neighbors.down.title}»` : 'Ниже должности нет'}
+                                disabled={!neighbors.down || Boolean(busyKey)}
+                                onClick={() => reassign(group, seat, neighbors.down, 'down')}
+                              >
+                                <span className="gad-rank-arrow" aria-hidden="true">↓</span>
+                                <span className="gad-rank-copy">
+                                  <strong>{busyKey === downKey ? '…' : 'Ниже'}</strong>
+                                  <em>{neighbors.down ? neighbors.down.title : 'нет'}</em>
+                                </span>
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="gad-person-actions">
                             {onOpenUser && (
                               <button
                                 type="button"
@@ -764,6 +777,7 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
                               </button>
                             )}
                           </div>
+
                           {asking && (
                             <div className="gad-confirm" role="alertdialog" aria-label="Подтверждение снятия">
                               <p>

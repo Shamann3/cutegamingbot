@@ -263,14 +263,15 @@
 
 .gad-person {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px 12px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
   padding: 12px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: background 0.2s ease, transform 0.2s var(--gad-rise);
+  overflow: hidden;
 }
 
 .gad-person:hover {
@@ -280,8 +281,9 @@
 
 .gad-person-main {
   display: grid;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .gad-person-main strong {
@@ -291,16 +293,37 @@
   white-space: nowrap;
 }
 
-.gad-person-main span {
+.gad-person-meta {
+  display: block;
+  min-width: 0;
   color: var(--e-text-2, rgba(255, 255, 255, 0.55));
   font-size: 0.8rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gad-person-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.gad-person-actions .gad-btn-info {
+  min-width: 0;
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.gad-person-actions .gad-btn-danger {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .gad-btn {
@@ -341,24 +364,61 @@
 }
 
 .gad-rank {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .gad-btn-rank {
-  min-width: 4.6em;
-  padding: 8px 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  line-height: 1.2;
+}
+
+.gad-rank-arrow {
+  font-size: 1rem;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+.gad-rank-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.gad-rank-copy strong {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.gad-rank-copy em {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.55));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gad-btn-rank:not(:disabled) {
   background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.16);
   border-color: transparent;
+}
+
+.gad-btn-rank:disabled .gad-rank-copy em {
+  opacity: 0.7;
 }
 
 .gad-list {
@@ -759,37 +819,33 @@
   border: 1px dashed rgba(255, 255, 255, 0.12);
 }
 
-html.is-phone .gad-person,
-html[data-viewport="phone"] .gad-person {
-  grid-template-columns: 1fr;
-}
-
 html.is-phone .gad-person-actions,
 html[data-viewport="phone"] .gad-person-actions {
-  justify-content: stretch;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-html.is-phone .gad-rank,
-html[data-viewport="phone"] .gad-rank {
-  width: 100%;
-}
-
-html.is-phone .gad-btn-rank,
-html[data-viewport="phone"] .gad-btn-rank {
-  flex: 1 1 auto;
-}
-
-html.is-phone .gad-btn-info,
-html[data-viewport="phone"] .gad-btn-info {
+html.is-phone .gad-person-actions .gad-btn-danger,
+html[data-viewport="phone"] .gad-person-actions .gad-btn-danger {
   width: 100%;
 }
 
 html.is-phone .gad-person-actions .gad-btn,
 html[data-viewport="phone"] .gad-person-actions .gad-btn,
 html.is-phone .gad-actions .gad-btn,
-html[data-viewport="phone"] .gad-actions .gad-btn {
-  flex: 1 1 auto;
+html[data-viewport="phone"] .gad-actions .gad-btn,
+html.is-phone .gad-btn-rank,
+html[data-viewport="phone"] .gad-btn-rank {
   min-height: 44px;
+}
+
+@media (max-width: 720px) {
+  .gad-person-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .gad-person-actions .gad-btn-danger {
+    width: 100%;
+  }
 }
 
 html.is-phone .gad-pick-grid,
