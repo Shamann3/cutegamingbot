@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import ApproveSeat from '../../components/ApproveSeat'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import {
@@ -12,8 +13,15 @@ import {
   searchAdminUsers,
 } from '../../lib/adminClient'
 import { applicationPerson } from '../../lib/applicationPerson'
-import { adminSeatChoices, positionKindLabel } from '../../lib/seatChoice'
+import { adminSeatChoices, positionKindLabel, rankNeighbors } from '../../lib/seatChoice'
 import '../../styles/group-admins-desk.css'
+
+const panelMotion = {
+  initial: { opacity: 0, y: 14, filter: 'blur(4px)' },
+  animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
+  exit: { opacity: 0, y: -8, filter: 'blur(2px)' },
+  transition: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+}
 
 const SEGMENTS = [
   { id: 'roster', label: 'Список' },
@@ -210,8 +218,10 @@ function AppointPersonField({ text, onText, userId, onUserId }) {
   )
 }
 
-export default function GroupAdminsDesk({ onOpenUser = null }) {
-  const [segment, setSegment] = useState('roster')
+export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = null }) {
+  const [segment, setSegment] = useState(() => (
+    SEGMENTS.some((item) => item.id === initialSegment) ? initialSegment : 'roster'
+  ))
   const [groups, setGroups] = useState([])
   const [apps, setApps] = useState([])
   const [drops, setDrops] = useState([])
@@ -235,6 +245,8 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
   const [termEnd, setTermEnd] = useState('')
   const [everywhere, setEverywhere] = useState(false)
   const [groupFilter, setGroupFilter] = useState('')
+  const [cleanupNote, setCleanupNote] = useState('')
+  const reduceMotion = useReducedMotion()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -248,6 +260,14 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
       setGroups(Array.isArray(board?.groups) ? board.groups : [])
       setApps(Array.isArray(appData?.items) ? appData.items : [])
       setDrops(Array.isArray(dropData?.items) ? dropData.items : [])
+      const cleaned = Number(board?.titleCleanup?.stripped || 0)
+      if (cleaned > 0) {
+        setCleanupNote(
+          cleaned === 1
+            ? 'Снят 1 чужой тег/админка вне системы Эпсилон'
+            : `Снято чужих тегов/админок: ${cleaned}`,
+        )
+      }
     } catch (err) {
       setError(err?.message || 'Не удалось открыть администраторов групп')
     } finally {
@@ -256,6 +276,12 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    if (SEGMENTS.some((item) => item.id === initialSegment)) {
+      setSegment(initialSegment)
+    }
+  }, [initialSegment])
 
   const q = query.trim().toLowerCase()
 
@@ -364,6 +390,45 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     } finally {
       setBusyKey('')
     }
+  }
+
+  const reassign = async (group, seat, nextPost, direction) => {
+    if (!nextPost || busyKey) return
+    const key = `rank:${group.chatId}:${seat.userId}:${direction}`
+    setBusyKey(key)
+    setError('')
+    setNotice('')
+    try {
+      await appointGroupAdmin({
+        chat_id: group.chatId,
+        user_id: seat.userId,
+        position_id: nextPost.id,
+        reason: direction === 'up' ? 'Повышение с доски администраторов' : 'Понижение с доски администраторов',
+      })
+      setNotice(
+        direction === 'up'
+          ? `${personName(seat)} повышен до «${nextPost.title}»`
+          : `${personName(seat)} понижен до «${nextPost.title}»`,
+      )
+      await load()
+    } catch (err) {
+      setError(err?.message || (direction === 'up' ? 'Повысить не удалось' : 'Понизить не удалось'))
+    } finally {
+      setBusyKey('')
+    }
+  }
+
+  const openUserInfo = (userId) => {
+    if (!onOpenUser) return
+    onOpenUser(userId, {
+      section: 'staff',
+      staffEntry: {
+        office: 'staff',
+        slice: 'groupAdmins',
+        deskSegment: segment,
+      },
+      label: 'Администраторы групп',
+    })
   }
 
   const approveApp = async (item, positionId = null) => {
@@ -505,17 +570,28 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     && (!spamPick || termEnd),
   )
 
+  const motionSafe = reduceMotion
+    ? { initial: false, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: { duration: 0.01 } }
+    : panelMotion
+
   return (
     <div className="gad">
       <header className="gad-hero">
-        <h3>Администраторы групп</h3>
-        <p>
-          Список, заявки, снятие и назначение — включая спам-блок.
-          Названия и права должностей меняет только создатель проекта.
-        </p>
-        <p className="gad-note">
-          {seatTotal} мест · {pendingApps} заявок · {pendingDrops} снятий
-        </p>
+        <div className="gad-hero-glow" aria-hidden="true" />
+        <div className="gad-hero-copy">
+          <p className="gad-kicker">Официальные группы · Эпсилон</p>
+          <h3>Администраторы групп</h3>
+          <p>
+            Список, заявки, снятие и назначение — включая спам-блок.
+            Чужие теги Telegram вне системы снимаются автоматически.
+            Названия и права должностей меняет только создатель проекта.
+          </p>
+          <div className="gad-stats" aria-label="Сводка">
+            <span><strong>{seatTotal}</strong> мест</span>
+            <span><strong>{pendingApps}</strong> заявок</span>
+            <span><strong>{pendingDrops}</strong> снятий</span>
+          </div>
+        </div>
       </header>
 
       <nav className="gad-segments" aria-label="Разделы администраторов групп">
@@ -524,15 +600,24 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
             : item.id === 'apps' ? pendingApps
               : item.id === 'drops' ? pendingDrops
                 : null
+          const on = segment === item.id
           return (
             <button
               key={item.id}
               type="button"
-              className={`gad-seg${segment === item.id ? ' is-on' : ''}`}
-              aria-current={segment === item.id ? 'page' : undefined}
+              className={`gad-seg${on ? ' is-on' : ''}`}
+              aria-current={on ? 'page' : undefined}
               onClick={() => setSegment(item.id)}
             >
-              {item.label}
+              {on && !reduceMotion && (
+                <motion.span
+                  className="gad-seg-glow"
+                  layoutId="gad-seg-glow"
+                  transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                  aria-hidden="true"
+                />
+              )}
+              <span className="gad-seg-label">{item.label}</span>
               {count != null && <span className="gad-seg-count">{count}</span>}
             </button>
           )
@@ -555,21 +640,43 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
         </button>
       </div>
 
-      {error && <p className="gad-error" role="alert">{error}</p>}
-      {notice && <p className="gad-status" role="status">{notice}</p>}
-      {keyOnce && (
-        <p className="gad-status" data-copyable="1">
-          Личный ключ, один показ: <code>{keyOnce}</code>
-        </p>
-      )}
+      <AnimatePresence mode="popLayout">
+        {error && (
+          <motion.p className="gad-error" role="alert" key="err" {...motionSafe}>
+            {error}
+          </motion.p>
+        )}
+        {notice && (
+          <motion.p className="gad-status" role="status" key="ok" {...motionSafe}>
+            {notice}
+          </motion.p>
+        )}
+        {cleanupNote && (
+          <motion.p className="gad-status gad-status-soft" role="status" key="cleanup" {...motionSafe}>
+            {cleanupNote}
+          </motion.p>
+        )}
+        {keyOnce && (
+          <motion.p className="gad-status" data-copyable="1" key="key" {...motionSafe}>
+            Личный ключ, один показ: <code>{keyOnce}</code>
+          </motion.p>
+        )}
+      </AnimatePresence>
 
+      <AnimatePresence mode="wait">
       {segment === 'roster' && (
-        <div className="gad-panel" key="roster">
+        <motion.div className="gad-panel" key="roster" {...motionSafe}>
           {loading && groups.length === 0 && <p className="gad-empty">Собираем список…</p>}
           {!loading && roster.length === 0 && <p className="gad-empty">Администраторов групп пока нет</p>}
           <div className="gad-groups">
-            {roster.map((group) => (
-              <article key={group.chatId} className="gad-group">
+            {roster.map((group, index) => (
+              <motion.article
+                key={group.chatId}
+                className="gad-group"
+                initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(index, 8) * 0.04, duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
+              >
                 <div className="gad-group-head">
                   <strong>{group.title || group.chatId}</strong>
                   <span>{(group.seats || []).length} чел.</span>
@@ -585,6 +692,10 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                       const asking = dismissAsk
                         && Number(dismissAsk.chatId) === Number(group.chatId)
                         && Number(dismissAsk.userId) === Number(seat.userId)
+                      const neighbors = rankNeighbors(group, seat)
+                      const canRank = !paused && !spam && Number(seat.rank) < 5 && !asking
+                      const upKey = `rank:${group.chatId}:${seat.userId}:up`
+                      const downKey = `rank:${group.chatId}:${seat.userId}:down`
                       return (
                         <li
                           key={`${group.chatId}-${seat.userId}`}
@@ -605,9 +716,35 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                             </span>
                           </div>
                           <div className="gad-person-actions">
+                            {canRank && (
+                              <div className="gad-rank" role="group" aria-label="Изменить должность">
+                                <button
+                                  type="button"
+                                  className="gad-btn gad-btn-rank"
+                                  title={neighbors.up ? `Повысить до «${neighbors.up.title}»` : 'Выше должности нет'}
+                                  disabled={!neighbors.up || Boolean(busyKey)}
+                                  onClick={() => reassign(group, seat, neighbors.up, 'up')}
+                                >
+                                  {busyKey === upKey ? '…' : '↑ Выше'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="gad-btn gad-btn-rank"
+                                  title={neighbors.down ? `Понизить до «${neighbors.down.title}»` : 'Ниже должности нет'}
+                                  disabled={!neighbors.down || Boolean(busyKey)}
+                                  onClick={() => reassign(group, seat, neighbors.down, 'down')}
+                                >
+                                  {busyKey === downKey ? '…' : '↓ Ниже'}
+                                </button>
+                              </div>
+                            )}
                             {onOpenUser && (
-                              <button type="button" className="gad-btn" onClick={() => onOpenUser(seat.userId)}>
-                                Игрок
+                              <button
+                                type="button"
+                                className="gad-btn gad-btn-info"
+                                onClick={() => openUserInfo(seat.userId)}
+                              >
+                                Информация о пользователе
                               </button>
                             )}
                             {!paused && Number(seat.rank) < 5 && !asking && (
@@ -659,14 +796,14 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                     })}
                   </ul>
                 )}
-              </article>
+              </motion.article>
             ))}
           </div>
-        </div>
+        </motion.div>
       )}
 
       {segment === 'apps' && (
-        <div className="gad-panel" key="apps">
+        <motion.div className="gad-panel" key="apps" {...motionSafe}>
           {loading && apps.length === 0 && <p className="gad-empty">Загрузка заявок…</p>}
           {!loading && filteredApps.length === 0 && <p className="gad-empty">Заявок в админы нет</p>}
           <ul className="gad-list">
@@ -697,8 +834,8 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                   {item.body && <p className="gad-body">{item.body}</p>}
                   <div className="gad-actions">
                     {onOpenUser && (
-                      <button type="button" className="gad-btn" onClick={() => onOpenUser(item.userId)}>
-                        Игрок
+                      <button type="button" className="gad-btn gad-btn-info" onClick={() => openUserInfo(item.userId)}>
+                        Информация о пользователе
                       </button>
                     )}
                     {pending && (
@@ -756,11 +893,11 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
               )
             })}
           </ul>
-        </div>
+        </motion.div>
       )}
 
       {segment === 'drops' && (
-        <div className="gad-panel" key="drops">
+        <motion.div className="gad-panel" key="drops" {...motionSafe}>
           {loading && drops.length === 0 && <p className="gad-empty">Собираем заявки на снятие…</p>}
           {!loading && filteredDrops.length === 0 && <p className="gad-empty">Заявок на снятие нет</p>}
           <ul className="gad-list">
@@ -805,11 +942,16 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
               )
             })}
           </ul>
-        </div>
+        </motion.div>
       )}
 
       {segment === 'appoint' && (
-        <form className="gad-form gad-form-wide" key="appoint" onSubmit={submitAppoint}>
+        <motion.form
+          className="gad-form gad-form-wide"
+          key="appoint"
+          onSubmit={submitAppoint}
+          {...motionSafe}
+        >
           <div className="gad-step">
             <span className="gad-step-num">1</span>
             <div>
@@ -1009,8 +1151,9 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
               Очистить
             </button>
           </div>
-        </form>
+        </motion.form>
       )}
+      </AnimatePresence>
 
       {seatItem && (
         <ApproveSeat

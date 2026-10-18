@@ -132,6 +132,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [staffPerms, setStaffPerms] = useState([])
   const [contentInitialTab, setContentInitialTab] = useState(null)
   const [staffEntry, setStaffEntry] = useState(null)
+  const [sectionReturn, setSectionReturn] = useState(null)
   const [recentSections, setRecentSections] = useState(() => loadRecentSections())
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const [lesson, setLesson] = useState(false)
@@ -423,10 +424,30 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       setContentInitialTab(null)
     }
     if (next !== section) setFlashKey((k) => k + 1)
+    setSectionReturn(null)
     setSection(next)
     setMobileNavOpen(false)
     if (next !== 'more') setRecentSections(pushRecentSection(next))
   }, [section])
+
+  const openUserWithReturn = useCallback((userId, returnTo = null) => {
+    setSectionReturn(returnTo && returnTo.section ? returnTo : null)
+    setUsersInitialId(userId)
+    setSection('users')
+    setMobileNavOpen(false)
+  }, [])
+
+  const returnToSection = useCallback(() => {
+    if (!sectionReturn?.section) {
+      setSectionReturn(null)
+      return
+    }
+    const back = sectionReturn
+    setSectionReturn(null)
+    if (back.staffEntry) setStaffEntry(back.staffEntry)
+    setSection(back.section)
+    setFlashKey((k) => k + 1)
+  }, [sectionReturn])
 
   const currentSection = PANEL_SECTIONS.find((s) => s.id === section)
 
@@ -686,6 +707,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
                 setSection('groupsStudio')
               }}
               punishPreviewRole={staffPreview ? staffPreview.role : null}
+              sectionReturn={sectionReturn}
+              onReturnToSection={returnToSection}
             />
           )}
           {isAccounts && (
@@ -805,9 +828,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               projectCreatorId={projectCreatorId}
               entry={staffEntry}
               onOpenPreview={openPreview}
-              onOpenUser={(userId) => {
-                setUsersInitialId(userId)
-                setSection('users')
+              onOpenUser={(userId, returnTo = null) => {
+                openUserWithReturn(userId, returnTo)
               }}
             />
           )}

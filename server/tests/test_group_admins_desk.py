@@ -97,6 +97,21 @@ def test_appoint_accepts_spamblock_term_fields():
     assert body.term_end == "2026-12-31"
 
 
+def test_board_schedules_foreign_title_cleanup():
+    source = inspect.getsource(rights_board)
+    assert "schedule_title_reconcile" in source
+    assert "titleCleanup" in source
+
+
+def test_reconcile_rotates_and_strips_foreign_tags():
+    from group_realm import reconcile_stale_admin_titles
+
+    source = inspect.getsource(reconcile_stale_admin_titles)
+    assert "_RECONCILE_CURSOR" in source
+    assert "_strip_foreign_admin" in source
+    assert "custom_title" in source or "тег" in source.lower() or "title" in source
+
+
 def test_position_create_stays_creator_only():
     source = inspect.getsource(create_position)
     assert "_require_creator(user_id)" in source

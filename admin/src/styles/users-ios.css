@@ -1371,6 +1371,22 @@
   background: rgba(var(--e-accent-rgb, 84, 255, 199), 0.08);
 }
 
+.pu-return-section {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.5rem;
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.12);
+  color: rgba(186, 230, 253, 0.96);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+}
+
+.pu-return-section:hover {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.2);
+}
+
 .panel-users-body-peek {
   display: none !important;
 }

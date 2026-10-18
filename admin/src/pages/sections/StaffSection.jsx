@@ -2237,7 +2237,12 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           )}
           {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
           {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
-          {onStaff && activeId === 'groupAdmins' && <GroupAdminsDesk onOpenUser={onOpenUser} />}
+          {onStaff && activeId === 'groupAdmins' && (
+            <GroupAdminsDesk
+              onOpenUser={onOpenUser}
+              initialSegment={entry?.deskSegment || null}
+            />
+          )}
           {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" myUserId={myUserId} />}
           {onStaff && activeId === 'stats' && <StatDesk onOpenUser={onOpenUser} />}
           {onStaff && seesWater && activeId === 'water' && <WaterGames onOpenUser={onOpenUser} />}

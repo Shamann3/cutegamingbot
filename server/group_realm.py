@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import html
@@ -3018,6 +3019,8 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
     await ensure_tables()
     await sweep_expired_spamblocks()
     await release_finished_holds()
+    # При открытии доски — фоном снять чужие теги/админку в официальных группах.
+    schedule_title_reconcile(limit_chats=8)
     # Доска показывает все официальные группы — и создателю, и сотруднику с вкладкой.
     groups = await _official_group_cards()
     seated = await _seated_people()
@@ -3057,7 +3060,11 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
                 continue
             seats.append({**person, "chatId": int(group["chatId"])})
         payload.append({**group, "positions": positions, "seats": seats})
-    return {"groups": payload, "canEditPositions": _is_creator(user_id)}
+    return {
+        "groups": payload,
+        "canEditPositions": _is_creator(user_id),
+        "titleCleanup": last_title_cleanup(),
+    }
 
 
 class HoldBody(BaseModel):
@@ -3154,18 +3161,27 @@ def bot_powers_from_member(member: dict | None) -> dict:
 
 
 def classify_chat_admin(row: dict, *, seated: bool, staff: bool) -> str:
-    """Кого показать во вкладке «Админы».
+    """Кого показать во вкладке «Админы» и кого снять автоматически.
 
-    show — есть должность в этой группе, это не сотрудник проекта.
-    hide — бот, сотрудник проекта, создатель Telegram без должности.
-    strip — права администратора в Telegram есть, должности в системе нет.
-    Спам-блок и админ ГЧ — тоже должность: их не снимаем.
+    show — есть должность Эпсилона в этой группе (включая спам-блок и админа ГЧ).
+    hide — бот, сотрудник проекта, создатель Telegram без должности в системе.
+    strip — в Telegram есть админка/тег (custom_title), а в Эпсилоне человека нет.
+    Чужой тег вроде «Волшебник» без должности/роли сотрудника снимается.
     """
     if row.get("isBot") or row.get("isSelfBot") or staff:
         return "hide"
     if str(row.get("status") or "") == "creator":
         return "show" if seated else "hide"
     return "show" if seated else "strip"
+
+
+def should_keep_telegram_admin(*, seated: bool, staff: bool, is_bot: bool = False, is_creator: bool = False) -> bool:
+    """Админка/тег в официальной группе остаются только у системы Эпсилон."""
+    if is_bot or staff:
+        return True
+    if is_creator:
+        return True
+    return bool(seated)
 
 
 def _tg_person_name(user: dict) -> str:
@@ -3632,13 +3648,17 @@ async def _chat_admin_board(chat_id: int, actor_id: int, *, creator: bool) -> di
         if kind == "hide":
             continue
         if kind == "strip":
-            fault = await _demote_outsider(chat_id, row["userId"])
+            tag = str(row.get("title") or "").strip()
+            fault = await _strip_foreign_admin(chat_id, row["userId"], title=tag)
             card = _short_admin(row)
             if fault:
                 stuck.append({**card, "error": explain_demote_fault(fault)})
             else:
                 dropped.append(card)
-                detail = f"Снял незарегистрированного: {row['name']}"
+                detail = "Снял чужой тег/админку"
+                if tag:
+                    detail += f" «{tag[:16]}»"
+                detail += f": {row['name']}"
                 if row["username"]:
                     detail += f" @{row['username']}"
                 detail += f" · {row['userId']}"
@@ -5087,12 +5107,75 @@ async def strip_orphaned_titles_for_user(user_id: int) -> dict:
     return {"stripped": stripped, "faults": faults[:12]}
 
 
-async def reconcile_stale_admin_titles(*, limit_chats: int = 60) -> dict:
-    """В официальных группах снимает префикс/тег у тех, кто уже не админ и не сотрудник."""
+_RECONCILE_CURSOR = 0
+_LAST_TITLE_CLEANUP: dict[str, Any] = {
+    "chats": 0,
+    "stripped": 0,
+    "stuck": 0,
+    "expired": 0,
+    "at": None,
+}
+_RECONCILE_LOCK: asyncio.Lock | None = None
+_RECONCILE_TASK: asyncio.Task | None = None
+
+
+def _reconcile_lock() -> asyncio.Lock:
+    global _RECONCILE_LOCK
+    if _RECONCILE_LOCK is None:
+        _RECONCILE_LOCK = asyncio.Lock()
+    return _RECONCILE_LOCK
+
+
+def _remember_title_cleanup(payload: dict) -> dict:
+    global _LAST_TITLE_CLEANUP
+    _LAST_TITLE_CLEANUP = {
+        "chats": int(payload.get("chats") or 0),
+        "stripped": int(payload.get("stripped") or 0),
+        "stuck": int(payload.get("stuck") or 0),
+        "expired": int(payload.get("expired") or 0),
+        "at": datetime.now(timezone.utc).isoformat(),
+    }
+    return dict(_LAST_TITLE_CLEANUP)
+
+
+def last_title_cleanup() -> dict:
+    return dict(_LAST_TITLE_CLEANUP)
+
+
+async def _strip_foreign_admin(chat_id: int, user_id: int, *, title: str = "") -> str:
+    """Снимает чужую админку и тег (custom_title). Пусто — получилось."""
+    # Сначала полный сброс через _strip_to_member (админка + тег + право писать).
+    note = await _strip_to_member(int(chat_id), int(user_id))
+    low = note.lower()
+    # «Должность в панели снята. В группе админка могла остаться» — это НЕ успех.
+    if "могл" not in low and ("тег сняты" in low or "админка снята" in low):
+        return ""
+    # Запасной путь с антифлуд-кэшем неудач.
+    fault = await _demote_outsider(int(chat_id), int(user_id))
+    if fault:
+        return fault or note
+    if title:
+        await _telegram_call(
+            "setChatAdministratorCustomTitle",
+            {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": ""},
+        )
+    await _apply_send_limits(int(chat_id), int(user_id), None)
+    return ""
+
+
+async def reconcile_stale_admin_titles(*, limit_chats: int = 10, sync_staff: bool = True) -> dict:
+    """Во всех официальных группах снимает чужие теги/админку.
+
+    Оставляет только: бота, создателя Telegram-группы, сотрудников проекта Эпсилон
+    и людей с должностью в epsilon_seats (включая спам-блок). Остальных с тегом
+    вроде «Волшебник» или любыми правами администратора — снимает.
+    Группы обходятся по кругу, чтобы не долбить одни и те же chat_id.
+    """
+    global _RECONCILE_CURSOR
     try:
         await ensure_tables()
     except Exception:
-        return {"chats": 0, "stripped": 0, "stuck": 0}
+        return _remember_title_cleanup({"chats": 0, "stripped": 0, "stuck": 0, "expired": 0})
     expired = await sweep_expired_seats()
     try:
         rows = await db.pool.fetch(
@@ -5101,63 +5184,93 @@ async def reconcile_stale_admin_titles(*, limit_chats: int = 60) -> dict:
             FROM epsilon_official_groups
             WHERE COALESCE(is_official, TRUE)
             ORDER BY chat_id
-            LIMIT $1
-            """,
-            max(1, int(limit_chats)),
+            """
         )
     except Exception:
         _log.exception("список официальных групп для сверки префиксов")
-        return {"chats": 0, "stripped": expired, "stuck": 0, "expired": expired}
+        return _remember_title_cleanup({
+            "chats": 0, "stripped": 0, "stuck": 0, "expired": expired,
+        })
+    chat_ids = [int(row["chat_id"]) for row in rows]
+    if not chat_ids:
+        result = {"chats": 0, "stripped": 0, "stuck": 0, "expired": expired, "staffPrefixes": {}}
+        _remember_title_cleanup(result)
+        return result
+    batch_size = max(1, min(int(limit_chats), len(chat_ids)))
+    start = _RECONCILE_CURSOR % len(chat_ids)
+    ordered = chat_ids[start:] + chat_ids[:start]
+    batch = ordered[:batch_size]
+    _RECONCILE_CURSOR = (start + batch_size) % len(chat_ids)
     stripped = 0
     stuck = 0
-    for row in rows:
-        cid = int(row["chat_id"])
+    for cid in batch:
         admins, error = await _chat_admin_rows(cid)
         if error and not admins:
             continue
         seated = await _registered_admin_ids(cid)
         staff = await _project_staff_ids([item["userId"] for item in admins])
         for item in admins:
+            uid = int(item["userId"])
             kind = classify_chat_admin(
                 item,
-                seated=item["userId"] in seated,
-                staff=item["userId"] in staff,
+                seated=uid in seated,
+                staff=uid in staff,
             )
             if kind != "strip":
                 continue
-            # Сначала через кэш неудач, затем полный сброс прав писать.
-            fault = await _demote_outsider(cid, int(item["userId"]))
+            # Есть тег или права без должности Эпсилона — снимаем полностью.
+            tag = str(item.get("title") or "").strip()
+            fault = await _strip_foreign_admin(cid, uid, title=tag)
             if fault:
                 stuck += 1
                 continue
-            await _apply_send_limits(cid, int(item["userId"]), None)
             stripped += 1
+            detail = "Снял чужой тег/админку"
+            if tag:
+                detail += f" «{tag[:16]}»"
+            detail += f": {item.get('name') or ''}"
+            if item.get("username"):
+                detail += f" @{item['username']}"
+            detail += f" · {uid}"
             try:
-                await _realm_log(
-                    cid,
-                    int(item["userId"]),
-                    "chat_admin_unregistered",
-                    (
-                        f"Снял устаревшую админку/префикс: {item.get('name') or ''}"
-                        f"{(' @' + item['username']) if item.get('username') else ''}"
-                        f" · {item['userId']}"
-                    )[:500],
-                    None,
-                )
+                await _realm_log(cid, uid, "chat_admin_unregistered", detail[:500], None)
             except Exception:
                 pass
     staff_sync = {"people": 0, "applied": 0, "faults": 0}
-    try:
-        staff_sync = await sync_all_staff_project_prefixes()
-    except Exception:
-        _log.exception("синхронизация префиксов сотрудников проекта")
-    return {
-        "chats": len(rows),
+    if sync_staff:
+        try:
+            staff_sync = await sync_all_staff_project_prefixes()
+        except Exception:
+            _log.exception("синхронизация префиксов сотрудников проекта")
+    result = {
+        "chats": len(batch),
         "stripped": stripped,
         "stuck": stuck,
         "staffPrefixes": staff_sync,
         "expired": expired,
     }
+    _remember_title_cleanup(result)
+    return result
+
+
+def schedule_title_reconcile(*, limit_chats: int = 8) -> None:
+    """Фоновая сверка тегов — не блокирует ответ доски."""
+    global _RECONCILE_TASK
+
+    async def _run() -> None:
+        async with _reconcile_lock():
+            try:
+                await reconcile_stale_admin_titles(limit_chats=limit_chats, sync_staff=False)
+            except Exception:
+                _log.exception("фоновая сверка тегов")
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if _RECONCILE_TASK and not _RECONCILE_TASK.done():
+        return
+    _RECONCILE_TASK = loop.create_task(_run())
 
 
 def _json_cell(value: Any) -> str | None:

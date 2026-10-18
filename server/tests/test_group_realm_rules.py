@@ -207,10 +207,15 @@ def test_admin_pulse_window_and_rank():
 
 
 def test_chat_admin_list_hides_staff_and_strips_strangers():
-    from group_realm import classify_chat_admin, _member_can_punish, _member_still_admin
+    from group_realm import (
+        classify_chat_admin,
+        should_keep_telegram_admin,
+        _member_can_punish,
+        _member_still_admin,
+    )
 
     seated = {"userId": 5, "status": "administrator", "isBot": False, "isSelfBot": False}
-    stranger = {"userId": 8, "status": "administrator", "isBot": False, "isSelfBot": False}
+    stranger = {"userId": 8, "status": "administrator", "isBot": False, "isSelfBot": False, "title": "Волшебник"}
     staff = {"userId": 3, "status": "administrator", "isBot": False, "isSelfBot": False}
     owner = {"userId": 1, "status": "creator", "isBot": False, "isSelfBot": False}
     bot = {"userId": 9, "status": "administrator", "isBot": True, "isSelfBot": True}
@@ -220,6 +225,10 @@ def test_chat_admin_list_hides_staff_and_strips_strangers():
     assert classify_chat_admin(owner, seated=False, staff=False) == "hide"
     assert classify_chat_admin(owner, seated=True, staff=False) == "show"
     assert classify_chat_admin(bot, seated=False, staff=False) == "hide"
+    assert should_keep_telegram_admin(seated=True, staff=False) is True
+    assert should_keep_telegram_admin(seated=False, staff=True) is True
+    assert should_keep_telegram_admin(seated=False, staff=False) is False
+    assert should_keep_telegram_admin(seated=False, staff=False, is_creator=True) is True
     from group_realm import explain_demote_fault
     assert "не может менять" in explain_demote_fault("Bad Request: CHAT_ADMIN_REQUIRED")
     assert "Добавление администраторов" in explain_demote_fault("not enough rights")

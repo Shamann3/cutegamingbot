@@ -2618,7 +2618,13 @@ async def _ready(query, store, game, uid: int) -> None:
         await _ack(query, "Бой начался. Стреляйте в общем сообщении.")
         await _begin_fight(store, game)
         return
-    await _paint_secret(game.get("bot"), game, uid, query, toast="Ждём соперника")
+    # show_alert: игрок явно видит, что готов и ждёт соперника.
+    await _ack(
+        query,
+        "Вы готовы к бою, осталось подождать пока противник выставит свои корабли",
+        alert=True,
+    )
+    await _paint_secret(game.get("bot"), game, uid, query, quiet=True)
     bot = game.get("bot")
     if bot is not None:
         await _show(bot, game, place_text(game), place_public_markup(game))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adminSeatChoices, positionKindLabel, typedChatId } from './seatChoice'
+import { adminSeatChoices, positionKindLabel, rankNeighbors, typedChatId } from './seatChoice'
 
 const SAMPLE = [
   {
@@ -33,5 +33,22 @@ describe('where an application can sit', () => {
   it('reads a chat id typed into the search', () => {
     expect(typedChatId('-1001234567890')).toBe(-1001234567890)
     expect(typedChatId('альфа')).toBeNull()
+  })
+
+  it('finds higher and lower posts for promote and demote', () => {
+    const group = {
+      positions: [
+        { id: 1, title: 'Хелпер', rank: 1, kind: 'post' },
+        { id: 2, title: 'Модератор', rank: 2, kind: 'post' },
+        { id: 3, title: 'Администратор', rank: 3, kind: 'post' },
+        { id: 4, title: 'Спам-блок', rank: 0, kind: 'spamblock' },
+      ],
+    }
+    const mid = rankNeighbors(group, { positionId: 2, position: 'Модератор', kind: 'post' })
+    expect(mid.up.title).toBe('Администратор')
+    expect(mid.down.title).toBe('Хелпер')
+    const top = rankNeighbors(group, { positionId: 3, kind: 'post' })
+    expect(top.up).toBeNull()
+    expect(top.down.title).toBe('Модератор')
   })
 })

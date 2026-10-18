@@ -1411,6 +1411,8 @@ export default function UsersSection({
   canOpenGroups = false,
   onOpenGroup,
   punishPreviewRole = null,
+  sectionReturn = null,
+  onReturnToSection = null,
 }) {
   const phone = useIsPhone()
   const isOwner = role === 'owner'
@@ -2000,6 +2002,16 @@ export default function UsersSection({
               </button>
             </div>
           </div>
+        )}
+
+        {!peek && sectionReturn?.section && typeof onReturnToSection === 'function' && (
+          <button
+            type="button"
+            className="pu-return-chip pu-return-section"
+            onClick={onReturnToSection}
+          >
+            ← Назад к {sectionReturn.label || 'предыдущему разделу'}
+          </button>
         )}
 
         {!peek && returnStack.length > 0 && hasProfile && (
