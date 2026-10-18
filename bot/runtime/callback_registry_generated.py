@@ -87,7 +87,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'server.admin_bot',
 )
 
-# prefix -> (module, handler): 397
+# prefix -> (module, handler): 398
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
@@ -476,6 +476,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'eps:': ('server.admin_bot', 'on_screen'),
     'gcA:': ('bot.handlers.group_captcha', 'on_captcha_answer'),
     'gcX:': ('bot.handlers.group_captcha', 'on_captcha_disable'),
+    'mrg:': ('bot.funcs.marriage_live', 'dispatch'),
     'pop_': ('bot.games.balls', 'process_callback_ball'),
     'ref1': ('bot.handlers.handlers_btns', 'process_callback_kb1btn1'),
     'sea:': ('bot.games.sea', 'sea_press'),

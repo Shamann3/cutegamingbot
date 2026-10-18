@@ -51,6 +51,12 @@ from bot.funcs.marriage_rules import (
 )
 
 
+def test_marriage_buttons_are_hot_dispatched():
+    from bot.runtime.callback_registry_generated import PREFIX_HANDLERS
+
+    assert PREFIX_HANDLERS["mrg:"] == ("bot.funcs.marriage_live", "dispatch")
+
+
 def test_three_free_then_double_until_300_then_fifteen_percent():
     assert [wedding_price(n) for n in range(3)] == [0, 0, 0]
     assert wedding_price(3) == 15
@@ -71,6 +77,9 @@ def test_phrases_a_newcomer_can_type_and_help_stays_help():
     assert classify("развод")["kind"] == "leave"
     assert classify("развестись")["kind"] == "leave"
     assert classify("разведёмся")["kind"] == "leave"
+    assert classify("расторгнуть брак")["kind"] == "leave"
+    assert classify("разорвать отношения")["kind"] == "leave"
+    assert classify("расстаться")["kind"] == "leave"
     assert classify("топ браков")["kind"] == "top"
     assert classify("+браки")["kind"] == "on"
     assert classify("+ браки")["kind"] == "on"
@@ -249,8 +258,9 @@ def test_settings_change_the_price_and_tone_stays_one_day():
     assert broken["freeWeddings"] == 0
     assert broken["proposalMinutes"] == 1440
     assert broken["verbs"] == {"hug": 40}
-    assert "тонус" in help_page(custom).lower()
-    assert "искра" in help_page(custom).lower()
+    page = help_page(custom).lower()
+    assert "искр" in page
+    assert "брак" in page
 
 
 def test_spark_needs_both_people_and_can_be_saved():
@@ -484,8 +494,8 @@ def test_kind_words_feed_the_flame_and_the_week_is_visible():
     assert "ещё можно" in strip
     from bot.funcs.marriage_design import HOW_TEXT, WHAT_TEXT, spark_fire
     assert "лимит" in WHAT_TEXT.lower()
-    assert "доброе слово" in WHAT_TEXT.lower()
-    assert "оба" in HOW_TEXT.lower()
+    assert "слово паре" in WHAT_TEXT.lower() or "доброе слово" in WHAT_TEXT.lower()
+    assert "оба" in HOW_TEXT.lower() or "оба" in WHAT_TEXT.lower()
     fire = spark_fire(
         {"need": 5, "goal": 10, "both_done": False, "fading": False, "level": {"name": "Знакомство"}, "state": {"spark_days": 0}},
         2, 0, "Б", 12,

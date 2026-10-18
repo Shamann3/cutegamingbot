@@ -57,6 +57,8 @@ MANUAL_PREFIX: dict[str, tuple[str, str]] = {
     "spd:": ("main", "speedconc_request_callback"),
     "speedconc_": ("main", "speedconc_request_callback"),
     "skipcb:": ("main", "gift_send_request"),  # gift filter раньше; prep тоже умеет
+    # Живые браки: кнопки без @callback_query — только hot-dispatch.
+    "mrg:": ("bot.funcs.marriage_live", "dispatch"),
 }
 
 
