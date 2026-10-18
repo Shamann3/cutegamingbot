@@ -393,6 +393,7 @@ def test_dismiss_clears_prefix_and_orphan_titles():
     source = inspect.getsource(group_dismiss)
     assert "_strip_to_member" in source
     assert "strip_orphaned_titles_for_user" in source
+    assert "apply_staff_project_prefix" in source
     assert "DELETE FROM epsilon_seats" in source
 
 

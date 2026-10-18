@@ -381,8 +381,8 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
     setError('')
     setNotice('')
     try {
-      await dismissGroupAdmin({ chat_id: chatId, user_id: userId })
-      setNotice('Должность снята')
+      const data = await dismissGroupAdmin({ chat_id: chatId, user_id: userId })
+      setNotice(data?.telegram ? `Должность снята. ${data.telegram}` : 'Должность снята')
       setDismissAsk(null)
       await load()
     } catch (err) {
@@ -399,17 +399,21 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
     setError('')
     setNotice('')
     try {
-      await appointGroupAdmin({
+      const nextPrefix = String(nextPost.prefix || nextPost.title || '').trim().slice(0, 16)
+      const data = await appointGroupAdmin({
         chat_id: group.chatId,
         user_id: seat.userId,
         position_id: nextPost.id,
+        prefix: nextPrefix,
         reason: direction === 'up' ? 'Повышение с доски администраторов' : 'Понижение с доски администраторов',
       })
-      setNotice(
-        direction === 'up'
-          ? `${personName(seat)} повышен до «${nextPost.title}»`
-          : `${personName(seat)} понижен до «${nextPost.title}»`,
-      )
+      const verb = direction === 'up' ? 'повышен' : 'понижен'
+      const tag = data?.prefix ? ` · тег «${data.prefix}»` : (nextPrefix ? ` · тег «${nextPrefix}»` : '')
+      const tg = data?.telegram ? ` ${data.telegram}` : ' Права и префикс обновлены в группе.'
+      setNotice(`${personName(seat)} ${verb} до «${nextPost.title}»${tag}.${tg}`)
+      if (data?.titleSynced === false) {
+        setError(data?.telegram || 'Должность записана, но тег в Telegram мог не обновиться')
+      }
       await load()
     } catch (err) {
       setError(err?.message || (direction === 'up' ? 'Повысить не удалось' : 'Понизить не удалось'))
@@ -522,21 +526,26 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
     setNotice('')
     setKeyOnce('')
     try {
+      const nextPrefix = String(selectedPost?.prefix || selectedPost?.title || '').trim().slice(0, 16)
       const data = await appointGroupAdmin({
         chat_id: chatId,
         user_id: userId,
         position_id: positionId,
+        prefix: nextPrefix,
         reason: appointReason.trim() || 'Назначение из администраторов групп',
         term_start: spamPick ? termStart : '',
         term_end: spamPick ? termEnd : '',
         everywhere,
       })
       setKeyOnce(data?.entryKey || '')
-      setNotice(
-        everywhere
-          ? `Должность выдана в ${data?.placed || 'нескольких'} официальных группах.`
-          : (data?.telegram || 'Человек назначен на должность'),
-      )
+      const base = everywhere
+        ? `Должность выдана в ${data?.placed || 'нескольких'} официальных группах.`
+        : (data?.telegram || 'Человек назначен на должность')
+      const tag = data?.prefix ? ` Тег «${data.prefix}».` : ''
+      setNotice(`${base}${everywhere ? tag : ''}`)
+      if (data?.titleSynced === false) {
+        setError(data?.telegram || 'Должность записана, но тег в Telegram мог не обновиться')
+      }
       resetAppoint()
       await load()
       setSegment('roster')

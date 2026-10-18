@@ -1734,17 +1734,19 @@ async def staff_approve_application(
         details={"role": role, "applicationId": application_id},
         ip=_get_client_ip(request),
     )
+    prefix_sync = {"applied": 0, "faults": []}
     try:
         from group_realm import apply_staff_project_prefix
 
-        await apply_staff_project_prefix(int(result["userId"]), role)
-    except Exception:
-        pass
+        prefix_sync = await apply_staff_project_prefix(int(result["userId"]), role)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("staff prefix after approve")
+        prefix_sync = {"applied": 0, "faults": [type(exc).__name__]}
     notify_staff(
         result["userId"],
         f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша заявка в состав сотрудников Эпсилона одобрена! Вы повышены до роли : {ROLE_LABELS.get(role, role)}. </b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>"
     )
-    return {"ok": True, **result}
+    return {"ok": True, **result, "prefixSync": prefix_sync}
 
 
 @router.post("/staff/applications/{application_id}/reject")
@@ -1799,14 +1801,28 @@ async def staff_suspend_member(
     if not ok:
         raise HTTPException(status_code=409, detail="Сотрудник не найден или это владелец")
 
+    prefix_strip = {"stripped": 0, "faults": []}
+    try:
+        from group_realm import strip_staff_project_prefix
+
+        # Сразу снять тег/админку роли сотрудника в официальных группах (должности групп не трогаем).
+        prefix_strip = await strip_staff_project_prefix(int(member_id))
+    except Exception as exc:
+        logging.getLogger(__name__).exception("staff prefix strip after suspend")
+        prefix_strip = {"stripped": 0, "faults": [type(exc).__name__]}
+
     await log_admin_action(
         user_id, "staff_suspend",
         target_type="staff",
         target_id=str(member_id),
         target_label="Доступ отключён",
+        details={
+            "stripped": prefix_strip.get("stripped"),
+            "faults": prefix_strip.get("faults"),
+        },
         ip=_get_client_ip(request),
     )
-    return {"ok": True}
+    return {"ok": True, "prefixStrip": prefix_strip}
 
 
 @router.post("/staff/members/{member_id}/reissue-key")
@@ -1967,12 +1983,15 @@ async def staff_change_role(
         details={"oldRole": result["oldRole"], "newRole": role, "reason": body.reason.strip()},
         ip=_get_client_ip(request),
     )
+    prefix_sync = {"applied": 0, "faults": [], "prefix": ""}
     try:
         from group_realm import apply_staff_project_prefix
 
-        await apply_staff_project_prefix(int(member_id), role)
-    except Exception:
-        pass
+        # Сразу заменить тег и права во всех официальных группах под новую роль.
+        prefix_sync = await apply_staff_project_prefix(int(member_id), role)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("staff prefix after role change")
+        prefix_sync = {"applied": 0, "faults": [type(exc).__name__], "prefix": ""}
     notify_staff(
         member_id,
         f"<tg-emoji emoji-id='5454074580010295588'>🔄</tg-emoji> <b>Ваша должность изменена : {ROLE_LABELS.get(result['oldRole'], result['oldRole'])} → </b>"
@@ -1980,7 +1999,7 @@ async def staff_change_role(
         + (f" <b>Причина : {body.reason.strip()}</b>" if body.reason.strip() else "") + (f"<blockquote><b>Виво-Эпсилон</b></blockquote>"),
 
     )
-    return {"ok": True, **result}
+    return {"ok": True, **result, "prefixSync": prefix_sync}
 
 
 @router.get("/staff/members/{member_id}/history")

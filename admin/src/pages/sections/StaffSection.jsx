@@ -582,6 +582,7 @@ function MemberManageModal({ member, members, canAssignRoles, onClose, onSaved }
   const [curatorId, setCuratorId] = useState(member.curatorId ? String(member.curatorId) : '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [okNote, setOkNote] = useState('')
 
   const curatorOptions = [
     { value: '', label: '— без куратора —' },
@@ -592,10 +593,19 @@ function MemberManageModal({ member, members, canAssignRoles, onClose, onSaved }
 
   const saveRole = async () => {
     if (role === member.role) { setError('Роль не изменилась'); return }
-    setError(''); setBusy(true)
+    setError(''); setOkNote(''); setBusy(true)
     try {
-      await changeMemberRole(member.userId, role, roleReason.trim())
-      onSaved()
+      const data = await changeMemberRole(member.userId, role, roleReason.trim())
+      const sync = data?.prefixSync || {}
+      const tag = String(sync.prefix || '').trim()
+      const applied = Number(sync.applied || 0)
+      const faults = Array.isArray(sync.faults) ? sync.faults.length : 0
+      let msg = 'Роль обновлена. Префикс и права в Telegram применены сразу.'
+      if (tag) msg += ` Тег «${tag}».`
+      if (applied > 0) msg += ` Обновлено групп: ${applied}.`
+      if (faults > 0) msg += ' Часть групп не приняла новый тег.'
+      setOkNote(msg)
+      onSaved?.({ keepOpen: true })
     } catch (err) {
       setError(err?.message || 'Ошибка смены роли')
     } finally { setBusy(false) }
@@ -618,10 +628,16 @@ function MemberManageModal({ member, members, canAssignRoles, onClose, onSaved }
         <p className="admin-modal-desc">Текущая роль: {roleLabel(member.role)}</p>
 
         {error && <p className="sec-error">{error}</p>}
+        {okNote && (
+          <p className="panel-action-notice panel-action-notice-ok" role="status">{okNote}</p>
+        )}
 
         {canAssignRoles && member.role !== 'owner' && (
           <div className="staff-manage-block">
             <span className="auth-label">Сменить должность</span>
+            <p className="admin-modal-desc">
+              При повышении или понижении тег и права в официальных группах обновятся сразу.
+            </p>
             <AdminSelect value={role} onChange={setRole} options={ASSIGN_ROLE_OPTIONS} />
             <input
               className="sec-input"
@@ -899,7 +915,10 @@ function MembersTab({ canAssignRoles, isOwner, myUserId, canManageStaff, isProje
           members={items}
           canAssignRoles={canAssignRoles}
           onClose={() => setManageMember(null)}
-          onSaved={() => { setManageMember(null); load() }}
+          onSaved={(opts) => {
+            if (!opts?.keepOpen) setManageMember(null)
+            load()
+          }}
         />
       )}
     </div>

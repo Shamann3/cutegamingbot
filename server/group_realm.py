@@ -1371,26 +1371,46 @@ async def _strip_to_member(chat_id: int, user_id: int) -> str:
     return f"Должность в панели снята. В группе админка могла остаться: {last_error}"
 
 
+async def _set_admin_custom_title(chat_id: int, user_id: int, title: str) -> tuple[bool, str]:
+    """Ставит или очищает custom_title (тег рядом с именем)."""
+    text = " ".join((title or "").split())[:16]
+    ok, err, _data = await _telegram_call(
+        "setChatAdministratorCustomTitle",
+        {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": text},
+    )
+    return ok, err
+
+
 async def _apply_chat_title(chat_id: int, user_id: int, title: str, *, rights: list[str] | None) -> str:
     """Ставит или снимает админку и префикс в группе. Токен в ответ не попадает.
 
     rights=None снимает админку: человек остаётся в чате обычным участником.
+    При повышении/понижении всегда заново выдаёт права и тег (custom_title).
     """
     if rights is None:
         return await _strip_to_member(int(chat_id), int(user_id))
-    ok, err, _data = await _telegram_call(
-        "promoteChatMember",
-        _promote_body(chat_id, user_id, rights),
-    )
+    payload = _promote_body(chat_id, user_id, rights)
+    ok, err, _data = await _telegram_call("promoteChatMember", payload)
     if not ok:
         return f"Место в панели есть. Префикс в группе не встал: {err}"
     text = " ".join((title or "").split())[:16]
+    titled = False
+    title_err = ""
+    # Telegram иногда не принимает тег сразу после promote — повторяем.
+    for attempt in range(3):
+        if attempt:
+            await asyncio.sleep(0.18 * attempt)
+            await _telegram_call("promoteChatMember", payload)
+        titled, title_err = await _set_admin_custom_title(chat_id, user_id, text)
+        if titled:
+            break
+        low = (title_err or "").lower()
+        if "not enough rights" in low or "chat_admin_required" in low or "user_creator" in low:
+            break
     if not text:
-        return "Админка в группе обновлена."
-    titled, title_err, _title_data = await _telegram_call(
-        "setChatAdministratorCustomTitle",
-        {"chat_id": int(chat_id), "user_id": int(user_id), "custom_title": text},
-    )
+        return "Админка в группе обновлена." if titled or not title_err else (
+            f"Админка в группе есть. Старый тег мог остаться: {title_err}"
+        )
     if not titled:
         return f"Админка в группе есть. Префикс «{text}» не встал: {title_err}"
     return f"В группе стоит префикс «{text}»."
@@ -2758,6 +2778,7 @@ async def apply_staff_project_prefix(
 ) -> dict:
     """Ставит префикс и права роли сотрудника во всех (или выбранных) официальных группах.
 
+    При повышении/понижении сотрудника сразу заменяет тег и права в Telegram.
     Если человек уже на должности группы — не трогаем: префикс должности важнее.
     Создателя проекта и владельца панели не помечаем этим префиксом.
     """
@@ -2789,9 +2810,18 @@ async def apply_staff_project_prefix(
     else:
         targets = [int(cid) for cid in chat_ids]
     applied = 0
+    skipped_seats = 0
     faults: list[str] = []
     for cid in targets:
         if cid in seated:
+            # На должности группы — обновляем права/тег самой должности, не роли сотрудника.
+            try:
+                note = await _restore_seat_admin_in_chat(cid, uid)
+                if note:
+                    applied += 1
+                skipped_seats += 1
+            except Exception as exc:
+                faults.append(f"{cid}: seat:{type(exc).__name__}")
             continue
         try:
             note = await _apply_chat_title(cid, uid, title, rights=rights)
@@ -2809,9 +2839,65 @@ async def apply_staff_project_prefix(
     return {
         "ok": True,
         "applied": applied,
+        "skippedSeats": skipped_seats,
         "faults": faults[:20],
         "prefix": title,
         "rights": rights,
+        "role": resolved,
+    }
+
+
+async def strip_staff_project_prefix(
+    user_id: int,
+    *,
+    chat_ids: list[int] | None = None,
+) -> dict:
+    """Снимает админку/тег роли сотрудника там, где нет должности группы.
+
+    Нужно при отключении сотрудника: иначе старый префикс роли остаётся в чате.
+    Должности группы (epsilon_seats) не трогаем.
+    """
+    uid = int(user_id)
+    if uid <= 0 or is_plain_user(uid) or _is_creator(uid):
+        return {"ok": True, "stripped": 0, "skipped": "skip", "faults": []}
+    await ensure_tables()
+    seated = await _active_staff_seat_chats(uid)
+    if chat_ids is None:
+        try:
+            rows = await db.pool.fetch(
+                """
+                SELECT chat_id FROM epsilon_official_groups
+                WHERE COALESCE(is_official, TRUE)
+                ORDER BY chat_id
+                """
+            )
+        except Exception:
+            return {"ok": False, "stripped": 0, "faults": ["official_list"]}
+        targets = [int(row["chat_id"]) for row in rows]
+    else:
+        targets = [int(cid) for cid in chat_ids]
+    stripped = 0
+    skipped_seats = 0
+    faults: list[str] = []
+    for cid in targets:
+        if cid in seated:
+            skipped_seats += 1
+            continue
+        try:
+            note = await _strip_to_member(cid, uid)
+        except Exception as exc:
+            faults.append(f"{cid}: {type(exc).__name__}")
+            continue
+        low = (note or "").lower()
+        if "могл" in low or "не настроен" in low or "отказал" in low or "не ответил" in low:
+            faults.append(f"{cid}: {(note or '')[:120]}")
+            continue
+        stripped += 1
+    return {
+        "ok": True,
+        "stripped": stripped,
+        "skippedSeats": skipped_seats,
+        "faults": faults[:20],
     }
 
 
@@ -5427,6 +5513,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
         if not local:
             continue
         local_kind = local["kind"] if local["kind"] in KINDS else KIND_POST
+        # При смене должности всегда берём префикс новой должности, если явно не передали свой.
         prefix, prefix_error = chat_title(
             local_kind, local["title"] or "", local["prefix"] or "", body.prefix,
         )
@@ -5470,6 +5557,7 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
             cid,
         )
         await clear_chat_strip(int(body.user_id), cid)
+        # Сразу права и тег новой должности в Telegram.
         telegram_note = await _sync_chat_rights(
             cid,
             int(body.user_id),
@@ -5496,13 +5584,22 @@ async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegr
     entry_key = await _issue_key(int(body.user_id))
     if body.everywhere:
         telegram = f"Должность выдана в {placed} официальных группах."
+        if first_prefix:
+            telegram += f" Тег «{first_prefix}»."
+        if first_note:
+            telegram += f" {first_note}"
     else:
-        telegram = first_note
+        telegram = first_note or (
+            f"В группе стоит префикс «{first_prefix}»." if first_prefix else "Должность и права обновлены."
+        )
+    title_ok = "не встал" not in (first_note or "").lower() and "не встал" not in telegram.lower()
     return {
         "ok": True,
         "entryKey": entry_key,
         "telegram": telegram,
         "prefix": first_prefix,
+        "rightsSynced": True,
+        "titleSynced": bool(title_ok),
         "everywhere": bool(body.everywhere),
         "placed": placed,
     }
@@ -5554,20 +5651,41 @@ async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegr
             int(body.user_id),
         )
     note = await _strip_to_member(int(body.chat_id), int(body.user_id))
-    # Если мест больше нет и человек не сотрудник — подчистить висячие префиксы в других группах.
-    if not int(left or 0):
-        try:
+    staff_tail = ""
+    staff_restored = False
+    try:
+        role = await _resolve_active_staff_role(int(body.user_id))
+        if role:
+            # Сняли должность группы — сразу вернуть права/тег роли сотрудника в этой группе.
+            sync = await apply_staff_project_prefix(
+                int(body.user_id),
+                role,
+                chat_ids=[int(body.chat_id)],
+            )
+            if int(sync.get("applied") or 0) > 0:
+                staff_restored = True
+                tag = str(sync.get("prefix") or "").strip()
+                staff_tail = (
+                    f" Вернули права сотрудника проекта"
+                    + (f" с тегом «{tag}»" if tag else "")
+                    + "."
+                )
+            elif sync.get("faults"):
+                staff_tail = " Права сотрудника проекта в группе могли не вернуться."
+        elif not int(left or 0):
+            # Не сотрудник и мест больше нет — подчистить висячие префиксы.
             await strip_orphaned_titles_for_user(int(body.user_id))
-        except Exception:
-            _log.exception("orphan titles after dismiss %s", body.user_id)
+    except Exception:
+        _log.exception("staff restore / orphan titles after dismiss %s", body.user_id)
+    telegram = f"{note}{staff_tail}".strip()
     await _realm_log(
         int(body.chat_id),
         int(body.user_id),
         "position_removed",
-        f"Должность «{seat['title']}» снята. {note}",
+        f"Должность «{seat['title']}» снята. {telegram}",
         int(user_id),
     )
-    return {"ok": True, "telegram": note}
+    return {"ok": True, "telegram": telegram, "staffRestored": staff_restored}
 
 
 class AccessBody(BaseModel):

@@ -15,6 +15,7 @@ from group_realm import (
     restore_staff_admin_on_join,
     staff_role_prefix,
     staff_role_tg_rights,
+    strip_staff_project_prefix,
 )
 
 
@@ -148,5 +149,47 @@ def test_apply_staff_uses_senior_rights_pack():
         assert args.args[0] == -55
         assert args.args[2] == "Ст.Админ/проекта"
         assert set(args.kwargs["rights"]) == set(STAFF_SENIOR_TG_RIGHTS)
+
+    asyncio.run(run())
+
+
+def test_apply_staff_refreshes_seat_when_person_holds_group_post():
+    seat_restore = AsyncMock(return_value="В группе стоит префикс «Админ».")
+    apply_title = AsyncMock(return_value="В группе стоит префикс «Ст.Админ/проекта».")
+
+    async def run():
+        with patch("group_realm.is_plain_user", return_value=False), patch(
+            "group_realm._is_creator", return_value=False
+        ), patch("group_realm.ensure_tables", new=AsyncMock()), patch(
+            "group_realm._active_staff_seat_chats", new=AsyncMock(return_value={-10})
+        ), patch(
+            "group_realm._resolve_active_staff_role",
+            new=AsyncMock(return_value="senior_admin"),
+        ), patch("group_realm._restore_seat_admin_in_chat", new=seat_restore), patch(
+            "group_realm._apply_chat_title", new=apply_title
+        ):
+            result = await apply_staff_project_prefix(11, "senior_admin", chat_ids=[-10, -20])
+        assert result["applied"] == 2
+        assert result["skippedSeats"] == 1
+        seat_restore.assert_awaited_once_with(-10, 11)
+        apply_title.assert_awaited_once()
+        assert apply_title.await_args.args[0] == -20
+
+    asyncio.run(run())
+
+
+def test_strip_staff_skips_seated_chats_and_demotes_others():
+    strip = AsyncMock(return_value="Админка снята.")
+
+    async def run():
+        with patch("group_realm.is_plain_user", return_value=False), patch(
+            "group_realm._is_creator", return_value=False
+        ), patch("group_realm.ensure_tables", new=AsyncMock()), patch(
+            "group_realm._active_staff_seat_chats", new=AsyncMock(return_value={-10})
+        ), patch("group_realm._strip_to_member", new=strip):
+            result = await strip_staff_project_prefix(11, chat_ids=[-10, -20])
+        assert result["stripped"] == 1
+        assert result["skippedSeats"] == 1
+        strip.assert_awaited_once_with(-20, 11)
 
     asyncio.run(run())
