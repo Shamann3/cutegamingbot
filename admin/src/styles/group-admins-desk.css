@@ -1,0 +1,436 @@
+/* Вкладка «Администраторы групп» — операционное управление местами */
+
+.gad {
+  --gad-rise: cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  animation: gad-in 0.45s var(--gad-rise) both;
+}
+
+@keyframes gad-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gad-card {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gad-panel {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.gad-hero {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(var(--e-accent-rgb, 200, 175, 255), 0.16), transparent 55%),
+    var(--e-plate, #17171b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gad-hero h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.gad-hero p {
+  margin: 0;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.gad-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.gad-segments {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  background: linear-gradient(to bottom, var(--e-bg, #0e0e12) 70%, transparent);
+}
+
+.gad-segments::-webkit-scrollbar { display: none; }
+
+.gad-seg {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.2s var(--gad-rise), background 0.2s ease, border-color 0.2s ease;
+}
+
+.gad-seg:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.gad-seg.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.2);
+  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.gad-seg-count {
+  min-width: 1.4em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.gad-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.gad-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.gad-search:focus {
+  outline: none;
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--e-accent-rgb, 200, 175, 255), 0.12);
+}
+
+.gad-panel {
+  animation: gad-panel 0.32s var(--gad-rise) both;
+}
+
+.gad-groups {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 960px) {
+  .gad-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.gad-group {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--e-plate, #17171b);
+  padding: 14px;
+  animation: gad-card 0.4s var(--gad-rise) both;
+}
+
+.gad-group:nth-child(1) { animation-delay: 0.02s; }
+.gad-group:nth-child(2) { animation-delay: 0.05s; }
+.gad-group:nth-child(3) { animation-delay: 0.08s; }
+.gad-group:nth-child(4) { animation-delay: 0.11s; }
+.gad-group:nth-child(5) { animation-delay: 0.14s; }
+
+.gad-group-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.gad-group-head strong {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.gad-group-head span {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.55));
+  font-size: 0.82rem;
+}
+
+.gad-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.gad-person {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s ease, transform 0.2s var(--gad-rise);
+}
+
+.gad-person:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.gad-person-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gad-person-main strong {
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gad-person-main span {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.55));
+  font-size: 0.8rem;
+}
+
+.gad-person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.gad-btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s var(--gad-rise);
+}
+
+.gad-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.gad-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.gad-btn-primary {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.22);
+  border-color: transparent;
+}
+
+.gad-btn-danger {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+.gad-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.gad-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--e-plate, #17171b);
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  animation: gad-card 0.38s var(--gad-rise) both;
+}
+
+.gad-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.gad-card-head strong {
+  font-size: 0.98rem;
+}
+
+.gad-meta {
+  margin: 0;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.58));
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.gad-body {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.gad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gad-reject {
+  display: grid;
+  gap: 8px;
+}
+
+.gad-reject textarea,
+.gad-form input,
+.gad-form select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.gad-form {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--e-plate, #17171b);
+  animation: gad-card 0.4s var(--gad-rise) both;
+}
+
+.gad-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.62));
+}
+
+.gad-posts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gad-post {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s var(--gad-rise);
+}
+
+.gad-post strong {
+  display: block;
+  font-size: 0.9rem;
+}
+
+.gad-post span {
+  color: var(--e-text-2, rgba(255, 255, 255, 0.55));
+  font-size: 0.78rem;
+}
+
+.gad-post.is-on {
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.2);
+  border-color: transparent;
+  transform: translateY(-1px);
+}
+
+.gad-status,
+.gad-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.9rem;
+}
+
+.gad-status {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+}
+
+.gad-error {
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.gad-empty {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--e-text-2, rgba(255, 255, 255, 0.55));
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+html.is-phone .gad-person,
+html[data-viewport="phone"] .gad-person {
+  grid-template-columns: 1fr;
+}
+
+html.is-phone .gad-person-actions,
+html[data-viewport="phone"] .gad-person-actions {
+  justify-content: stretch;
+}
+
+html.is-phone .gad-person-actions .gad-btn,
+html[data-viewport="phone"] .gad-person-actions .gad-btn,
+html.is-phone .gad-actions .gad-btn,
+html[data-viewport="phone"] .gad-actions .gad-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gad,
+  .gad-group,
+  .gad-card,
+  .gad-panel,
+  .gad-form,
+  .gad-seg,
+  .gad-person,
+  .gad-btn {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,6 +1,14 @@
 from main import *
 
 
+async def _restore_project_staff_admin(chat_id: int, user_id: int) -> None:
+    """Сотрудник проекта снова в официальной группе — вернуть админку и префикс."""
+    try:
+        from group_realm import restore_staff_admin_on_join
+
+        await restore_staff_admin_on_join(int(chat_id), int(user_id))
+    except Exception as exc:
+        print(f"[staff-restore] chat={chat_id} user={user_id}: {type(exc).__name__}: {exc}")
 
 
 @dp.message(content_types=types.ContentType.NEW_CHAT_MEMBERS)
@@ -18,6 +26,10 @@ async def invite(message: Message):
         for new_member in message.new_chat_members:
             # Получаем идентификатор добавленного участника
             invited_user_id = new_member.id
+
+            # Сотрудник проекта / админ с должностью — права при возврате.
+            if not getattr(new_member, "is_bot", False):
+                await _restore_project_staff_admin(chat_id, invited_user_id)
 
             # Проверяем, достаточно ли денег на балансе чата для выплаты
             chat_balance = await db.get_chat_balance(bot1,chat_id)

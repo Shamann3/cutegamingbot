@@ -435,6 +435,11 @@ OWNER_USER_IDS = os.getenv("OWNER_USER_IDS", "").strip()
 # Обычные игроки. Эти id не становятся создателем, владельцем или сотрудником,
 # даже если номер остался в списках доступа или в строке аккаунта панели.
 PLAIN_USER_IDS = frozenset({6908672757})
+# Не показывать в «Сотрудники проекта» (аккаунт может оставаться в БД).
+HIDDEN_STAFF_USERNAMES = frozenset({
+    "helpercute",
+    "werkov3",
+})
 _DEFAULT_CREATOR_ID = 6801702632
 # Единственный создатель проекта (скрытый Soft Restart и т.п.).
 _creator_raw = int(os.getenv("PROJECT_CREATOR_ID", str(_DEFAULT_CREATOR_ID)) or str(_DEFAULT_CREATOR_ID))
@@ -589,6 +594,12 @@ def is_plain_user(user_id) -> bool:
         return int(user_id) in PLAIN_USER_IDS
     except (TypeError, ValueError):
         return False
+
+
+def is_hidden_staff_username(username) -> bool:
+    """Скрытые аккаунты поддержки/служебные — не в списке сотрудников проекта."""
+    name = str(username or "").strip().lstrip("@").lower()
+    return bool(name) and name in HIDDEN_STAFF_USERNAMES
 
 
 def public_creator_id() -> int:

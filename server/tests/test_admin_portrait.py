@@ -20,7 +20,7 @@ def _facts(**overrides) -> AdminPortraitFacts:
     base = dict(
         user_id=6801702632,
         role=ROLE_SENIOR,
-        role_label="Старший администратор",
+        role_label="Старший администратор проекта",
         section_labels=("Игроки", "Поддержка", "Архив"),
         tab_labels=("Поддержка · очередь",),
         tenure_days=120,
@@ -62,8 +62,8 @@ def test_admin_payload_has_portrait_and_achievements():
     )
     assert payload is not None
     assert payload["portrait"]
-    assert "Старший администратор" in payload["portrait"] or "старш" in payload["portrait"].lower()
-    assert payload["roleLabel"] == "Старший администратор"
+    assert "Старший администратор проекта" in payload["portrait"] or "старш" in payload["portrait"].lower()
+    assert payload["roleLabel"] == "Старший администратор проекта"
     ids = {a["id"] for a in payload["achievements"]}
     assert "tickets" in ids
     assert "access" in ids
@@ -79,14 +79,14 @@ def test_same_inputs_same_text():
 
 
 def test_different_roles_different_texture():
-    senior = generate_admin_portrait(_facts(role=ROLE_SENIOR, role_label="Старший администратор"))
+    senior = generate_admin_portrait(_facts(role=ROLE_SENIOR, role_label="Старший администратор проекта"))
     owner = generate_admin_portrait(_facts(role=ROLE_OWNER, role_label="Владелец"))
-    junior = generate_admin_portrait(_facts(role=ROLE_JUNIOR, role_label="Младший администратор"))
-    mod = generate_admin_portrait(_facts(role=ROLE_MODERATOR, role_label="Модератор"))
+    junior = generate_admin_portrait(_facts(role=ROLE_JUNIOR, role_label="Младший администратор проекта"))
+    mod = generate_admin_portrait(_facts(role=ROLE_MODERATOR, role_label="Модератор проекта"))
     texts = {senior, owner, junior, mod}
     assert len(texts) == 4
     assert "Владелец" in owner
-    assert "Модератор" in mod or "модератор" in mod.lower()
+    assert "Модератор проекта" in mod or "модератор" in mod.lower()
 
 
 def test_never_claims_counter_not_passed():

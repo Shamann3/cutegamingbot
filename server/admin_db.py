@@ -431,6 +431,8 @@ async def reject_application(application_id: int, reason: str, reviewer_id: int)
 
 
 async def list_staff_members() -> list[dict]:
+    from config import is_hidden_staff_username, is_plain_user
+
     rows = await db.pool.fetch(
         """
         SELECT user_id, username, first_name, role, status,
@@ -459,9 +461,13 @@ async def list_staff_members() -> list[dict]:
             hired_at NULLS LAST
         """,
     )
-    return [
-        {
-            "userId": int(r["user_id"]),
+    items = []
+    for r in rows:
+        uid = int(r["user_id"])
+        if is_plain_user(uid) or is_hidden_staff_username(r["username"]):
+            continue
+        items.append({
+            "userId": uid,
             "username": r["username"],
             "firstName": r["first_name"],
             "role": r["role"],
@@ -476,9 +482,8 @@ async def list_staff_members() -> list[dict]:
             "availability": r["availability"] or "active",
             "availabilityUntil": r["availability_until"].isoformat() if r["availability_until"] else None,
             "activeStrikes": int(r["active_strikes"] or 0),
-        }
-        for r in rows
-    ]
+        })
+    return items
 
 
 async def change_member_role(user_id: int, new_role: str, changed_by: int, reason: str) -> dict | None:

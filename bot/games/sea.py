@@ -32,15 +32,44 @@ from aiogram.types import (
 
 SIZE = 8
 COLS = "ABCDEFGH"            # не короче SIZE. Буквы слева направо, верх поля
-# Наборы выбирает создатель до старта. Число в названии — клетки кораблей, поле остаётся 8×8.
-# Лёгкий 8: 1×3, 2×2, 1×1. Средний 10: 1×4, 1×3, 1×2, 1×1. Сложный 12: 2×3, 2×2, 2×1.
+# Наборы выбирает создатель до старта. Число в названии — клетки кораблей, поле 8×8.
+# Больше клеток — проще попадать. Лёгкий до 16.
+# 1 — катер, 2 — крейсер, 3 — эсминец, 4 — линкор.
 LEVELS = (
-    ("easy", "Лёгкий 8", (3, 2, 2, 1), "Лёгкий. Один корабль на 3 клетки, два на 2 и один на 1."),
-    ("mid", "Средний 10", (4, 3, 2, 1), "Средний. Корабли на 4, на 3, на 2 и на 1 клетку."),
-    ("hard", "Сложный 12", (3, 3, 2, 2, 1, 1), "Сложный. Два корабля на 3 клетки, два на 2 и два на 1."),
+    (
+        "easy",
+        "Лёгкий 16",
+        (4, 3, 3, 2, 2, 1, 1),
+        "Лёгкий. Линкор, два эсминца, два крейсера и два катера.",
+    ),
+    (
+        "mid",
+        "Средний 12",
+        (4, 3, 2, 2, 1),
+        "Средний. Линкор, эсминец, два крейсера и катер.",
+    ),
+    (
+        "hard",
+        "Сложный 8",
+        (3, 2, 2, 1),
+        "Сложный. Эсминец, два крейсера и катер.",
+    ),
 )
 _LEVEL = {item[0]: item for item in LEVELS}
 FLEET = _LEVEL["easy"][2]
+# Название типа: (им. ед., род. ед., род. мн.)
+SHIP_KIND = {
+    1: ("катер", "катера", "катеров"),
+    2: ("крейсер", "крейсера", "крейсеров"),
+    3: ("эсминец", "эсминца", "эсминцев"),
+    4: ("линкор", "линкора", "линкоров"),
+}
+SHIP_TITLE = {
+    1: "Катер",
+    2: "Крейсер",
+    3: "Эсминец",
+    4: "Линкор",
+}
 PLACE_SECONDS = 300          # расстановка. Кто не успел — партия снимается, куты на месте
 LOBBY_SECONDS = 7200         # стол без старта сам закрывается через 2 часа
 TURN_SECONDS = 60            # минута на выстрел
@@ -138,7 +167,7 @@ FACE = {
 _WATER = "\u3164"
 _GUIDE = {
     "lobby": "«Присоединиться», затем «Начать». Сложность выбирает создатель.",
-    "place": "«Авто» ставит само. «Выставить вручную» — клетка за клеткой, до 3. Затем «Готово».",
+    "place": "«Авто» ставит само. «Выставить вручную» — клетка за клеткой: катер, крейсер, эсминец, линкор. Затем «Готово».",
     "fight": "Нажмите клетку. «Мои корабли» — ваши.",
 }
 _PACE = "Пожалуйста, не торопитесь"
@@ -158,8 +187,14 @@ def letters() -> str:
     return (COLS + "ABCDEFGHIJKLMNOPQRSTUVWXYZ")[:SIZE]
 
 
-def fleet_phrase() -> str:
-    return ", ".join(str(int(n)) for n in FLEET)
+def fleet_phrase(fleet=None) -> str:
+    """Кратко: «линкор ×1, эсминец ×2, …»."""
+    parts = []
+    for length, _got, want in fleet_progress([], fleet):
+        if want <= 0:
+            continue
+        parts.append(f"{SHIP_TITLE.get(length, 'корабль').lower()} ×{want}")
+    return ", ".join(parts) if parts else ", ".join(str(int(n)) for n in FLEET)
 
 
 def span_text(seconds: int) -> str:
@@ -283,7 +318,7 @@ def place_ship(ships, length: int, r: int, c: int, across: bool, fleet=None):
     return True, [*ships, tuple(cells)], ""
 
 
-HAND_CAP = 3
+HAND_CAP = 4  # линкор — самый длинный
 
 
 def cells_used(ships) -> int:
@@ -292,6 +327,82 @@ def cells_used(ships) -> int:
 
 def hand_budget(fleet=None) -> int:
     return sum(_spec(fleet).elements())
+
+
+def hand_cap(fleet=None) -> int:
+    """Самый длинный корабль выбранного набора — дальше вручную не растёт."""
+    lengths = [int(n) for n in (FLEET if fleet is None else fleet)]
+    if not lengths:
+        return 3
+    return min(HAND_CAP, max(lengths))
+
+
+def ship_word(length: int, count: int = 1) -> str:
+    """Согласованное слово: 1 катер, 2 катера, 5 катеров."""
+    forms = SHIP_KIND.get(int(length))
+    if not forms:
+        return "корабль" if abs(int(count)) == 1 else "корабля"
+    one, few, many = forms
+    n = abs(int(count))
+    tail = n % 10
+    hundred = n % 100
+    if tail == 1 and hundred != 11:
+        return one
+    if tail in (2, 3, 4) and hundred not in (12, 13, 14):
+        return few
+    return many
+
+
+def ship_count_label(length: int, count: int) -> str:
+    n = abs(int(count))
+    return f"{n} {ship_word(length, n)}"
+
+
+def ship_max_alert(length: int, fleet=None) -> str:
+    """Текст show_alert, когда лимит типа уже выбран."""
+    want = int(_spec(fleet)[int(length)])
+    if want <= 0:
+        return "Такого корабля в наборе нет."
+    forms = SHIP_KIND.get(int(length))
+    many = forms[2] if forms else "кораблей"
+    return (
+        f"Максимум {many} уже выставлен.\n"
+        f"В наборе: {ship_count_label(int(length), want)}."
+    )
+
+
+def fleet_feasible(ships, fleet=None) -> bool:
+    """Текущие корабли ещё могут дорасти до набора сложности."""
+    slots = sorted((int(n) for n in (FLEET if fleet is None else fleet)), reverse=True)
+    lens = sorted((len(ship) for ship in ships), reverse=True)
+    if len(lens) > len(slots):
+        return False
+    return all(length <= slots[index] for index, length in enumerate(lens))
+
+
+def _can_start_ship(ships, fleet) -> bool:
+    """Можно ли начать новый катер: есть слот «1» или ещё не начат более длинный."""
+    need = _spec(fleet)
+    have = Counter(len(ship) for ship in ships)
+    total = sum(need.values())
+    if len(ships) >= total:
+        return False
+    if have[1] < need[1]:
+        return True
+    larger_need = sum(count for length, count in need.items() if length > 1)
+    larger_have = sum(1 for ship in ships if len(ship) > 1)
+    growing = max(0, have[1] - need[1])
+    return larger_have + growing < larger_need
+
+
+def fleet_progress(ships, fleet=None) -> list[tuple[int, int, int]]:
+    """[(длина, стоит, нужно), ...] от линкора к катеру."""
+    need = _spec(fleet)
+    have = Counter(len(ship) for ship in ships)
+    return [
+        (length, int(have[length]), int(need[length]))
+        for length in sorted(need, reverse=True)
+    ]
 
 
 def _straight(ship) -> bool:
@@ -340,9 +451,14 @@ def _diagonal(ships, r: int, c: int) -> bool:
     return False
 
 
-def hand_put(ships, r: int, c: int, budget: int):
-    """Клетка становится кораблём или удлиняет его по прямой. Диагональ не проходит."""
+def hand_put(ships, r: int, c: int, budget: int, fleet=None):
+    """Клетка становится кораблём или удлиняет его по прямой. Диагональ не проходит.
+
+    Код ``count:N`` — лимит кораблей длины N уже выбран (для show_alert).
+    """
     cell = (int(r), int(c))
+    cap = hand_cap(fleet)
+    need_total = sum(_spec(fleet).values()) if fleet is not None else None
     if not (0 <= cell[0] < SIZE and 0 <= cell[1] < SIZE):
         return False, ships, "edge"
     if ship_at(ships, cell[0], cell[1]) is not None:
@@ -355,30 +471,79 @@ def hand_put(ships, r: int, c: int, budget: int):
     if len(growers) == 1:
         index = growers[0]
         ship = ships[index]
-        if len(ship) >= HAND_CAP:
+        if len(ship) >= cap:
             return False, ships, "long"
         nxt = _order_ship([*ship, cell])
         if not _straight(nxt) or not _fits(_without(ships, index), nxt):
             return False, ships, "touch"
         out = list(ships)
         out[index] = nxt
+        if fleet is not None and not fleet_feasible(out, fleet):
+            return False, ships, f"count:{len(nxt)}"
         return True, out, "grow"
+    if fleet is not None and not _can_start_ship(ships, fleet):
+        have = Counter(len(ship) for ship in ships)
+        need = _spec(fleet)
+        if have[1] >= need[1]:
+            return False, ships, "count:1"
+        return False, ships, "slots"
+    if need_total is not None and len(ships) >= need_total:
+        return False, ships, "slots"
     if _diagonal(ships, cell[0], cell[1]):
         return False, ships, "diag"
     if not _fits(ships, (cell,)):
         return False, ships, "touch"
-    return True, [*ships, (cell,)], "new"
+    trial = [*ships, (cell,)]
+    if fleet is not None and not fleet_feasible(trial, fleet):
+        return False, ships, "count:1"
+    return True, trial, "new"
 
 
-def hand_ready(ships, budget: int) -> bool:
-    if cells_used(ships) != int(budget):
+def hand_ready(ships, budget: int, fleet=None) -> bool:
+    """Вручную нужен ровно набор выбранной сложности."""
+    if fleet is not None:
+        if cells_used(ships) != int(budget):
+            return False
+        if not fleet_ready(ships, fleet):
+            return False
+    elif cells_used(ships) != int(budget):
         return False
-    if any(len(ship) < 1 or len(ship) > HAND_CAP or not _straight(ship) for ship in ships):
+    cap = hand_cap(fleet)
+    if any(len(ship) < 1 or len(ship) > cap or not _straight(ship) for ship in ships):
         return False
     for index, ship in enumerate(ships):
         if not _fits(_without(ships, index), ship):
             return False
     return True
+
+
+_HAND_NOTE = {
+    "full": "Клетки набора уже заняты.",
+    "long": "Корабль длиннее, чем позволяет набор.",
+    "diag": "По диагонали нельзя.",
+    "touch": "Сюда нельзя — слишком близко к другому кораблю.",
+    "edge": "Сюда нельзя.",
+    "slots": "Все корабли набора уже начаты.",
+    "grow": "Корабль стал длиннее.",
+    "new": "Катер поставлен. Удлините по прямой или начните другой.",
+}
+
+
+def hand_fail_text(code: str, fleet=None) -> str:
+    raw = str(code or "")
+    if raw.startswith("count:"):
+        try:
+            length = int(raw.split(":", 1)[1])
+        except (TypeError, ValueError, IndexError):
+            length = 1
+        return ship_max_alert(length, fleet)
+    if raw == "slots":
+        return "Все корабли набора уже начаты. Удлините существующие или нажмите «Готово»."
+    if raw == "long":
+        cap = hand_cap(fleet)
+        title = SHIP_TITLE.get(cap, "Корабль")
+        return f"Дальше нельзя: в наборе самый длинный — {title.lower()} ({cap})."
+    return _HAND_NOTE.get(raw, "Сюда нельзя")
 
 
 def fleet_ready(ships, fleet=None) -> bool:
@@ -461,25 +626,30 @@ def turn_ship(ships, index: int):
 
 
 _PLANS = {
+    # Сложный 8
     (3, 2, 2, 1): (
         (3, 0, 0, True),
         (2, 2, 0, True),
         (2, 2, 3, True),
         (1, 4, 0, True),
     ),
-    (4, 3, 2, 1): (
+    # Средний 12
+    (4, 3, 2, 2, 1): (
         (4, 0, 0, True),
-        (3, 2, 0, True),
-        (2, 2, 4, True),
-        (1, 4, 0, True),
-    ),
-    (3, 3, 2, 2, 1, 1): (
-        (3, 0, 0, True),
-        (3, 0, 4, True),
+        (3, 0, 5, True),
         (2, 2, 0, True),
         (2, 2, 3, True),
         (1, 4, 0, True),
-        (1, 4, 2, True),
+    ),
+    # Лёгкий 16
+    (4, 3, 3, 2, 2, 1, 1): (
+        (4, 0, 0, True),
+        (3, 0, 5, True),
+        (3, 2, 0, True),
+        (2, 2, 4, True),
+        (2, 4, 0, True),
+        (1, 4, 3, True),
+        (1, 4, 5, True),
     ),
 }
 
@@ -572,13 +742,11 @@ def ship_face(length: int, left: int, chosen: bool) -> str:
 
 
 def remain_line(ships, fleet=None) -> str:
-    have = Counter(len(ship) for ship in ships)
-    need = _spec(fleet)
     bits = []
-    for length in sorted(need, reverse=True):
-        left = need[length] - have[length]
+    for length, got, want in fleet_progress(ships, fleet):
+        left = want - got
         if left > 0:
-            bits.append(f"{_LEFT_WORD.get(left, str(left))} на {length}")
+            bits.append(ship_count_label(length, left))
     if not bits:
         return "Все корабли на воде."
     if len(bits) == 1:
@@ -1147,15 +1315,29 @@ def fight_text(game) -> str:
     return "\n".join(lines)
 
 
-def secret_place_text(board, budget: int = 0) -> str:
+def secret_place_text(board, budget: int = 0, fleet=None) -> str:
     title = f"{_tag('title', '🛥')} <b>Ваше море</b>"
     if not board.get("hand"):
         return title
-    left = max(0, int(budget) - cells_used(board.get("ships") or []))
+    ships = board.get("ships") or []
+    used = cells_used(ships)
+    left = max(0, int(budget) - used)
+    cap = hand_cap(fleet)
+    rows = []
+    for length, got, want in fleet_progress(ships, fleet):
+        mark = "✓" if got >= want else "·"
+        name = SHIP_TITLE.get(length, "Корабль")
+        rows.append(f"{mark} {name} — <b>{got}</b> из <b>{want}</b>")
+    roster = "\n".join(rows)
+    tip = (
+        "Пустая клетка — новый катер. Соседняя по прямой — удлинение.\n"
+        f"Самый длинный в наборе — {SHIP_TITLE.get(cap, 'корабль').lower()} ({cap})."
+    )
     return (
         f"{title}\n"
-        f"Клеток ещё можно занять: <b>{left}</b>\n"
-        "Нажмите клетку. Корабль растёт по прямой и не длиннее 3 клеток."
+        f"<blockquote>{roster}</blockquote>\n"
+        f"Клеток: <b>{used}</b> из <b>{int(budget)}</b> · ещё <b>{left}</b>\n"
+        f"<i>{tip}</i>"
     )
 
 
@@ -1168,10 +1350,11 @@ def _secret_view(game, uid: int):
     prefix = game["prefix"]
     gid = game["id"]
     if game["phase"] == "place":
-        text = secret_place_text(board, hand_budget(game_fleet(game)))
+        fleet = game_fleet(game)
+        text = secret_place_text(board, hand_budget(fleet), fleet)
         markup = place_markup(
             prefix, gid, board["ships"], board["page"], board.get("hold"),
-            hand=bool(board.get("hand")), tool=board.get("tool"), fleet=game_fleet(game),
+            hand=bool(board.get("hand")), tool=board.get("tool"), fleet=fleet,
         )
         return text, _with_game_link(markup.inline_keyboard, game, uid)
     if game.get("phase") == "over":
@@ -2407,15 +2590,23 @@ async def _ready(query, store, game, uid: int) -> None:
         await _ack(query, "Нажмите «Моё море» в общем сообщении.", alert=True)
         return
     board = game["boards"][uid]
-    budget = hand_budget(game_fleet(game))
+    fleet = game_fleet(game)
+    budget = hand_budget(fleet)
     if board.get("hand"):
-        if not hand_ready(board["ships"], budget):
+        if not hand_ready(board["ships"], budget, fleet):
             left = budget - cells_used(board["ships"])
-            note = f"Осталось занять клеток: {max(0, left)}." if left > 0 else "Проверьте корабли."
+            if left > 0:
+                note = f"Осталось занять клеток: {max(0, left)}.\n{remain_line(board['ships'], fleet)}"
+            elif not fleet_ready(board["ships"], fleet):
+                note = remain_line(board["ships"], fleet)
+                if note == "Все корабли на воде.":
+                    note = "Проверьте длины кораблей — нужен точный набор сложности."
+            else:
+                note = "Проверьте корабли."
             await _ack(query, note, alert=True)
             return
-    elif not fleet_ready(board["ships"], game_fleet(game)):
-        await _ack(query, "Кораблей ещё не хватает.", alert=True)
+    elif not fleet_ready(board["ships"], fleet):
+        await _ack(query, remain_line(board["ships"], fleet), alert=True)
         return
     board["ready"] = True
     if all(game["boards"][person]["ready"] for person in game["players"]):
@@ -2456,32 +2647,41 @@ async def _place_cell(query, game, uid: int, r: int, c: int) -> None:
     await _paint_secret(game.get("bot"), game, uid, query, toast="Двигайте стрелками.")
 
 
-_HAND_NOTE = {
-    "full": "Клетки уже заняты.",
-    "long": "Корабль не длиннее 3 клеток.",
-    "diag": "По диагонали нельзя.",
-    "touch": "Сюда нельзя.",
-    "edge": "Сюда нельзя.",
-    "grow": "Корабль стал длиннее.",
-    "new": "Корабль поставлен.",
-}
-
-
 async def _place_hand(query, game, uid: int, r: int, c: int) -> None:
     board = game["boards"][uid]
     index = ship_index(board["ships"], r, c)
     if index is not None:
+        length = len(board["ships"][index])
         board["ships"] = _without(board["ships"], index)
         board["ready"] = False
-        await _paint_secret(game.get("bot"), game, uid, query, toast="Корабль убран.")
+        title = SHIP_TITLE.get(length, "Корабль")
+        await _paint_secret(game.get("bot"), game, uid, query, toast=f"{title} убран.")
         return
-    ok, ships, code = hand_put(board["ships"], r, c, hand_budget(game_fleet(game)))
+    fleet = game_fleet(game)
+    before = list(board["ships"])
+    ok, ships, code = hand_put(before, r, c, hand_budget(fleet), fleet)
     if not ok:
-        await _ack(query, _HAND_NOTE.get(code, "Сюда нельзя"), alert=True)
+        await _ack(query, hand_fail_text(code, fleet), alert=True)
         return
     board["ships"] = ships
     board["ready"] = False
-    await _paint_secret(game.get("bot"), game, uid, query, toast=_HAND_NOTE.get(code, "Корабль поставлен."))
+    # Какой корабль изменился — для тоста.
+    toast = _HAND_NOTE.get(code, "Корабль поставлен.")
+    if code == "new":
+        toast = "Катер поставлен. Удлините по прямой или начните другой."
+    elif code == "grow":
+        grown = None
+        before_lens = Counter(len(ship) for ship in before)
+        after_lens = Counter(len(ship) for ship in ships)
+        for length in sorted(after_lens, reverse=True):
+            if after_lens[length] > before_lens[length]:
+                grown = length
+                break
+        if grown:
+            toast = f"Теперь это {SHIP_TITLE.get(grown, 'корабль').lower()}."
+        else:
+            toast = "Корабль стал длиннее."
+    await _paint_secret(game.get("bot"), game, uid, query, toast=toast)
 
 
 async def _auto(query, game, uid: int) -> None:

@@ -3,13 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import StaffSection from './StaffSection'
 import StaffPreviewPane from './StaffPreviewPane'
 import GroupPreviewPane from './GroupPreviewPane'
-import { fetchPanelAccess, fetchRightsBoard, fetchStaffPunishRights } from '../../lib/adminClient'
+import {
+  fetchAdminDrops,
+  fetchGroupApplications,
+  fetchPanelAccess,
+  fetchRightsBoard,
+  fetchStaffPunishRights,
+} from '../../lib/adminClient'
 
 vi.mock('../../lib/adminClient', async (importOriginal) => ({
   ...(await importOriginal()),
   fetchPanelAccess: vi.fn(),
   fetchStaffPunishRights: vi.fn(),
   fetchRightsBoard: vi.fn(),
+  fetchGroupApplications: vi.fn(),
+  fetchAdminDrops: vi.fn(),
 }))
 
 vi.mock('./StaffAccessPane', async () => {
@@ -29,8 +37,8 @@ vi.mock('./GroupApplicationsPane', async () => {
 
 const ACCESS = {
   roles: [
-    { id: 'moderator', label: 'Модератор' },
-    { id: 'senior_admin', label: 'Старший админ' },
+    { id: 'moderator', label: 'Модератор проекта' },
+    { id: 'senior_admin', label: 'Старший администратор проекта' },
   ],
   roleDefaults: {},
   rolePreview: {
@@ -43,7 +51,7 @@ const ACCESS = {
       firstName: 'Иван',
       username: 'ivan',
       role: 'moderator',
-      roleLabel: 'Модератор',
+      roleLabel: 'Модератор проекта',
       effectiveSections: ['dashboard'],
       effectiveTabs: {},
       permissions: [],
@@ -76,6 +84,8 @@ beforeEach(() => {
   vi.mocked(fetchPanelAccess).mockResolvedValue(ACCESS)
   vi.mocked(fetchStaffPunishRights).mockResolvedValue({ roles: [{ role: 'moderator', permissions: { mute: true, ban: false } }] })
   vi.mocked(fetchRightsBoard).mockResolvedValue(BOARD)
+  vi.mocked(fetchGroupApplications).mockResolvedValue({ items: [] })
+  vi.mocked(fetchAdminDrops).mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -92,10 +102,10 @@ describe('StaffSection', () => {
     expect(staff.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('Настройка доступа')).toBeTruthy()
     const staffTabs = screen.getByRole('navigation', { name: 'Сотрудники' })
-    expect(buttonLabels(staffTabs)).toEqual(['Доступ', 'Копия панели', 'Зарплаты', 'Статистика', 'Водные игры', 'Команда'])
+    expect(buttonLabels(staffTabs)).toEqual(['Доступ', 'Копия панели', 'Администраторы групп', 'Зарплаты', 'Статистика', 'Водные игры', 'Команда'])
 
     fireEvent.click(within(staffTabs).getByRole('button', { name: 'Копия панели' }))
-    const card = (await screen.findByText('Модератор')).closest('li')
+    const card = (await screen.findByText('Модератор проекта')).closest('li')
     fireEvent.click(within(card).getByRole('button', { name: 'Войти в копию' }))
     expect(onOpenPreview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'staff', role: 'moderator' }))
 
@@ -112,7 +122,7 @@ describe('StaffSection', () => {
     expect(onOpenPreview).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'group', roleLabel: 'Глава' }))
 
     fireEvent.click(staff)
-    expect(await screen.findByText('Модератор')).toBeTruthy()
+    expect(await screen.findByText('Модератор проекта')).toBeTruthy()
   })
 
   it('comes back to the copy list after leaving a copy', async () => {
@@ -129,7 +139,33 @@ describe('StaffSection', () => {
   it('shows a senior admin only the staff desk and no copies', () => {
     render(<StaffSection role="senior_admin" permissions={['manage_panel_access', 'review_applications']} onOpenPreview={vi.fn()} />)
     expect(screen.queryByRole('tablist')).toBeNull()
-    expect(buttonLabels(screen.getByRole('navigation', { name: 'Сотрудники' }))).toEqual(['Доступ', 'Заявки', 'Команда'])
+    expect(buttonLabels(screen.getByRole('navigation', { name: 'Сотрудники' }))).toEqual(['Доступ', 'Заявки', 'Администраторы групп', 'Команда'])
+  })
+
+  it('hides group admins when the panel tab is closed for staff', () => {
+    render(
+      <StaffSection
+        role="senior_admin"
+        permissions={['manage_panel_access', 'review_applications', 'manage_group_admins']}
+        panelTabs={{ staff: ['applications'] }}
+        onOpenPreview={vi.fn()}
+      />,
+    )
+    expect(buttonLabels(screen.getByRole('navigation', { name: 'Сотрудники' }))).toEqual(['Доступ', 'Заявки'])
+  })
+
+  it('shows group admins desk when the staff tab is open', async () => {
+    render(
+      <StaffSection
+        role="senior_admin"
+        permissions={['manage_group_admins']}
+        panelTabs={{ staff: ['groupAdmins'] }}
+        onOpenPreview={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Администраторы групп' }))
+    expect(await screen.findByRole('heading', { name: 'Администраторы групп' })).toBeTruthy()
+    expect(screen.getByText(/Названия и права должностей меняет только создатель/)).toBeTruthy()
   })
 })
 
@@ -137,13 +173,13 @@ describe('StaffPreviewPane', () => {
   it('lists every position with its menu and punishments', async () => {
     const onOpen = vi.fn()
     render(<StaffPreviewPane onOpen={onOpen} />)
-    const card = (await screen.findByText('Модератор')).closest('li')
+    const card = (await screen.findByText('Модератор проекта')).closest('li')
     expect(within(card).getByText('3 раздела')).toBeTruthy()
     expect(within(card).getByText('Главная')).toBeTruthy()
     expect(within(card).getByText('Моя зарплата')).toBeTruthy()
     expect(within(card).getByText('Игроки')).toBeTruthy()
     expect(within(card).getByText('Наказания: Мут')).toBeTruthy()
-    const senior = screen.getByText('Старший админ').closest('li')
+    const senior = screen.getByText('Старший администратор проекта').closest('li')
     expect(within(senior).getByText('Моя зарплата')).toBeTruthy()
 
     fireEvent.click(within(card).getByRole('button', { name: 'Войти в копию' }))
@@ -178,7 +214,7 @@ describe('StaffPreviewPane', () => {
     render(<StaffPreviewPane onOpen={vi.fn()} />)
     expect(await screen.findByText('Сервер не ответил')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    expect(await screen.findByText('Модератор')).toBeTruthy()
+    expect(await screen.findByText('Модератор проекта')).toBeTruthy()
   })
 })
 

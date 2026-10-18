@@ -58,21 +58,23 @@ def test_chart_escapes_ship_bows_inside_pre():
 
 
 def test_ships_stay_straight_and_do_not_touch_even_by_a_corner():
-    ok, ships, code = place_ship([], 3, 0, 0, True)
+    hard = (3, 2, 2, 1)
+    ok, ships, code = place_ship([], 3, 0, 0, True, hard)
     assert ok and code == ""
     assert ships[0] == ((0, 0), (0, 1), (0, 2))
-    ok, _, code = place_ship(ships, 1, 1, 3, True)
+    ok, _, code = place_ship(ships, 1, 1, 3, True, hard)
     assert not ok and code == "touch"
-    ok, _, code = place_ship(ships, 3, 0, 6, True)
+    ok, _, code = place_ship(ships, 3, 0, 6, True, hard)
     assert not ok and code == "edge"
-    ok, _, code = place_ship(ships, 3, 2, 0, True)
+    ok, _, code = place_ship(ships, 3, 2, 0, True, hard)
     assert not ok and code == "count"
-    ok, down, code = place_ship([], 3, 0, 0, False)
+    ok, down, code = place_ship([], 3, 0, 0, False, hard)
     assert ok and code == ""
     assert down[0] == ((0, 0), (1, 0), (2, 0))
 
 
 def test_a_full_fleet_can_stand_without_touching():
+    hard = (3, 2, 2, 1)
     ships = []
     plan = [
         (3, 0, 0, True),
@@ -81,9 +83,9 @@ def test_a_full_fleet_can_stand_without_touching():
         (1, 4, 0, True),
     ]
     for length, r, c, across in plan:
-        ok, ships, code = place_ship(ships, length, r, c, across)
+        ok, ships, code = place_ship(ships, length, r, c, across, hard)
         assert ok and code == "", code
-    assert fleet_ready(ships)
+    assert fleet_ready(ships, hard)
 
 
 def test_live_ship_is_hidden_and_a_sunk_one_keeps_its_shape_inside_a_ring():
@@ -194,10 +196,21 @@ def test_the_table_shows_the_next_step():
     assert "Мои корабли" in guide_text("fight")
     assert "столбца" in label_hint("a")
     assert "ряда" in label_hint("n")
-    assert next_length([]) == 3
+    hard = (3, 2, 2, 1)
+    assert next_length([], fleet=hard) == 3
     three = [((0, 0), (0, 1), (0, 2))]
-    assert next_length(three) == 2
-    assert next_length(three, 3) == 2
+    assert next_length(three, fleet=hard) == 2
+    assert next_length(three, 3, fleet=hard) == 2
+    # В лёгком наборе сначала линкор (4), потом эсминцы.
+    assert next_length([]) == 4
+    assert next_length(three) == 4
+    easy = (4, 3, 3, 2, 2, 1, 1)
+    one_destroyer = [((0, 0), (0, 1), (0, 2))]
+    assert next_length([((0, 0), (0, 1), (0, 2), (0, 3))], fleet=easy) == 3
+    assert next_length(
+        [((0, 0), (0, 1), (0, 2), (0, 3)), *one_destroyer],
+        fleet=easy,
+    ) == 3
     assert ship_face(4, 1, True).startswith("✓")
     assert "▬" in ship_face(3, 2, False)
     lobby = lobby_text({"bet": 0, "creator": 1, "participants": [1], "links": {1: "A"}})
@@ -339,7 +352,9 @@ def test_levels_squares_and_the_coin_ring():
 
     assert stake_line(0) == ""
     easy, mid, hard = (item[2] for item in LEVELS)
-    assert sum(easy) == 8 and sum(mid) == 10 and sum(hard) == 12
+    assert sum(easy) == 16 and sum(mid) == 12 and sum(hard) == 8
+    assert [item[1] for item in LEVELS] == ["Лёгкий 16", "Средний 12", "Сложный 8"]
+    assert 4 in easy and 4 in mid
     for fleet in (easy, mid, hard):
         ships = sea._fallback_fleet(fleet)
         assert sea.fleet_ready(ships, fleet)
@@ -353,21 +368,62 @@ def test_levels_squares_and_the_coin_ring():
         "bet": 0,
     }
     names = [button.text for row in lobby_markup(game).inline_keyboard for button in row]
-    assert names[:3] == ["Лёгкий 8", "Средний 10", "Сложный 12"]
+    assert names[:3] == ["Лёгкий 16", "Средний 12", "Сложный 8"]
     assert "Отмена" not in names
     assert "Присоединиться" in names
-    note = sea.secret_place_text({"hand": True, "ships": [((0, 0),)]}, 8)
-    assert "Клеток ещё можно занять" in note and "<b>7</b>" in note
-    ok, grown, code = sea.hand_put([], 0, 0, 8)
+    hard_fleet = hard
+    note = sea.secret_place_text({"hand": True, "ships": [((0, 0),)]}, 8, hard_fleet)
+    assert "Клеток:" in note and "<b>1</b> из <b>8</b>" in note
+    assert "Катер" in note and "Крейсер" in note and "Эсминец" in note
+    assert "Линкор" not in note
+    ok, grown, code = sea.hand_put([], 0, 0, 8, hard_fleet)
     assert ok and code == "new" and grown == [((0, 0),)]
-    ok, grown, code = sea.hand_put(grown, 0, 1, 8)
+    ok, grown, code = sea.hand_put(grown, 0, 1, 8, hard_fleet)
     assert ok and code == "grow" and len(grown[0]) == 2
-    ok, _, code = sea.hand_put(grown, 1, 1, 8)
+    ok, _, code = sea.hand_put(grown, 1, 1, 8, hard_fleet)
     assert not ok and code == "diag"
-    ok, grown, code = sea.hand_put(grown, 0, 2, 8)
+    ok, grown, code = sea.hand_put(grown, 0, 2, 8, hard_fleet)
     assert ok and len(grown[0]) == 3
-    ok, _, code = sea.hand_put(grown, 0, 3, 8)
+    ok, _, code = sea.hand_put(grown, 0, 3, 8, hard_fleet)
     assert not ok and code == "long"
+    ones = [((r, 0),) for r in range(8)]
+    assert sea.hand_ready(ones, 8, hard_fleet) is False
+    spaced = [((0, 0),), ((0, 2),), ((2, 0),), ((2, 2),)]
+    assert sea.hand_ready(spaced, 4) is True
+    assert sea.hand_ready(sea._fallback_fleet(hard_fleet), 8, hard_fleet) is True
+
+
+def test_hand_limits_ship_types_and_names():
+    easy = (4, 3, 3, 2, 2, 1, 1)
+    assert sea.ship_word(1, 1) == "катер"
+    assert sea.ship_word(1, 2) == "катера"
+    assert sea.ship_word(2, 5) == "крейсеров"
+    assert "катеров" in sea.ship_max_alert(1, (1, 1))
+    assert "Максимум" in sea.ship_max_alert(1, (1, 1))
+    # Два катера уже стоят, третий нельзя — в наборе только два слота «1».
+    two_boats = [((0, 0),), ((0, 2),)]
+    ok, _, code = sea.hand_put(two_boats, 2, 0, 4, (1, 1))
+    assert not ok and code == "count:1"
+    assert "Максимум" in sea.hand_fail_text(code, (1, 1))
+    # Катера заняты, но крейсер ещё не начат — третью клетку можно (потом удлинить).
+    ok, ships, code = sea.hand_put(two_boats, 2, 0, 4, (2, 1, 1))
+    assert ok and code == "new" and len(ships) == 3
+    # Два крейсера уже есть, слота под третий нет — удлинить катер нельзя.
+    fleet = (2, 2, 1)
+    ships = [((0, 0), (0, 1)), ((2, 0), (2, 1)), ((4, 0),)]
+    ok, _, code = sea.hand_put(ships, 4, 1, 6, fleet)
+    assert not ok and code == "count:2"
+    assert "крейсеров" in sea.hand_fail_text(code, fleet)
+    # Линкор на 4 клетки в лёгком наборе.
+    ok, ships, code = sea.hand_put([], 0, 0, 16, easy)
+    assert ok and code == "new"
+    for col in (1, 2, 3):
+        ok, ships, code = sea.hand_put(ships, 0, col, 16, easy)
+        assert ok and code == "grow"
+    assert len(ships[0]) == 4
+    text = sea.secret_place_text({"hand": True, "ships": ships}, 16, easy)
+    assert "Линкор — <b>1</b> из <b>1</b>" in text
+    assert "Катер — <b>0</b> из <b>2</b>" in text
     board = place_markup("sea:", 1, [((0, 0), (0, 1))], 0)
     square = sea._PART_TEXT["one"]
     assert board.inline_keyboard[2][0].text == square

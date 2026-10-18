@@ -16,8 +16,8 @@ import {
 } from './panelPreview'
 
 const ROLES = [
-  { id: 'moderator', label: 'Модератор' },
-  { id: 'senior_admin', label: 'Старший админ' },
+  { id: 'moderator', label: 'Модератор проекта' },
+  { id: 'senior_admin', label: 'Старший администратор проекта' },
 ]
 
 const navIds = (preview, creatorId = null) => staffPreviewNav(preview, creatorId).map((item) => item.id)
@@ -84,7 +84,7 @@ describe('staff copy', () => {
       kind: 'staff',
       who: 'role',
       role: 'moderator',
-      roleLabel: 'Модератор',
+      roleLabel: 'Модератор проекта',
       tabs: { users: ['search'] },
       permissions: ['view_players'],
       staffPerms: ['mute'],
@@ -118,7 +118,7 @@ describe('staff copy', () => {
       firstName: 'Иван',
       username: 'ivan',
       role: 'moderator',
-      roleLabel: 'Модератор',
+      roleLabel: 'Модератор проекта',
       effectiveSections: ['dashboard', 'users', 'groupGuard'],
       effectiveTabs: {},
       permissions: ['view_players'],
@@ -204,18 +204,18 @@ describe('group cabinet copy', () => {
 
 describe('copy strip and stand-in profile', () => {
   it('says whose panel is open', () => {
-    expect(previewTitle({ kind: 'staff', who: 'role', roleLabel: 'Модератор' })).toBe('Копия панели сотрудника · Модератор')
-    expect(previewTitle({ kind: 'staff', who: 'person', name: 'Иван', roleLabel: 'Модератор' }))
-      .toBe('Копия панели сотрудника · Иван (Модератор)')
+    expect(previewTitle({ kind: 'staff', who: 'role', roleLabel: 'Модератор проекта' })).toBe('Копия панели сотрудника · Модератор проекта')
+    expect(previewTitle({ kind: 'staff', who: 'person', name: 'Иван', roleLabel: 'Модератор проекта' }))
+      .toBe('Копия панели сотрудника · Иван (Модератор проекта)')
     expect(previewTitle({ kind: 'group', who: 'person', name: 'Аня', roleLabel: 'Старший' })).toBe('Копия кабинета группы · Аня')
     expect(previewTitle({ kind: 'group', who: 'role', roleLabel: 'Глава' })).toBe('Копия кабинета группы · Глава')
   })
 
   it('greets as the person, or as the position for a role copy', () => {
-    expect(previewStandIn({ who: 'person', name: 'Иван', username: 'ivan', userId: 7, roleLabel: 'Модератор' }))
+    expect(previewStandIn({ who: 'person', name: 'Иван', username: 'ivan', userId: 7, roleLabel: 'Модератор проекта' }))
       .toEqual({ displayName: 'Иван', username: 'ivan', userId: 7 })
-    expect(previewStandIn({ who: 'role', roleLabel: 'Модератор' }))
-      .toEqual({ displayName: 'Модератор', username: null, userId: null })
+    expect(previewStandIn({ who: 'role', roleLabel: 'Модератор проекта' }))
+      .toEqual({ displayName: 'Модератор проекта', username: null, userId: null })
     expect(previewStandIn(null)).toBeNull()
   })
 })

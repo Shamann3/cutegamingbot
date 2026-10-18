@@ -548,9 +548,9 @@ def reviewer_roster_sql() -> str:
     live_staff AS (
       SELECT a.user_id,
              CASE a.role
-               WHEN 'senior_admin' THEN 'Старший администратор'
-               WHEN 'junior_admin' THEN 'Младший администратор'
-               WHEN 'moderator' THEN 'Модератор'
+               WHEN 'senior_admin' THEN 'Старший администратор проекта'
+               WHEN 'junior_admin' THEN 'Младший администратор проекта'
+               WHEN 'moderator' THEN 'Модератор проекта'
                ELSE ''
              END AS title
       FROM admin_accounts a

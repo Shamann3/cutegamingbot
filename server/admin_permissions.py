@@ -28,9 +28,9 @@ STATUS_SUSPENDED = "suspended"
 
 ROLE_LABELS = {
     ROLE_OWNER: "Владелец",
-    ROLE_SENIOR: "Старший администратор",
-    ROLE_JUNIOR: "Младший администратор",
-    ROLE_MODERATOR: "Модератор",
+    ROLE_SENIOR: "Старший администратор проекта",
+    ROLE_JUNIOR: "Младший администратор проекта",
+    ROLE_MODERATOR: "Модератор проекта",
     ROLE_APPLICANT: "Кандидат",
     ROLE_SUSPENDED: "Отстранён",
 }
@@ -67,6 +67,7 @@ ALL_PERMISSIONS = {
     "approve_salary",          # одобрять зарплату (owner)
     "pay_salary",              # выплачивать зарплату (owner)
     "manage_appeals",          # апелляции банов (owner + senior)
+    "manage_group_admins",     # админы официальных групп: список, назначение, заявки, снятия
     "manage_panel_access",     # матрица доступов к вкладкам (только owner)
     # Достижения профиля
     "manage_achievements",           # каталог официальных в панели
@@ -89,6 +90,7 @@ PERMISSIONS_BY_ROLE = {
         "set_salary",
         "pay_salary",
         "manage_appeals",
+        "manage_group_admins",
         "manage_marriages",
     },
     ROLE_JUNIOR: {

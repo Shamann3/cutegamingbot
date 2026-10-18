@@ -168,6 +168,7 @@ CONFIGURABLE_SECTION_IDS = [s["id"] for s in PANEL_SECTION_DEFS if not s.get("ow
 SECTION_TABS: dict[str, list[dict]] = {
     "staff": [
         {"id": "applications", "label": "Заявки", "perm": "review_applications"},
+        {"id": "groupAdmins", "label": "Администраторы групп", "perm": "manage_group_admins"},
         {"id": "members", "label": "Сотрудники", "perm": "manage_staff"},
         {"id": "invites", "label": "Инвайты", "perm": "assign_roles"},
         {"id": "salaries", "label": "Зарплаты", "perm": "set_salary"},
@@ -712,6 +713,8 @@ async def list_panel_access_overview() -> dict:
         item["id"] for item in custom if item["id"] not in CONFIGURABLE_ROLES
     ]
     defaults = await get_role_defaults_map()
+    from config import is_hidden_staff_username, is_plain_user
+
     members = await db.pool.fetch(
         """
         SELECT user_id, username, first_name, role, status
@@ -729,6 +732,10 @@ async def list_panel_access_overview() -> dict:
         """,
         role_ids,
     )
+    members = [
+        m for m in members
+        if not is_plain_user(int(m["user_id"])) and not is_hidden_staff_username(m["username"])
+    ]
     member_ids = [int(m["user_id"]) for m in members]
     override_rows = await db.pool.fetch(
         """

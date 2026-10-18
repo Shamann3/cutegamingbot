@@ -10,6 +10,11 @@ import { PANEL_SECTIONS, sectionBlurb } from './panelNav.js'
 export const PANEL_SECTION_TABS = {
   staff: [
     { id: 'applications', label: 'Заявки', blurb: 'Просмотр и разбор заявок кандидатов в команду.' },
+    {
+      id: 'groupAdmins',
+      label: 'Администраторы групп',
+      blurb: 'Список админов официальных групп, назначение, заявки и снятия. Названия и права должностей не меняются.',
+    },
     { id: 'members', label: 'Сотрудники', blurb: 'Список сотрудников, роли, статусы и карточки.' },
     { id: 'invites', label: 'Инвайты', blurb: 'Создание инвайт-ссылок для найма.' },
     { id: 'salaries', label: 'Зарплаты', blurb: 'Выставление и сохранение зарплат, отправка Stars в канал.' },

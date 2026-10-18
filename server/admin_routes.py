@@ -1734,6 +1734,12 @@ async def staff_approve_application(
         details={"role": role, "applicationId": application_id},
         ip=_get_client_ip(request),
     )
+    try:
+        from group_realm import apply_staff_project_prefix
+
+        await apply_staff_project_prefix(int(result["userId"]), role)
+    except Exception:
+        pass
     notify_staff(
         result["userId"],
         f"<tg-emoji emoji-id='5208540237524911208'>✅</tg-emoji> <b>Ваша заявка в состав сотрудников Эпсилона одобрена! Вы повышены до роли : {ROLE_LABELS.get(role, role)}. </b>\n<blockquote><b>Виво-Эпсилон</b></blockquote>"
@@ -1961,6 +1967,12 @@ async def staff_change_role(
         details={"oldRole": result["oldRole"], "newRole": role, "reason": body.reason.strip()},
         ip=_get_client_ip(request),
     )
+    try:
+        from group_realm import apply_staff_project_prefix
+
+        await apply_staff_project_prefix(int(member_id), role)
+    except Exception:
+        pass
     notify_staff(
         member_id,
         f"<tg-emoji emoji-id='5454074580010295588'>🔄</tg-emoji> <b>Ваша должность изменена : {ROLE_LABELS.get(result['oldRole'], result['oldRole'])} → </b>"

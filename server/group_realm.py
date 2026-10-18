@@ -2241,6 +2241,31 @@ def _require_creator(user_id: int) -> None:
         raise HTTPException(status_code=403, detail="Только создатель проекта отмечает группы и должности")
 
 
+async def _can_manage_group_admins_desk(user_id: int) -> bool:
+    """Создатель или сотрудник с вкладкой «Администраторы групп»."""
+    if _is_creator(user_id):
+        return True
+    try:
+        from admin_permissions import STATUS_ACTIVE, get_admin_account_security
+
+        account = await get_admin_account_security(int(user_id))
+    except Exception:
+        return False
+    if not account or account.get("status") != STATUS_ACTIVE:
+        return False
+    tabs = account.get("panelTabs") or {}
+    return "groupAdmins" in (tabs.get("staff") or [])
+
+
+async def _require_group_admins_desk(user_id: int) -> None:
+    if await _can_manage_group_admins_desk(user_id):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Нет доступа к вкладке «Администраторы групп»",
+    )
+
+
 class OfficialBody(BaseModel):
     chat_id: int
     title: str = ""
@@ -2531,6 +2556,10 @@ async def group_official(body: OfficialBody, user_id: int = Depends(get_any_tele
         await _seed_positions(int(body.chat_id))
         from group_guard import apply_policy_to_chat
         await apply_policy_to_chat(int(body.chat_id), int(user_id))
+        try:
+            await sync_all_staff_project_prefixes()
+        except Exception:
+            _log.exception("префиксы сотрудников в новой официальной группе %s", body.chat_id)
     return {"ok": True, "chatId": int(body.chat_id), "official": bool(body.official)}
 
 
@@ -2557,6 +2586,260 @@ async def _can_manage_chat_admins(user_id: int, chat_id: int) -> dict | None:
 
 
 STAFF_PANEL_ROLES = ("owner", "senior_admin", "junior_admin", "moderator")
+# Telegram custom_title ≤ 16 символов. «Модератор проекта» не влезает — короткий вариант.
+STAFF_ROLE_PREFIXES = {
+    "senior_admin": "Ст.Админ/проекта",
+    "junior_admin": "Мл.Админ/проекта",
+    "moderator": "Модер/проекта",
+}
+# Старший администратор проекта — как в Telegram «What can this admin do?»:
+# удаление, бан, закреп, видеочаты, теги участников, назначение админов.
+# Без смены инфо группы, инвайт-ссылок, историй и анонимности.
+STAFF_SENIOR_TG_RIGHTS = (
+    "can_manage_chat",
+    "can_delete_messages",
+    "can_restrict_members",
+    "can_pin_messages",
+    "can_manage_video_chats",
+    "can_promote_members",
+)
+# Мл. админ / модер / кастом — те же TG-флаги, что у должности «Администратор» группы.
+_ADMIN_POST_RIGHTS = next(
+    (item["rights"] for item in POSITION_TEMPLATES if item.get("id") == "admin"),
+    tuple(right for right in ALL_RIGHTS if right != "manage_positions"),
+)
+STAFF_GROUP_ADMIN_TG_RIGHTS = tuple(
+    flag for flag in _TG_ADMIN_FLAGS if flag in _ADMIN_POST_RIGHTS
+)
+# Явно выключены у старшего проекта (и не входят в его пакет).
+STAFF_SENIOR_TG_DENIED = (
+    "can_change_info",
+    "can_invite_users",
+    "can_post_stories",
+    "can_edit_stories",
+    "can_delete_stories",
+)
+
+
+def staff_role_prefix(role: str) -> str:
+    """Префикс сотрудника проекта в официальных группах. Пусто — не ставим."""
+    text = STAFF_ROLE_PREFIXES.get(str(role or "").strip(), "")
+    cleaned, error = clean_prefix(text)
+    return "" if error else cleaned
+
+
+def staff_role_tg_rights(role: str) -> list[str]:
+    """Права Telegram в официальной группе для роли сотрудника проекта."""
+    key = str(role or "").strip()
+    if key == "senior_admin":
+        return list(STAFF_SENIOR_TG_RIGHTS)
+    if key in ("junior_admin", "moderator"):
+        return list(STAFF_GROUP_ADMIN_TG_RIGHTS)
+    # Кастомные роли сотрудников — как у старшего администратора группы.
+    if key and key not in ("owner", "applicant", "suspended"):
+        return list(STAFF_GROUP_ADMIN_TG_RIGHTS)
+    return []
+
+async def _active_staff_seat_chats(user_id: int) -> set[int]:
+    """Группы, где у сотрудника уже есть должность — там префикс должности важнее."""
+    try:
+        rows = await db.pool.fetch(
+            """
+            SELECT chat_id FROM epsilon_seats
+            WHERE user_id = $1
+              AND (term_end IS NULL OR term_end > NOW())
+            """,
+            int(user_id),
+        )
+    except Exception:
+        return set()
+    return {int(row["chat_id"]) for row in rows}
+
+
+async def _resolve_active_staff_role(user_id: int, role: str | None = None) -> str | None:
+    """Активная роль сотрудника проекта или None."""
+    uid = int(user_id)
+    if _is_creator(uid) or is_plain_user(uid):
+        return None
+    resolved = str(role or "").strip()
+    if not resolved:
+        try:
+            row = await db.pool.fetchrow(
+                """
+                SELECT role, status FROM admin_accounts
+                WHERE user_id = $1
+                """,
+                uid,
+            )
+        except Exception:
+            return None
+        if not row or row["status"] != "active":
+            return None
+        resolved = str(row["role"] or "")
+    if resolved in ("", "owner", "applicant", "suspended"):
+        return None
+    if resolved in STAFF_PANEL_ROLES or resolved in STAFF_ROLE_PREFIXES:
+        return resolved
+    # Кастомная активная роль — тоже сотрудник, права как у админа группы.
+    if staff_role_tg_rights(resolved):
+        return resolved
+    return None
+
+async def _restore_seat_admin_in_chat(chat_id: int, user_id: int) -> str:
+    """Вернуть админку/префикс по должности в этой группе."""
+    row = await db.pool.fetchrow(
+        """
+        SELECT s.prefix, p.kind, p.title, p.rank, p.rights, p.prefix AS post_prefix
+        FROM epsilon_seats s
+        JOIN epsilon_positions p ON p.id = s.position_id
+        WHERE s.user_id = $1 AND s.chat_id = $2
+          AND (s.term_end IS NULL OR s.term_end > NOW())
+        """,
+        int(user_id),
+        int(chat_id),
+    )
+    if not row:
+        return ""
+    kind = row["kind"] if row["kind"] in KINDS else KIND_POST
+    prefix = row["prefix"] or row["post_prefix"] or row["title"] or ""
+    rights = rights_for_kind(kind, int(row["rank"]), _rights(row["rights"]), creator=True)
+    return await _sync_chat_rights(int(chat_id), int(user_id), prefix, rights, kind=kind)
+
+
+async def restore_staff_admin_on_join(chat_id: int, user_id: int) -> dict:
+    """Сотрудник проекта вернулся в официальную группу — админка и префикс снова.
+
+    Если есть должность группы — восстанавливаем её права.
+    Иначе — права роли сотрудника проекта.
+    """
+    cid = int(chat_id)
+    uid = int(user_id)
+    if uid <= 0 or is_plain_user(uid):
+        return {"ok": True, "restored": False, "reason": "skip"}
+    try:
+        await ensure_tables()
+        official = await db.pool.fetchval(
+            """
+            SELECT 1 FROM epsilon_official_groups
+            WHERE chat_id = $1 AND COALESCE(is_official, TRUE)
+            """,
+            cid,
+        )
+    except Exception:
+        return {"ok": False, "restored": False, "reason": "db"}
+    if not official:
+        return {"ok": True, "restored": False, "reason": "not_official"}
+    seated = await _active_staff_seat_chats(uid)
+    if cid in seated:
+        try:
+            note = await _restore_seat_admin_in_chat(cid, uid)
+        except Exception as exc:
+            return {"ok": False, "restored": False, "reason": type(exc).__name__}
+        return {"ok": True, "restored": bool(note), "note": note, "via": "seat"}
+    role = await _resolve_active_staff_role(uid)
+    if not role:
+        return {"ok": True, "restored": False, "reason": "not_staff"}
+    result = await apply_staff_project_prefix(uid, role, chat_ids=[cid])
+    return {
+        "ok": bool(result.get("ok")),
+        "restored": int(result.get("applied") or 0) > 0,
+        "via": "staff",
+        "prefix": result.get("prefix"),
+        "faults": result.get("faults") or [],
+    }
+
+
+async def apply_staff_project_prefix(
+    user_id: int,
+    role: str | None = None,
+    *,
+    chat_ids: list[int] | None = None,
+) -> dict:
+    """Ставит префикс и права роли сотрудника во всех (или выбранных) официальных группах.
+
+    Если человек уже на должности группы — не трогаем: префикс должности важнее.
+    Создателя проекта и владельца панели не помечаем этим префиксом.
+    """
+    uid = int(user_id)
+    resolved = await _resolve_active_staff_role(uid, role)
+    if not resolved:
+        return {"ok": True, "applied": 0, "skipped": "inactive_or_owner", "faults": []}
+    title = staff_role_prefix(resolved)
+    rights = staff_role_tg_rights(resolved)
+    if not rights:
+        return {"ok": True, "applied": 0, "skipped": "no_rights", "faults": []}
+    if not title:
+        # Без префикса (кастом) всё равно ставим админку по правам роли.
+        title = ""
+    await ensure_tables()
+    seated = await _active_staff_seat_chats(uid)
+    if chat_ids is None:
+        try:
+            rows = await db.pool.fetch(
+                """
+                SELECT chat_id FROM epsilon_official_groups
+                WHERE COALESCE(is_official, TRUE)
+                ORDER BY chat_id
+                """
+            )
+        except Exception:
+            return {"ok": False, "applied": 0, "faults": ["official_list"]}
+        targets = [int(row["chat_id"]) for row in rows]
+    else:
+        targets = [int(cid) for cid in chat_ids]
+    applied = 0
+    faults: list[str] = []
+    for cid in targets:
+        if cid in seated:
+            continue
+        try:
+            note = await _apply_chat_title(cid, uid, title, rights=rights)
+        except Exception as exc:
+            faults.append(f"{cid}: {type(exc).__name__}")
+            continue
+        low = note.lower()
+        if "стоит префикс" in low or "админка в группе обновлена" in low or "админка в группе есть" in low:
+            applied += 1
+            if "не встал" in low:
+                faults.append(f"{cid}: {note[:120]}")
+            continue
+        if "не встал" in low or "не настроен" in low or "отказал" in low or "не ответил" in low:
+            faults.append(f"{cid}: {note[:120]}")
+    return {
+        "ok": True,
+        "applied": applied,
+        "faults": faults[:20],
+        "prefix": title,
+        "rights": rights,
+    }
+
+
+async def sync_all_staff_project_prefixes(*, limit: int = 80) -> dict:
+    """Проставляет префиксы ролей всем активным сотрудникам проекта."""
+    try:
+        await ensure_tables()
+        rows = await db.pool.fetch(
+            """
+            SELECT user_id, role
+            FROM admin_accounts
+            WHERE status = 'active'
+              AND role = ANY($1::text[])
+            ORDER BY user_id
+            LIMIT $2
+            """,
+            [role for role in STAFF_PANEL_ROLES if role != "owner"],
+            max(1, int(limit)),
+        )
+    except Exception:
+        _log.exception("список сотрудников для префиксов")
+        return {"people": 0, "applied": 0, "faults": 0}
+    applied = 0
+    faults = 0
+    for row in rows:
+        result = await apply_staff_project_prefix(int(row["user_id"]), str(row["role"] or ""))
+        applied += int(result.get("applied") or 0)
+        faults += len(result.get("faults") or [])
+    return {"people": len(rows), "applied": applied, "faults": faults}
 
 
 async def _seated_people() -> dict[int, list[dict]]:
@@ -2709,13 +2992,34 @@ async def _paused_people() -> dict[int, list[dict]]:
     return out
 
 
+async def _official_group_cards() -> list[dict]:
+    """Все официальные группы для доски админов (не личные места сотрудника)."""
+    rows = await db.pool.fetch(
+        """
+        SELECT chat_id, title, username
+        FROM epsilon_official_groups
+        WHERE is_official = TRUE
+        ORDER BY title, chat_id
+        """
+    )
+    return [
+        {
+            "chatId": int(r["chat_id"]),
+            "title": r["title"] or str(r["chat_id"]),
+            "username": r["username"] or "",
+        }
+        for r in rows
+    ]
+
+
 @router.get("/board")
 async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     await sweep_expired_spamblocks()
     await release_finished_holds()
-    groups = await seats_for(user_id)
+    # Доска показывает все официальные группы — и создателю, и сотруднику с вкладкой.
+    groups = await _official_group_cards()
     seated = await _seated_people()
     paused = await _paused_people()
     payload = []
@@ -2753,7 +3057,7 @@ async def rights_board(user_id: int = Depends(get_any_telegram_user_id)):
                 continue
             seats.append({**person, "chatId": int(group["chatId"])})
         payload.append({**group, "positions": positions, "seats": seats})
-    return {"groups": payload}
+    return {"groups": payload, "canEditPositions": _is_creator(user_id)}
 
 
 class HoldBody(BaseModel):
@@ -3621,9 +3925,9 @@ async def _ask_creator_to_drop(chat_id: int, target: dict, actor_id: int) -> str
 
 
 async def decide_admin_drop(request_id: int, decider_id: int, approve: bool) -> dict:
-    """Создатель принимает или отклоняет снятие. Повторное решение не снимает второй раз."""
-    if not _is_creator(int(decider_id)):
-        return {"ok": False, "toast": "Это решает создатель проекта", "text": ""}
+    """Принимает или отклоняет снятие. Повторное решение не снимает второй раз."""
+    if not await _can_manage_group_admins_desk(int(decider_id)):
+        return {"ok": False, "toast": "Нет доступа к снятию администраторов", "text": ""}
     await ensure_tables()
     row = await db.pool.fetchrow(
         """
@@ -3798,7 +4102,7 @@ LEFT JOIN users a ON a.user_id = d.actor_id
 
 @router.get("/admin-drops")
 async def list_admin_drops(user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     rows = await db.pool.fetch(
         _DROP_LIST_SQL + """
@@ -4842,10 +5146,16 @@ async def reconcile_stale_admin_titles(*, limit_chats: int = 60) -> dict:
                 )
             except Exception:
                 pass
+    staff_sync = {"people": 0, "applied": 0, "faults": 0}
+    try:
+        staff_sync = await sync_all_staff_project_prefixes()
+    except Exception:
+        _log.exception("синхронизация префиксов сотрудников проекта")
     return {
         "chats": len(rows),
         "stripped": stripped,
         "stuck": stuck,
+        "staffPrefixes": staff_sync,
         "expired": expired,
     }
 
@@ -4915,7 +5225,7 @@ async def _match_or_clone(source, chat_id: int) -> int | None:
 
 @router.post("/appoint")
 async def group_appoint(body: AppointBody, user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     if is_plain_user(body.user_id):
         raise HTTPException(status_code=403, detail="Этот человек остаётся обычным игроком")
     await ensure_tables()
@@ -5094,7 +5404,7 @@ class DismissBody(BaseModel):
 @router.post("/dismiss")
 async def group_dismiss(body: DismissBody, user_id: int = Depends(get_any_telegram_user_id)):
     """Снимает должность. Человек остаётся в группе, префикс и админка чата уходят."""
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     seat = await db.pool.fetchrow(
         """
@@ -5405,7 +5715,7 @@ async def group_logs(
 
 @router.get("/applications")
 async def group_applications(user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     rows = await db.pool.fetch(
         """
@@ -5464,7 +5774,7 @@ def application_seat_block(pos) -> str | None:
 
 @router.post("/decide")
 async def group_decide(body: DecideBody, user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     app = await db.pool.fetchrow(
         """

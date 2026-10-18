@@ -34,9 +34,9 @@ export const ROLE_BADGE_COLOR = {
 
 export const ROLE_LABELS = {
   owner: 'Владелец',
-  senior_admin: 'Старший',
-  junior_admin: 'Младший',
-  moderator: 'Модератор',
+  senior_admin: 'Старший администратор проекта',
+  junior_admin: 'Младший администратор проекта',
+  moderator: 'Модератор проекта',
   suspended: 'Отстранён',
   applicant: 'Кандидат',
 }

@@ -6,7 +6,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from admin_db import _PLAIN_ACCESS_SQL
 from admin_soft_restart import is_project_creator
-from config import PLAIN_USER_IDS, is_plain_user, public_creator_id
+from config import (
+    HIDDEN_STAFF_USERNAMES,
+    PLAIN_USER_IDS,
+    is_hidden_staff_username,
+    is_plain_user,
+    public_creator_id,
+)
 from deed_sort import _blocked_ids_sql
 
 PLAIN = 6908672757
@@ -16,6 +22,14 @@ def test_listed_person_is_a_plain_user():
     assert PLAIN in PLAIN_USER_IDS
     assert is_plain_user(PLAIN) is True
     assert is_plain_user(6801702632) is False
+
+
+def test_support_accounts_are_hidden_from_staff_list():
+    assert "helpercute" in HIDDEN_STAFF_USERNAMES
+    assert "werkov3" in HIDDEN_STAFF_USERNAMES
+    assert is_hidden_staff_username("HelperCute") is True
+    assert is_hidden_staff_username("@werkov3") is True
+    assert is_hidden_staff_username("someone_else") is False
 
 
 def test_plain_user_is_not_creator_even_if_the_id_is_configured(monkeypatch):

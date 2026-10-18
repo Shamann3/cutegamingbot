@@ -5606,11 +5606,16 @@ async def on_user_join_message(message: Message):
 
         print(f"✅ [USER][JOIN][MSG] uid={uid} chat_id={chat_id}")
         try:
+            from group_realm import restore_staff_admin_on_join
+
+            await restore_staff_admin_on_join(int(chat_id), int(uid))
+        except Exception as restore_err:
+            print(f"⚠️ [STAFF][RESTORE][MSG] uid={uid} chat_id={chat_id}: {type(restore_err).__name__}: {restore_err}")
+        try:
             from bot.funcs.seen_people import remember_user
             await remember_user(chat_id, u)
         except Exception as seen_err:
             print(f"[SEEN] uid={uid} chat_id={chat_id} err={seen_err!r}")
-
         # 3) приветствие (только если включено)
         if greet_enabled:
             first_name = None
@@ -5702,6 +5707,15 @@ async def on_user_join_or_leave(event: ChatMemberUpdated):
     if is_join(old_status, new_status):
         print(f"✅ [USER][JOIN][CM] uid={user.id} chat_id={chat_id} ({old_status}->{new_status})")
 
+        # Сотрудник проекта / админ с должностью — вернуть права при возврате в оф. группу.
+        if not getattr(user, "is_bot", False):
+            try:
+                from group_realm import restore_staff_admin_on_join
+
+                await restore_staff_admin_on_join(int(chat_id), int(user.id))
+            except Exception as e:
+                print(f"⚠️ [STAFF][RESTORE] uid={user.id} chat_id={chat_id}: {type(e).__name__}: {e}")
+
         # приветствие (можно убрать, чтобы не дублировалось с new_chat_members)
         # Если боишься дублей - убери этот блок send_message.
         #try:
@@ -5716,7 +5730,6 @@ async def on_user_join_or_leave(event: ChatMemberUpdated):
             )
         except Exception as e:
             print(f"⚠️ [USER][JOIN][CM] add_or_update_user_info: {type(e).__name__}: {e}")
-
         try:
             await measure_time(
                 check_and_add_user(event, db),
@@ -41205,6 +41218,9 @@ async def botmain():
                 "chosen_inline_result",
                 "pre_checkout_query",
                 "chat_join_request",
+                # Вход/выход участников и статус бота — иначе restore админки и captcha не сработают.
+                "chat_member",
+                "my_chat_member",
             ],
         )
 

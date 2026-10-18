@@ -69,6 +69,7 @@ import { filterSectionTabs } from '../../constants/panelAccessTree'
 import RightsSection from './RightsSection'
 import StaffAccessPane from './StaffAccessPane'
 import StaffPreviewPane from './StaffPreviewPane'
+import GroupAdminsDesk from './GroupAdminsDesk'
 import GroupApplicationsPane from './GroupApplicationsPane'
 import AdminDropsPane from './AdminDropsPane'
 import OfficialGroupsPane from './OfficialGroupsPane'
@@ -108,9 +109,9 @@ const PAYOUT_LABELS = Object.fromEntries(
 )
 
 const ASSIGN_ROLE_OPTIONS = [
-  { value: 'moderator', label: 'Модератор' },
-  { value: 'junior_admin', label: 'Младший администратор' },
-  { value: 'senior_admin', label: 'Старший администратор' },
+  { value: 'moderator', label: 'Модератор проекта' },
+  { value: 'junior_admin', label: 'Младший администратор проекта' },
+  { value: 'senior_admin', label: 'Старший администратор проекта' },
 ]
 
 const ROLE_BADGE_COLOR = {
@@ -123,9 +124,9 @@ const ROLE_BADGE_COLOR = {
 
 const ROLE_LABELS = {
   owner: 'Владелец',
-  senior_admin: 'Старший',
-  junior_admin: 'Младший',
-  moderator: 'Модератор',
+  senior_admin: 'Старший администратор проекта',
+  junior_admin: 'Младший администратор проекта',
+  moderator: 'Модератор проекта',
   suspended: 'Отстранён',
   applicant: 'Кандидат',
 }
@@ -2140,6 +2141,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
     if (canConfigure) staff.push({ id: 'access', label: 'Доступ' })
     if (canPreview) staff.push({ id: 'view', label: 'Копия панели' })
     if (perms.has('review_applications') && open('applications')) staff.push({ id: 'apps', label: 'Заявки' })
+    if (isProjectCreator || open('groupAdmins')) staff.push({ id: 'groupAdmins', label: 'Администраторы групп' })
     if (perms.has('assign_roles') && open('invites')) staff.push({ id: 'keys', label: 'Ключи' })
     if (isProjectCreator) staff.push({ id: 'pay', label: 'Зарплаты' })
     if (isProjectCreator) staff.push({ id: 'stats', label: 'Статистика' })
@@ -2235,6 +2237,7 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
           )}
           {onStaff && activeId === 'view' && <StaffPreviewPane onOpen={onOpenPreview} />}
           {onStaff && activeId === 'apps' && <ApplicationsTab onOpenUser={onOpenUser} />}
+          {onStaff && activeId === 'groupAdmins' && <GroupAdminsDesk onOpenUser={onOpenUser} />}
           {onStaff && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="staff" myUserId={myUserId} />}
           {onStaff && activeId === 'stats' && <StatDesk onOpenUser={onOpenUser} />}
           {onStaff && seesWater && activeId === 'water' && <WaterGames onOpenUser={onOpenUser} />}

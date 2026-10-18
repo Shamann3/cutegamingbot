@@ -352,9 +352,9 @@ const ComparePane = memo(function ComparePane({
           <div className="pa-cyber-filters">
             {[
               ['all', 'Все роли'],
-              ['senior_admin', 'Старшие'],
-              ['junior_admin', 'Младшие'],
-              ['moderator', 'Модераторы'],
+              ['senior_admin', 'Старшие админы проекта'],
+              ['junior_admin', 'Младшие админы проекта'],
+              ['moderator', 'Модераторы проекта'],
             ].map(([id, label]) => (
               <button
                 key={id}
