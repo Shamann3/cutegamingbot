@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ApproveSeat from '../../components/ApproveSeat'
 import { CopyableId, CopyableUsername } from '../../components/Copyable'
 import {
@@ -9,9 +9,10 @@ import {
   fetchAdminDrops,
   fetchGroupApplications,
   fetchRightsBoard,
+  searchAdminUsers,
 } from '../../lib/adminClient'
 import { applicationPerson } from '../../lib/applicationPerson'
-import { adminSeatChoices } from '../../lib/seatChoice'
+import { adminSeatChoices, positionKindLabel } from '../../lib/seatChoice'
 import '../../styles/group-admins-desk.css'
 
 const SEGMENTS = [
@@ -56,6 +57,159 @@ function matchQuery(hay, query) {
   return String(hay || '').toLowerCase().includes(query)
 }
 
+function typedUserId(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return null
+  const id = Number(digits)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+function personBits(item) {
+  if (!item) return null
+  const id = Number(item.userId ?? item.user_id ?? item.id)
+  if (!Number.isSafeInteger(id) || id < 1) return null
+  const username = String(item.username || '').replace(/^@/, '')
+  const name = String(item.displayName || item.display_name || item.firstName || item.first_name || item.name || '').trim()
+  return { id, username, name }
+}
+
+function AppointPersonField({ text, onText, userId, onUserId }) {
+  const [hits, setHits] = useState([])
+  const [phase, setPhase] = useState('idle')
+  const [picked, setPicked] = useState(null)
+  const onUserIdRef = useRef(onUserId)
+  onUserIdRef.current = onUserId
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    const query = String(text || '').trim()
+    const bare = query.replace(/^@/, '')
+    if (bare.length < 2) {
+      setHits([])
+      setPicked(null)
+      setPhase('idle')
+      return undefined
+    }
+    let cancelled = false
+    const timer = window.setTimeout(async () => {
+      setPhase('loading')
+      try {
+        const data = await searchAdminUsers(query)
+        if (cancelled) return
+        const items = (Array.isArray(data?.results) ? data.results : Array.isArray(data?.items) ? data.items : []).slice(0, 6)
+        setHits(items)
+        const exact = items
+          .map((item) => ({ item, bits: personBits(item) }))
+          .find(({ bits }) => bits && (
+            String(bits.id) === bare
+            || bits.username.toLowerCase() === bare.toLowerCase()
+          ))
+        if (exact?.bits) {
+          setPicked(exact.item)
+          onUserIdRef.current(exact.bits.id)
+          setPhase('ready')
+        } else {
+          setPicked(null)
+          setPhase(items.length ? 'ready' : 'empty')
+        }
+      } catch {
+        if (cancelled) return
+        setHits([])
+        setPicked(null)
+        setPhase('error')
+      }
+    }, 180)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [text])
+
+  const type = (value) => {
+    onText(value)
+    onUserId(typedUserId(value))
+    setPicked(null)
+  }
+
+  const choose = (person) => {
+    const bits = personBits(person)
+    if (!bits) return
+    setPicked(person)
+    onUserId(bits.id)
+    onText(bits.username ? `@${bits.username}` : bits.name || String(bits.id))
+    inputRef.current?.focus()
+  }
+
+  const chosen = personBits(picked)
+  const shownId = chosen?.id || userId
+
+  return (
+    <div className="gad-person-field">
+      <label htmlFor="gad-person-input">Кому</label>
+      <div className="gad-person-box">
+        <input
+          id="gad-person-input"
+          ref={inputRef}
+          type="text"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder="@username, имя или id"
+          value={text}
+          onChange={(event) => type(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            if (hits.length === 1) choose(hits[0])
+          }}
+        />
+        {text ? (
+          <button type="button" className="gad-person-clear" onClick={() => type('')}>
+            Стереть
+          </button>
+        ) : null}
+      </div>
+      {phase === 'loading' && <p className="gad-hint">Ищем…</p>}
+      {phase === 'empty' && !typedUserId(text) && (
+        <p className="gad-hint">Такого человека нет. Проверьте @username или впишите id.</p>
+      )}
+      {phase === 'error' && (
+        <p className="gad-hint">Поиск не ответил. Id можно вписать цифрами.</p>
+      )}
+      {chosen && (
+        <p className="gad-picked" role="status">
+          Выбран: <strong>{chosen.name || chosen.username || chosen.id}</strong>
+          {chosen.username ? ` · @${chosen.username}` : ''}
+          {' · '}
+          id {chosen.id}
+        </p>
+      )}
+      {!chosen && shownId && (
+        <p className="gad-picked" role="status">Будет назначен id {shownId}</p>
+      )}
+      {hits.length > 0 && !chosen && (
+        <ul className="gad-hits">
+          {hits.map((item) => {
+            const bits = personBits(item)
+            if (!bits) return null
+            return (
+              <li key={bits.id}>
+                <button type="button" onClick={() => choose(item)}>
+                  <strong>{bits.name || bits.username || bits.id}</strong>
+                  <span>
+                    {bits.username ? `@${bits.username} · ` : ''}
+                    id {bits.id}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function GroupAdminsDesk({ onOpenUser = null }) {
   const [segment, setSegment] = useState('roster')
   const [groups, setGroups] = useState([])
@@ -70,9 +224,17 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
   const [rejectId, setRejectId] = useState(null)
   const [rejectNote, setRejectNote] = useState('')
   const [seatItem, setSeatItem] = useState(null)
-  const [appointUserId, setAppointUserId] = useState('')
+  const [dismissAsk, setDismissAsk] = useState(null)
+
+  const [personText, setPersonText] = useState('')
+  const [appointUserId, setAppointUserId] = useState(null)
   const [appointChatId, setAppointChatId] = useState('')
   const [appointPositionId, setAppointPositionId] = useState(null)
+  const [appointReason, setAppointReason] = useState('')
+  const [termStart, setTermStart] = useState('')
+  const [termEnd, setTermEnd] = useState('')
+  const [everywhere, setEverywhere] = useState(false)
+  const [groupFilter, setGroupFilter] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -101,7 +263,18 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     return groups
       .map((group) => {
         const seats = (group.seats || []).filter((seat) => {
-          if (seat.paused || seat.kind === 'spamblock') return true
+          if (!q) return true
+          if (seat.paused || seat.kind === 'spamblock') {
+            const blob = [
+              personName(seat),
+              seat.username,
+              seat.userId,
+              seat.position,
+              group.title,
+              seat.kind,
+            ].join(' ')
+            return matchQuery(blob, q)
+          }
           const blob = [
             personName(seat),
             seat.username,
@@ -130,12 +303,50 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     [groups],
   )
 
-  const seatChoices = useMemo(() => adminSeatChoices(groups), [groups])
+  const seatChoices = useMemo(
+    () => adminSeatChoices(groups, { includeSpamblock: true }),
+    [groups],
+  )
+
+  const filteredGroups = useMemo(() => {
+    const needle = groupFilter.trim().toLowerCase()
+    if (!needle) return seatChoices
+    return seatChoices.filter((group) => matchQuery(`${group.title} ${group.chatId}`, needle))
+  }, [seatChoices, groupFilter])
+
   const appointPosts = useMemo(() => {
+    if (everywhere) {
+      // Для «во все группы» берём должности из выбранной группы-шаблона.
+      const chatId = Number(appointChatId)
+      const group = seatChoices.find((item) => Number(item.chatId) === chatId)
+      return group?.posts || []
+    }
     const chatId = Number(appointChatId)
     const group = seatChoices.find((item) => Number(item.chatId) === chatId)
     return group?.posts || []
-  }, [seatChoices, appointChatId])
+  }, [seatChoices, appointChatId, everywhere])
+
+  const selectedPost = useMemo(
+    () => appointPosts.find((post) => Number(post.id) === Number(appointPositionId)) || null,
+    [appointPosts, appointPositionId],
+  )
+  const spamPick = selectedPost?.kind === 'spamblock'
+  const selectedGroup = useMemo(
+    () => seatChoices.find((item) => Number(item.chatId) === Number(appointChatId)) || null,
+    [seatChoices, appointChatId],
+  )
+
+  const resetAppoint = () => {
+    setPersonText('')
+    setAppointUserId(null)
+    setAppointChatId('')
+    setAppointPositionId(null)
+    setAppointReason('')
+    setTermStart('')
+    setTermEnd('')
+    setEverywhere(false)
+    setGroupFilter('')
+  }
 
   const dismiss = async (chatId, userId) => {
     const key = `d:${chatId}:${userId}`
@@ -146,6 +357,7 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     try {
       await dismissGroupAdmin({ chat_id: chatId, user_id: userId })
       setNotice('Должность снята')
+      setDismissAsk(null)
       await load()
     } catch (err) {
       setError(err?.message || 'Снять не удалось')
@@ -225,29 +437,42 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
 
   const submitAppoint = async (event) => {
     event.preventDefault()
-    const userId = Number(String(appointUserId).trim())
+    const userId = Number(appointUserId || typedUserId(personText))
     const chatId = Number(appointChatId)
     const positionId = Number(appointPositionId)
     if (!Number.isSafeInteger(userId) || userId < 1) {
-      setError('Укажите корректный ID пользователя')
+      setError('Выберите человека или укажите корректный ID')
       return
     }
     if (!Number.isSafeInteger(chatId) || !Number.isSafeInteger(positionId) || positionId < 1) {
       setError('Выберите группу и должность')
       return
     }
+    if (spamPick && !termEnd) {
+      setError('Для спам-блока укажите, по какое число держать должность')
+      return
+    }
     setBusyKey('appoint')
     setError('')
     setNotice('')
+    setKeyOnce('')
     try {
-      await appointGroupAdmin({
+      const data = await appointGroupAdmin({
         chat_id: chatId,
         user_id: userId,
         position_id: positionId,
+        reason: appointReason.trim() || 'Назначение из администраторов групп',
+        term_start: spamPick ? termStart : '',
+        term_end: spamPick ? termEnd : '',
+        everywhere,
       })
-      setNotice('Человек назначен на должность')
-      setAppointUserId('')
-      setAppointPositionId(null)
+      setKeyOnce(data?.entryKey || '')
+      setNotice(
+        everywhere
+          ? `Должность выдана в ${data?.placed || 'нескольких'} официальных группах.`
+          : (data?.telegram || 'Человек назначен на должность'),
+      )
+      resetAppoint()
       await load()
       setSegment('roster')
     } catch (err) {
@@ -273,12 +498,19 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
     ))
   }, [drops, q])
 
+  const appointReady = Boolean(
+    (appointUserId || typedUserId(personText))
+    && appointChatId
+    && appointPositionId
+    && (!spamPick || termEnd),
+  )
+
   return (
     <div className="gad">
       <header className="gad-hero">
         <h3>Администраторы групп</h3>
         <p>
-          Список админов официальных групп, заявки на вступление и снятие, самостоятельное назначение.
+          Список, заявки, снятие и назначение — включая спам-блок.
           Названия и права должностей меняет только создатель проекта.
         </p>
         <p className="gad-note">
@@ -349,8 +581,15 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                     {(group.seats || []).map((seat) => {
                       const key = `d:${group.chatId}:${seat.userId}`
                       const paused = Boolean(seat.paused)
+                      const spam = seat.kind === 'spamblock'
+                      const asking = dismissAsk
+                        && Number(dismissAsk.chatId) === Number(group.chatId)
+                        && Number(dismissAsk.userId) === Number(seat.userId)
                       return (
-                        <li key={`${group.chatId}-${seat.userId}`} className="gad-person">
+                        <li
+                          key={`${group.chatId}-${seat.userId}`}
+                          className={`gad-person${spam ? ' is-spam' : ''}${paused ? ' is-paused' : ''}`}
+                        >
                           <div className="gad-person-main">
                             <strong>{personName(seat)}</strong>
                             <span>
@@ -358,6 +597,11 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                               {seat.position || 'должность'}
                               {seat.rank != null ? ` · ранг ${seat.rank}` : ''}
                               {paused ? ' · на паузе' : ''}
+                              {spam && seat.termEnd ? ` · до ${seat.termEnd}` : ''}
+                            </span>
+                            <span className="gad-chips">
+                              {spam && <span className="gad-chip gad-chip-spam">Спам-блок</span>}
+                              {paused && <span className="gad-chip">Пауза</span>}
                             </span>
                           </div>
                           <div className="gad-person-actions">
@@ -366,17 +610,50 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
                                 Игрок
                               </button>
                             )}
-                            {!paused && Number(seat.rank) < 5 && (
+                            {!paused && Number(seat.rank) < 5 && !asking && (
                               <button
                                 type="button"
                                 className="gad-btn gad-btn-danger"
-                                disabled={busyKey === key}
-                                onClick={() => dismiss(group.chatId, seat.userId)}
+                                disabled={Boolean(busyKey)}
+                                onClick={() => setDismissAsk({
+                                  chatId: group.chatId,
+                                  userId: seat.userId,
+                                  name: personName(seat),
+                                  position: seat.position,
+                                  group: group.title,
+                                })}
                               >
-                                {busyKey === key ? '…' : 'Снять'}
+                                Снять
                               </button>
                             )}
                           </div>
+                          {asking && (
+                            <div className="gad-confirm" role="alertdialog" aria-label="Подтверждение снятия">
+                              <p>
+                                Снять «{dismissAsk.position || 'должность'}» у {dismissAsk.name}
+                                {dismissAsk.group ? ` в «${dismissAsk.group}»` : ''}?
+                                Человек останется в группе без префикса.
+                              </p>
+                              <div className="gad-actions">
+                                <button
+                                  type="button"
+                                  className="gad-btn gad-btn-danger"
+                                  disabled={busyKey === key}
+                                  onClick={() => dismiss(group.chatId, seat.userId)}
+                                >
+                                  {busyKey === key ? 'Снимаем…' : 'Да, снять'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="gad-btn"
+                                  disabled={busyKey === key}
+                                  onClick={() => setDismissAsk(null)}
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </li>
                       )
                     })}
@@ -532,68 +809,206 @@ export default function GroupAdminsDesk({ onOpenUser = null }) {
       )}
 
       {segment === 'appoint' && (
-        <form className="gad-form" key="appoint" onSubmit={submitAppoint}>
-          <p className="gad-meta">
-            Назначьте человека на существующую должность. Создать или переименовать должность здесь нельзя.
-          </p>
-          <label>
-            ID пользователя
+        <form className="gad-form gad-form-wide" key="appoint" onSubmit={submitAppoint}>
+          <div className="gad-step">
+            <span className="gad-step-num">1</span>
+            <div>
+              <h4>Человек</h4>
+              <p className="gad-meta">Найдите по @username, имени или id — как в карточке должности.</p>
+            </div>
+          </div>
+          <AppointPersonField
+            text={personText}
+            onText={setPersonText}
+            userId={appointUserId}
+            onUserId={setAppointUserId}
+          />
+
+          <div className="gad-step">
+            <span className="gad-step-num">2</span>
+            <div>
+              <h4>Группа</h4>
+              <p className="gad-meta">
+                {everywhere
+                  ? 'Должность встанет во все официальные группы. Ниже выберите группу-образец с нужной должностью.'
+                  : 'Выберите одну официальную группу — должность встанет только туда.'}
+              </p>
+            </div>
+          </div>
+
+          <label className="gad-switch">
             <input
-              value={appointUserId}
-              onChange={(event) => setAppointUserId(event.target.value.replace(/[^\d]/g, '').slice(0, 15))}
-              inputMode="numeric"
-              placeholder="Например 123456789"
-              required
-            />
-          </label>
-          <label>
-            Группа
-            <select
-              value={appointChatId}
+              type="checkbox"
+              checked={everywhere}
               onChange={(event) => {
-                setAppointChatId(event.target.value)
+                setEverywhere(event.target.checked)
                 setAppointPositionId(null)
               }}
-              required
-            >
-              <option value="">Выберите группу</option>
-              {seatChoices.map((group) => (
-                <option key={group.chatId} value={String(group.chatId)}>
-                  {group.title}
-                </option>
-              ))}
-            </select>
+            />
+            <span>Во все официальные группы</span>
           </label>
-          {appointChatId && (
-            <div>
-              <p className="gad-meta">Должность</p>
-              {appointPosts.length === 0 ? (
-                <p className="gad-meta">В этой группе нет доступных должностей администратора.</p>
-              ) : (
-                <div className="gad-posts">
-                  {appointPosts.map((post) => (
-                    <button
-                      key={post.id}
-                      type="button"
-                      className={`gad-post${Number(appointPositionId) === Number(post.id) ? ' is-on' : ''}`}
-                      aria-pressed={Number(appointPositionId) === Number(post.id)}
-                      onClick={() => setAppointPositionId(post.id)}
-                    >
-                      <strong>{post.title}</strong>
-                      <span>ранг {post.rank}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+
+          <input
+            className="gad-search"
+            type="search"
+            value={groupFilter}
+            onChange={(event) => setGroupFilter(event.target.value)}
+            placeholder="Найти группу по названию"
+            aria-label="Фильтр групп"
+          />
+
+          {filteredGroups.length === 0 ? (
+            <p className="gad-empty">Официальных групп по запросу нет</p>
+          ) : (
+            <div className="gad-pick-grid" role="listbox" aria-label="Официальные группы">
+              {filteredGroups.map((group) => {
+                const on = Number(appointChatId) === Number(group.chatId)
+                const postCount = (group.posts || []).length
+                return (
+                  <button
+                    key={group.chatId}
+                    type="button"
+                    role="option"
+                    aria-selected={on}
+                    className={`gad-pick${on ? ' is-on' : ''}`}
+                    onClick={() => {
+                      setAppointChatId(String(group.chatId))
+                      setAppointPositionId(null)
+                    }}
+                  >
+                    <strong>{group.title}</strong>
+                    <span>
+                      {postCount
+                        ? `${postCount} ${postCount === 1 ? 'должность' : 'должностей'}`
+                        : 'нет должностей'}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           )}
-          <button
-            type="submit"
-            className="gad-btn gad-btn-primary"
-            disabled={busyKey === 'appoint' || !appointPositionId}
-          >
-            {busyKey === 'appoint' ? 'Назначаем…' : 'Назначить'}
-          </button>
+
+          {appointChatId && (
+            <>
+              <div className="gad-step">
+                <span className="gad-step-num">3</span>
+                <div>
+                  <h4>Должность</h4>
+                  <p className="gad-meta">
+                    {selectedGroup
+                      ? `В «${selectedGroup.title}»${everywhere ? ' — образец для всех групп' : ''}.`
+                      : 'Выберите должность администратора или спам-блок.'}
+                  </p>
+                </div>
+              </div>
+              {appointPosts.length === 0 ? (
+                <p className="gad-meta">В этой группе нет доступных должностей. Их добавляет создатель во вкладке «Должности».</p>
+              ) : (
+                <div className="gad-posts" role="listbox" aria-label="Должности">
+                  {appointPosts.map((post) => {
+                    const on = Number(appointPositionId) === Number(post.id)
+                    const spam = post.kind === 'spamblock'
+                    return (
+                      <button
+                        key={post.id}
+                        type="button"
+                        role="option"
+                        aria-selected={on}
+                        className={`gad-post${on ? ' is-on' : ''}${spam ? ' is-spam' : ''}`}
+                        onClick={() => {
+                          setAppointPositionId(post.id)
+                          if (post.kind !== 'spamblock') {
+                            setTermStart('')
+                            setTermEnd('')
+                          }
+                        }}
+                      >
+                        <strong>{post.title}</strong>
+                        <span>
+                          {positionKindLabel(post.kind)}
+                          {post.kind !== 'spamblock' ? ` · ранг ${post.rank}` : ' · нужен срок'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {spamPick && (
+            <div className="gad-dates">
+              <div className="gad-step">
+                <span className="gad-step-num">4</span>
+                <div>
+                  <h4>Срок спам-блока</h4>
+                  <p className="gad-meta">Конец обязателен. После даты должность снимется сама.</p>
+                </div>
+              </div>
+              <div className="gad-date-row">
+                <label>
+                  С какого числа
+                  <input
+                    type="date"
+                    value={termStart}
+                    onChange={(event) => setTermStart(event.target.value)}
+                  />
+                </label>
+                <label>
+                  По какое число
+                  <input
+                    type="date"
+                    value={termEnd}
+                    onChange={(event) => setTermEnd(event.target.value)}
+                    required
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
+          {appointPositionId && (
+            <label>
+              Для чего
+              <input
+                value={appointReason}
+                onChange={(event) => setAppointReason(event.target.value)}
+                placeholder="Можно оставить пустым"
+                maxLength={200}
+              />
+            </label>
+          )}
+
+          {appointReady && (
+            <div className="gad-summary" role="status">
+              <strong>Готово к назначению</strong>
+              <span>
+                {personText || `id ${appointUserId}`}
+                {' → '}
+                {selectedPost?.title || 'должность'}
+                {everywhere ? ' · все официальные группы' : selectedGroup ? ` · «${selectedGroup.title}»` : ''}
+                {spamPick && termEnd ? ` · до ${termEnd}` : ''}
+              </span>
+            </div>
+          )}
+
+          <div className="gad-form-actions">
+            <button
+              type="submit"
+              className="gad-btn gad-btn-primary"
+              disabled={busyKey === 'appoint' || !appointReady}
+            >
+              {busyKey === 'appoint' ? 'Назначаем…' : spamPick ? 'Выдать спам-блок' : 'Назначить'}
+            </button>
+            <button
+              type="button"
+              className="gad-btn"
+              disabled={busyKey === 'appoint'}
+              onClick={resetAppoint}
+            >
+              Очистить
+            </button>
+          </div>
         </form>
       )}
 

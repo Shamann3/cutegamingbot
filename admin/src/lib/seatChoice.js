@@ -1,10 +1,15 @@
-/** Должности, на которые создатель может посадить человека из заявки. */
+/** Должности, на которые можно посадить человека из заявки или с доски. */
 
-export function adminSeatChoices(groups) {
+export function adminSeatChoices(groups, options = {}) {
+  const includeSpamblock = Boolean(options.includeSpamblock)
   return (groups || []).map((group) => {
     const posts = (group.positions || []).filter((post) => {
       const kind = post.kind || 'post'
-      return kind === 'post' && Number(post.rank) < 5
+      const rank = Number(post.rank)
+      if (!Number.isFinite(rank) || rank >= 5) return false
+      if (kind === 'post') return true
+      if (includeSpamblock && kind === 'spamblock') return true
+      return false
     })
     return {
       chatId: group.chatId,
@@ -19,4 +24,10 @@ export function typedChatId(query) {
   if (!/^-?\d{6,}$/.test(text)) return null
   const id = Number(text)
   return Number.isSafeInteger(id) ? id : null
+}
+
+export function positionKindLabel(kind) {
+  if (kind === 'spamblock') return 'Спам-блок'
+  if (kind === 'member') return 'Участник'
+  return 'Админ'
 }

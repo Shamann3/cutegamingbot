@@ -165,7 +165,7 @@ describe('StaffSection', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Администраторы групп' }))
     expect(await screen.findByRole('heading', { name: 'Администраторы групп' })).toBeTruthy()
-    expect(screen.getByText(/Названия и права должностей меняет только создатель/)).toBeTruthy()
+    expect(screen.getByText(/включая спам-блок/)).toBeTruthy()
   })
 })
 

@@ -5675,7 +5675,7 @@ async def group_member_check(
     user_id: int = Depends(get_any_telegram_user_id),
 ):
     """Что Telegram сообщает о человеке. Срока глобального спам-блока в Bot API нет."""
-    _require_creator(user_id)
+    await _require_group_admins_desk(user_id)
     await ensure_tables()
     return await _telegram_member(int(chat_id), int(member_id))
 

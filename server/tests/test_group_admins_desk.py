@@ -68,6 +68,8 @@ def test_staff_without_tab_cannot_open_group_admins_desk():
 
 
 def test_operational_routes_use_group_admins_desk_gate():
+    from group_realm import group_member_check
+
     for handler in (
         rights_board,
         group_applications,
@@ -75,10 +77,24 @@ def test_operational_routes_use_group_admins_desk_gate():
         list_admin_drops,
         group_appoint,
         group_dismiss,
+        group_member_check,
     ):
         source = inspect.getsource(handler)
         assert "_require_group_admins_desk" in source
         assert "_require_creator(user_id)" not in source
+
+
+def test_appoint_accepts_spamblock_term_fields():
+    from group_realm import AppointBody
+
+    body = AppointBody(
+        chat_id=-100,
+        user_id=1,
+        position_id=2,
+        term_start="2026-01-01",
+        term_end="2026-12-31",
+    )
+    assert body.term_end == "2026-12-31"
 
 
 def test_position_create_stays_creator_only():
