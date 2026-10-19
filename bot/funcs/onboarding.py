@@ -943,21 +943,56 @@ def _wallet_from_assignment(assignment: Dict[str, Any], *, is_free: bool) -> Wal
     )
 
 
-async def _group_balance_for_wallet(wallet: Wallet) -> Optional[float]:
-    """Баланс группы для умного расчёта ставки новичка."""
-    chat_id = int(wallet.chat_id or 0)
-    if chat_id <= 0:
-        chat_id = int(CLUB_CHAT_ID or 0)
-    if chat_id <= 0:
-        return None
+async def _resolve_play_venue(
+    *,
+    min_balance: int = 0,
+    user_id: Optional[int] = None,
+):
+    """Официальная группа с макс. кутами (при равенстве — самая активная)."""
+    from bot.funcs.play_venue import pick_official_play_venue
+
+    return await pick_official_play_venue(
+        fallback_chat_id=int(CLUB_CHAT_ID),
+        fallback_username=str(CLUB_USERNAME or ""),
+        min_balance=int(min_balance or 0),
+        user_id=int(user_id) if user_id else None,
+        member_check=_in_chat if user_id else None,
+    )
+
+
+async def _group_balance_for_wallet(wallet: Wallet) -> Tuple[Optional[float], int]:
+    """Баланс группы и chat_id для умного расчёта ставки новичка.
+
+    Returns: (balance_or_None, chat_id). Для обычной игры — самая богатая
+    официальная площадка, а не всегда CuteGamingChat.
+    """
+    if wallet.free_quest and int(wallet.chat_id or 0) > 0:
+        chat_id = int(wallet.chat_id)
+        try:
+            raw = await db.get_chat_balancebalance(bot1, chat_id)
+            if raw in (None, ""):
+                return 0.0, chat_id
+            return float(raw), chat_id
+        except Exception as e:
+            print(f"[ONBOARDING] group balance for bet: {e!r}")
+            return None, chat_id
+
     try:
-        raw = await db.get_chat_balancebalance(bot1, chat_id)
-        if raw in (None, ""):
-            return 0.0
-        return float(raw)
+        venue = await _resolve_play_venue()
+        return float(venue.balance), int(venue.chat_id)
     except Exception as e:
-        print(f"[ONBOARDING] group balance for bet: {e!r}")
-        return None
+        print(f"[ONBOARDING] pick play venue for bet: {e!r}")
+        chat_id = int(CLUB_CHAT_ID or 0)
+        if chat_id <= 0:
+            return None, 0
+        try:
+            raw = await db.get_chat_balancebalance(bot1, chat_id)
+            if raw in (None, ""):
+                return 0.0, chat_id
+            return float(raw), chat_id
+        except Exception as e2:
+            print(f"[ONBOARDING] group balance fallback: {e2!r}")
+            return None, chat_id
 
 
 def _bet_for(
@@ -965,6 +1000,7 @@ def _bet_for(
     wallet: Wallet,
     *,
     group_balance: Optional[float] = None,
+    cap_chat_id: int = 0,
 ) -> int:
     """Ставка для запуска.
 
@@ -996,9 +1032,9 @@ def _bet_for(
             # иначе новичок застрял бы на старте.
             if from_group >= floor:
                 bet = min(bet, from_group)
-            # Для обычной (не free) игры учитываем потолок ★ группы.
+            # Для обычной (не free) игры учитываем потолок ★ выбранной группы.
             if not wallet.free_quest:
-                cap_chat = int(wallet.chat_id or 0) or int(CLUB_CHAT_ID or 0)
+                cap_chat = int(cap_chat_id or 0) or int(wallet.chat_id or 0) or int(CLUB_CHAT_ID or 0)
                 if cap_chat:
                     cap = effective_stake_cap(cap_chat, cfg=cfg)
                     if cap is not None:
@@ -1546,7 +1582,8 @@ async def ob_take(call: CallbackQuery):
         )
         return
 
-    await _swap(call, _games_text(wallet, accepted=True), _games_markup(wallet))
+    text, markup = await _games_screen(wallet, accepted=True)
+    await _swap(call, text, markup)
 
 
 async def _activate_quest(
@@ -1853,7 +1890,8 @@ async def ob_games(call: CallbackQuery):
         game_key="",
     )
     wallet = await _wallet(call.from_user.id)
-    await _swap(call, _games_text(wallet), _games_markup(wallet))
+    text, markup = await _games_screen(wallet)
+    await _swap(call, text, markup)
 
 
 @dp.callback_query(F.data == "ob_next")
@@ -1888,10 +1926,24 @@ async def ob_next(call: CallbackQuery):
         )
         await _swap(call, text, _games_markup(wallet))
         return
-    await _swap(call, _games_text(wallet), _games_markup(wallet))
+    text, markup = await _games_screen(wallet)
+    await _swap(call, text, markup)
 
 
-def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
+async def _games_screen(wallet: Wallet, *, accepted: bool = False) -> Tuple[str, InlineKeyboardMarkup]:
+    """Текст и кнопки выбора игр с актуальной официальной площадкой."""
+    club = ""
+    if not wallet.free_quest:
+        try:
+            venue = await _resolve_play_venue()
+            club = venue.ref
+        except Exception as e:
+            print(f"[ONBOARDING] games screen venue: {e!r}")
+            club = f"@{CLUB_USERNAME}" if CLUB_USERNAME else "в группе клуба"
+    return _games_text(wallet, accepted=accepted, club=club), _games_markup(wallet)
+
+
+def _games_text(wallet: Wallet, *, accepted: bool = False, club: str = "") -> str:
     """Экран выбора игр. Правь текст прямо здесь."""
     if wallet.free_quest:
         where = _venue_label(wallet)
@@ -1919,13 +1971,15 @@ def _games_text(wallet: Wallet, *, accepted: bool = False) -> str:
             f"</blockquote>\n\n"
             f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите игру</b>"
         )
-    club = f"@{CLUB_USERNAME}" if CLUB_USERNAME else "в группе клуба"
+    club_label = str(club or "").strip() or (
+        f"@{CLUB_USERNAME}" if CLUB_USERNAME else "в группе клуба"
+    )
     return (
         f"<tg-emoji emoji-id='5319229795375018323'>🎮</tg-emoji> <b>Игры</b>\n\n"
         f"<blockquote>"
         f"<b>{wallet.amount} кут</b>\n"
         f"<b>1 кут = 1 <tg-emoji emoji-id='5848259999763011021'>⭐️</tg-emoji></b>\n"
-        f"<b>Ставка с баланса · {club}</b>"
+        f"<b>Ставка с баланса · {club_label}</b>"
         f"</blockquote>\n\n"
         f"<tg-emoji emoji-id='5231102735817918643'>👇</tg-emoji> <b>Выберите игру</b>"
     )
@@ -1974,8 +2028,8 @@ async def ob_game(call: CallbackQuery):
         await _swap(call, _bet_limit_text(game, wallet), _bet_limit_markup())
         return
 
-    group_bal = await _group_balance_for_wallet(wallet)
-    bet = _bet_for(game, wallet, group_balance=group_bal)
+    group_bal, venue_chat = await _group_balance_for_wallet(wallet)
+    bet = _bet_for(game, wallet, group_balance=group_bal, cap_chat_id=venue_chat)
     if bet < floor:
         await _swap(call, _no_funds_text(game, wallet), _no_funds_markup(wallet))
         return
@@ -2030,7 +2084,8 @@ async def ob_resume(call: CallbackQuery):
     saved = _recall(call.from_user.id)
     if not saved:
         wallet = await _wallet(call.from_user.id)
-        await _swap(call, _games_text(wallet), _games_markup(wallet))
+        text, markup = await _games_screen(wallet)
+        await _swap(call, text, markup)
         return
     await _try_launch(call, saved[0], saved[1], saved[2])
 
@@ -2141,10 +2196,16 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
     except Exception:
         pass
     wallet = await _wallet(user.id)
-    venue_chat_id, venue_url, venue_ref = _play_venue(wallet)
+    venue_chat_id, venue_url, venue_ref = await _play_venue(
+        wallet, min_balance=int(bet), user_id=int(user.id),
+    )
 
     if not await _in_chat(user.id, venue_chat_id):
-        await _swap(call, _join_text(game, venue_url), _join_markup(venue_url))
+        await _swap(
+            call,
+            _join_text(game, venue_url, where=venue_ref),
+            _join_markup(venue_url, where=venue_ref),
+        )
         return
 
     if wallet.amount < bet or bet < int(game["min"]):
@@ -2152,8 +2213,33 @@ async def _try_launch(call: CallbackQuery, game_key: str, bet: int,
         return
 
     if not await _chat_can_pay(venue_chat_id, bet):
-        await _swap(call, _empty_treasury_text(), _empty_treasury_markup())
-        return
+        # Кэш мог устареть — перечитываем и пробуем другую официальную группу.
+        paid = False
+        try:
+            from bot.funcs.play_venue import invalidate_play_venue_cache, any_official_can_pay
+            invalidate_play_venue_cache()
+            if await any_official_can_pay(
+                bet,
+                fallback_chat_id=int(CLUB_CHAT_ID),
+                fallback_username=str(CLUB_USERNAME or ""),
+            ):
+                venue_chat_id, venue_url, venue_ref = await _play_venue(
+                    wallet, min_balance=int(bet), user_id=int(user.id),
+                )
+                if not await _in_chat(user.id, venue_chat_id):
+                    await _swap(
+                        call,
+                        _join_text(game, venue_url, where=venue_ref),
+                        _join_markup(venue_url, where=venue_ref),
+                    )
+                    return
+                paid = await _chat_can_pay(venue_chat_id, bet)
+        except Exception as e:
+            print(f"[ONBOARDING] treasury re-pick: {e!r}")
+            paid = False
+        if not paid:
+            await _swap(call, _empty_treasury_text(), _empty_treasury_markup())
+            return
 
     # Повтор «Открыть игру»: партия уже ждёт — не плодим вторую доску,
     # а снова даём ссылку на ту же.
@@ -3613,27 +3699,43 @@ def _ready_markup(play_url: str, *, free_quest: bool = False) -> InlineKeyboardM
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _join_text(game: Dict[str, Any], venue_url: str = CLUB_URL) -> str:
+def _join_text(
+    game: Dict[str, Any],
+    venue_url: str = CLUB_URL,
+    *,
+    where: Optional[str] = None,
+) -> str:
     """Вход в группу. Правь текст прямо здесь."""
-    if venue_url != CLUB_URL:
-        where = "группу задания"
-    elif CLUB_USERNAME:
-        where = f"@{CLUB_USERNAME}"
+    label = str(where or "").strip()
+    if not label:
+        if venue_url != CLUB_URL:
+            label = "группу задания"
+        elif CLUB_USERNAME:
+            label = f"@{CLUB_USERNAME}"
+        else:
+            label = "группу клуба"
+    if label.startswith("@") or label.startswith("http"):
+        enter_where = label
     else:
-        where = "группу клуба"
+        enter_where = label
     return (
         f"{game['emoji']} <b>{game['title']}</b>\n\n"
         f"<blockquote>"
-        f"<b>Зайдите в {where}</b>\n"
+        f"<b>Зайдите в {enter_where}</b>\n"
         f"<b>Потом нажмите кнопку ниже</b>"
         f"</blockquote>"
     )
 
 
-def _join_markup(venue_url: str = CLUB_URL) -> InlineKeyboardMarkup:
-    if venue_url != CLUB_URL:
-        enter = "Зайти в группу"
-    elif CLUB_USERNAME:
+def _join_markup(
+    venue_url: str = CLUB_URL,
+    *,
+    where: Optional[str] = None,
+) -> InlineKeyboardMarkup:
+    label = str(where or "").strip()
+    if label.startswith("@"):
+        enter = f"Зайти в {label}"
+    elif CLUB_USERNAME and venue_url == CLUB_URL:
         enter = f"Зайти в @{CLUB_USERNAME}"
     else:
         enter = "Зайти в группу"
@@ -3804,29 +3906,42 @@ async def _is_newbie(user_id: int) -> bool:
 
 def _venue_label(wallet: Wallet, venue_ref: Optional[str] = None) -> str:
     """Короткое имя площадки для текстов."""
+    ref = str(venue_ref or "").strip()
+    if ref:
+        return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
     if wallet.free_quest and wallet.chat_id and int(wallet.chat_id) != CLUB_CHAT_ID:
-        ref = str(venue_ref or wallet.chat_ref or "").strip()
-        if ref:
-            return ref if ref.startswith("@") or ref.startswith("http") else f"@{ref.lstrip('@')}"
+        quest_ref = str(wallet.chat_ref or "").strip()
+        if quest_ref:
+            return (
+                quest_ref
+                if quest_ref.startswith("@") or quest_ref.startswith("http")
+                else f"@{quest_ref.lstrip('@')}"
+            )
         return "в группе задания"
     if CLUB_USERNAME:
         return f"@{CLUB_USERNAME}"
     return "в группе клуба"
 
 
-def _play_venue(wallet: Wallet) -> Tuple[int, str, Optional[str]]:
-    """Куда запускать игру: чат задания или клуб.
+async def _play_venue(
+    wallet: Wallet,
+    *,
+    min_balance: int = 0,
+    user_id: Optional[int] = None,
+) -> Tuple[int, str, Optional[str]]:
+    """Куда запускать игру: чат задания или лучшая официальная группа.
 
-    Если в бесплатном задании указана группа - играем там.
-    Если группы нет - дефолтный клуб (test/prod через ONBOARDING_CLUB).
+    Обычная игра — официальная группа с наибольшей казной; при равных
+    кутах — самая активная. Среди групп, которые тянут ставку, предпочитаем
+    ту, где человек уже состоит.
 
     Returns: (chat_id, open_url, chat_ref)
     """
     if wallet.free_quest and wallet.chat_id:
         ref = str(wallet.chat_ref or "").strip()
         return wallet.chat_id, _chat_open_url(wallet.chat_id, ref), ref or None
-    club_ref = f"@{CLUB_USERNAME}" if CLUB_USERNAME else None
-    return CLUB_CHAT_ID, CLUB_URL, club_ref
+    venue = await _resolve_play_venue(min_balance=min_balance, user_id=user_id)
+    return int(venue.chat_id), venue.open_url, venue.ref
 
 
 async def _send_html_chat(
@@ -4154,7 +4269,16 @@ async def _chat_can_pay(chat_id: int, bet: int) -> bool:
 
 
 async def _club_can_pay(bet: int) -> bool:
-    return await _chat_can_pay(CLUB_CHAT_ID, bet)
+    """True, если хоть одна официальная группа тянет ставку."""
+    try:
+        from bot.funcs.play_venue import any_official_can_pay
+        return await any_official_can_pay(
+            bet,
+            fallback_chat_id=int(CLUB_CHAT_ID),
+            fallback_username=str(CLUB_USERNAME or ""),
+        )
+    except Exception:
+        return await _chat_can_pay(CLUB_CHAT_ID, bet)
 
 
 def _html_plain(text: str) -> str:
