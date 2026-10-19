@@ -3464,9 +3464,57 @@ html[data-viewport="phone"] .panel-shell .panel-security .sec-tabs {
     transform 160ms var(--e-ease, ease);
 }
 .staff-office-btn strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 17px;
   font-weight: 680;
   letter-spacing: -0.02em;
+}
+
+.staff-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35em;
+  height: 1.35em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--e-accent, #f4f4f4);
+  color: #0a0a0a;
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: 0 0 14px rgba(var(--e-accent-rgb, 255, 255, 255), 0.35);
+  animation: staff-tab-count-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.staff-office-tabs .sec-tab .staff-tab-count,
+.staff-office-btn .staff-tab-count {
+  margin-left: 2px;
+}
+
+.staff-office-tabs .sec-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-tab-label {
+  min-width: 0;
+}
+
+@keyframes staff-tab-count-pop {
+  from { opacity: 0; transform: scale(0.7); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staff-tab-count {
+    animation: none !important;
+  }
 }
 .staff-office-btn span {
   font-size: 13px;

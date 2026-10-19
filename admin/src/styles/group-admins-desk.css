@@ -177,9 +177,17 @@
   min-width: 1.4em;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.28);
+  background: rgba(var(--e-accent-rgb, 200, 175, 255), 0.85);
+  color: #0a0a0a;
   font-size: 0.78rem;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
+  animation: gad-count-pop 0.4s var(--gad-rise) both;
+}
+
+@keyframes gad-count-pop {
+  from { opacity: 0; transform: scale(0.65); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .gad-toolbar {
@@ -860,6 +868,122 @@ html[data-viewport="phone"] .gad-person-box {
   grid-template-columns: 1fr;
 }
 
+/* Карточки снятий — отдельная вертикальная лента, без склеивания на телефоне */
+.admin-drops-desk .admin-drops-list {
+  gap: 14px;
+}
+
+.admin-drop-card {
+  gap: 12px;
+  padding: 16px;
+}
+
+.admin-drop-card.is-waiting {
+  border-color: rgba(var(--e-accent-rgb, 200, 175, 255), 0.28);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.admin-drop-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.admin-drop-status.is-pending {
+  background: rgba(250, 204, 21, 0.14);
+  color: #facc15;
+  animation: admin-drop-pulse 1.8s ease-in-out infinite;
+}
+
+.admin-drop-status.is-approved {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+
+.admin-drop-status.is-rejected {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+@keyframes admin-drop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(250, 204, 21, 0); }
+}
+
+.admin-drop-meta {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 8px;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+}
+
+.admin-drop-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.admin-drop-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.admin-drop-actions .gad-btn {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  min-height: 44px;
+}
+
+html.is-phone .admin-drop-actions,
+html[data-viewport="phone"] .admin-drop-actions {
+  grid-template-columns: 1fr;
+}
+
+html.is-phone .admin-drop-card,
+html[data-viewport="phone"] .admin-drop-card {
+  padding: 14px;
+}
+
+html.is-phone .admin-drop-card .gad-card-head,
+html[data-viewport="phone"] .admin-drop-card .gad-card-head {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+@media (max-width: 560px) {
+  .admin-drop-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-drop-card {
+    padding: 14px;
+  }
+
+  .admin-drop-card .gad-card-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gad,
   .gad-group,
@@ -871,7 +995,8 @@ html[data-viewport="phone"] .gad-person-box {
   .gad-btn,
   .gad-pick,
   .gad-post,
-  .gad-hero-glow {
+  .gad-hero-glow,
+  .admin-drop-status.is-pending {
     animation: none !important;
     transition: none !important;
   }

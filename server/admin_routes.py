@@ -1710,6 +1710,56 @@ async def staff_list_applications(
     return {"items": await list_applications(status)}
 
 
+@router.get("/panel/inbox")
+async def panel_inbox(
+    request: Request,
+    user_id: int = Depends(require_active_admin),
+):
+    """Лёгкие счётчики нерешённых заявок для бейджей вкладок."""
+    account = getattr(request.state, "admin_account", None)
+    if not account:
+        account = await get_admin_account_security(user_id)
+        request.state.admin_account = account
+    perms = set(account.get("permissions") or [])
+    out = {
+        "staffApps": 0,
+        "groupApps": 0,
+        "drops": 0,
+        "staff": 0,
+    }
+    from db import db as app_db
+    if "review_applications" in perms and app_db.pool is not None:
+        try:
+            out["staffApps"] = int(
+                await app_db.pool.fetchval(
+                    "SELECT COUNT(*) FROM admin_applications WHERE status = 'pending'"
+                )
+                or 0
+            )
+        except Exception:
+            out["staffApps"] = 0
+    try:
+        from group_realm import _can_manage_group_admins_desk, ensure_tables
+        if await _can_manage_group_admins_desk(user_id) and app_db.pool is not None:
+            await ensure_tables()
+            out["groupApps"] = int(
+                await app_db.pool.fetchval(
+                    "SELECT COUNT(*) FROM epsilon_group_applications WHERE status = 'pending'"
+                )
+                or 0
+            )
+            out["drops"] = int(
+                await app_db.pool.fetchval(
+                    "SELECT COUNT(*) FROM epsilon_admin_drop WHERE status = 'pending'"
+                )
+                or 0
+            )
+    except Exception:
+        pass
+    out["staff"] = int(out["staffApps"]) + int(out["groupApps"]) + int(out["drops"])
+    return out
+
+
 @router.post("/staff/applications/{application_id}/approve")
 async def staff_approve_application(
     application_id: int,

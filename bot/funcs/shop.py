@@ -2868,12 +2868,19 @@ async def shop_op(message: Message):
 
         # Инвентарь и все предметы с этим эмодзи, именем или name1.
         # Один эмодзи бывает у нескольких строк dex. Берём ту, что реально лежит у человека.
+        # ⚽️ / ⚽ — варианты одного символа (с VS16 и без).
+        bare = item_emoji.replace("\ufe0f", "")
+        emoji_variants = []
+        for item in (item_emoji, bare, bare + "\ufe0f"):
+            if item and item not in emoji_variants:
+                emoji_variants.append(item)
         user_inventory = await db.get_user_inventory_use(message.from_user.id)
         rows = await db.pool.fetch(
             """
             SELECT * FROM dex
-            WHERE emoji = $1 OR name = $1 OR name1 = $1
+            WHERE emoji = ANY($1::text[]) OR name = $2 OR name1 = $2
             """,
+            emoji_variants,
             item_emoji,
         )
         from bot.funcs.item_use_match import pick_held_row
@@ -3413,24 +3420,24 @@ async def shop_op(message: Message):
             #await db.delete_user_inventory1(user_id , item_name)
 
         elif "slots" in str(second_name):
-            await slots(user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+            if await slots(user_id, message):
+                await db.delete_user_inventory1(user_id, item_name)
 
         elif "bowling" in str(second_name):
-            await bowling(user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+            if await bowling(user_id, message):
+                await db.delete_user_inventory1(user_id, item_name)
 
         elif "dart" in str(second_name):
-            await dart(user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+            if await dart(user_id, message):
+                await db.delete_user_inventory1(user_id, item_name)
 
-        elif "foot" in str(second_name):
-            await foot(user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+        elif "foot" in str(second_name) or "soccer" in str(second_name):
+            if await foot(user_id, message):
+                await db.delete_user_inventory1(user_id, item_name)
 
-        elif "bask" in str(second_name):
-            await bask(user_id , message)
-            await db.delete_user_inventory1(user_id , item_name)
+        elif "bask" in str(second_name) or "basket" in str(second_name):
+            if await bask(user_id, message):
+                await db.delete_user_inventory1(user_id, item_name)
 
         elif "gamepad" in str(second_name):
             await gamepad(user_id , message)
@@ -3455,10 +3462,14 @@ async def shop_op(message: Message):
             #await db.delete_user_inventory1(user_id , item_name)
 
 
-        else:  # Обработка других случаев, когда предмет не соответствует заранее заданным категориям
-            await message.reply("<tg-emoji emoji-id='4956499161319998529'>🔥</tg-emoji> <b>Предмет не подходит для использования, он будет удалён.</b>" , parse_mode="HTML" ,disable_web_page_preview=True)
-            print(f"Предмет '{item_name}' не относится к известным категориям. Удаляем его из инвентаря.")
-            print(f"Предмет '{item_name}' удалён из инвентаря, так как не подходит для использования.")
+        else:  # Нет обработчика — убираем из инвентаря, как обещает текст ответа.
+            await message.reply(
+                "<tg-emoji emoji-id='4956499161319998529'>🔥</tg-emoji> <b>Предмет не подходит для использования, он будет удалён.</b>",
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            await db.delete_user_inventory1(user_id, item_name)
+            print(f"Предмет '{item_name}' (name1={second_name!r}) удалён: нет обработчика use.")
     text_parts = message.text.split()
 
 

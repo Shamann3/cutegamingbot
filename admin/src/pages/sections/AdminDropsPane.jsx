@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { decideAdminDrop, fetchAdminDrops } from '../../lib/adminClient'
+import '../../styles/group-admins-desk.css'
 
 const STATUS = {
   pending: 'Ждёт решения',
@@ -11,7 +13,12 @@ function when(iso) {
   if (!iso) return ''
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export default function AdminDropsPane() {
@@ -20,6 +27,7 @@ export default function AdminDropsPane() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busyId, setBusyId] = useState(null)
+  const reduce = useReducedMotion()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -35,6 +43,11 @@ export default function AdminDropsPane() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const pending = useMemo(
+    () => items.filter((item) => item.status === 'pending').length,
+    [items],
+  )
 
   async function decide(item, approve) {
     if (busyId) return
@@ -52,34 +65,125 @@ export default function AdminDropsPane() {
     }
   }
 
+  const motionSafe = reduce
+    ? {}
+    : {
+        initial: { opacity: 0, y: 12 },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, y: -6 },
+        transition: { type: 'spring', stiffness: 380, damping: 32 },
+      }
+
   return (
-    <section className="admin-drops">
-      <h3 className="realm-h">Снятия администраторов</h3>
-      <p className="realm-copy">
-        Заявки из вкладки «Админы» группы. Принять — человек становится обычным участником.
-        Отклонить — должность остаётся. Те же кнопки приходят в личные сообщения.
-      </p>
-      {error && <p className="chat-admins-warn">{error}</p>}
-      {notice && <p className="chat-admins-note">{notice}</p>}
-      {loading && <p className="realm-copy">Собираем заявки…</p>}
-      {!loading && items.length === 0 && <p className="realm-copy">Заявок на снятие нет.</p>}
-      <ul className="realm-list">
-        {items.map((item) => {
-          const waiting = item.status === 'pending'
-          return (
-            <li key={item.id} className="realm-row">
-              <strong>{item.name}{item.username ? ` · @${item.username}` : ''}</strong>
-              <span>{item.group} · {STATUS[item.status] || item.status} · просит {item.actorName}</span>
-              <span>{when(item.at)} · id {item.userId}</span>
-              {waiting && (
-                <span>
-                  <button type="button" disabled={busyId === item.id} onClick={() => decide(item, true)}>Принять</button>
-                  <button type="button" disabled={busyId === item.id} onClick={() => decide(item, false)}>Отклонить</button>
-                </span>
-              )}
-            </li>
-          )
-        })}
+    <section className="gad admin-drops-desk">
+      <header className="gad-hero">
+        <span className="gad-hero-glow" aria-hidden="true" />
+        <div className="gad-hero-copy">
+          <p className="gad-kicker">Администраторы · снятия</p>
+          <h3>Заявки на снятие</h3>
+          <p>
+            Принять — человек становится обычным участником группы.
+            Отклонить — должность остаётся. Те же кнопки приходят в личные сообщения.
+          </p>
+          <div className="gad-stats">
+            <span>
+              Ждут
+              {' '}
+              <strong>{pending}</strong>
+            </span>
+            <span>
+              Всего
+              {' '}
+              <strong>{items.length}</strong>
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <div className="gad-toolbar">
+        <button type="button" className="gad-btn" onClick={load} disabled={loading}>
+          {loading ? 'Обновляем…' : 'Обновить'}
+        </button>
+      </div>
+
+      <AnimatePresence mode="popLayout">
+        {error && (
+          <motion.p className="gad-error" role="alert" key="err" {...motionSafe}>
+            {error}
+          </motion.p>
+        )}
+        {notice && (
+          <motion.p className="gad-note" role="status" key="ok" {...motionSafe}>
+            {notice}
+          </motion.p>
+        )}
+      </AnimatePresence>
+
+      {loading && items.length === 0 && (
+        <p className="gad-empty">Собираем заявки на снятие…</p>
+      )}
+      {!loading && items.length === 0 && (
+        <p className="gad-empty">Заявок на снятие нет</p>
+      )}
+
+      <ul className="gad-list admin-drops-list">
+        <AnimatePresence initial={false}>
+          {items.map((item, index) => {
+            const waiting = item.status === 'pending'
+            return (
+              <motion.li
+                key={item.id}
+                className={`gad-card admin-drop-card${waiting ? ' is-waiting' : ''}`}
+                layout={!reduce}
+                initial={reduce ? false : { opacity: 0, y: 14, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reduce ? undefined : { opacity: 0, y: -8, scale: 0.98 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 360,
+                  damping: 30,
+                  delay: reduce ? 0 : Math.min(index, 6) * 0.04,
+                }}
+              >
+                <div className="gad-card-head">
+                  <strong>
+                    {item.name || 'Без имени'}
+                    {item.username ? ` · @${item.username}` : ''}
+                  </strong>
+                  <span className={`admin-drop-status is-${item.status || 'pending'}`}>
+                    {STATUS[item.status] || item.status}
+                  </span>
+                </div>
+                <p className="gad-meta admin-drop-meta">
+                  <span className="admin-drop-chip">{item.group || 'Группа'}</span>
+                  <span className="admin-drop-chip">просит {item.actorName || '—'}</span>
+                  {item.at ? <span className="admin-drop-chip">{when(item.at)}</span> : null}
+                  <span className="admin-drop-chip">id {item.userId}</span>
+                </p>
+                {waiting && (
+                  <div className="gad-actions admin-drop-actions">
+                    <button
+                      type="button"
+                      className="gad-btn gad-btn-primary"
+                      disabled={busyId === item.id}
+                      onClick={() => decide(item, true)}
+                    >
+                      {busyId === item.id ? '…' : 'Принять снятие'}
+                    </button>
+                    <button
+                      type="button"
+                      className="gad-btn gad-btn-danger"
+                      disabled={busyId === item.id}
+                      onClick={() => decide(item, false)}
+                    >
+                      Отклонить
+                    </button>
+                  </div>
+                )}
+              </motion.li>
+            )
+          })}
+        </AnimatePresence>
       </ul>
     </section>
   )

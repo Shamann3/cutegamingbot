@@ -695,6 +695,13 @@ export async function fetchStaffApplications(status = 'pending') {
 
 
 
+/** Счётчики нерешённых заявок для бейджей (стафф / группы / снятия). */
+export async function fetchPanelInbox() {
+  return adminRequest('/panel/inbox')
+}
+
+
+
 export async function approveStaffApplication(applicationId, role) {
 
   return adminRequest(`/staff/applications/${applicationId}/approve`, {

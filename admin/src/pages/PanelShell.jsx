@@ -5,6 +5,7 @@ import EliteTopbar from '../components/EliteTopbar'
 import ToastHost from '../components/ToastHost'
 import {
   fetchAdminMe,
+  fetchPanelInbox,
   fetchPrOverview,
   fetchStaffPunishRights,
   fetchDeedQueue,
@@ -137,6 +138,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [coach, setCoach] = useState(() => !coachClosed('epsilon.onboard.staff.v4'))
   const [lesson, setLesson] = useState(false)
   const [workCount, setWorkCount] = useState(0)
+  const [inbox, setInbox] = useState({ staffApps: 0, groupApps: 0, drops: 0, staff: 0 })
   const [coachRun, setCoachRun] = useState(0)
   const [preview, setPreview] = useState(null)
   useEffect(() => {
@@ -323,11 +325,16 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   useEffect(() => {
     if (!showWork || preview || role == null) return undefined
     let alive = true
-    const job = isProjectCreator ? fetchDeedQueue({}) : fetchStaffWorkCount()
-    job
-      .then((data) => { if (alive) setWorkCount(Number(data?.waiting) || 0) })
-      .catch(() => {})
-    return () => { alive = false }
+    const load = () => {
+      if (document.visibilityState !== 'visible') return
+      const job = isProjectCreator ? fetchDeedQueue({}) : fetchStaffWorkCount()
+      job
+        .then((data) => { if (alive) setWorkCount(Number(data?.waiting) || 0) })
+        .catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 20_000)
+    return () => { alive = false; clearInterval(id) }
   }, [showWork, preview, role, isProjectCreator])
 
   const isMore = section === 'more'
@@ -349,10 +356,28 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
   const [nikaCrisisCount, setNikaCrisisCount] = useState(0)
   const [prPending, setPrPending] = useState(0)
 
+  const staffBadge = Number(inbox.staff) || 0
   const moreBadge = useMemo(() => {
-    const map = { tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending, support: openTickets }
+    const map = {
+      tiktok: tiktokPending,
+      nika: nikaCrisisCount,
+      prGroups: prPending,
+      support: openTickets,
+      staff: staffBadge,
+      work: workCount,
+    }
     return extraSections.reduce((sum, item) => sum + (Number(map[item.id]) || 0), 0)
-  }, [extraSections, tiktokPending, nikaCrisisCount, prPending, openTickets])
+  }, [extraSections, tiktokPending, nikaCrisisCount, prPending, openTickets, staffBadge, workCount])
+
+  const navBadges = useMemo(() => ({
+    support: openTickets,
+    tiktok: tiktokPending,
+    nika: nikaCrisisCount,
+    prGroups: prPending,
+    work: workCount,
+    staff: staffBadge,
+    more: moreBadge,
+  }), [openTickets, tiktokPending, nikaCrisisCount, prPending, workCount, staffBadge, moreBadge])
 
   const handleNikaPulse = useCallback((pulse) => {
     const n = Number(pulse?.openCritical || 0) + Number(pulse?.starvingCount || 0)
@@ -362,7 +387,8 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     const hasSupport = navSections.some((s) => s.id === 'support')
     const hasTiktok = navSections.some((s) => s.id === 'tiktok')
     const hasPr = navSections.some((s) => s.id === 'prGroups')
-    if (!hasSupport && !hasTiktok && !hasPr) return
+    const hasStaff = navSections.some((s) => s.id === 'staff')
+    if (!hasSupport && !hasTiktok && !hasPr && !hasStaff) return
     let cancelled = false
     const load = () => {
       if (document.visibilityState !== 'visible') return
@@ -379,6 +405,19 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
       if (hasPr) {
         fetchPrOverview()
           .then((d) => { if (!cancelled) setPrPending(d.pending || 0) })
+          .catch(() => {})
+      }
+      if (hasStaff) {
+        fetchPanelInbox()
+          .then((d) => {
+            if (cancelled || !d) return
+            setInbox({
+              staffApps: Number(d.staffApps) || 0,
+              groupApps: Number(d.groupApps) || 0,
+              drops: Number(d.drops) || 0,
+              staff: Number(d.staff) || 0,
+            })
+          })
           .catch(() => {})
       }
     }
@@ -579,7 +618,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           onMusicVolumeChange={setMusicVolume}
           onToggleMusic={toggleMusicMute}
           onEnterGodMode={() => setGodMode(true)}
-          badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+          badges={navBadges}
           accent={accent}
           onAccentChange={handleAccentChange}
           onReplayCoach={replayCoach}
@@ -668,7 +707,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
           {isMore && (
             <ExtrasHub
               sections={extraSections}
-              badges={{ support: openTickets, tiktok: tiktokPending, nika: nikaCrisisCount, prGroups: prPending }}
+              badges={navBadges}
               onOpen={handleNavigate}
               tools={phone ? (
                 <PanelPocketTools
@@ -827,6 +866,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
               isProjectCreator={showCreator}
               projectCreatorId={projectCreatorId}
               entry={staffEntry}
+              inbox={inbox}
               onOpenPreview={openPreview}
               onOpenUser={(userId, returnTo = null) => {
                 openUserWithReturn(userId, returnTo)
@@ -890,14 +930,7 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
         sections={dockSections}
         activeSection={dockActiveId(section, primaryIds)}
         onNavigate={handleNavigate}
-        badges={{
-          support: openTickets,
-          work: workCount,
-          tiktok: tiktokPending,
-          nika: nikaCrisisCount,
-          prGroups: prPending,
-          more: moreBadge,
-        }}
+        badges={navBadges}
         menuOpen={!phone && mobileNavOpen}
         onOpenMenu={phone ? undefined : () => setMobileNavOpen((open) => !open)}
       />

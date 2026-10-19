@@ -923,26 +923,28 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
         <motion.div className="gad-panel" key="drops" {...motionSafe}>
           {loading && drops.length === 0 && <p className="gad-empty">Собираем заявки на снятие…</p>}
           {!loading && filteredDrops.length === 0 && <p className="gad-empty">Заявок на снятие нет</p>}
-          <ul className="gad-list">
+          <ul className="gad-list admin-drops-list">
             {filteredDrops.map((item) => {
               const waiting = item.status === 'pending'
               return (
-                <li key={item.id} className="gad-card">
+                <li key={item.id} className={`gad-card admin-drop-card${waiting ? ' is-waiting' : ''}`}>
                   <div className="gad-card-head">
                     <strong>
                       {item.name}
                       {item.username ? ` · @${item.username}` : ''}
                     </strong>
-                    <span className="gad-meta">{DROP_STATUS[item.status] || item.status}</span>
+                    <span className={`admin-drop-status is-${item.status || 'pending'}`}>
+                      {DROP_STATUS[item.status] || item.status}
+                    </span>
                   </div>
-                  <p className="gad-meta">
-                    {item.group} · просит {item.actorName}
-                    {item.at ? ` · ${when(item.at)}` : ''}
-                    {' · '}
-                    id {item.userId}
+                  <p className="gad-meta admin-drop-meta">
+                    <span className="admin-drop-chip">{item.group || 'Группа'}</span>
+                    <span className="admin-drop-chip">просит {item.actorName || '—'}</span>
+                    {item.at ? <span className="admin-drop-chip">{when(item.at)}</span> : null}
+                    <span className="admin-drop-chip">id {item.userId}</span>
                   </p>
                   {waiting && (
-                    <div className="gad-actions">
+                    <div className="gad-actions admin-drop-actions">
                       <button
                         type="button"
                         className="gad-btn gad-btn-primary"
@@ -953,7 +955,7 @@ export default function GroupAdminsDesk({ onOpenUser = null, initialSegment = nu
                       </button>
                       <button
                         type="button"
-                        className="gad-btn"
+                        className="gad-btn gad-btn-danger"
                         disabled={busyKey === `drop:${item.id}`}
                         onClick={() => decideDrop(item, false)}
                       >

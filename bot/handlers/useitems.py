@@ -7,7 +7,14 @@ from main import dp
 import math
 from aiogram.enums import ParseMode  # Для ParseMode из aiogram.enums
 from main import *
-from bot.games.games_item import Slots, Bowling,Dart,FootGame,Basketball
+from bot.games.games_item import (
+    Slots,
+    Bowling,
+    Dart,
+    FootGame,
+    Basketball,
+    OK_PLAYED,
+)
 
 
 
@@ -1266,183 +1273,92 @@ async def svidobrake(user_id, message):
 
 
 
-async def slots(user_id , message):
+async def _item_game_cooldown(bucket: dict, user_id, message, rest: float = 3.0) -> bool:
+    """True = ещё кулдаун, играть нельзя. Предмет не списываем."""
+    now = time.time()
+    last = bucket.get(user_id, 0)
+    if now - last < rest:
+        remaining = int(rest - (now - last))
+        await message.reply(
+            f"⌚️ <b>Пожалуйста, подождите <i>{remaining}</i> секунд</b>",
+            parse_mode="HTML",
+        )
+        return True
+    bucket[user_id] = now
+    return False
+
+
+async def _credit_item_win(user_id, balance, win_amount, history_label: str) -> None:
+    if not win_amount or win_amount <= 0:
+        return
+    amount = round(win_amount)
+    await db.update_user_balance(user_id, balance + amount)
+    await db.cutehistory_plus(user_id, amount, history_label)
+    await db.set_items(user_id, "Геймпад", 1)
+
+
+async def slots(user_id, message):
+    """Возвращает True, если бросок состоялся (предмет можно списать)."""
+    if await _item_game_cooldown(slots_cooldowns, user_id, message):
+        return False
     bet = await db.get_price_by_emoji('🎰')
     balance = await db.get_user_balance(user_id)
-
-    current_time = time.time()
-    REST = 3
-
-    # Получаем время последнего использования функции пользователем
-    last_usage_time = slots_cooldowns.get(user_id , 0)
-
-    # Проверяем, прошёл ли период отдыха
-    if current_time - last_usage_time < REST:
-        remaining_time = int(REST - (current_time - last_usage_time))
-        await message.reply(f"⌚️ <b>Пожалуйста, подождите <i>{remaining_time}</i> секунд</b>",parse_mode="HTML")
-        return
-
-    # Обновляем время последнего использования
-    slots_cooldowns [ user_id ] = current_time
-
-
-
-    slot_game = Slots(bet , user_id , balance , bot1 , dp , message)
-    win_amount = await slot_game.main()  # Получаем сумму выигрыша
-
-    if win_amount > 0:
-        win_amount_commission = round(win_amount)
-        await db.update_user_balance(user_id, balance + win_amount_commission)
-        await db.cutehistory_plus(
-            user_id , win_amount_commission , "предмет слоты")
-        await db.set_items(user_id , "Геймпад" , 1)
-        print(f"Пользователь {user_id} выиграл {win_amount}. Баланс обновлён.")
-
+    code, win = await Slots(bet, user_id, balance, bot1, dp, message).main()
+    if code != OK_PLAYED:
+        return False
+    await _credit_item_win(user_id, balance, win, "предмет слоты")
+    return True
 
 
 async def bowling(user_id, message):
+    if await _item_game_cooldown(bowling_cooldowns, user_id, message):
+        return False
     bet = await db.get_price_by_emoji('🎳')
-    balance = await db.get_user_balance(user_id)  # Получение текущего баланса
-
-    current_time = time.time()
-    REST = 3
-
-    # Получаем время последнего использования функции пользователем
-    last_usage_time = bowling_cooldowns.get(user_id , 0)
-
-    # Проверяем, прошёл ли период отдыха
-    if current_time - last_usage_time < REST:
-        remaining_time = int(REST - (current_time - last_usage_time))
-        await message.reply(
-            f"⌚️ <b>Пожалуйста, подождите <i>{remaining_time}</i> секунд</b>" , parse_mode="HTML")
-        return
-
-    # Обновляем время последнего использования
-    bowling_cooldowns [ user_id ] = current_time
-
-    # Инициализируем и запускаем игру в боулинг
-    bowling_game = Bowling(bet, user_id, balance, bot1, dp, message)
-    win_amount_commission = await bowling_game.main()  # Получаем сумму выигрыша
-
-    if win_amount_commission > 0:
-        new_balance = balance + win_amount_commission  # Обновляем баланс с выигрышем
-        await db.update_user_balance(user_id, new_balance)  # Запись в БД
-        await db.cutehistory_plus(
-            user_id , win_amount_commission , "предмет боулинг")
-        await db.set_items(user_id , "Геймпад" , 1)
-        print(f"Пользователь {user_id} выиграл {win_amount_commission}. Баланс обновлён.")
+    balance = await db.get_user_balance(user_id)
+    code, win = await Bowling(bet, user_id, balance, bot1, dp, message).main()
+    if code != OK_PLAYED:
+        return False
+    await _credit_item_win(user_id, balance, win, "предмет боулинг")
+    return True
 
 
 async def dart(user_id, message):
+    if await _item_game_cooldown(dart_cooldowns, user_id, message):
+        return False
     bet = await db.get_price_by_emoji('🎯')
-    balance = await db.get_user_balance(user_id)  # Get current balance
-
-    current_time = time.time()
-    REST = 3
-
-    # Получаем время последнего использования функции пользователем
-    last_usage_time = dart_cooldowns.get(user_id , 0)
-
-    # Проверяем, прошёл ли период отдыха
-    if current_time - last_usage_time < REST:
-        remaining_time = int(REST - (current_time - last_usage_time))
-        await message.reply(
-            f"⌚️ <b>Пожалуйста, подождите <i>{remaining_time}</i> секунд</b>" , parse_mode="HTML")
-        return
-
-    # Обновляем время последнего использования
-    dart_cooldowns [ user_id ] = current_time
-
-    # Initialize and start the Dart game
-    dart_game = Dart(bet, user_id, balance, bot1, dp, message)
-    win_amount_commission = await dart_game.main()  # Get win amount
-
-    if win_amount_commission > 0:
-        new_balance = balance + win_amount_commission  # Update balance with win
-        await db.update_user_balance(user_id, new_balance)  # Update in the database
-        await db.cutehistory_plus(
-            user_id , win_amount_commission , "предмет дартс")
-        await db.set_items(user_id , "Геймпад" , 1)
-        print(f"Пользователь {user_id} выиграл {win_amount_commission}. Баланс обновлён.")
-
+    balance = await db.get_user_balance(user_id)
+    code, win = await Dart(bet, user_id, balance, bot1, dp, message).main()
+    if code != OK_PLAYED:
+        return False
+    await _credit_item_win(user_id, balance, win, "предмет дартс")
+    return True
 
 
 async def foot(user_id, message):
+    """Предмет ⚽️ / ⚽ — футбольный dice."""
+    if await _item_game_cooldown(foot_cooldowns, user_id, message):
+        return False
     bet = await db.get_price_by_emoji('⚽️')
-    balance = await db.get_user_balance(user_id)  # Get current balance
-
-    current_time = time.time()
-    REST = 3
-
-    # Получаем время последнего использования функции пользователем
-    last_usage_time = foot_cooldowns.get(user_id , 0)
-
-    # Проверяем, прошёл ли период отдыха
-    if current_time - last_usage_time < REST:
-        remaining_time = int(REST - (current_time - last_usage_time))
-        await message.reply(
-            f"⌚️ <b>Пожалуйста, подождите <i>{remaining_time}</i> секунд</b>" , parse_mode="HTML")
-        return
-
-    # Обновляем время последнего использования
-    foot_cooldowns [ user_id ] = current_time
-
-    # Initialize and start the FootGame
-    foot_game = FootGame(bet, user_id, balance, bot1, dp, message)
-    win_amount_commission = await foot_game.main()  # Get win amount
-
-    # Check if win_amount_commission is None or 0
-    if win_amount_commission is None:
-        print(f"Ошибка: выигрыш не определен для пользователя {user_id}.")
-        return
-
-    if win_amount_commission > 0:
-        new_balance = balance + win_amount_commission  # Update balance with win
-        await db.update_user_balance(user_id, new_balance)  # Update in the database
-        await db.cutehistory_plus(
-            user_id , win_amount_commission , "предмет футбол")
-        await db.set_items(user_id , "Геймпад" , 1)
-        print(f"Пользователь {user_id} выиграл {win_amount_commission}. Баланс обновлён.")
-
+    if bet is None:
+        bet = await db.get_price_by_emoji('⚽')
+    balance = await db.get_user_balance(user_id)
+    code, win = await FootGame(bet, user_id, balance, bot1, dp, message).main()
+    if code != OK_PLAYED:
+        return False
+    await _credit_item_win(user_id, balance, win, "предмет футбол")
+    return True
 
 
 async def bask(user_id, message):
+    if await _item_game_cooldown(bask_cooldowns, user_id, message):
+        return False
     bet = await db.get_price_by_emoji('🏀')
-    balance = await db.get_user_balance(user_id)  # Get current balance
-
-    current_time = time.time()
-    REST = 3
-
-    # Получаем время последнего использования функции пользователем
-    last_usage_time = bask_cooldowns.get(user_id , 0)
-
-    # Проверяем, прошёл ли период отдыха
-    if current_time - last_usage_time < REST:
-        remaining_time = int(REST - (current_time - last_usage_time))
-        await message.reply(
-            f"⌚️ <b>Пожалуйста, подождите <i>{remaining_time}</i> секунд</b>" , parse_mode="HTML")
-        return
-
-    # Обновляем время последнего использования
-    bask_cooldowns [ user_id ] = current_time
-
-    # Initialize and start the FootGame
-    Basketball_game = Basketball(bet, user_id, balance, bot1, dp, message)
-    win_amount_commission = await Basketball_game.main()  # Get win amount
-
-    # Check if win_amount_commission is None or 0
-    if win_amount_commission is None:
-        print(f"Ошибка: выигрыш не определен для пользователя {user_id}.")
-        return
-
-    if win_amount_commission > 0:
-        new_balance = balance + win_amount_commission  # Update balance with win
-
-        await db.update_user_balance(user_id, new_balance)  # Update in the database
-        await db.cutehistory_plus(
-            user_id , win_amount_commission , "предмет баскетбол")
-        await db.set_items(user_id , "Геймпад" , 1)
-        print(f"Пользователь {user_id} выиграл {win_amount_commission}. Баланс обновлён.")
+    balance = await db.get_user_balance(user_id)
+    code, win = await Basketball(bet, user_id, balance, bot1, dp, message).main()
+    if code != OK_PLAYED:
+        return False
+    await _credit_item_win(user_id, balance, win, "предмет баскетбол")
+    return True
 
 
 

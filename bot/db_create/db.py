@@ -12983,20 +12983,25 @@ class Database:
 
 
     async def get_price_by_emoji(self, emoji):
-        """Получает цену предмета по его эмодзи."""
-        query = "SELECT price FROM dex WHERE emoji = $1"
-
+        """Цена предмета по эмодзи. ⚽️ и ⚽ — один и тот же предмет."""
+        raw = str(emoji or "").strip()
+        if not raw:
+            return None
+        bare = raw.replace("\ufe0f", "")
+        variants = []
+        for item in (raw, bare, bare + "\ufe0f"):
+            if item and item not in variants:
+                variants.append(item)
+        query = "SELECT price FROM dex WHERE emoji = ANY($1::text[]) LIMIT 1"
         try:
             async with self.pool.acquire() as connection:
-                result = await connection.fetchrow(query, emoji)
-
+                result = await connection.fetchrow(query, variants)
             if result:
-                price = result['price']
+                price = result["price"]
                 print(f"Цена предмета: {price}")
                 return price
-            else:
-                print("Предмет не найден.")
-                return None
+            print("Предмет не найден.")
+            return None
         except Exception as e:
             print(f"[ERROR] Ошибка при выполнении запроса: {e}")
             return None

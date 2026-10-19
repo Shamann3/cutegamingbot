@@ -970,8 +970,20 @@ html[data-viewport="phone"] .panel-economy-dex-wrap {
   font-style: normal;
   font-size: 10px;
   font-weight: 700;
+  animation: extras-hub-badge-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   line-height: 16px;
   text-align: center;
+}
+
+@keyframes extras-hub-badge-pop {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .extras-hub-badge {
+    animation: none !important;
+  }
 }
 
 .extras-hub-name {

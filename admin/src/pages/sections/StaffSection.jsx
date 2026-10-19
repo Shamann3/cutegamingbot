@@ -2125,11 +2125,48 @@ export function creatorSeesWater(isProjectCreator) {
   return isProjectCreator === true
 }
 
-export default function StaffSection({ role, permissions = [], myUserId = null, panelTabs = null, isProjectCreator = false, projectCreatorId = null, entry = null, onOpenPreview = null, onOpenUser = null }) {
+function TabCount({ n }) {
+  const count = Number(n) || 0
+  if (count <= 0) return null
+  return (
+    <i className="staff-tab-count" aria-label={`${count} нерешённых`}>
+      {count > 99 ? '99+' : count}
+    </i>
+  )
+}
+
+export default function StaffSection({
+  role,
+  permissions = [],
+  myUserId = null,
+  panelTabs = null,
+  isProjectCreator = false,
+  projectCreatorId = null,
+  entry = null,
+  inbox = null,
+  onOpenPreview = null,
+  onOpenUser = null,
+}) {
   const perms = useMemo(() => new Set(permissions), [permissions])
   const isOwner = role === 'owner'
   const canConfigure = isProjectCreator || perms.has('manage_panel_access')
   const seesWater = creatorSeesWater(isProjectCreator)
+  const counts = useMemo(() => ({
+    staffApps: Number(inbox?.staffApps) || 0,
+    groupApps: Number(inbox?.groupApps) || 0,
+    drops: Number(inbox?.drops) || 0,
+  }), [inbox])
+  const officeCounts = useMemo(() => ({
+    staff: counts.staffApps + counts.groupApps + counts.drops,
+    group: counts.groupApps + counts.drops,
+  }), [counts])
+  const tabCounts = useMemo(() => ({
+    apps: counts.staffApps,
+    groupAdmins: counts.groupApps + counts.drops,
+    // group office tabs reuse id "apps" / "drops"
+    groupApps: counts.groupApps,
+    drops: counts.drops,
+  }), [counts])
 
   const workTabs = useMemo(() => {
     const list = []
@@ -2221,7 +2258,10 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
               className={`staff-office-btn${activeOffice === item.id ? ' is-on' : ''}`}
               onClick={() => setOffice(item.id)}
             >
-              <strong>{item.title}</strong>
+              <strong>
+                {item.title}
+                <TabCount n={officeCounts[item.id]} />
+              </strong>
               <span>{item.detail}</span>
             </button>
           ))}
@@ -2230,17 +2270,23 @@ export default function StaffSection({ role, permissions = [], myUserId = null, 
 
       {pool.length > 0 && (
         <nav className="sec-tabs staff-office-tabs" aria-label={onGroup ? 'Администраторы' : 'Сотрудники'}>
-          {pool.map((item) => (
-            <button
-              key={`${activeOffice}-${item.id}`}
-              type="button"
-              className={`sec-tab${activeId === item.id ? ' sec-tab-active' : ''}`}
-              aria-current={activeId === item.id ? 'page' : undefined}
-              onClick={() => pick(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
+          {pool.map((item) => {
+            const badge = onGroup
+              ? (item.id === 'apps' ? tabCounts.groupApps : item.id === 'drops' ? tabCounts.drops : 0)
+              : (item.id === 'apps' ? tabCounts.apps : item.id === 'groupAdmins' ? tabCounts.groupAdmins : 0)
+            return (
+              <button
+                key={`${activeOffice}-${item.id}`}
+                type="button"
+                className={`sec-tab${activeId === item.id ? ' sec-tab-active' : ''}`}
+                aria-current={activeId === item.id ? 'page' : undefined}
+                onClick={() => pick(item.id)}
+              >
+                <span className="staff-tab-label">{item.label}</span>
+                <TabCount n={badge} />
+              </button>
+            )
+          })}
         </nav>
       )}
 
