@@ -47,10 +47,32 @@ describe('StaffDesk', () => {
     render(<StaffDesk />)
     expect(await screen.findByText('Анна: наказание выдано неправильно')).toBeTruthy()
     expect(screen.getByText(/указал, что оно выдано неправильно/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Подходит/ }).className).toContain('is-clear')
+    expect(screen.getByRole('button', { name: /^Наказание выдано неправильно/ }).className).toContain('is-wrong')
+    expect(screen.getByRole('button', { name: /^Непонятно/ }).className).toContain('is-weak')
     expect(screen.getByRole('button', { name: /Подать заявку на разблокировку/ }).className).toContain('is-ask')
     expect(screen.queryByRole('button', { name: /В зарплату/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Мимо/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Выплатить/ })).toBeNull()
+  })
+
+  it('keeps left and right buttons visible while the group admin still holds the card', async () => {
+    vi.mocked(fetchStaffWork).mockResolvedValue({
+      waiting: 1,
+      card: { ...card, turn: 'admin', chain: [] },
+    })
+    render(<StaffDesk />)
+    expect(await screen.findByText(/Ждёт администратора группы/)).toBeTruthy()
+    const wrong = screen.getByRole('button', { name: /^Наказание выдано неправильно/ })
+    const clear = screen.getByRole('button', { name: /^Подходит/ })
+    const weak = screen.getByRole('button', { name: /^Непонятно/ })
+    expect(wrong.disabled).toBe(true)
+    expect(clear.disabled).toBe(true)
+    expect(weak.disabled).toBe(true)
+    expect(wrong.className).toContain('is-wrong')
+    expect(clear.className).toContain('is-clear')
+    expect(screen.getByText(/Кнопки ← и → уже здесь/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Подать заявку на разблокировку/ })).toBeNull()
   })
 
   it('sends a clear answer without asking to lift', async () => {

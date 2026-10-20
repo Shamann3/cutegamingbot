@@ -2276,6 +2276,131 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   margin-top: 0.85rem;
 }
 
+/* Запас высоты, пока панель на телефоне в position:fixed. */
+.deck-actions-slot {
+  display: none;
+  width: 100%;
+  pointer-events: none;
+}
+
+/* На ПК sticky держит кнопки внизу окна прокрутки. */
+.deck-actions.work-choice {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 12;
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.45rem 0.5rem;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(14, 14, 18, 0.02) 0%, rgba(14, 14, 18, 0.88) 18%, rgba(14, 14, 18, 0.97) 100%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 -10px 28px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  scroll-margin-bottom: 1rem;
+}
+
+/* overflow-x: clip у .work-desk ломает sticky — для колоды снимаем. */
+.work-desk:has(.deck-actions),
+.pay-desk:has(.deck-actions) {
+  overflow: visible;
+}
+
+@supports (overflow: clip) {
+  .work-desk:has(.deck-actions),
+  .pay-desk:has(.deck-actions) {
+    overflow: visible;
+  }
+}
+
+/*
+  Телефон: док fixed снизу. Sticky внутри колоды ненадёжен —
+  панель ответа тоже fixed, чуть выше дока (z-index ниже дока).
+*/
+html.is-phone .deck-actions-slot,
+html[data-viewport="phone"] .deck-actions-slot {
+  display: block;
+  min-height: 10.75rem;
+  margin-top: 0.65rem;
+}
+
+html.is-phone .deck-col:has(.deck-actions.has-extra) .deck-actions-slot,
+html[data-viewport="phone"] .deck-col:has(.deck-actions.has-extra) .deck-actions-slot,
+html.is-phone .pay-lens:has(.deck-actions.has-extra) .deck-actions-slot,
+html[data-viewport="phone"] .pay-lens:has(.deck-actions.has-extra) .deck-actions-slot {
+  min-height: 14.5rem;
+}
+
+html.is-phone .deck-col:has(.deck-actions.is-waiting) .deck-actions-slot,
+html[data-viewport="phone"] .deck-col:has(.deck-actions.is-waiting) .deck-actions-slot {
+  min-height: 12.25rem;
+}
+
+html.is-phone .deck-actions.work-choice,
+html[data-viewport="phone"] .deck-actions.work-choice {
+  position: fixed;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 70;
+  width: auto;
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 0.5rem 0.4rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.deck-actions .deck-actions-wait,
+.deck-actions .lift-ask {
+  grid-column: 1 / -1;
+}
+
+.deck-actions-wait {
+  margin: 0 0 0.1rem;
+  padding: 0.15rem 0.35rem 0.3rem;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: var(--e-text-2, #c4c4c8);
+  text-align: center;
+}
+
+.deck-actions.is-waiting .deck-btn {
+  opacity: 0.52;
+}
+
+.deck-actions .deck-arrow {
+  display: inline-block;
+  min-width: 1.1em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.deck-actions .lift-ask {
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.15rem 0;
+}
+
+/* Узкий телефон: короче кнопки, без второстепенных подписей. */
+@media (max-width: 380px) {
+  html.is-phone .deck-actions.work-choice .sec-btn small,
+  html[data-viewport="phone"] .deck-actions.work-choice .sec-btn small {
+    display: none;
+  }
+
+  html.is-phone .deck-actions.work-choice .sec-btn,
+  html[data-viewport="phone"] .deck-actions.work-choice .sec-btn {
+    min-height: 58px !important;
+    padding: 8px 8px !important;
+    font-size: 0.95rem !important;
+  }
+
+  html.is-phone .deck-actions-slot,
+  html[data-viewport="phone"] .deck-actions-slot {
+    min-height: 8.75rem;
+  }
+}
+
 .work-choice .work-wrong {
   grid-area: wrong;
 }
@@ -3529,7 +3654,8 @@ html.deck-scroll-lock body {
 
 html.is-phone .deck-toast,
 html[data-viewport="phone"] .deck-toast {
-  bottom: calc(9.75rem + env(safe-area-inset-bottom, 0px));
+  /* Над fixed-панелью ←/→ и над доком. */
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 11.75rem);
   scroll-margin: 0;
 }
 

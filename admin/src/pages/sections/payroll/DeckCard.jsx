@@ -333,6 +333,100 @@ export function useToastInView() {
   return useRef(null)
 }
 
+/** Кнопки ← / → / ↓ всегда на экране — на телефоне fixed над доком, на ПК sticky. */
+export function DeckActions({
+  choices = [],
+  locked = false,
+  waiting = false,
+  waitHint = '',
+  onPick,
+  extra = null,
+}) {
+  const barRef = useRef(null)
+  const slotRef = useRef(null)
+
+  useEffect(() => {
+    const bar = barRef.current
+    const slot = slotRef.current
+    if (!bar) return undefined
+
+    const syncSlot = () => {
+      if (!slot) return
+      const height = Math.ceil(bar.getBoundingClientRect().height)
+      if (height > 0) slot.style.minHeight = `${height}px`
+    }
+
+    syncSlot()
+    let ro = null
+    if (typeof ResizeObserver === 'function') {
+      ro = new ResizeObserver(syncSlot)
+      ro.observe(bar)
+    }
+
+    const quiet = motionQuiet()
+    const timer = window.setTimeout(() => {
+      try {
+        bar.scrollIntoView({
+          block: 'nearest',
+          inline: 'nearest',
+          behavior: quiet ? 'auto' : 'smooth',
+        })
+      } catch {
+        /* старый webview */
+      }
+    }, 80)
+
+    return () => {
+      window.clearTimeout(timer)
+      ro?.disconnect()
+    }
+  }, [waiting, choices, extra])
+
+  if (!choices.length) return null
+
+  const classes = [
+    'deck-actions',
+    'work-choice',
+    waiting ? 'is-waiting' : '',
+    extra ? 'has-extra' : '',
+  ].filter(Boolean).join(' ')
+
+  return (
+    <>
+      <div ref={slotRef} className="deck-actions-slot" aria-hidden="true" />
+      <div
+        ref={barRef}
+        className={classes}
+        role="group"
+        aria-label="Ответ по наказанию"
+      >
+        {waiting && waitHint ? (
+          <p className="deck-actions-wait" role="status">{waitHint}</p>
+        ) : null}
+        {choices.map((choice) => (
+          <button
+            key={choice.id}
+            type="button"
+            className={`sec-btn sec-btn-ghost deck-btn is-${choice.id} work-${choice.id}`}
+            disabled={locked || waiting}
+            aria-label={choice.aria || choice.label}
+            onClick={() => onPick?.(choice)}
+          >
+            <span>
+              {choice.side === 'left' && <span className="deck-arrow" aria-hidden="true">←</span>}
+              {choice.label}
+              {choice.side === 'right' && <span className="deck-arrow" aria-hidden="true">→</span>}
+              {choice.side === 'down' && <span className="deck-arrow" aria-hidden="true">↓</span>}
+            </span>
+            {choice.hint ? <small>{choice.hint}</small> : null}
+          </button>
+        ))}
+        {extra}
+      </div>
+    </>
+  )
+}
+
 function stepWord(step) {
   if (step.role === 'issue') return step.name || 'готово'
   if (step.state === 'done') return (step.label || 'ответил').toLowerCase()

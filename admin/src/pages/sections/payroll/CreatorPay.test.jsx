@@ -116,8 +116,8 @@ describe('CreatorPay', () => {
     vi.mocked(keepDeed).mockResolvedValue({ ok: true })
     render(<CreatorPay />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /тому, кто выдал/ }))
-    expect(await screen.findByText('Сейчас решать нечего.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /^В зарплату/ }))
+    expect(await screen.findByText(/Сейчас решать нечего/)).toBeTruthy()
     expect(screen.getByText('В зарплату. Засчитано тем, у кого стояла галочка и чей ответ совпал.')).toBeTruthy()
     expect(keepDeed).toHaveBeenCalledWith(9, [
       { role: 'issue', userId: 3 },
@@ -140,7 +140,7 @@ describe('CreatorPay', () => {
     vi.mocked(undoDeed).mockResolvedValue({ ok: true, status: 'kept' })
     render(<CreatorPay />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /тому, кто выдал/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^В зарплату/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Вернуть' }))
     expect(await screen.findByText('Решение отменено и убрано из зарплаты. Карточка снова перед вами.')).toBeTruthy()
     expect(undoDeed).toHaveBeenCalledWith(9)
@@ -243,7 +243,7 @@ describe('CreatorPay', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Сами' }))
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
     expect(screen.getByText('Ещё никто не проверял')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /тому, кто выдал/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^В зарплату/ }))
     expect(await screen.findByText(/Сразу в зарплату тому, кто выдал/)).toBeTruthy()
     expect(sortCreatorDeed).toHaveBeenCalledWith(9, 'clear')
   })

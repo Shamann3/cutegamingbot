@@ -1,15 +1,47 @@
 import { useCallback, useEffect, useState } from 'react'
 import CountUp from '../../../components/CountUp'
 import { fetchDeedWork, isPanelPreviewMode, sortDeed, unsortDeed } from '../../../lib/adminClient'
-import { BAND_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
+import { BAND_LABEL, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait } from './DeckCard'
+import DeckCard, {
+  DeckActions,
+  DeckPileNote,
+  FLY_MS,
+  motionQuiet,
+  pinShellScroll,
+  useDeckLive,
+  useRefill,
+  useToastInView,
+  useWarmProof,
+  wait,
+} from './DeckCard'
 
 const CHOICES = [
-  { id: 'wrong', label: VERDICT_BUTTON.wrong, stamp: 'Неправильно', hint: 'можно просить снять', side: 'left' },
-  { id: 'weak', label: VERDICT_BUTTON.weak, stamp: 'Непонятно', hint: 'передать дальше по цепочке', side: 'down' },
-  { id: 'clear', label: VERDICT_BUTTON.clear, stamp: 'Подходит', hint: 'доказательство на месте', side: 'right' },
+  {
+    id: 'wrong',
+    label: SORT_LABEL.wrong,
+    aria: VERDICT_BUTTON.wrong,
+    stamp: 'Неправильно',
+    hint: 'можно просить снять',
+    side: 'left',
+  },
+  {
+    id: 'weak',
+    label: SORT_LABEL.weak,
+    aria: VERDICT_BUTTON.weak,
+    stamp: 'Непонятно',
+    hint: 'передать дальше по цепочке',
+    side: 'down',
+  },
+  {
+    id: 'clear',
+    label: SORT_LABEL.clear,
+    aria: VERDICT_BUTTON.clear,
+    stamp: 'Подходит',
+    hint: 'доказательство на месте',
+    side: 'right',
+  },
 ]
 
 const BY_SIDE = { left: CHOICES[0], down: CHOICES[1], right: CHOICES[2] }
@@ -204,9 +236,9 @@ export default function WorkDesk({ onCount }) {
           )}
           {card && (
             <p className="work-keys">
-              Потяните карточку: вправо — подходит, влево — выдано неправильно, вниз — непонятно.
+              Кнопки под карточкой всегда на экране: ← неправильно, → подходит, ↓ непонятно. Можно потянуть карточку в ту же сторону.
               {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
-              <span className="deck-keys-only"> На клавиатуре: → подходит, ← выдано неправильно, ↓ непонятно, Ctrl+Z — вернуть ответ.</span>
+              <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
             </p>
           )}
         </div>
@@ -221,25 +253,11 @@ export default function WorkDesk({ onCount }) {
               back={backSide}
               swipe={swipe}
             />
-            <div className="work-choice">
-              {CHOICES.map((choice) => (
-                <button
-                  key={choice.id}
-                  type="button"
-                  className={`sec-btn sec-btn-ghost deck-btn is-${choice.id} work-${choice.id}`}
-                  disabled={locked}
-                  onClick={() => choose(choice)}
-                >
-                  <span>
-                    {choice.side === 'left' && <span className="deck-arrow" aria-hidden="true">←</span>}
-                    {choice.label}
-                    {choice.side === 'right' && <span className="deck-arrow" aria-hidden="true">→</span>}
-                    {choice.side === 'down' && <span className="deck-arrow" aria-hidden="true">↓</span>}
-                  </span>
-                  <small>{choice.hint}</small>
-                </button>
-              ))}
-            </div>
+            <DeckActions
+              choices={CHOICES}
+              locked={locked}
+              onPick={choose}
+            />
             {notes}
           </div>
         )}
