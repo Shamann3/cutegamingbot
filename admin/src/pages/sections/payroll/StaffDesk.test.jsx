@@ -32,65 +32,59 @@ const card = {
   band: 'reason',
   chatTitle: 'Кьют',
   scopeLabel: 'одна группа',
+  turn: 'staff',
   chain: [{ role: 'admin', id: 4, name: 'Анна', verdict: 'wrong', label: 'Наказание выдано неправильно' }],
 }
 
 describe('StaffDesk', () => {
   it('says the desk is empty until an administrator has answered', async () => {
-    vi.mocked(fetchStaffWork).mockResolvedValue({ waiting: 0, card: null })
+    vi.mocked(fetchStaffWork).mockResolvedValue({ waiting: 0, ready: 0, card: null })
     render(<StaffDesk />)
     expect(await screen.findByText(/Сейчас проверять нечего/)).toBeTruthy()
   })
 
+  it('explains when cards still wait for the group admin and keeps buttons off the screen', async () => {
+    vi.mocked(fetchStaffWork).mockResolvedValue({ waiting: 3, ready: 0, card: null })
+    render(<StaffDesk />)
+    expect(await screen.findByText(/ещё смотрят администраторы групп/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Подходит/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Наказание выдано неправильно/ })).toBeNull()
+  })
+
   it('shows the previous administrator and offers an unban request', async () => {
-    vi.mocked(fetchStaffWork).mockResolvedValue({ waiting: 1, card })
+    vi.mocked(fetchStaffWork).mockResolvedValue({ waiting: 1, ready: 1, card })
     render(<StaffDesk />)
     expect(await screen.findByText('Анна: наказание выдано неправильно')).toBeTruthy()
     expect(screen.getByText(/указал, что оно выдано неправильно/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /^Подходит/ }).className).toContain('is-clear')
-    expect(screen.getByRole('button', { name: /^Наказание выдано неправильно/ }).className).toContain('is-wrong')
-    expect(screen.getByRole('button', { name: /^Непонятно/ }).className).toContain('is-weak')
+    const clear = screen.getByRole('button', { name: /^Подходит/ })
+    const wrong = screen.getByRole('button', { name: /^Наказание выдано неправильно/ })
+    expect(clear.disabled).toBe(false)
+    expect(wrong.disabled).toBe(false)
+    expect(clear.className).toContain('is-clear')
+    expect(wrong.className).toContain('is-wrong')
     expect(screen.getByRole('button', { name: /Подать заявку на разблокировку/ }).className).toContain('is-ask')
     expect(screen.queryByRole('button', { name: /В зарплату/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Мимо/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Выплатить/ })).toBeNull()
   })
 
-  it('keeps left and right buttons visible while the group admin still holds the card', async () => {
-    vi.mocked(fetchStaffWork).mockResolvedValue({
-      waiting: 1,
-      card: { ...card, turn: 'admin', chain: [] },
-    })
-    render(<StaffDesk />)
-    expect(await screen.findByText(/Ждёт администратора группы/)).toBeTruthy()
-    const wrong = screen.getByRole('button', { name: /^Наказание выдано неправильно/ })
-    const clear = screen.getByRole('button', { name: /^Подходит/ })
-    const weak = screen.getByRole('button', { name: /^Непонятно/ })
-    expect(wrong.disabled).toBe(true)
-    expect(clear.disabled).toBe(true)
-    expect(weak.disabled).toBe(true)
-    expect(wrong.className).toContain('is-wrong')
-    expect(clear.className).toContain('is-clear')
-    expect(screen.getByText(/Кнопки ← и → уже здесь/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /Подать заявку на разблокировку/ })).toBeNull()
-  })
-
   it('sends a clear answer without asking to lift', async () => {
     vi.mocked(fetchStaffWork)
-      .mockResolvedValueOnce({ waiting: 1, card })
-      .mockResolvedValue({ waiting: 0, card: null })
+      .mockResolvedValueOnce({ waiting: 1, ready: 1, card })
+      .mockResolvedValue({ waiting: 0, ready: 0, card: null })
     vi.mocked(sortStaffDeed).mockResolvedValue({ ok: true, next: 'creator' })
     render(<StaffDesk />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /^Подходит/ }))
     expect(await screen.findByText(/Сейчас проверять нечего/)).toBeTruthy()
     expect(sortStaffDeed).toHaveBeenCalledWith(7, 'clear', false)
+    expect(await screen.findByRole('button', { name: 'Вернуть' })).toBeTruthy()
   })
 
   it('files an unban request as its own action', async () => {
     vi.mocked(fetchStaffWork)
-      .mockResolvedValueOnce({ waiting: 1, card })
-      .mockResolvedValue({ waiting: 0, card: null })
+      .mockResolvedValueOnce({ waiting: 1, ready: 1, card })
+      .mockResolvedValue({ waiting: 0, ready: 0, card: null })
     vi.mocked(sortStaffDeed).mockResolvedValue({ ok: true, next: 'creator' })
     render(<StaffDesk />)
     expect(await screen.findByText('Бан · Игрок')).toBeTruthy()
@@ -101,9 +95,9 @@ describe('StaffDesk', () => {
 
   it('takes the last staff answer back', async () => {
     vi.mocked(fetchStaffWork)
-      .mockResolvedValueOnce({ waiting: 1, card })
-      .mockResolvedValueOnce({ waiting: 0, card: null })
-      .mockResolvedValue({ waiting: 1, card })
+      .mockResolvedValueOnce({ waiting: 1, ready: 1, card })
+      .mockResolvedValueOnce({ waiting: 0, ready: 0, card: null })
+      .mockResolvedValue({ waiting: 1, ready: 1, card })
     vi.mocked(sortStaffDeed).mockResolvedValue({ ok: true, next: 'creator' })
     vi.mocked(unsortStaffDeed).mockResolvedValue({ ok: true })
     render(<StaffDesk />)

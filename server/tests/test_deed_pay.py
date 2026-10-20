@@ -290,7 +290,7 @@ def test_a_person_can_claim_only_their_own_ready_tech_payout():
 def test_a_fresh_punishment_is_visible_and_salary_waits_for_the_chain():
     import inspect
 
-    from deed_pay import _decide, _staff_live_order, _staff_live_where, _staff_where, deed_staff, process_of, turn_of
+    from deed_pay import _decide, _open_staff, _staff_live_order, _staff_live_where, _staff_where, deed_staff, process_of, turn_of
     from deed_sort import creator_board_order_sql
 
     live = _staff_live_where()
@@ -309,6 +309,10 @@ def test_a_fresh_punishment_is_visible_and_salary_waits_for_the_chain():
     from deed_pay import _filters
     assert "creator_ready_sql" in inspect.getsource(_filters)
     assert "_open_staff" in inspect.getsource(deed_staff)
+    open_src = inspect.getsource(_open_staff)
+    assert "_staff_where()" in open_src
+    assert "_grab(" in open_src
+    assert "actionable" not in open_src
     assert turn_of(False, False) == "admin"
     assert turn_of(False, True) == "staff"
     assert turn_of(True, False) == "creator"

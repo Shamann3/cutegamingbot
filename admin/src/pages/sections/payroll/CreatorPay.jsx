@@ -17,7 +17,7 @@ import {
 import { chainLine, chosenCredits, creditHint, openingOf, payLabel, people as peopleCount, SORT_LABEL, VERDICT_BUTTON, waitCaption } from '../../../lib/deedSort'
 import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
-import DeckCard, { DeckActions, DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useToastInView, useWarmProof, wait, when } from './DeckCard'
+import DeckCard, { DeckActions, DeckFlash, DeckPileNote, FLY_MS, motionQuiet, pinShellScroll, useDeckLive, useRefill, useWarmProof, wait, when } from './DeckCard'
 import { DeedPayouts, DeedRates } from './DeedPay'
 import PurseDesk from './PurseDesk'
 import RateTune from './RateTune'
@@ -64,7 +64,6 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
   }, [load])
 
   const card = queue?.card
-  const toastRef = useToastInView()
   const watching = Boolean(card?.turn) && card.turn !== 'creator'
   const salaryOpen = Boolean(card) && !card.reviewStatus && !watching
   useRefill(queue, load)
@@ -214,24 +213,9 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
     })
   }
 
-  const notes = (
-    <>
-      {flash && (
-        <p ref={toastRef} key={flash.key} className="deed-flash deck-toast" role="status">
-          <span>{flash.text}</span>
-          {flash.undoId ? (
-            <button type="button" className="sec-btn sec-btn-ghost deed-undo" disabled={locked} onClick={undo}>
-              Вернуть
-            </button>
-          ) : null}
-        </p>
-      )}
-      {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
-    </>
-  )
-
   return (
     <div className="tinder-wrap">
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className="deck-copy">
         {waiting > 0 && (
           <div className="deck-count">
@@ -247,7 +231,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
               ? `Показаны только проверки: ${focusName}.`
               : 'Здесь только карточки, которые уже кто-то проверил. Пока её лишь открыли и могли забыть — её здесь нет. Второго ответа можно не ждать.'}
         </p>
-        {!card && notes}
+        {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
         {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
         {queue && !card && !error && (
           <p className="work-empty">
@@ -359,7 +343,6 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
               Кнопки появятся, когда администратор группы или сотрудник проекта отправит ответ. Тогда работа засчитается ему.
             </p>
           )}
-          {notes}
         </div>
       )}
     </div>
@@ -428,7 +411,6 @@ export function CreatorSelf() {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
-  const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(SELF_BY_SIDE[side]),
     disabled: busy || Boolean(fly) || !card,
@@ -524,24 +506,10 @@ export function CreatorSelf() {
   const waiting = Number(queue?.waiting) || 0
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
-  const notes = (
-    <>
-      {flash && (
-        <p ref={toastRef} key={flash.key} className="deed-flash deck-toast" role="status">
-          <span>{flash.text}</span>
-          {flash.undoId ? (
-            <button type="button" className="sec-btn sec-btn-ghost deed-undo" disabled={locked} onClick={undo}>
-              Вернуть
-            </button>
-          ) : null}
-        </p>
-      )}
-      {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
-    </>
-  )
 
   return (
     <div className="work-desk">
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className={`work-grid${card ? ' has-card' : ''}`}>
         <div className="work-head deck-copy">
           {waiting > 0 && (
@@ -557,7 +525,7 @@ export function CreatorSelf() {
           <p className="deck-why">
             «Подходит» засчитывает тому, кто выдал — администратору группы или сотруднику проекта, это одно и то же. «Неправильно» и «непонятно» никого не оплачивают.
           </p>
-          {!card && notes}
+          {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
           {queue && !card && !error && waiting > 0 && (
             <p className="work-empty">Остальные карточки сейчас смотрят. Если ответа не будет, они вернутся сюда.</p>
@@ -590,7 +558,6 @@ export function CreatorSelf() {
               locked={locked}
               onPick={choose}
             />
-            {notes}
           </div>
         )}
       </div>

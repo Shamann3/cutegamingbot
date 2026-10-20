@@ -6,13 +6,13 @@ import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, {
   DeckActions,
+  DeckFlash,
   DeckPileNote,
   FLY_MS,
   motionQuiet,
   pinShellScroll,
   useDeckLive,
   useRefill,
-  useToastInView,
   useWarmProof,
   wait,
 } from './DeckCard'
@@ -89,12 +89,10 @@ export default function StaffDesk({ onCount }) {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
-  const watching = card?.turn === 'admin'
   const prior = adminStep(card)
-  const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(BY_SIDE[side], false),
-    disabled: busy || Boolean(fly) || !card || watching,
+    disabled: busy || Boolean(fly) || !card,
     cardKey: card?.id ?? null,
   })
   const { reset } = swipe
@@ -128,7 +126,7 @@ export default function StaffDesk({ onCount }) {
 
   const choose = useCallback((choice, lift = false) => {
     const id = card?.id
-    if (!id || busy || fly || card?.turn === 'admin') return false
+    if (!id || busy || fly) return false
     if (!lift && !choice) return false
     if (!lift) playVerdictMeme(choice.id)
     run(id, choice, lift)
@@ -184,17 +182,15 @@ export default function StaffDesk({ onCount }) {
 
   const locked = busy || Boolean(fly)
   const waiting = Number(queue?.waiting) || 0
+  const ready = Number(queue?.ready)
+  const pendingAdmin = Number.isFinite(ready) ? Math.max(0, waiting - ready) : 0
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
   const priorWrong = prior?.verdict === 'wrong'
-  const band = watching
-    ? 'Ждёт администратора группы'
-    : prior
+  const band = prior
     ? `${prior.name}: ${(prior.label || '').toLowerCase()}`
     : 'Администратор не проверял'
-  const note = watching
-    ? 'Кнопки ← и → уже на экране, но нажать их можно только после ответа администратора группы. Цепочка на карточке обновляется сама.'
-    : priorWrong
+  const note = priorWrong
     ? `${prior.name} проверил это наказание и указал, что оно выдано неправильно.`
     : prior?.verdict === 'weak'
       ? `${prior.name} не смог решить. Теперь решение за вами, затем за создателем.`
@@ -202,24 +198,9 @@ export default function StaffDesk({ onCount }) {
         ? 'Сверьте доказательство с тем, что уже ответил администратор.'
         : 'Проверять администратору было некому. Вы первый, дальше карточку увидит создатель.'
 
-  const notes = (
-    <>
-      {flash && (
-        <p ref={toastRef} key={flash.key} className="deed-flash deck-toast" role="status">
-          <span>{flash.text}</span>
-          {flash.undoId ? (
-            <button type="button" className="sec-btn sec-btn-ghost deed-undo" disabled={locked} onClick={undo}>
-              Вернуть
-            </button>
-          ) : null}
-        </p>
-      )}
-      {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
-    </>
-  )
-
   return (
     <div className="work-desk">
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className={`work-grid${card ? ' has-card' : ''}`}>
         <div className="work-head deck-copy">
           {waiting > 0 && (
@@ -230,32 +211,31 @@ export default function StaffDesk({ onCount }) {
           )}
           {pileNote && card && <DeckPileNote text={pileNote} />}
           <p className="deed-lead">
-            {watching
-              ? 'Наказание уже здесь. Сейчас его смотрит администратор группы. Когда он ответит, проверка станет вашей, затем карточку увидит создатель.'
-              : 'Администратор группы уже посмотрел это наказание — его ответ на карточке. Проверьте, всё ли верно. Дальше карточку увидит создатель.'}
+            Администратор группы уже посмотрел это наказание — его ответ на карточке. Проверьте, всё ли верно. Дальше карточку увидит создатель.
           </p>
           <p className="deck-why">
-            {watching
-              ? 'Пока администратор группы не ответил, карточку и кнопки видно, но ответить ещё нельзя.'
-              : 'Каждую карточку берёт один сотрудник, остальные её не видят. Оплата появится, если создатель согласится с вашим ответом.'}
+            Каждую карточку берёт один сотрудник, остальные её не видят. Оплата появится, если создатель согласится с вашим ответом.
           </p>
-          {!card && notes}
+          {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
-          {queue && !card && !error && waiting > 0 && (
+          {queue && !card && !error && pendingAdmin > 0 && (
+            <p className="work-empty">
+              {pendingAdmin === 1
+                ? 'Одно наказание ещё смотрит администратор группы. Как только он ответит — карточка появится здесь, и кнопки ← / → сразу будут активны.'
+                : `${pendingAdmin} наказаний ещё смотрят администраторы групп. Как только они ответят — карточки появятся здесь с активными кнопками.`}
+            </p>
+          )}
+          {queue && !card && !error && pendingAdmin === 0 && waiting > 0 && (
             <p className="work-empty">Остальные карточки сейчас смотрят другие сотрудники. Если они не ответят, карточки вернутся сюда.</p>
           )}
           {queue && !card && !error && waiting === 0 && (
-            <p className="work-empty">Сейчас проверять нечего. Новое наказание появляется здесь сразу. Пока его смотрит администратор группы, ответить ещё нельзя.</p>
+            <p className="work-empty">Сейчас проверять нечего. Новое наказание появится здесь, когда администратор группы ответит — кнопки сразу будут активны.</p>
           )}
           {card && (
             <p className="work-keys">
-              {watching
-                ? 'Кнопки ← неправильно и → подходит уже под карточкой. Станут активными сразу после ответа администратора группы.'
-                : 'Потяните карточку: вправо — подходит, влево — выдано неправильно, вниз — непонятно.'}
-              {!watching && card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
-              {!watching && (
-                <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
-              )}
+              Кнопки под карточкой активны: ← неправильно, → подходит, ↓ непонятно. Можно потянуть карточку в ту же сторону.
+              {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
+              <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
             </p>
           )}
         </div>
@@ -275,10 +255,8 @@ export default function StaffDesk({ onCount }) {
             <DeckActions
               choices={CHOICES}
               locked={locked}
-              waiting={watching}
-              waitHint="Ждём ответ администратора группы. Кнопки ← и → уже здесь и включатся сами, как только проверка станет вашей."
               onPick={(choice) => choose(choice, false)}
-              extra={!watching ? (
+              extra={(
                 <div className={`lift-ask${priorWrong ? ' is-hot' : ''}`}>
                   <button
                     type="button"
@@ -294,9 +272,8 @@ export default function StaffDesk({ onCount }) {
                     </small>
                   </button>
                 </div>
-              ) : null}
+              )}
             />
-            {notes}
           </div>
         )}
       </div>

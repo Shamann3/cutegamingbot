@@ -6,13 +6,13 @@ import { playVerdictMeme } from '../../../lib/memeSounds'
 import useSwipeDeck, { deckKey } from '../../../lib/useSwipeDeck'
 import DeckCard, {
   DeckActions,
+  DeckFlash,
   DeckPileNote,
   FLY_MS,
   motionQuiet,
   pinShellScroll,
   useDeckLive,
   useRefill,
-  useToastInView,
   useWarmProof,
   wait,
 } from './DeckCard'
@@ -96,7 +96,6 @@ export default function WorkDesk({ onCount }) {
   useWarmProof(queue?.nextProofMediaId)
 
   const card = queue?.card
-  const toastRef = useToastInView()
   const swipe = useSwipeDeck({
     onSwipe: (side) => choose(BY_SIDE[side]),
     disabled: busy || Boolean(fly) || !card,
@@ -193,24 +192,9 @@ export default function WorkDesk({ onCount }) {
   const flySide = fly && card && fly.id === card.id ? fly.side : ''
   const backSide = back && card && back.id === card.id ? back.side : ''
 
-  const notes = (
-    <>
-      {flash && (
-        <p ref={toastRef} key={flash.key} className="deed-flash deck-toast" role="status">
-          <span>{flash.text}</span>
-          {flash.undoId ? (
-            <button type="button" className="sec-btn sec-btn-ghost deed-undo" disabled={locked} onClick={undo}>
-              Вернуть
-            </button>
-          ) : null}
-        </p>
-      )}
-      {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
-    </>
-  )
-
   return (
     <div className="work-desk">
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className={`work-grid${card ? ' has-card' : ''}`}>
         <div className="work-head deck-copy">
           {waiting > 0 && (
@@ -226,7 +210,7 @@ export default function WorkDesk({ onCount }) {
           <p className="deck-why">
             Каждую карточку берёт один из администраторов группы, после ответа её не видят остальные. Оплата за проверку появится, если создатель согласится с вашим ответом. Наказания которые выдали именно вы - проверяет кто-то другой, поэтому их здесь нет.
           </p>
-          {!card && notes}
+          {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
           {queue && !card && !error && waiting > 0 && (
             <p className="work-empty">Остальные карточки сейчас смотрят другие администраторы. Если они не ответят, карточки вернутся сюда.</p>
@@ -258,7 +242,6 @@ export default function WorkDesk({ onCount }) {
               locked={locked}
               onPick={choose}
             />
-            {notes}
           </div>
         )}
       </div>

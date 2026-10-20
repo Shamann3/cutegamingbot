@@ -1394,40 +1394,23 @@ async def deed_staff_count(user_id: int = Depends(get_any_telegram_user_id)):
 
 
 async def _open_staff(user_id: int) -> dict:
-    """Сначала карточка, на которую сотрудник уже может ответить. Остальные видны без захвата."""
+    """В руки — только карточка, на которую уже можно ответить.
+
+    Пока администратор группы не ответил, карточку сотруднику не показываем:
+    иначе на экране висят неактивные ← / →. Счётчик waiting считает и те,
+    что ещё у администратора (live), ready — уже готовые к ответу.
+    """
     params = [list(PUNISH), int(user_id)]
-    where = _staff_live_where()
-    waiting = await _count(where, params)
-    rows = await db.pool.fetch(
-        f"""
-        SELECT s.id,
-               NULLIF(btrim(s.proof_media_id), '') AS proof,
-               ({admin_stage_done_sql("s")}) AS actionable
-        {_CHAIN_FROM}
-        WHERE {where}
-        ORDER BY {_staff_live_order()}
-        LIMIT 8
-        """,
-        *params,
-    )
-    chosen = None
-    async with db.pool.acquire() as conn:
-        for row in rows:
-            if not row["actionable"]:
-                if chosen is None:
-                    chosen = int(row["id"])
-                break
-            if await _claim(conn, int(row["id"]), STAGE_STAFF, user_id):
-                chosen = int(row["id"])
-                break
-    proof = None
-    if chosen is not None:
-        for row in rows:
-            if int(row["id"]) != chosen and row["proof"]:
-                proof = row["proof"]
-                break
+    waiting = await _count(_staff_live_where(), params)
+    ready = await _count(_staff_where(), params)
+    chosen, proof = await _grab(_staff_where(), params, STAGE_STAFF, user_id, ADMIN_ORDER_SQL)
     card = await _load_card(chosen) if chosen else None
-    return {"waiting": waiting, "card": card, "nextProofMediaId": proof}
+    return {
+        "waiting": waiting,
+        "ready": ready,
+        "card": card,
+        "nextProofMediaId": proof,
+    }
 
 
 @router.get("/staff")

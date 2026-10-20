@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import PhotoLook from '../../../components/PhotoLook'
 import { loadTgPhotoUrl } from '../../../components/TgPhoto'
 import { fetchDeedPulse, getAdminToken, isPanelPreviewMode } from '../../../lib/adminClient'
@@ -331,6 +332,27 @@ export function pinShellScroll() {
 
 export function useToastInView() {
   return useRef(null)
+}
+
+/** Плашка «Вернуть» в body — иначе fixed ломается от transform/backdrop у колоды. */
+export function DeckFlash({ flash, locked = false, onUndo }) {
+  if (!flash || typeof document === 'undefined') return null
+  return createPortal(
+    <p key={flash.key} className="deed-flash deck-toast" role="status">
+      <span>{flash.text}</span>
+      {flash.undoId ? (
+        <button
+          type="button"
+          className="sec-btn sec-btn-ghost deed-undo"
+          disabled={locked}
+          onClick={onUndo}
+        >
+          Вернуть
+        </button>
+      ) : null}
+    </p>,
+    document.body,
+  )
 }
 
 /** Кнопки ← / → / ↓ всегда на экране — на телефоне fixed над доком, на ПК sticky. */
