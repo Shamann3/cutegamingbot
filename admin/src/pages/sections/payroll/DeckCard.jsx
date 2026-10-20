@@ -349,17 +349,20 @@ export function DeckActions({
     const bar = barRef.current
     const slot = slotRef.current
     if (!bar) return undefined
+    const root = document.documentElement
 
-    const syncSlot = () => {
-      if (!slot) return
+    const syncFloor = () => {
       const height = Math.ceil(bar.getBoundingClientRect().height)
-      if (height > 0) slot.style.minHeight = `${height}px`
+      if (height > 0) {
+        if (slot) slot.style.minHeight = `${height}px`
+        root.style.setProperty('--deck-actions-h', `${height}px`)
+      }
     }
 
-    syncSlot()
+    syncFloor()
     let ro = null
     if (typeof ResizeObserver === 'function') {
-      ro = new ResizeObserver(syncSlot)
+      ro = new ResizeObserver(syncFloor)
       ro.observe(bar)
     }
 
@@ -379,6 +382,7 @@ export function DeckActions({
     return () => {
       window.clearTimeout(timer)
       ro?.disconnect()
+      root.style.removeProperty('--deck-actions-h')
     }
   }, [waiting, choices, extra])
 

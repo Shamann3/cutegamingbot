@@ -2342,7 +2342,7 @@ html[data-viewport="phone"] .deck-actions.work-choice {
   position: fixed;
   left: max(10px, env(safe-area-inset-left, 0px));
   right: max(10px, env(safe-area-inset-right, 0px));
-  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 10px);
+  bottom: var(--deck-floor);
   z-index: 70;
   width: auto;
   max-width: 34rem;
@@ -2565,43 +2565,69 @@ html[data-viewport="phone"] .deck-keys-only {
   display: none;
 }
 
-html.is-phone .deck-toast,
-html[data-viewport="phone"] .deck-toast {
-  scroll-margin-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
-}
-
 @media (hover: none) and (pointer: coarse) {
   .deck-keys-only {
     display: none;
   }
 }
 
+/*
+  Плашка «Вернуть» — всегда снизу:
+  над доком, и только при живых кнопках — чуть выше них.
+  Высоту кнопок пишет DeckActions в --deck-actions-h.
+*/
+:root {
+  --deck-floor: max(0.85rem, env(safe-area-inset-bottom, 0px));
+  --deck-actions-h: 0px;
+}
+
+html.is-phone,
+html[data-viewport="phone"] {
+  --deck-floor: calc(64px + env(safe-area-inset-bottom, 0px) + 10px);
+}
+
 .deck-toast {
-  position: relative;
-  z-index: 4;
-  scroll-margin-bottom: 1rem;
+  position: fixed;
+  z-index: 72;
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(var(--deck-floor) + var(--deck-actions-h, 0px) + 0.45rem);
+  width: min(36rem, calc(100% - 24px));
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 0.7rem 0.85rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.6rem 0.85rem;
-  margin: 0.75rem 0 0;
-  padding: 0.85rem 1.1rem;
-  border-radius: 14px;
-  border: 1px solid var(--e-line, rgba(255, 255, 255, 0.12));
-  background: var(--e-overlay-2, rgba(24, 24, 28, 0.92));
-  animation: deckToastIn 320ms var(--e-move-ease, cubic-bezier(.2, .8, .2, 1)) backwards;
+  justify-content: space-between;
+  gap: 0.55rem 0.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(22, 22, 26, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--e-text, #f5f5f5);
+  scroll-margin: 0;
+  animation: deckToastIn 280ms var(--e-move-ease, cubic-bezier(.2, .8, .2, 1)) both;
 }
 
 .deck-toast > span {
-  flex: 1 1 13rem;
+  flex: 1 1 12rem;
   min-width: 0;
-  line-height: 1.4;
+  font-size: 0.95rem;
+  line-height: 1.35;
 }
 
 .panel-shell .deck-toast .deed-undo {
   flex: 0 0 auto;
+  min-height: 40px !important;
+  padding: 0.45rem 0.9rem !important;
   color: var(--e-text, #f5f5f5) !important;
-  border-color: var(--e-line-strong, rgba(255, 255, 255, 0.16)) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .panel-shell .deck-toast .deed-undo:disabled {
@@ -2615,7 +2641,7 @@ html[data-viewport="phone"] .deck-toast {
 @keyframes deckToastIn {
   from {
     opacity: 0;
-    transform: translate3d(0, 8px, 0) scale(0.98);
+    transform: translate3d(0, 10px, 0);
   }
 }
 
@@ -3640,23 +3666,6 @@ html.is-coaching .work-lesson-bar {
 html.deck-scroll-lock,
 html.deck-scroll-lock body {
   scroll-behavior: auto !important;
-}
-
-.deck-toast {
-  position: fixed;
-  z-index: 36;
-  left: max(1rem, calc(50% - 20rem));
-  right: max(1rem, calc(50% - 20rem));
-  bottom: calc(8.25rem + env(safe-area-inset-bottom, 0px));
-  margin: 0;
-  scroll-margin: 0;
-}
-
-html.is-phone .deck-toast,
-html[data-viewport="phone"] .deck-toast {
-  /* Над fixed-панелью ←/→ и над доком. */
-  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 11.75rem);
-  scroll-margin: 0;
 }
 
 .my-pay-page {
