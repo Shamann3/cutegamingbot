@@ -49,6 +49,8 @@ describe('water games shop stock', () => {
     expect(screen.getByText('Облившему от 36 до 72 кут')).toBeTruthy()
     expect(screen.getByText('В «Игры» от 4 до 8 кут')).toBeTruthy()
     expect(screen.getByText('Пистолетик без лимита в сутки')).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Поиск по @username, id и имени' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByText('Поиск: 3 раза в сутки · 500 кут · в «Фон»')).toBeTruthy()
     expect(screen.getByText((text) => String(text).replace(/\s/g, '') === '4–8%·зараздо1500·засуткидо4000·ниже50неберём·комиссия10%·Игры')).toBeTruthy()
     expect(screen.getByRole('switch', { name: 'Лимит пистолетика в сутки' }).getAttribute('aria-checked')).toBe('false')
     fireEvent.click(screen.getByRole('switch', { name: 'Лимит пистолетика в сутки' }))

@@ -40,7 +40,12 @@ from bot.funcs.water_games_design import (
     default_rules,
     fee_group_name,
     normalize_fee_chat,
+    normalize_seek_chat,
     pistol_is_blocked,
+    pistol_seek_query,
+    seek_ask_text,
+    seek_rules_line,
+    seek_yes_label,
     extend_empty_text,
     extend_list_text,
     shield_mark,
@@ -147,6 +152,7 @@ def _rules_text(rules: dict | None = None) -> str:
         cap=rules["shotCap"],
         day=rules["dayCap"],
         poor=rules["poorBalance"],
+        seek=seek_rules_line(rules),
     )
 
 
@@ -157,7 +163,8 @@ async def _shot_rules() -> dict:
         row = await db.pool.fetchrow(
             """
             SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent,
-                   fee_chat_id, pistol_day_on, pistol_day_max
+                   fee_chat_id, pistol_day_on, pistol_day_max,
+                   seek_on, seek_day_max, seek_fee, seek_fee_chat_id
             FROM water_rules WHERE id = 1
             """
         )
@@ -180,6 +187,10 @@ async def _shot_rules() -> dict:
         "feeChatId": normalize_fee_chat(row["fee_chat_id"]),
         "pistolDayOn": bool(row["pistol_day_on"]),
         "pistolDayMax": max(0, int(row["pistol_day_max"] or 0)),
+        "seekOn": bool(row["seek_on"]),
+        "seekDayMax": max(0, int(row["seek_day_max"] or 0)),
+        "seekFee": max(0, int(row["seek_fee"] or 0)),
+        "seekFeeChatId": normalize_seek_chat(row["seek_fee_chat_id"]),
     }
 
 
@@ -291,6 +302,60 @@ async def ensure() -> None:
         """
         ALTER TABLE water_rules
             ADD COLUMN IF NOT EXISTS pistol_day_max INT NOT NULL DEFAULT 10
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_on BOOLEAN NOT NULL DEFAULT TRUE
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_day_max INT NOT NULL DEFAULT 3
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_fee INT NOT NULL DEFAULT 500
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_fee_chat_id BIGINT NOT NULL DEFAULT -1004318525471
+        """
+    )
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_seeks (
+            id BIGSERIAL PRIMARY KEY,
+            shooter_id BIGINT NOT NULL,
+            target_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            fee INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    await pool.execute(
+        """
+        CREATE INDEX IF NOT EXISTS water_seeks_shooter_idx
+            ON water_seeks (shooter_id, created_at DESC)
+        """
+    )
+    await pool.execute(
+        """
+        CREATE TABLE IF NOT EXISTS water_seek_offers (
+            id BIGSERIAL PRIMARY KEY,
+            shooter_id BIGINT NOT NULL,
+            target_id BIGINT NOT NULL,
+            chat_id BIGINT NOT NULL,
+            fee INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
         """
     )
     base = default_rules()
@@ -802,7 +867,7 @@ async def splash_from_item(message) -> None:
         return
     reply = message.reply_to_message
     if reply is None or reply.from_user is None:
-        await message.reply(screen_text("shot_reply"), parse_mode="HTML")
+        await _open_seek(message, user_id)
         return
     target_id = reply.from_user.id
     if int(target_id) == int(user_id):
@@ -844,6 +909,281 @@ async def splash_from_item(message) -> None:
         await message.reply(blocked, parse_mode="HTML")
         return
     await _preview_shot(message, user_id, target_id, now, day_start)
+
+
+def _seek_hint(message):
+    text = getattr(message, "text", "") or ""
+    query = pistol_seek_query(text)
+    hinted = None
+    for ent in getattr(message, "entities", None) or []:
+        if getattr(ent, "type", "") == "text_mention" and getattr(ent, "user", None) is not None:
+            hinted = ent.user
+            break
+    return query, hinted
+
+
+def _person_label(row, hinted=None) -> str:
+    if hinted is not None:
+        parts = []
+        for piece in (getattr(hinted, "first_name", ""), getattr(hinted, "last_name", "")):
+            text = " ".join(str(piece or "").split())
+            if text:
+                parts.append(text)
+        if parts:
+            return " ".join(parts)
+        username = " ".join(str(getattr(hinted, "username", "") or "").split())
+        if username:
+            return f"@{username}"
+    if not row:
+        return ""
+    name = " ".join(str(row["first_name"] or "").split())
+    if name:
+        return name
+    username = " ".join(str(row["username"] or "").split())
+    return f"@{username}" if username else ""
+
+
+async def _seek_used(user_id: int, now) -> int:
+    return int(await db.pool.fetchval(
+        """
+        SELECT COUNT(*) FROM water_seeks
+        WHERE shooter_id = $1 AND created_at > $2
+        """,
+        int(user_id), now - timedelta(hours=24),
+    ) or 0)
+
+
+async def _resolve_seek(query: str, hinted, shooter_id: int):
+    """one / self / none / many и строка пользователя."""
+    if hinted is not None:
+        try:
+            uid = int(hinted.id)
+        except (TypeError, ValueError):
+            uid = 0
+        if uid == int(shooter_id):
+            return "self", None
+        row = await db.pool.fetchrow(
+            "SELECT user_id, first_name, username FROM users WHERE user_id = $1",
+            uid,
+        )
+        if not row:
+            return "none", None
+        return "one", row
+
+    needle = " ".join(str(query or "").split())
+    if not needle:
+        return "empty", None
+    if needle.startswith("@"):
+        needle = needle[1:].strip()
+    if not needle:
+        return "empty", None
+
+    if re.fullmatch(r"\d{5,16}", needle):
+        row = await db.pool.fetchrow(
+            "SELECT user_id, first_name, username FROM users WHERE user_id = $1",
+            int(needle),
+        )
+        if not row:
+            return "none", None
+        if int(row["user_id"]) == int(shooter_id):
+            return "self", None
+        return "one", row
+
+    rows = []
+    if re.fullmatch(r"[A-Za-z0-9_]{4,32}", needle):
+        rows = await db.pool.fetch(
+            """
+            SELECT user_id, first_name, username FROM users
+            WHERE lower(username) = lower($1) AND user_id > 0
+            LIMIT 6
+            """,
+            needle,
+        )
+    if not rows:
+        rows = await db.pool.fetch(
+            """
+            SELECT user_id, first_name, username FROM users
+            WHERE lower(btrim(first_name)) = lower($1) AND user_id > 0
+            LIMIT 6
+            """,
+            needle,
+        )
+    people = [row for row in rows if int(row["user_id"]) != int(shooter_id)]
+    if not people:
+        if rows:
+            return "self", None
+        return "none", None
+    if len(people) > 1:
+        return "many", None
+    return "one", people[0]
+
+
+async def _open_seek(message, user_id: int) -> None:
+    """Платный поиск человека по @username, id или имени. Ответ на сообщение сюда не входит."""
+    query, hinted = _seek_hint(message)
+    if not query and hinted is None:
+        await message.reply(screen_text("shot_reply"), parse_mode="HTML")
+        return
+    bag = await _inventory(user_id)
+    items = bag["items"]
+    if not await _holds(user_id, "pistoletik", items):
+        await message.reply(
+            screen_text("splash_need", missing=word("missing_pistol")),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
+                pistol_missing=True, water_missing=False, owner_id=user_id,
+            )),
+        )
+        return
+    if not await _holds(user_id, "watercraft", items):
+        await message.reply(
+            screen_text("splash_need", missing=word("missing_water")),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=_need_rows(
+                pistol_missing=False, water_missing=True, owner_id=user_id,
+            )),
+        )
+        return
+    own = await _shield(user_id)
+    if _still(own) and not can_shoot(own["kind"]):
+        view = _kind_view(own["kind"])
+        await message.reply(
+            screen_text("shot_locked", emoji=view["emoji"], name=view["name"]),
+            parse_mode="HTML",
+        )
+        return
+    now = datetime.now(timezone.utc)
+    rules = await _shot_rules()
+    blocked = await _pistol_block_text(user_id, rules, now)
+    if blocked:
+        await message.reply(blocked, parse_mode="HTML")
+        return
+    if not rules.get("seekOn"):
+        await message.reply(screen_text("seek_off"), parse_mode="HTML")
+        return
+    limit = max(1, int(rules.get("seekDayMax") or 0))
+    used = await _seek_used(user_id, now)
+    if used >= limit:
+        await message.reply(screen_text("seek_limit", used=used, limit=limit), parse_mode="HTML")
+        return
+    try:
+        status, row = await _resolve_seek(query, hinted, user_id)
+    except Exception:
+        log.exception("water seek")
+        await message.reply(screen_text("seek_none"), parse_mode="HTML")
+        return
+    if status == "empty":
+        await message.reply(screen_text("shot_reply"), parse_mode="HTML")
+        return
+    if status == "self":
+        await message.reply(screen_text("shot_self"), parse_mode="HTML")
+        return
+    if status == "many":
+        await message.reply(screen_text("seek_many"), parse_mode="HTML")
+        return
+    if status != "one" or not row:
+        await message.reply(screen_text("seek_none"), parse_mode="HTML")
+        return
+    fee = max(0, int(rules.get("seekFee") or 0))
+    offer_id = await db.pool.fetchval(
+        """
+        INSERT INTO water_seek_offers (shooter_id, target_id, chat_id, fee)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        """,
+        int(user_id), int(row["user_id"]), int(message.chat.id), fee,
+    )
+    left = max(0, limit - used)
+    text = seek_ask_text(_person_label(row, hinted), fee, left)
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        _button(word("seek_no"), stamp_callback(f"wg:seekno:{int(offer_id)}", user_id), "danger"),
+        _button(seek_yes_label(fee), stamp_callback(f"wg:seekyes:{int(offer_id)}", user_id), "success"),
+    ]])
+    await message.reply(text, parse_mode="HTML", reply_markup=markup)
+
+
+async def _leave_seek(call, offer_id: int) -> None:
+    row = await db.pool.fetchrow(
+        """
+        DELETE FROM water_seek_offers
+        WHERE id = $1 AND shooter_id = $2
+        RETURNING id
+        """,
+        int(offer_id), int(call.from_user.id),
+    )
+    if not row:
+        await call.answer(word("offer_gone"), show_alert=True)
+        return
+    await _edit_call(call, screen_text("seek_cancel"))
+    await call.answer()
+
+
+async def _agree_seek(call, offer_id: int) -> None:
+    row = await db.pool.fetchrow(
+        """
+        DELETE FROM water_seek_offers
+        WHERE id = $1 AND shooter_id = $2
+        RETURNING shooter_id, target_id, chat_id, fee
+        """,
+        int(offer_id), int(call.from_user.id),
+    )
+    if not row:
+        await call.answer(word("offer_gone"), show_alert=True)
+        return
+    user_id = int(row["shooter_id"])
+    target_id = int(row["target_id"])
+    chat_id = int(row["chat_id"])
+    now = datetime.now(timezone.utc)
+    rules = await _shot_rules()
+    if not rules.get("seekOn"):
+        await _edit_call(call, screen_text("seek_off"))
+        await call.answer()
+        return
+    limit = max(1, int(rules.get("seekDayMax") or 0))
+    used = await _seek_used(user_id, now)
+    if used >= limit:
+        await _edit_call(call, screen_text("seek_limit", used=used, limit=limit))
+        await call.answer()
+        return
+    blocked = await _pistol_block_text(user_id, rules, now)
+    if blocked:
+        await _edit_call(call, blocked)
+        await call.answer()
+        return
+    fee = max(0, int(rules.get("seekFee") or 0))
+    if fee > 0:
+        bag = await _inventory(user_id)
+        if int(bag["balance"] or 0) < fee:
+            await _edit_call(call, screen_text("seek_poor", fee=_money(fee)))
+            await call.answer()
+            return
+        kept = await _keep_project_fee(user_id, fee, int(rules["seekFeeChatId"]))
+        if kept < 1:
+            await _edit_call(call, screen_text("seek_fail"))
+            await call.answer()
+            return
+        try:
+            await db.cutehistory_plus(user_id, -fee, "поиск для облития")
+        except Exception:
+            log.exception("water seek history")
+    await db.pool.execute(
+        """
+        INSERT INTO water_seeks (shooter_id, target_id, chat_id, fee)
+        VALUES ($1, $2, $3, $4)
+        """,
+        user_id, target_id, chat_id, fee,
+    )
+    try:
+        await _preview_shot(call.message, user_id, target_id, now, now - timedelta(hours=24), edit_call=call)
+    except Exception:
+        log.exception("water seek preview")
+        await _edit_call(
+            call,
+            "<b>Поиск оплачен</b>\n"
+            "<i>Экран облития не открылся. Ответьте на сообщение этого человека "
+            "и напишите «<code>Использовать 🔫</code>» — так повторная плата не нужна.</i>",
+        )
+    await call.answer()
 
 
 def _ask_markup(offer_id: int, owner_id: int) -> InlineKeyboardMarkup:
@@ -1626,6 +1966,22 @@ async def water_click(call):
             log.exception("water unequip button")
             text = screen_text("shield_off_none")
         await _show(call, "home", text, markup=_markup("home", call.message, owner_id=clicker))
+        return
+    if data.startswith("wg:seekno:"):
+        try:
+            offer_id = int(data.split(":")[2])
+        except (IndexError, ValueError):
+            await call.answer(word("offer_gone"), show_alert=True)
+            return
+        await _leave_seek(call, offer_id)
+        return
+    if data.startswith("wg:seekyes:"):
+        try:
+            offer_id = int(data.split(":")[2])
+        except (IndexError, ValueError):
+            await call.answer(word("offer_gone"), show_alert=True)
+            return
+        await _agree_seek(call, offer_id)
         return
     if data.startswith("wg:leave:"):
         try:

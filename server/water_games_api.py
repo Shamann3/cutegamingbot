@@ -56,6 +56,10 @@ class RulesBody(BaseModel):
     feeChatId: str
     pistolDayOn: bool = False
     pistolDayMax: int = Field(default=10, ge=0, le=100_000)
+    seekOn: bool = True
+    seekDayMax: int = Field(default=3, ge=0, le=100_000)
+    seekFee: int = Field(default=500, ge=0, le=99_999_999)
+    seekFeeChatId: str = ""
     model_config = {"extra": "forbid"}
 
 
@@ -139,6 +143,30 @@ async def _ensure(pool) -> None:
             ADD COLUMN IF NOT EXISTS pistol_day_max INT NOT NULL DEFAULT 10
         """
     )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_on BOOLEAN NOT NULL DEFAULT TRUE
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_day_max INT NOT NULL DEFAULT 3
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_fee INT NOT NULL DEFAULT 500
+        """
+    )
+    await pool.execute(
+        """
+        ALTER TABLE water_rules
+            ADD COLUMN IF NOT EXISTS seek_fee_chat_id BIGINT NOT NULL DEFAULT -1004318525471
+        """
+    )
     base = default_rules()
     await pool.execute(
         """
@@ -157,7 +185,7 @@ async def _ensure(pool) -> None:
 
 
 def _rules_view(row) -> dict:
-    from water_games.design import default_rules, normalize_fee_chat
+    from water_games.design import default_rules, normalize_fee_chat, normalize_seek_chat
     base = default_rules()
     if not row:
         return base
@@ -175,6 +203,10 @@ def _rules_view(row) -> dict:
         "feeChatId": normalize_fee_chat(row["fee_chat_id"]),
         "pistolDayOn": bool(row["pistol_day_on"]),
         "pistolDayMax": max(0, int(row["pistol_day_max"] or 0)),
+        "seekOn": bool(row["seek_on"]) if "seek_on" in row.keys() else base["seekOn"],
+        "seekDayMax": max(0, int(row["seek_day_max"] or 0)) if "seek_day_max" in row.keys() else base["seekDayMax"],
+        "seekFee": max(0, int(row["seek_fee"] or 0)) if "seek_fee" in row.keys() else base["seekFee"],
+        "seekFeeChatId": normalize_seek_chat(row["seek_fee_chat_id"]) if "seek_fee_chat_id" in row.keys() else base["seekFeeChatId"],
     }
 
 
@@ -280,7 +312,8 @@ async def water_board(_user_id: int = Depends(_creator)):
     rules = await pool.fetchrow(
         """
         SELECT percent_low, percent_high, shot_cap, day_cap, poor_balance, commission_percent,
-               fee_chat_id, pistol_day_on, pistol_day_max
+               fee_chat_id, pistol_day_on, pistol_day_max,
+               seek_on, seek_day_max, seek_fee, seek_fee_chat_id
         FROM water_rules WHERE id = 1
         """
     )
@@ -398,16 +431,19 @@ async def water_rules(body: RulesBody, _user_id: int = Depends(_creator)):
         raise HTTPException(status_code=400, detail="Нижний процент больше верхнего")
     if body.pistolDayOn and int(body.pistolDayMax) < 1:
         raise HTTPException(status_code=400, detail="Укажите, сколько раз в сутки можно брать пистолетик")
+    if body.seekOn and int(body.seekDayMax) < 1:
+        raise HTTPException(status_code=400, detail="Укажите, сколько поисков в сутки можно оплатить")
     pool = _pool()
     await _ensure(pool)
-    from water_games.design import normalize_fee_chat
+    from water_games.design import normalize_fee_chat, normalize_seek_chat
     row = await pool.fetchrow(
         """
         INSERT INTO water_rules (
             id, percent_low, percent_high, shot_cap, day_cap, poor_balance,
-            commission_percent, fee_chat_id, pistol_day_on, pistol_day_max, updated_at
+            commission_percent, fee_chat_id, pistol_day_on, pistol_day_max,
+            seek_on, seek_day_max, seek_fee, seek_fee_chat_id, updated_at
         )
-        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
         ON CONFLICT (id) DO UPDATE
         SET percent_low = EXCLUDED.percent_low,
             percent_high = EXCLUDED.percent_high,
@@ -418,9 +454,14 @@ async def water_rules(body: RulesBody, _user_id: int = Depends(_creator)):
             fee_chat_id = EXCLUDED.fee_chat_id,
             pistol_day_on = EXCLUDED.pistol_day_on,
             pistol_day_max = EXCLUDED.pistol_day_max,
+            seek_on = EXCLUDED.seek_on,
+            seek_day_max = EXCLUDED.seek_day_max,
+            seek_fee = EXCLUDED.seek_fee,
+            seek_fee_chat_id = EXCLUDED.seek_fee_chat_id,
             updated_at = NOW()
         RETURNING percent_low, percent_high, shot_cap, day_cap, poor_balance,
-                  commission_percent, fee_chat_id, pistol_day_on, pistol_day_max
+                  commission_percent, fee_chat_id, pistol_day_on, pistol_day_max,
+                  seek_on, seek_day_max, seek_fee, seek_fee_chat_id
         """,
         int(body.percentLow),
         int(body.percentHigh),
@@ -431,5 +472,9 @@ async def water_rules(body: RulesBody, _user_id: int = Depends(_creator)):
         int(normalize_fee_chat(body.feeChatId)),
         bool(body.pistolDayOn),
         int(body.pistolDayMax),
+        bool(body.seekOn),
+        int(body.seekDayMax),
+        int(body.seekFee),
+        int(normalize_seek_chat(body.seekFeeChatId)),
     )
     return {"ok": True, "rules": _rules_view(row)}

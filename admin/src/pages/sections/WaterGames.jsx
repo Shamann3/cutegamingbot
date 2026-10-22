@@ -35,6 +35,10 @@ const FALLBACK_RULES = {
   feeChatId: FALLBACK_GROUPS[0].id,
   pistolDayOn: false,
   pistolDayMax: 10,
+  seekOn: true,
+  seekDayMax: 3,
+  seekFee: 500,
+  seekFeeChatId: '-1004318525471',
 }
 
 function pourAmount(balance, percent, cap, dayLeft, poor) {
@@ -55,6 +59,15 @@ function cutOf(amount, rate) {
   return { shooter: Number(amount) - fee, project: fee }
 }
 
+function timesWord(count) {
+  const n = Math.abs(Number(count) || 0)
+  const last = n % 10
+  const last2 = n % 100
+  if (last === 1 && last2 !== 11) return 'раз'
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'раза'
+  return 'раз'
+}
+
 function rangeLine(label, low, high) {
   if (low === high) return `${label} ${money(low)} кут`
   return `${label} от ${money(low)} до ${money(high)} кут`
@@ -73,9 +86,18 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
   const wallets = groups && groups.length ? groups : FALLBACK_GROUPS
   const feeId = String(rules.feeChatId || wallets[0].id)
   const feeName = (wallets.find((item) => String(item.id) === feeId) || wallets[0]).name
+  const seekId = String(rules.seekFeeChatId || '-1004318525471')
+  const seekName = (wallets.find((item) => String(item.id) === seekId) || { name: 'Фон' }).name
   const shotsReady = !shotsOn || (rules.pistolDayMax !== '' && shots >= 1 && shots <= 100000)
+  const seekOn = rules.seekOn !== false
+  const seekMax = Number(rules.seekDayMax)
+  const seekFee = Number(rules.seekFee)
+  const seekReady = !seekOn || (
+    rules.seekDayMax !== '' && seekMax >= 1 && seekMax <= 100000
+    && rules.seekFee !== '' && seekFee >= 0 && seekFee <= 99999999
+  )
   const ready = low >= 1 && high >= low && high <= 100 && cap >= 1 && day >= 1 && poor >= 0
-    && rules.commissionPercent !== '' && rate >= 0 && rate <= 100 && shotsReady && sample !== ''
+    && rules.commissionPercent !== '' && rate >= 0 && rate <= 100 && shotsReady && seekReady && sample !== ''
   const from = ready ? pourAmount(balance, low, cap, day, poor) : 0
   const to = ready ? pourAmount(balance, high, cap, day, poor) : 0
   const fromCut = cutOf(from, rate)
@@ -93,6 +115,11 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
   const pistolLine = shotsOn
     ? `Пистолетик: не больше ${money(shots || 0)} раз в сутки`
     : 'Пистолетик без лимита в сутки'
+  const seekLine = !seekOn
+    ? 'Поиск по данным выключен. Ответ на сообщение бесплатный'
+    : seekReady
+      ? `Поиск: ${money(seekMax)} ${timesWord(seekMax)} в сутки · ${money(seekFee)} кут · в «${seekName}»`
+      : 'Укажите, сколько раз в сутки и какую плату брать'
   const recap = ready
     ? `${low}–${high}% · за раз до ${money(cap)} · за сутки до ${money(day)} · ниже ${money(poor)} не берём · комиссия ${rate}% · ${feeName}`
     : ''
@@ -169,6 +196,44 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
       {showCut && <p className="water-pour water-cut" key={shooterLine}>{shooterLine}</p>}
       {showCut && <p className="water-pour water-cut" key={projectLine}>{projectLine}</p>}
       <p className="water-pour water-cut" key={pistolLine}>{pistolLine}</p>
+      <div className="water-seek">
+        <h4 className="sec-title">Поиск без ответа</h4>
+        <p className="sec-subtitle">«Использовать 🔫 @username», id или имя. Плата уходит в выбранную группу. Ответ на сообщение этот лимит не тратит.</p>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={seekOn}
+          aria-label="Поиск по @username, id и имени"
+          className={`water-switch${seekOn ? ' is-on' : ''}`}
+          onClick={() => onChange({ ...rules, seekOn: !seekOn })}
+        >
+          <span>Поиск по @username, id и имени</span>
+          <i />
+        </button>
+        <div className={`water-drawer${seekOn ? ' is-open' : ''}`}>
+          <div>
+            <div className="water-rule-grid">
+              <label className="water-field">
+                <span>Сколько раз в сутки</span>
+                <input className="sec-input" inputMode="numeric" aria-label="Сколько поисков в сутки" value={rules.seekDayMax ?? ''} onChange={set('seekDayMax')} />
+              </label>
+              <label className="water-field">
+                <span>Плата за поиск, кут</span>
+                <input className="sec-input" inputMode="numeric" aria-label="Плата за поиск" value={rules.seekFee ?? ''} onChange={set('seekFee')} />
+              </label>
+              <label className="water-field water-rule-span">
+                <span>Куда падает плата</span>
+                <select className="sec-input" aria-label="Группа платы за поиск" value={seekId} onChange={(event) => onChange({ ...rules, seekFeeChatId: event.target.value })}>
+                  {wallets.map((item) => (
+                    <option key={item.id} value={String(item.id)}>{item.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+        <p className="water-pour water-cut" key={seekLine}>{seekLine}</p>
+      </div>
       <button type="button" className="sec-btn" disabled={!ready || busy} onClick={onSave}>
         {busy ? 'Сохраняем…' : saved ? 'Правила сохранены' : 'Сохранить правила'}
       </button>
@@ -295,6 +360,10 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
                   feeChatId: String(rulesDraft.feeChatId || FALLBACK_GROUPS[0].id),
                   pistolDayOn: rulesDraft.pistolDayOn === true,
                   pistolDayMax: Number(rulesDraft.pistolDayMax || 0),
+                  seekOn: rulesDraft.seekOn !== false,
+                  seekDayMax: Number(rulesDraft.seekDayMax || 0),
+                  seekFee: Number(rulesDraft.seekFee || 0),
+                  seekFeeChatId: String(rulesDraft.seekFeeChatId || '-1004318525471'),
                 })
                 setRulesDraft(saved.rules)
                 setRulesSaved(true)

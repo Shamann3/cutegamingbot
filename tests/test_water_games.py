@@ -49,6 +49,10 @@ from water_games.design import (
     fee_group_name,
     normalize_fee_chat,
     pistol_is_blocked,
+    pistol_seek_query,
+    seek_ask_text,
+    seek_yes_label,
+    times_word,
     pour_bounds,
     split_take,
     take_amount,
@@ -333,6 +337,32 @@ def test_pour_bounds_follow_the_percent_and_the_ceiling():
     assert pour_bounds(100_000, 4, 8, cap=1500, day_left=4000, poor=50) == (1500, 1500)
     assert pour_bounds(40, 4, 8, cap=1500, day_left=4000, poor=50) == (0, 0)
     assert pour_bounds(1000, 4, 8, cap=1500, day_left=30, poor=50) == (30, 30)
+
+
+def test_seek_by_name_is_paid_and_counted_in_russian():
+    assert pistol_seek_query("Использовать 🔫 @dominator_afk") == "@dominator_afk"
+    assert pistol_seek_query("использовать 🔫 123456789") == "123456789"
+    assert pistol_seek_query("Использовать 🔫 Иван Петров") == "Иван Петров"
+    assert pistol_seek_query("Использовать 🔫") == ""
+    assert times_word(1) == "раз"
+    assert times_word(2) == "раза"
+    assert times_word(5) == "раз"
+    assert times_word(11) == "раз"
+    assert times_word(21) == "раз"
+    assert times_word(22) == "раза"
+    ask = seek_ask_text("Вася", 500, 3)
+    assert "Вы можете облить Вася" in ask
+    assert "500" in ask
+    assert "осталось <b>3</b> раза" in ask
+    one = seek_ask_text("Вася", 500, 1)
+    assert "остался <b>1</b> раз" in one
+    assert seek_yes_label(500) == "Согласиться | − 500 кут"
+    assert seek_yes_label(0) == "Согласиться"
+    marked = stamp_callback("wg:seekyes:4", 42)
+    assert button_owner(marked) == 42
+    assert strip_callback_owner(marked) == "wg:seekyes:4"
+    assert "Ответьте" in screen_text("shot_reply")
+    assert "@username" in screen_text("shot_reply")
 
 
 def test_poor_balance_is_not_taken_and_a_shot_has_a_ceiling():

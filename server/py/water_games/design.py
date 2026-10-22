@@ -57,7 +57,7 @@ def emoji_id(value) -> str:
 # В callback уже сидит хозяин: защита, продление, сложение срока.
 _EMBEDDED_OWNER = {"more", "worn", "pick", "join"}
 # Хозяин дописывается последним куском: выстрел, поиск, полотенце, навигация.
-_SUFFIX_OWNER = {"leave", "pour", "towel", "find"}
+_SUFFIX_OWNER = {"leave", "pour", "towel", "find", "seekyes", "seekno"}
 
 
 def button_owner(data: str):
@@ -238,6 +238,8 @@ WORDS = {
     "place_shop": "магазин",
     "leave": "Уйти",
     "pour": "Облить",
+    "seek_no": "Отказаться",
+    "seek_yes": "Согласиться | − {fee} кут",
     "offer_gone": "Это уже решено",
     "missing_pistol": "Нужен Пистолетик.",
     "missing_water": "Нужна Вода: один выстрел списывает одну.",
@@ -661,6 +663,7 @@ screen(
     <b>Как облить</b>
     Напишите «<code>Использовать 🔫</code>» в ответ на сообщение другого пользователя и вы получите от <u>{low}%</u> до <u>{high}%</u> от баланса того пользователя, которого вы облили водой.
     Не больше <code>{cap}</code> за раз и <code>{day}</code> за сутки.
+    {seek}
     """,
     [
         [b(text="Выстрелить", go="aim", data="wg:aim", color="success", emoji=SHOOT_EMOJI)],
@@ -686,7 +689,8 @@ screen(
     "aim",
     """
     <b>Дальше только Пистолетик</b>
-    <i>В группе ответьте на сообщение человека и напишите «<code>Использовать 🔫</code>».</i>
+    <i>В группе ответьте на сообщение и напишите «<code>Использовать 🔫</code>».
+Без ответа: «<code>Использовать 🔫 @username</code>», id или имя — этот поиск платный.</i>
     """,
     [
         [b(text="Назад", go="home", data="wg:home", color="default")],
@@ -759,8 +763,9 @@ screen(
 screen(
     "shot_reply",
     """
-    <b>Выстрел не пошёл</b>
-    <i>Ответьте на человека и снова откройте Пистолетик.</i>
+    <b>На кого выстрел</b>
+    <i>Ответьте на сообщение человека.
+Или напишите «<code>Использовать 🔫 @username</code>», id или имя.</i>
     """,
 )
 
@@ -776,7 +781,7 @@ screen(
     "shot_private",
     """
     <b>В личке выстрела нет</b>
-    <i>Пистолетик и вода уже есть. Зайдите в группу по кнопке и откройте Пистолетик, ответив на человека.</i>
+    <i>Пистолетик и вода уже есть. Зайдите в группу по кнопке: ответьте на человека или напишите «<code>Использовать 🔫 @username</code>».</i>
     """,
 )
 
@@ -895,6 +900,63 @@ screen(
     """
     <b>Выстрел отменён</b>
     <i>Вода при вас.</i>
+    """,
+)
+
+screen(
+    "seek_off",
+    """
+    <b>Поиск по данным выключен</b>
+    <i>Ответьте на сообщение человека и напишите «<code>Использовать 🔫</code>».</i>
+    """,
+)
+
+screen(
+    "seek_limit",
+    """
+    <b>Поиски на сегодня закончились</b>
+    <i>{used} из {limit}. Завтра снова можно.
+Ответ на сообщение остаётся бесплатным.</i>
+    """,
+)
+
+screen(
+    "seek_none",
+    """
+    <b>Такого пользователя нет</b>
+    <i>Проверьте @username, id или имя. Куты не списаны.</i>
+    """,
+)
+
+screen(
+    "seek_many",
+    """
+    <b>Нашлось несколько человек</b>
+    <i>Напишите @username или id, чтобы облить нужного. Куты не списаны.</i>
+    """,
+)
+
+screen(
+    "seek_cancel",
+    """
+    <b>Поиск отменён</b>
+    <i>Куты и попытка при вас.</i>
+    """,
+)
+
+screen(
+    "seek_poor",
+    """
+    <b>Не хватает {fee} кут</b>
+    <i>Попытка не списана. Пополните баланс и напишите команду снова.</i>
+    """,
+)
+
+screen(
+    "seek_fail",
+    """
+    <b>Оплата не прошла</b>
+    <i>Куты вернулись. Попробуйте ещё раз.</i>
     """,
 )
 
@@ -1209,6 +1271,92 @@ def fee_group_name(raw) -> str:
     return FEE_GROUPS[0]["name"]
 
 
+# Плата за поиск человека без ответа на сообщение. По умолчанию — «Фон».
+SEEK_FEE_CHAT = "-1004318525471"
+
+
+def normalize_seek_chat(raw) -> str:
+    text = str(raw or "").strip()
+    allowed = {item["id"] for item in FEE_GROUPS}
+    if text in allowed:
+        return text
+    return SEEK_FEE_CHAT
+
+
+def times_word(count: int) -> str:
+    """1 раз, 2 раза, 5 раз, 11 раз, 21 раз."""
+    n = abs(int(count or 0))
+    last = n % 10
+    last2 = n % 100
+    if last == 1 and last2 != 11:
+        return "раз"
+    if last in (2, 3, 4) and last2 not in (12, 13, 14):
+        return "раза"
+    return "раз"
+
+
+def seek_left_phrase(count: int) -> str:
+    n = max(0, int(count or 0))
+    verb = "остался" if n % 10 == 1 and n % 100 != 11 else "осталось"
+    return f"{verb} <b>{n}</b> {times_word(n)}"
+
+
+def seek_yes_label(fee: int) -> str:
+    amount = max(0, int(fee or 0))
+    if amount < 1:
+        return "Согласиться"
+    shown = f"{amount:,}".replace(",", " ")
+    return word("seek_yes", fee=shown)
+
+
+def pistol_seek_query(text: str) -> str:
+    """Хвост после 🔫: @username, id или имя. Пусто — цели в тексте нет."""
+    raw = str(text or "").replace("\ufe0f", "")
+    mark = "🔫"
+    idx = raw.find(mark)
+    if idx < 0:
+        lowered = raw.lower()
+        for name in ("pistoletik", "пистолетик"):
+            pos = lowered.find(name)
+            if pos >= 0:
+                idx = pos + len(name)
+                break
+        else:
+            return ""
+        return " ".join(raw[idx:].split())
+    return " ".join(raw[idx + len(mark):].split())
+
+
+def seek_rules_line(rules: dict | None) -> str:
+    rules = rules or {}
+    if not rules.get("seekOn"):
+        return "Поиск по @username, id или имени сейчас выключен. Ответьте на сообщение."
+    times = max(0, int(rules.get("seekDayMax") or 0))
+    fee = max(0, int(rules.get("seekFee") or 0))
+    shown = f"{fee:,}".replace(",", " ")
+    return (
+        "Без ответа на сообщение: «<code>Использовать 🔫 @username</code>», id или имя. "
+        f"Поиск стоит <b>{shown}</b> кут, не больше <b>{times}</b> {times_word(times)} в сутки."
+    )
+
+
+def seek_ask_text(name: str, fee: int, left: int) -> str:
+    who = html.escape(" ".join(str(name or "").split()) or "этого пользователя")
+    pay = max(0, int(fee or 0))
+    shown = f"{pay:,}".replace(",", " ")
+    if pay > 0:
+        bill = f"За поиск по @username, id или имени придётся заплатить <b>{shown}</b> кут."
+    else:
+        bill = "Поиск по @username, id или имени сейчас без платы."
+    return (
+        "<tg-emoji emoji-id='5222486447306602688'>🔫</tg-emoji> "
+        f"<b>Вы можете облить {who}</b>\n"
+        f"<blockquote>{bill}\n"
+        f"На подобные облития у вас {seek_left_phrase(left)}.</blockquote>\n"
+        "<i>Дальше подтвердите облитие. Вода спишется только по кнопке «Облить».</i>"
+    )
+
+
 def pistol_is_blocked(used: int, *, on: bool, limit: int) -> bool:
     """Лимит выключен — пистолетик можно брать сколько угодно раз."""
     if not on:
@@ -1229,6 +1377,10 @@ def default_rules() -> dict:
         "feeChatId": FEE_GROUPS[0]["id"],
         "pistolDayOn": False,
         "pistolDayMax": 10,
+        "seekOn": True,
+        "seekDayMax": 3,
+        "seekFee": 500,
+        "seekFeeChatId": SEEK_FEE_CHAT,
     }
 
 

@@ -2862,7 +2862,16 @@ async def shop_op(message: Message):
             return
 
         from bot.funcs.flag_book import normalize_flag
-        typed = "".join(parts[1].split())
+        raw_item = parts[1].strip()
+        lowered_item = raw_item.lower()
+        if raw_item.startswith("🔫"):
+            typed = "🔫"
+        elif lowered_item.startswith("pistoletik"):
+            typed = "pistoletik"
+        elif lowered_item.startswith("пистолетик"):
+            typed = raw_item.split(maxsplit=1)[0]
+        else:
+            typed = "".join(raw_item.split())
         item_emoji = normalize_flag(typed) or typed
         print(f"Команда 'использовать' для предмета с эмодзи: {item_emoji}")
 
