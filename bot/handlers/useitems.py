@@ -1410,8 +1410,8 @@ async def freebonus(user_id, message):
 
     if not conf.get("enabled"):
         await message.reply(
-            "<tg-emoji emoji-id='5213181173026533794'>⚠️</tg-emoji> "
-            "<b>Подарочный бонус сейчас выключен создателем.</b>",
+            "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
+            "<b>🎁 сейчас выключен</b>",
             parse_mode="HTML",
         )
         return False
@@ -1429,8 +1429,8 @@ async def freebonus(user_id, message):
     except Exception as exc:
         print(f"[FLAME][GIFT] open: {exc}")
         await message.reply(
-            "<tg-emoji emoji-id='5213181173026533794'>⚠️</tg-emoji> "
-            "Не удалось открыть подарочный бонус. Попробуйте ещё раз.",
+            "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
+            "<b>Не вышло</b> — попробуй ещё раз",
             parse_mode="HTML",
         )
         return False

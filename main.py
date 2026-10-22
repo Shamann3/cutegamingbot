@@ -12441,8 +12441,9 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                     await db.set_items(user_id, item_name, 1)
                     await note_gift_loot(db, user_id, "item", 1, item_name, item_name)
                     item_text = (
-                        f"<tg-emoji emoji-id='5787166284705699232'>🎁</tg-emoji> | "
-                        f"<b>+<code>{item_emoji}</code> {item_name}</b>"
+                        f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
+                        f"<b>Ещё подарок</b>\n"
+                        f"<code>{item_emoji}</code> <b>{item_name}</b>"
                     )
                     try:
                         await message.reply(item_text, parse_mode="HTML")
@@ -12457,8 +12458,8 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                         await note_gift_loot(db, user_id, "kuty", add, "", f"{add} кут")
                         try:
                             await message.reply(
-                                f"<tg-emoji emoji-id='5787166284705699232'>🎁</tg-emoji> | "
-                                f"<b>+{add} кут</b>",
+                                f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
+                                f"<b>Ещё +{add} кут</b>",
                                 parse_mode="HTML",
                             )
                         except Exception:
@@ -12950,10 +12951,10 @@ async def process_bonus_request(
             shown = html.escape((user.first_name or "имя").strip() or "имя")
             text = (
                 "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
-                "<b>Чтобы открыть 🎁, в имени должно быть слово Cute</b>\n"
-                f"Сейчас имя: <b>{shown}</b>\n"
-                "Например: <code>Имя Cute</code>\n"
-                "Предмет остался у вас. Когда имя готово — снова напишите «использовать 🎁»."
+                "<b>Нужна приписка <code>Cute</code></b>\n"
+                f"<blockquote>Сейчас: <b>{shown}</b>\n"
+                "Пример: <code>Имя Cute</code></blockquote>\n"
+                "<i>🎁 остался у тебя</i>"
             )
             try:
                 await bot1.send_message(
@@ -13002,7 +13003,7 @@ async def process_bonus_request(
     gift = gift_conf or {}
     if from_gift_item:
         multiplier = max(1, int(gift.get("mult") or 1))
-        bonus_label = f"Подарочный ×{multiplier}" if multiplier > 1 else "Подарочный"
+        bonus_label = f"Подарок ×{multiplier}" if multiplier > 1 else "Подарок"
         show_hint = False
         kuty_lo = max(1, int(gift.get("kuty_min") or 1)) * multiplier
         kuty_hi = max(kuty_lo, int(gift.get("kuty_max") or kuty_lo) * multiplier)
@@ -13034,20 +13035,24 @@ async def process_bonus_request(
         show_x2_hint=show_hint and not from_gift_item,
         gift_conf=gift if from_gift_item else None,
     )
-    header = (
-        f"<b>🎁 {bonus_label} бонус</b>\n"
-        f"×{multiplier} | +{kuty_lo}…{kuty_hi} кут\n"
-    )
     if from_gift_item:
-        header += (
-            "Нажмите любую клетку — куты придут сразу.\n"
-            "Победа в игре не нужна. Слово Cute в имени уже есть.\n"
-            "Если выпадет ещё награда, она придёт отдельным сообщением."
+        header = (
+            f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
+            f"<b>{bonus_label}</b>\n"
+            f"<blockquote>×{multiplier} · <b>+{kuty_lo}…{kuty_hi}</b> кут</blockquote>\n"
+            "<i>Жми клетку — куты сразу</i>"
         )
-    elif multiplier == 1:
-        header += "<i>Нажмите 🔥 ×2 Бонус, чтобы удвоить</i>"
-    full_text = f"{header}\n{random.choice(textfraza)}"
-    board_text = full_text if from_gift_item else "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>"
+        full_text = header
+        board_text = full_text
+    else:
+        header = (
+            f"<b>🎁 {bonus_label} бонус</b>\n"
+            f"×{multiplier} | +{kuty_lo}…{kuty_hi} кут\n"
+        )
+        if multiplier == 1:
+            header += "<i>Нажмите 🔥 ×2 Бонус, чтобы удвоить</i>"
+        full_text = f"{header}\n{random.choice(textfraza)}"
+        board_text = "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>"
 
     if edit_message:
         try:

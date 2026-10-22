@@ -193,12 +193,19 @@ def _gift_words(rewards: list[dict]) -> str:
 async def _tell_streak(user_id: int, result: dict) -> None:
     gifts = _gift_words(result.get("rewards") or [])
     title = str(result.get("title") or "").strip()
-    head = f"<b>{title}</b> · " if title else ""
-    extra = f"\n<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Награда: <b>{gifts}</b>" if gifts else ""
+    label = result.get("label") or "1 день"
+    head = f"<b>{title}</b>\n" if title else ""
+    extra = (
+        f"\n\n<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>{gifts}</b>"
+        if gifts
+        else ""
+    )
     text = (
         f"<tg-emoji emoji-id='5355118129783553944'>⚫️</tg-emoji> "
-        f"{head}<b>Огонёк сообщений уже {result.get('label') or '1 день'}</b>\n"
-        f"День закрыт: завтра серия станет длиннее, если снова наберёте норму.{extra}"
+        f"<b>Огонёк уже {label}</b>\n"
+        f"{head}"
+        f"<blockquote>День закрыт. Завтра — снова норма.</blockquote>"
+        f"{extra}"
     )
     await _dm(user_id, text)
 
@@ -206,10 +213,10 @@ async def _tell_streak(user_id: int, result: dict) -> None:
 async def _tell_warm(user_id: int, gift: dict) -> None:
     label = gift.get("label") or _gift_words([gift])
     text = (
-        f"<tg-emoji emoji-id='5355118129783553944'>⚫️</tg-emoji> "
-        f"<b>Тёплый час!</b>\n"
-        f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Вам: <b>{label}</b>\n"
-        f"<i>Потому что огонёк жив — и вы писали в удачный час.</i>"
+        f"<tg-emoji emoji-id='5296561370303592127'>🌟</tg-emoji> "
+        f"<b>Тёплый час</b>\n"
+        f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>{label}</b>\n"
+        f"<i>Ты в удачный час</i>"
     )
     await _dm(user_id, text)
 
@@ -282,20 +289,25 @@ async def top_text(db) -> str:
     if not people:
         return (
             "<tg-emoji emoji-id='5354962501643578130'>⚫️</tg-emoji> "
-            "<b>Лучшие огоньки</b>\n\n"
-            "Здесь самые длинные серии. Пока пусто: напишите норму сообщений "
-            "в официальных группах — и ваш первый день появится в этом списке."
+            "<b>Лучшие огоньки</b>\n"
+            "<blockquote><i>Пока пусто — набери норму и займи место</i></blockquote>"
         )
     from bot.funcs.top import stat_person_html
     lines = [
         "<tg-emoji emoji-id='5354962501643578130'>⚫️</tg-emoji> <b>Лучшие огоньки</b>",
         "",
     ]
+    medals = {
+        1: "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji>",
+        2: "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>",
+        3: "<tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji>",
+    }
     for index, person in enumerate(people, start=1):
         name = stat_person_html(person["name"], person.get("username"), person["userId"])
-        mark = "рекорд " if person.get("record") else ""
-        title = f" · {person['title']}" if person.get("title") else ""
-        lines.append(f"{index}. {name} — {mark}{person['label']}{title}")
+        mark = " · <i>рекорд</i>" if person.get("record") else ""
+        title = f" · <b>{person['title']}</b>" if person.get("title") else ""
+        prefix = medals.get(index, f"<b>{index}.</b>")
+        lines.append(f"{prefix} {name} — <b>{person['label']}</b>{title}{mark}")
     return "\n".join(lines)
 
 
@@ -350,25 +362,27 @@ async def _send_profit(card: dict) -> None:
         left = int(nxt["day"]) - int(card.get("streak") or 0)
         gift = _kind_words(nxt["kind"], nxt["amount"], nxt.get("item_name") or "")
         next_line = (
-            f"\nДо награды за <b>{span_label(int(nxt['day']))}</b> — ещё "
-            f"<b>{left}</b> дн.: {gift}"
+            f"\n<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> "
+            f"Через <b>{left}</b> · {span_label(int(nxt['day']))}: {gift}"
         )
-    else:
-        next_line = "\nВсе настроенные награды за дни вы уже собрали. Держите серию дальше."
     loot_rows = card.get("loot") or []
     if loot_rows:
-        loot_line = "\nСегодня получили: " + "; ".join(
+        loot_line = "\n" + " · ".join(
             f"<b>{row['label']}</b>" for row in loot_rows if row.get("label")
         )
     else:
-        loot_line = "\nСегодня отдельных наград пока не было — день ещё идёт."
-    kept = "норма дня уже закрыта" if card.get("keptToday") else "норма дня ещё открыта"
+        loot_line = ""
+    kept = (
+        "<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> норма <b>закрыта</b>"
+        if card.get("keptToday")
+        else "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> норма <b>ещё открыта</b>"
+    )
     text = (
         f"<tg-emoji emoji-id='5355118129783553944'>⚫️</tg-emoji> "
-        f"<b>Ваш огонёк сегодня</b>\n{head}"
-        f"Серия: <b>{streak}</b> · место в топе: <b>#{card.get('rank') or '—'}</b>\n"
-        f"{kept}.{next_line}{loot_line}\n\n"
-        f"<i>Одна фраза другу: «у меня огонёк уже {streak}».</i>"
+        f"<b>Твой огонёк</b>\n{head}"
+        f"<blockquote><b>{streak}</b> · топ <b>#{card.get('rank') or '—'}</b>\n"
+        f"{kept}</blockquote>"
+        f"{next_line}{loot_line}"
     )
     await _dm(int(card["userId"]), text)
 

@@ -112,15 +112,16 @@ def profile_line(days: int, titles: list[dict] | None = None) -> str:
     if int(days or 0) <= 0:
         return ""
     badge = title_for(days, titles or [])
+    label = span_label(days)
     if badge:
         eid = badge["emoji_id"] or STATUS_EMOJI
         return (
             f"<tg-emoji emoji-id='{eid}'>⚫️</tg-emoji> "
-            f"<b>{badge['title']}</b> · огонёк уже {span_label(days)}"
+            f"<b>{badge['title']}</b> · уже <b>{label}</b>"
         )
     return (
         f"<tg-emoji emoji-id='{EMOJI}'>⚫️</tg-emoji> "
-        f"<b>Огонёк сообщений уже {span_label(days)}</b>"
+        f"<b>Огонёк уже {label}</b>"
     )
 
 
@@ -131,23 +132,22 @@ def _reward_line(row: dict) -> str:
     kind = str(row.get("kind") or "")
     amount = max(1, int(row.get("amount") or 1))
     item = str(row.get("item_name") or row.get("itemName") or "").strip()
-    when = span_label(day)
     gift = _kind_words(kind, amount, item)
     if not gift:
         return ""
-    return f"· <b>{when}</b> — {gift}"
+    return f"· <b>{span_label(day)}</b> — {gift}"
 
 
 def _kind_words(kind: str, amount: int, item: str = "") -> str:
     amount = max(1, int(amount or 1))
     if kind == "bonus":
-        return "бесплатное открытие обычного бонуса" if amount == 1 else f"бесплатных открытий обычного бонуса: {amount}"
+        return "открытие бонуса" if amount == 1 else f"открытие бонуса ×{amount}"
     if kind == "bonus_x2":
-        return "бесплатное открытие бонуса ×2" if amount == 1 else f"бесплатных открытий бонуса ×2: {amount}"
+        return "бонус ×2" if amount == 1 else f"бонус ×2 · {amount}"
     if kind == "kuty":
-        return f"{amount} кут"
+        return f"<b>{amount}</b> кут"
     if kind == "item" and item:
-        return item if amount == 1 else f"{item} × {amount}"
+        return f"<b>{item}</b>" if amount == 1 else f"<b>{item}</b> ×{amount}"
     return ""
 
 
@@ -161,74 +161,69 @@ def help_html(board: dict) -> str:
     base = int(settings.get("base_messages") or 200)
     words = int(settings.get("min_words") or 2)
     enabled = bool(settings.get("enabled"))
+
     parts = [
         f"<tg-emoji emoji-id='{EMOJI}'>⚫️</tg-emoji> <b>Огонёк сообщений</b>",
         "",
-        "<b>Зачем он вам</b>",
-        "Каждый день, когда вы пишете в официальных группах, огонёк живёт ещё сутки. "
-        "Чем длиннее серия — тем больше с неё можно забрать: бонус, куты, предмет или статус в профиле.",
-        "Если день пропустить — серия гаснет и начинается заново. Держать её выгодно именно вам.",
+        f"<blockquote>Пиши в официальных группах — копи <b>{base}</b> сообщений за сутки <b>МСК</b>.\n"
+        f"От <b>{words}</b> слов · без команд и копипаста</blockquote>",
         "",
-        "<b>Как засчитать день</b>",
-        f"Нужно <b>{base}</b> обычных сообщений за сутки по Москве. "
-        f"Считаются сообщения от <b>{words}</b> слов во всех официальных группах вместе.",
-        "Не считаются команды, игры и один и тот же текст подряд.",
-        "Норма закрыта — в 00:00 серия становится на день длиннее. Нормы нет — огонёк тухнет.",
+        "<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> <b>Серия</b>",
+        "Норма есть → в 00:00 <b>+1 день</b>",
+        "Пропуск → огонёк <b>гаснет</b>",
     ]
     if not enabled:
-        parts.append("Сейчас огонёк выключен. Как только его включат, счёт пойдёт сам.")
+        parts += ["", "<i>Сейчас выключен</i>"]
+
     rises = []
     for step in sorted(steps, key=lambda row: int(row.get("from_day") or 0)):
         start = int(step.get("from_day") or 0)
         messages = int(step.get("messages") or 0)
         if start <= 1 or messages < 1:
             continue
-        rises.append(f"с {start}-го дня — {messages} сообщений")
+        rises.append(f"с {start}-го — <b>{messages}</b>")
     if rises:
-        parts.append("Дальше норма растёт: " + "; ".join(rises) + ".")
+        parts += [
+            "",
+            "<tg-emoji emoji-id='5438449312893792440'>🚀</tg-emoji> <b>Рост нормы</b>",
+            " · ".join(rises),
+        ]
+
     lines = [_reward_line(row) for row in sorted(rewards, key=lambda row: int(row.get("day") or 0))]
     lines = [line for line in lines if line]
-    parts.append("")
-    parts.append("<b>Что вы получаете</b>")
+    parts += ["", "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Награды</b>"]
     if lines:
-        parts.append("Награда приходит один раз, в тот день серии, и сразу видна в личке:")
         parts.extend(lines)
     else:
-        parts.append("Награды за дни создатель ещё выставит. Серия уже считается и видна в профиле.")
+        parts.append("<i>скоро появятся</i>")
+
     if titles:
-        parts.append("")
-        parts.append("<b>Статус в профиле</b>")
-        parts.append("Его видно всем. Пока огонёк жив — статус ваш. Погас — статус пропадает.")
+        parts += ["", "<tg-emoji emoji-id='5233479338791281256'>⭐️</tg-emoji> <b>Статус</b>"]
         for row in sorted(titles, key=lambda t: int(t.get("from_day") or 0)):
-            parts.append(f"· с {span_label(int(row['from_day']))} — <b>{row['title']}</b>")
+            parts.append(f"· {span_label(int(row['from_day']))} — <b>{row['title']}</b>")
+
     if warm.get("enabled"):
-        parts.append("")
-        parts.append("<b>Тёплый час</b>")
-        parts.append(
-            "Каждый день с 15:00 до 0:00 по Москве выпадает один случайный час. "
-            f"Если огонёк уже {span_label(int(warm.get('min_day') or 3))}, в этот час "
-            f"каждые {int(warm.get('every') or 40)} сообщений можно поймать ещё одну награду "
-            f"(не больше {int(warm.get('cap') or 3)} раз за день)."
-        )
+        parts += [
+            "",
+            "<tg-emoji emoji-id='5296561370303592127'>🌟</tg-emoji> <b>Тёплый час</b>",
+            f"С {span_label(int(warm.get('min_day') or 3))} · каждые <b>{int(warm.get('every') or 40)}</b> · до <b>{int(warm.get('cap') or 3)}</b>/день",
+        ]
         if warm.get("hour") is not None:
             hour = int(warm["hour"])
-            parts.append(
-                f"Сегодня тёплый час: <b>{hour:02d}:00–{(hour + 1) % 24:02d}:00</b> МСК."
-            )
+            parts.append(f"Сегодня: <code>{hour:02d}:00–{(hour + 1) % 24:02d}:00</code>")
+
     if gift.get("enabled"):
         mult = int(gift.get("mult") or 1)
-        parts.append("")
-        parts.append("<b>Предмет 🎁</b>")
-        parts.append(
-            "Напишите «использовать 🎁». Откроется такая же доска, как у команды «бонус»: "
-            "нажмите клетку и заберите куты."
-        )
-        parts.append("Нужно только слово Cute в имени. Побеждать в игре не нужно.")
+        gift_line = "«использовать 🎁» · нужна <code>Cute</code>"
         if mult > 1:
-            parts.append(f"С этой доски куты уже идут с умножением ×{mult}.")
-        parts.append("Если Cute ещё нет в имени — предмет остаётся у вас.")
-    parts.append("")
-    parts.append("Вечером в личку приходит короткая карточка: сколько дней серия, какое место и что уже получили.")
+            gift_line += f" · ×{mult}"
+        parts += [
+            "",
+            "<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> <b>Предмет</b>",
+            gift_line,
+        ]
+
+    parts += ["", "<i>Держи серию — это выгодно тебе</i>"]
     return "\n".join(parts)
 
 

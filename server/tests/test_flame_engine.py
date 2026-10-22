@@ -30,7 +30,7 @@ def test_need_grows_from_the_chosen_day():
 def test_profile_line_with_status_title():
     assert profile_line(0) == ""
     text = profile_line(2)
-    assert "Огонёк сообщений уже 2 дня" in text
+    assert "Огонёк уже 2 дня" in text
     titled = profile_line(10, [{"from_day": 7, "title": "Живой огонь", "emoji_id": "1"}])
     assert "Живой огонь" in titled
     assert "10 дней" in titled
@@ -59,12 +59,12 @@ def test_help_lists_rewards_and_warm_hour():
         "gift": {"enabled": True, "mult": 2},
     })
     assert "200" in html
-    assert "с 7-го дня — 250" in html
+    assert "с 7-го — <b>250</b>" in html
     assert "3 дня" in html
-    assert "50 кут" in html
+    assert "<b>50</b> кут" in html
     assert "Тёплый час" in html
     assert "18:00" in html
-    assert "Подарочный" in html or "🎁" in html
+    assert "🎁" in html
 
 
 def test_gift_preview_shows_average():
