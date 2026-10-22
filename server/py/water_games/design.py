@@ -1373,14 +1373,33 @@ def _seek_money(amount: int) -> str:
     return f"{max(0, int(amount or 0)):,}".replace(",", " ")
 
 
+def seek_person_html(name: str, username: str = "", user_id: int = 0) -> str:
+    """Имя ссылкой: t.me, если есть @username, иначе профиль по id."""
+    handle = str(username or "").strip().lstrip("@")
+    label = " ".join(str(name or "").split())
+    if label.startswith("@") and not handle:
+        handle = label[1:]
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{3,31}", handle or ""):
+        handle = ""
+    if not label:
+        label = f"@{handle}" if handle else "этот пользователь"
+    safe = html.escape(label, quote=False)
+    if handle:
+        return f'<a href="https://t.me/{handle}">{safe}</a>'
+    try:
+        uid = int(user_id or 0)
+    except (TypeError, ValueError):
+        uid = 0
+    if uid > 0:
+        return f'<a href="tg://user?id={uid}">{safe}</a>'
+    return safe
+
+
 def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
-    """Сколько этот человек отдаст и сколько из этого останется облившему."""
+    """Сколько кут получит именно тот, кто обливает."""
+    del gross
     if kind == "hit":
-        taken = _seek_money(gross)
-        yours = _seek_money(payout)
-        if int(gross or 0) > int(payout or 0):
-            return f"С этого пользователя будет снято <b>{taken}</b> кут. Вам — <b>{yours}</b>."
-        return f"С этого пользователя вы получите <b>{yours}</b> кут."
+        return f"Вы получите с него <b>{_seek_money(payout)}</b> кут."
     if kind == "shield":
         return "С этого пользователя куты не перейдут: он под защитой."
     if kind in {"broke", "dry"}:
@@ -1394,8 +1413,8 @@ def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
     return ""
 
 
-def seek_ask_text(name: str, fee: int, left: int, take: str = "") -> str:
-    who = html.escape(" ".join(str(name or "").split()) or "этого пользователя")
+def seek_ask_text(name: str, fee: int, left: int, take: str = "", username: str = "", user_id: int = 0) -> str:
+    who = seek_person_html(name, username, user_id)
     pay = max(0, int(fee or 0))
     shown = _seek_money(pay)
     if pay > 0:

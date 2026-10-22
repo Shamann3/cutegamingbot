@@ -1130,11 +1130,14 @@ async def _open_seek(message, user_id: int) -> None:
         int(quote["amount"]), int(quote["percent"]), str(quote["kind"]),
     )
     left = max(0, limit - used)
+    hinted_name = getattr(hinted, "username", "") if hinted is not None else ""
     text = seek_ask_text(
         _person_label(row, hinted),
         fee,
         left,
         seek_loot_line(quote["kind"], quote["amount"], quote["payout"]),
+        username=str(row["username"] or hinted_name or ""),
+        user_id=int(row["user_id"]),
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[[
         _button(word("seek_no"), stamp_callback(f"wg:seekno:{int(offer_id)}", user_id), "danger"),

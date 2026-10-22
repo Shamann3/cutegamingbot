@@ -68,6 +68,36 @@ function timesWord(count) {
   return 'раз'
 }
 
+const PRESETS = [
+  {
+    id: 'soft',
+    label: 'Мягко',
+    patch: {
+      percentLow: '3', percentHigh: '5', shotCap: '800', dayCap: '2000', poorBalance: '100',
+      commissionPercent: '5', pistolDayOn: false, pistolDayMax: '10',
+      seekOn: true, seekDayMax: '3', seekFee: '250',
+    },
+  },
+  {
+    id: 'usual',
+    label: 'Обычно',
+    patch: {
+      percentLow: '4', percentHigh: '8', shotCap: '1500', dayCap: '4000', poorBalance: '50',
+      commissionPercent: '10', pistolDayOn: false, pistolDayMax: '10',
+      seekOn: true, seekDayMax: '3', seekFee: '500',
+    },
+  },
+  {
+    id: 'hard',
+    label: 'Жёстко',
+    patch: {
+      percentLow: '8', percentHigh: '12', shotCap: '3000', dayCap: '8000', poorBalance: '20',
+      commissionPercent: '15', pistolDayOn: true, pistolDayMax: '8',
+      seekOn: true, seekDayMax: '5', seekFee: '1000',
+    },
+  },
+]
+
 function rangeLine(label, low, high) {
   if (low === high) return `${label} ${money(low)} кут`
   return `${label} от ${money(low)} до ${money(high)} кут`
@@ -110,6 +140,7 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
   else if (ready && from === to) verdict = `Заберёт ${money(from)} кут`
   else if (ready) verdict = `Заберёт от ${money(from)} до ${money(to)} кут`
   const showCut = ready && balance >= poor && (from > 0 || to > 0)
+  const receiveLine = rangeLine('Обливающий получит', fromCut.shooter, toCut.shooter)
   const shooterLine = rangeLine('Облившему', fromCut.shooter, toCut.shooter)
   const projectLine = rangeLine(`В «${feeName}»`, fromCut.project, toCut.project)
   const pistolLine = shotsOn
@@ -127,7 +158,20 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
   return (
     <section className={`water-rules${saved ? ' is-saved' : ''}`}>
       <h4 className="sec-title">Сколько забирает выстрел</h4>
-      <p className="sec-subtitle">Процент, потолки, комиссия и лимит пистолетика. Комиссия — доля уже снятой суммы, она падает на баланс выбранной технической группы.</p>
+      <p className="sec-subtitle">Сначала набор, потом точечные числа. «Обливающий получит» — это сумма уже после комиссии. Она и пишется человеку перед оплатой поиска.</p>
+      <div className="water-presets" role="group" aria-label="Готовые наборы">
+        {PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="water-preset"
+            onClick={() => onChange({ ...rules, ...preset.patch })}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      <p className="water-note">Набор подставляет числа и не включает их сам. Они заработают после «Сохранить правила». Группы комиссии и платы остаются теми, что выбраны ниже.</p>
       <div className="water-rule-grid">
         <label className="water-field">
           <span>От, %</span>
@@ -193,6 +237,7 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
       </label>
       {recap && <p className="water-note">{recap}</p>}
       <p className="water-pour" key={verdict}>{verdict}</p>
+      {showCut && <p className="water-pour" key={receiveLine}>{receiveLine}</p>}
       {showCut && <p className="water-pour water-cut" key={shooterLine}>{shooterLine}</p>}
       {showCut && <p className="water-pour water-cut" key={projectLine}>{projectLine}</p>}
       <p className="water-pour water-cut" key={pistolLine}>{pistolLine}</p>
@@ -234,7 +279,7 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
         </div>
         <p className="water-pour water-cut" key={seekLine}>{seekLine}</p>
       </div>
-      <button type="button" className="sec-btn" disabled={!ready || busy} onClick={onSave}>
+      <button type="button" className="sec-btn water-save" disabled={!ready || busy} onClick={onSave}>
         {busy ? 'Сохраняем…' : saved ? 'Правила сохранены' : 'Сохранить правила'}
       </button>
     </section>
@@ -375,7 +420,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
             }}
           />
 
-          <section className="water-shop">
+          <section className="water-shop water-block">
             <h4 className="sec-title">Количество в магазине</h4>
             <p className="sec-subtitle">Число — сколько штук сейчас можно купить. Покупка уменьшает его. Ноль снимает предмет с продажи.</p>
             <div className="water-shop-list">
@@ -432,7 +477,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
             <div className="water-stat" style={{ animationDelay: '160ms' }}><b>{money(totals.project)}</b><span>кут получил проект</span></div>
           </div>
 
-          <section className="water-ledger">
+          <section className="water-ledger water-block">
             <h4 className="sec-title">Сколько раз обливали</h4>
             <p className="sec-subtitle">Имя открывает карточку. Человека это не упоминает и не будит.</p>
             <div className="water-views" role="tablist" aria-label="Статистика обливаний">
@@ -484,7 +529,7 @@ export default function WaterGames({ onOpenUser = null, page = false }) {
             </div>
           </section>
 
-          <section>
+          <section className="water-block">
             <h4 className="sec-title">Последние выстрелы</h4>
             <ul className="water-recent">
               {(board.recent || []).map((row, index) => (

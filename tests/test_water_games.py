@@ -353,17 +353,18 @@ def test_seek_by_name_is_paid_and_counted_in_russian():
     assert times_word(11) == "раз"
     assert times_word(21) == "раз"
     assert times_word(22) == "раза"
-    ask = seek_ask_text("Вася", 500, 3, seek_loot_line("hit", 80, 72))
-    assert "Вы можете облить Вася" in ask
+    ask = seek_ask_text("Вася", 500, 3, seek_loot_line("hit", 80, 72), username="vasya")
+    assert 'href="https://t.me/vasya"' in ask
+    assert ">Вася</a>" in ask
     assert "За поиск пользователя нужно будет заплатить" in ask
-    assert "user_id" not in ask.lower()
-    assert "username" not in ask.lower()
-    assert "снято <b>80</b>" in ask
-    assert "Вам — <b>72</b>" in ask
+    assert "Вы получите с него <b>72</b> кут." in ask
+    assert "снято" not in ask
     assert "500" in ask
     assert "осталось <b>3</b> раза" in ask
+    by_id = seek_ask_text("Вася", 500, 1, username="", user_id=42)
+    assert 'href="tg://user?id=42"' in by_id
     plain = seek_ask_text("Вася", 500, 2, seek_loot_line("hit", 40, 40))
-    assert "получите <b>40</b>" in plain
+    assert "Вы получите с него <b>40</b> кут." in plain
     one = seek_ask_text("Вася", 500, 1)
     assert "остался <b>1</b> раз" in one
     assert seek_yes_label(500) == "Согласиться | − 500 кут"
