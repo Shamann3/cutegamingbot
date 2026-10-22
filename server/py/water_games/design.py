@@ -690,7 +690,7 @@ screen(
     """
     <b>Дальше только Пистолетик</b>
     <i>В группе ответьте на сообщение и напишите «<code>Использовать 🔫</code>».
-Без ответа: «<code>Использовать 🔫 @username</code>», id или имя — этот поиск платный.</i>
+Без ответа: «<code>Использовать 🔫 @username</code>» или ссылка <code>t.me</code>. Поиск платный.</i>
     """,
     [
         [b(text="Назад", go="home", data="wg:home", color="default")],
@@ -765,7 +765,7 @@ screen(
     """
     <b>На кого выстрел</b>
     <i>Ответьте на сообщение человека.
-Или напишите «<code>Использовать 🔫 @username</code>», id или имя.</i>
+Или напишите «<code>Использовать 🔫 @username</code>» либо ссылку <code>t.me</code>.</i>
     """,
 )
 
@@ -906,7 +906,7 @@ screen(
 screen(
     "seek_off",
     """
-    <b>Поиск по данным выключен</b>
+    <b>Поиск пользователя выключен</b>
     <i>Ответьте на сообщение человека и напишите «<code>Использовать 🔫</code>».</i>
     """,
 )
@@ -924,7 +924,7 @@ screen(
     "seek_none",
     """
     <b>Такого пользователя нет</b>
-    <i>Проверьте @username, id или имя. Куты не списаны.</i>
+    <i>Проверьте @username, ссылку или имя. Куты не списаны.</i>
     """,
 )
 
@@ -1309,8 +1309,32 @@ def seek_yes_label(fee: int) -> str:
     return word("seek_yes", fee=shown)
 
 
+_SEEK_LINK_SKIP = {
+    "joinchat", "share", "addstickers", "proxy", "socks", "iv", "boost",
+    "invoice", "login", "giftcode",
+}
+
+
+def seek_handle_from_link(text: str) -> str:
+    """Username из https://t.me/имя, t.me/имя и tg://resolve?domain=имя."""
+    raw = str(text or "").strip()
+    found = re.search(
+        r"(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/([A-Za-z0-9_]{4,32})",
+        raw,
+        re.IGNORECASE,
+    )
+    if not found:
+        found = re.search(r"[?&]domain=([A-Za-z0-9_]{4,32})", raw, re.IGNORECASE)
+    if not found:
+        return ""
+    handle = found.group(1)
+    if handle.lower() in _SEEK_LINK_SKIP:
+        return ""
+    return handle
+
+
 def pistol_seek_query(text: str) -> str:
-    """Хвост после 🔫: @username, id или имя. Пусто — цели в тексте нет."""
+    """Хвост после 🔫: @username, ссылка t.me, id или имя. Пусто — цели в тексте нет."""
     raw = str(text or "").replace("\ufe0f", "")
     mark = "🔫"
     idx = raw.find(mark)
@@ -1323,37 +1347,68 @@ def pistol_seek_query(text: str) -> str:
                 break
         else:
             return ""
-        return " ".join(raw[idx:].split())
-    return " ".join(raw[idx + len(mark):].split())
+        tail = " ".join(raw[idx:].split())
+    else:
+        tail = " ".join(raw[idx + len(mark):].split())
+    handle = seek_handle_from_link(tail) or seek_handle_from_link(raw)
+    if handle:
+        return f"@{handle}"
+    return tail
 
 
 def seek_rules_line(rules: dict | None) -> str:
     rules = rules or {}
     if not rules.get("seekOn"):
-        return "Поиск по @username, id или имени сейчас выключен. Ответьте на сообщение."
+        return "Поиск пользователя сейчас выключен. Ответьте на сообщение."
     times = max(0, int(rules.get("seekDayMax") or 0))
     fee = max(0, int(rules.get("seekFee") or 0))
     shown = f"{fee:,}".replace(",", " ")
     return (
-        "Без ответа на сообщение: «<code>Использовать 🔫 @username</code>», id или имя. "
-        f"Поиск стоит <b>{shown}</b> кут, не больше <b>{times}</b> {times_word(times)} в сутки."
+        "Без ответа: «<code>Использовать 🔫 @username</code>» или ссылка <code>t.me</code>. "
+        f"За поиск пользователя — <b>{shown}</b> кут, не больше <b>{times}</b> {times_word(times)} в сутки."
     )
 
 
-def seek_ask_text(name: str, fee: int, left: int) -> str:
+def _seek_money(amount: int) -> str:
+    return f"{max(0, int(amount or 0)):,}".replace(",", " ")
+
+
+def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
+    """Сколько этот человек отдаст и сколько из этого останется облившему."""
+    if kind == "hit":
+        taken = _seek_money(gross)
+        yours = _seek_money(payout)
+        if int(gross or 0) > int(payout or 0):
+            return f"С этого пользователя будет снято <b>{taken}</b> кут. Вам — <b>{yours}</b>."
+        return f"С этого пользователя вы получите <b>{yours}</b> кут."
+    if kind == "shield":
+        return "С этого пользователя куты не перейдут: он под защитой."
+    if kind in {"broke", "dry"}:
+        return "С этого пользователя сейчас нечего взять."
+    if kind == "day":
+        return "С этого пользователя за сутки уже взяли максимум."
+    if kind == "calm":
+        return "Этого пользователя сейчас нельзя облить."
+    if kind == "unknown":
+        return "Этого пользователя нет в игре."
+    return ""
+
+
+def seek_ask_text(name: str, fee: int, left: int, take: str = "") -> str:
     who = html.escape(" ".join(str(name or "").split()) or "этого пользователя")
     pay = max(0, int(fee or 0))
-    shown = f"{pay:,}".replace(",", " ")
+    shown = _seek_money(pay)
     if pay > 0:
-        bill = f"За поиск по @username, id или имени придётся заплатить <b>{shown}</b> кут."
+        bill = f"За поиск пользователя нужно будет заплатить <b>{shown}</b> кут."
     else:
-        bill = "Поиск по @username, id или имени сейчас без платы."
+        bill = "За поиск пользователя плата не нужна."
+    loot = " ".join(str(take or "").split())
+    lines = [line for line in (loot, bill, f"На подобные облития у вас {seek_left_phrase(left)}.") if line]
     return (
         "<tg-emoji emoji-id='5222486447306602688'>🔫</tg-emoji> "
         f"<b>Вы можете облить {who}</b>\n"
-        f"<blockquote>{bill}\n"
-        f"На подобные облития у вас {seek_left_phrase(left)}.</blockquote>\n"
-        "<i>Дальше подтвердите облитие. Вода спишется только по кнопке «Облить».</i>"
+        "<blockquote>" + "\n".join(lines) + "</blockquote>\n"
+        "<i>Вода спишется только по кнопке «Облить».</i>"
     )
 
 

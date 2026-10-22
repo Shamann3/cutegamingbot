@@ -198,7 +198,7 @@ function RulesCard({ rules, groups, sample, busy, saved, onChange, onSample, onS
       <p className="water-pour water-cut" key={pistolLine}>{pistolLine}</p>
       <div className="water-seek">
         <h4 className="sec-title">Поиск без ответа</h4>
-        <p className="sec-subtitle">«Использовать 🔫 @username», id или имя. Плата уходит в выбранную группу. Ответ на сообщение этот лимит не тратит.</p>
+        <p className="sec-subtitle">«Использовать 🔫 @username», ссылка t.me, id или имя. В том же сообщении человек видит, сколько заберёт выстрел по правилам выше. Плата уходит в выбранную группу. Ответ на сообщение этот лимит не тратит.</p>
         <button
           type="button"
           role="switch"

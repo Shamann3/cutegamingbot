@@ -51,6 +51,7 @@ from water_games.design import (
     pistol_is_blocked,
     pistol_seek_query,
     seek_ask_text,
+    seek_loot_line,
     seek_yes_label,
     times_word,
     pour_bounds,
@@ -343,6 +344,8 @@ def test_seek_by_name_is_paid_and_counted_in_russian():
     assert pistol_seek_query("Использовать 🔫 @dominator_afk") == "@dominator_afk"
     assert pistol_seek_query("использовать 🔫 123456789") == "123456789"
     assert pistol_seek_query("Использовать 🔫 Иван Петров") == "Иван Петров"
+    assert pistol_seek_query("использовать 🔫 https://t.me/Stremlenue") == "@Stremlenue"
+    assert pistol_seek_query("Использовать 🔫 t.me/Stremlenue/3") == "@Stremlenue"
     assert pistol_seek_query("Использовать 🔫") == ""
     assert times_word(1) == "раз"
     assert times_word(2) == "раза"
@@ -350,10 +353,17 @@ def test_seek_by_name_is_paid_and_counted_in_russian():
     assert times_word(11) == "раз"
     assert times_word(21) == "раз"
     assert times_word(22) == "раза"
-    ask = seek_ask_text("Вася", 500, 3)
+    ask = seek_ask_text("Вася", 500, 3, seek_loot_line("hit", 80, 72))
     assert "Вы можете облить Вася" in ask
+    assert "За поиск пользователя нужно будет заплатить" in ask
+    assert "user_id" not in ask.lower()
+    assert "username" not in ask.lower()
+    assert "снято <b>80</b>" in ask
+    assert "Вам — <b>72</b>" in ask
     assert "500" in ask
     assert "осталось <b>3</b> раза" in ask
+    plain = seek_ask_text("Вася", 500, 2, seek_loot_line("hit", 40, 40))
+    assert "получите <b>40</b>" in plain
     one = seek_ask_text("Вася", 500, 1)
     assert "остался <b>1</b> раз" in one
     assert seek_yes_label(500) == "Согласиться | − 500 кут"
