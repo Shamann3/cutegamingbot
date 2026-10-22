@@ -1395,46 +1395,45 @@ async def pistoletik(db, user_id, message):
 
 
 async def freebonus(user_id, message):
-    user_id = message.from_user.id
+    """Предмет 🎁: тот же интерфейс, что у «бонус», но без победы в игре.
 
-    # Генерация кнопок бонуса
+    Возвращает True, если доска открылась — тогда предмет можно списать.
+    """
+    user = message.from_user
+    try:
+        from bot.funcs.flame import load_gift
+        from bot.db_create.db import db as _db
+        conf = await load_gift(_db)
+    except Exception as exc:
+        print(f"[FLAME][GIFT] load: {exc}")
+        conf = {"enabled": False}
 
+    if not conf.get("enabled"):
+        await message.reply(
+            "<tg-emoji emoji-id='5213181173026533794'>⚠️</tg-emoji> "
+            "<b>Подарочный бонус сейчас выключен создателем.</b>",
+            parse_mode="HTML",
+        )
+        return False
 
-
-
-
-    random.shuffle(emojisbonus)  # Перемешиваем список эмодзи
-    randomemoji = random.choice(emojisbonus)
-    randomtextfraza = random.choice(textfraza)
-
-    # Выбираем случайное количество кнопок от 15 до 25
-    num_buttons = random.randint(3, 10)
-
-
-    # Выбираем эмодзи
-    selected_emojis = emojisbonus [ :num_buttons ]   # Создаём кнопки с эмодзи
-    buttons = [ InlineKeyboardButton(text=emoji , callback_data=str(random.randint(1 , itembonusbet))) for emoji in
-                selected_emojis ]
-
-    # Разбиваем на ряды по 5 кнопок
-    keyboard_layout = [ buttons [ i:i + 5 ] for i in range(0 , len(buttons) , 5) ]
-
-    # Добавляем кнопку ✖️ в отдельном ряду
-    # keyboard_layout.append([ InlineKeyboardButton(text=" " , callback_data="9close_bonus", style="default" ,
-    #                 icon_custom_emoji_id="5226660202035554522") ])
-
-    # Создаём клавиатуру
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_layout)
-
-    # Отправка сообщения с кнопками бонуса
-
-    randomtextfraza = random.choice(textfraza)
-    send_message_bonus = await message.reply(
-        f"{randomtextfraza}" , parse_mode="HTML" , reply_markup=keyboard)
-
-    # Сохранение id сообщения, отправленного пользователю
-    message_id = send_message_bonus.message_id
-    user_freebonus_requests.setdefault(user_id , [ ]).append(message_id)
+    try:
+        from main import process_bonus_request
+        ok = await process_bonus_request(
+            user=user,
+            chat_id=message.chat.id,
+            reply_to=message,
+            from_gift_item=True,
+            gift_conf=conf,
+        )
+        return bool(ok)
+    except Exception as exc:
+        print(f"[FLAME][GIFT] open: {exc}")
+        await message.reply(
+            "<tg-emoji emoji-id='5213181173026533794'>⚠️</tg-emoji> "
+            "Не удалось открыть подарочный бонус. Попробуйте ещё раз.",
+            parse_mode="HTML",
+        )
+        return False
 
 
 

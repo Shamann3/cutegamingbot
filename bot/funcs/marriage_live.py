@@ -12,6 +12,9 @@ from types import SimpleNamespace
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.funcs import marriage_store as store
+
+# Система жива в коде и в панели. Игрокам её не показываем.
+SHOWN_TO_USERS = False
 from bot.funcs.marriage_design import (
     ALERT_BUSY,
     ALERT_CLOSED,
@@ -342,6 +345,8 @@ def _kb_roster(kind: str) -> InlineKeyboardMarkup:
 
 async def on_text(message) -> bool:
     """True — фраза брака уже отвечена, общее рп для неё не нужно."""
+    if not SHOWN_TO_USERS:
+        return False
     try:
         return await _on_text(message)
     except Exception as e:
@@ -350,6 +355,12 @@ async def on_text(message) -> bool:
 
 
 async def dispatch(query) -> None:
+    if not SHOWN_TO_USERS:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        return
     try:
         await _dispatch(query)
     except Exception as e:

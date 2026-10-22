@@ -2276,14 +2276,7 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   margin-top: 0.85rem;
 }
 
-/* Запас высоты, пока панель на телефоне в position:fixed. */
-.deck-actions-slot {
-  display: none;
-  width: 100%;
-  pointer-events: none;
-}
-
-/* На ПК sticky держит кнопки внизу окна прокрутки. */
+/* Кнопки в потоке страницы: sticky только прилипает к низу прокрутки и не закрывает текст. */
 .deck-actions.work-choice {
   position: sticky;
   bottom: 0.75rem;
@@ -2314,39 +2307,14 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   }
 }
 
-/*
-  Телефон: док fixed снизу. Sticky внутри колоды ненадёжен —
-  панель ответа тоже fixed, чуть выше дока (z-index ниже дока).
-*/
-html.is-phone .deck-actions-slot,
-html[data-viewport="phone"] .deck-actions-slot {
-  display: block;
-  min-height: 10.75rem;
-  margin-top: 0.65rem;
-}
-
-html.is-phone .deck-col:has(.deck-actions.has-extra) .deck-actions-slot,
-html[data-viewport="phone"] .deck-col:has(.deck-actions.has-extra) .deck-actions-slot,
-html.is-phone .pay-lens:has(.deck-actions.has-extra) .deck-actions-slot,
-html[data-viewport="phone"] .pay-lens:has(.deck-actions.has-extra) .deck-actions-slot {
-  min-height: 14.5rem;
-}
-
-html.is-phone .deck-col:has(.deck-actions.is-waiting) .deck-actions-slot,
-html[data-viewport="phone"] .deck-col:has(.deck-actions.is-waiting) .deck-actions-slot {
-  min-height: 12.25rem;
-}
-
 html.is-phone .deck-actions.work-choice,
 html[data-viewport="phone"] .deck-actions.work-choice {
-  position: fixed;
-  left: max(10px, env(safe-area-inset-left, 0px));
-  right: max(10px, env(safe-area-inset-right, 0px));
-  bottom: var(--deck-floor);
-  z-index: 70;
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 12;
   width: auto;
-  max-width: 34rem;
-  margin: 0 auto;
+  max-width: none;
+  margin-top: 0.65rem;
   padding: 0.5rem 0.4rem 0.45rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -2395,10 +2363,6 @@ html[data-viewport="phone"] .deck-actions.work-choice {
     font-size: 0.95rem !important;
   }
 
-  html.is-phone .deck-actions-slot,
-  html[data-viewport="phone"] .deck-actions-slot {
-    min-height: 8.75rem;
-  }
 }
 
 .work-choice .work-wrong {
@@ -2571,31 +2535,13 @@ html[data-viewport="phone"] .deck-keys-only {
   }
 }
 
-/*
-  Плашка «Вернуть» — всегда снизу:
-  над доком, и только при живых кнопках — чуть выше них.
-  Высоту кнопок пишет DeckActions в --deck-actions-h.
-*/
-:root {
-  --deck-floor: max(0.85rem, env(safe-area-inset-bottom, 0px));
-  --deck-actions-h: 0px;
-}
-
-html.is-phone,
-html[data-viewport="phone"] {
-  --deck-floor: calc(64px + env(safe-area-inset-bottom, 0px) + 10px);
-}
-
+/* Плашка «Вернуть» стоит под кнопками, в обычном потоке. */
 .deck-toast {
-  position: fixed;
-  z-index: 72;
-  left: max(12px, env(safe-area-inset-left, 0px));
-  right: max(12px, env(safe-area-inset-right, 0px));
-  /* Над доком; если есть кнопки ответа — ровно над ними. */
-  bottom: calc(var(--deck-floor, 1rem) + var(--deck-actions-h, 0px) + 0.5rem);
-  width: min(36rem, calc(100% - 24px));
+  position: relative;
+  z-index: 2;
+  width: 100%;
   max-width: 36rem;
-  margin: 0 auto;
+  margin: 0.7rem 0 0;
   padding: 0.7rem 0.85rem;
   display: flex;
   flex-wrap: wrap;

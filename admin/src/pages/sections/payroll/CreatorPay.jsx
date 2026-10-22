@@ -215,7 +215,6 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
 
   return (
     <div className="tinder-wrap">
-      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className="deck-copy">
         {waiting > 0 && (
           <div className="deck-count">
@@ -345,6 +344,7 @@ export function CreatorDeck({ sorterId = 0, focusName = '', onCount, onDecided }
           )}
         </div>
       )}
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
     </div>
   )
 }
@@ -509,7 +509,6 @@ export function CreatorSelf() {
 
   return (
     <div className="work-desk">
-      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className={`work-grid${card ? ' has-card' : ''}`}>
         <div className="work-head deck-copy">
           {waiting > 0 && (
@@ -561,6 +560,7 @@ export function CreatorSelf() {
           </div>
         )}
       </div>
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
     </div>
   )
 }

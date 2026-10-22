@@ -953,14 +953,17 @@ async def _profile_collect_state_for_render(
     # Счёт сообщений этой группы читается параллельно с профилем — без лишнего ожидания.
     pulse_task = asyncio.ensure_future(_profile_load_chat_pulse(db, chat_id, user_id))
     marriage_task = asyncio.ensure_future(_profile_load_marriage_line(db, user_id))
+    flame_task = asyncio.ensure_future(_profile_load_flame_line(db, user_id))
     try:
         bundle = await db.fetch_profile_render_bundle(user_id)
     except BaseException:
         pulse_task.cancel()
         marriage_task.cancel()
+        flame_task.cancel()
         raise
     chat_pulse = await pulse_task
     marriage_line = await marriage_task
+    flame_line = await flame_task
     if bundle:
         from bot.funcs.flag_book import country_title
         country_text = country_title(bundle.get("country_emoji", ""), bundle.get("flag_name", ""))
@@ -977,6 +980,7 @@ async def _profile_collect_state_for_render(
             "growth_fund_milestone": growth_fund_milestone,
             "chat_pulse": chat_pulse,
             "marriage_line": marriage_line,
+            "flame_line": flame_line,
         }
 
     async def _safe_db_call(fn, default=None, tag: str = "PROFILE-STATE"):
@@ -1071,8 +1075,18 @@ async def _profile_collect_state_for_render(
         "growth_fund_milestone": growth_fund_milestone,
         "chat_pulse": chat_pulse,
         "marriage_line": marriage_line,
+        "flame_line": flame_line,
         "is_banned": bool(is_banned),
     }
+
+
+async def _profile_load_flame_line(db, user_id: int) -> str:
+    """Огонёк над последней активностью. Выключен или нулевая серия — пустая строка."""
+    try:
+        from bot.funcs.flame import profile_html
+        return await profile_html(db, user_id)
+    except Exception:
+        return ""
 
 
 async def _profile_load_marriage_line(db, user_id: int) -> str:
@@ -1139,9 +1153,9 @@ def _profile_fund_and_pulse(
             )
         except Exception:
             pulse_html = ""
-    marriage_line = str(state.get("marriage_line") or "").strip()
-    if marriage_line:
-        pulse_html = (pulse_html + "\n" + marriage_line).strip() if pulse_html else marriage_line
+    flame_line = str(state.get("flame_line") or "").strip()
+    if flame_line:
+        pulse_html = (flame_line + "\n" + pulse_html).strip() if pulse_html else flame_line
     if pulse_html and fund_parts:
         return "\n".join(fund_parts) + "\n\n" + pulse_html + "\n"
     if pulse_html:

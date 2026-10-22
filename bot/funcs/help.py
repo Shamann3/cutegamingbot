@@ -788,7 +788,7 @@ async def help(message: Message):
     user_message_ffunc.save()
 
 
-    if message.text.lower() in [ "Хелп брак","хелп брак","брак хелп","брак хелп","Браки хелп","браки хелп","хелп браки","Хелп браки","Хелп/брак","хелп/брак","брак/хелп","брак/хелп","Браки/хелп","браки/хелп","хелп/браки","Хелп/браки","хелп отношения","отношения хелп","хелп/отношения","отношения/хелп"]:
+    if False and message.text.lower() in [ "Хелп брак","хелп брак","брак хелп","брак хелп","Браки хелп","браки хелп","хелп браки","Хелп браки","Хелп/брак","хелп/брак","брак/хелп","брак/хелп","Браки/хелп","браки/хелп","хелп/браки","Хелп/браки","хелп отношения","отношения хелп","хелп/отношения","отношения/хелп"]:
         user_id = message.from_user.id
         # Создаем кнопку "_" и клавиатуру
         button = InlineKeyboardButton(text=" " , callback_data="brak", style="default" ,
@@ -840,16 +840,8 @@ async def relations_help_callback(call: types.CallbackQuery):
         return
     try:
         await call.answer()
-        from bot.funcs.marriage_live import current_help_text
-        await call.message.edit_text(
-            text=await current_help_text(),
-            parse_mode="HTML",
-            disable_web_page_preview=True,
-            reply_markup=btn_help,
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
+    except TelegramBadRequest:
+        pass
 
 @dp.callback_query(lambda c: c.data.startswith('9help_editprofile'))
 async def qwehelp_editprofile(call: types.CallbackQuery):
@@ -1206,6 +1198,45 @@ async def calltewdxwback_main(call: types.CallbackQuery):
         if "message is not modified" in str(e):
             pass  # ack уже отправлен в начале обработчика - не дублируем answer()
         pass  # Игнорируем ошибку MessageNotModified
+
+
+@dp.callback_query(lambda c: c.data.startswith('9help_btnflame'))
+async def callback_help_flame_9(call: types.CallbackQuery):
+    from bot.db_create.db import db
+    from bot.funcs.flame import help_text
+    try:
+        await call.answer()
+        await call.message.edit_text(
+            text=await help_text(db),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_help9,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+
+
+@dp.callback_query(lambda c: c.data.startswith('help_btnflame'))
+async def callback_help_flame(call: types.CallbackQuery):
+    from bot.db_create.db import db
+    from bot.funcs.flame import help_text
+    user_id = call.from_user.id
+    message_id = call.message.message_id
+    try:
+        if not _help_owner_guard(user_id, message_id):
+            await _help_reject_intruder(call)
+            return
+        await call.answer()
+        await call.message.edit_text(
+            text=await help_text(db),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_help,
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
 
 
 @dp.callback_query(lambda c: c.data.startswith('9help_btnking'))

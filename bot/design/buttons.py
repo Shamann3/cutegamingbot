@@ -293,6 +293,7 @@ btn_help6 = InlineKeyboardButton(text="🛡 Кланы", callback_data="help_btn
 # btn_help9 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="help_btn9")
 btn_help10 = InlineKeyboardButton(text="Функции", callback_data="help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
 btn_helpking = InlineKeyboardButton(text="Царь статы", callback_data="help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
+btn_helpflame = InlineKeyboardButton(text="Огонёк сообщений", callback_data="help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
 
 btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_editprofile")
 
@@ -318,11 +319,11 @@ inline_keyboard = [
     [btn_helpcomm],
     [btn_help10],
     [btn_helpking],
+    [btn_helpflame],
     [btn_help2, btn_help3],
     [btn_help5],
     [btn_help_farm],
     [btn_help5123],
-    [btn_help_rel],
     #[btn_help4],
     # [btn_help6],  # Разкомментируйте, если нужно,
     [btn_help11]
@@ -352,6 +353,7 @@ btn_help69 = InlineKeyboardButton(text="🛡 Кланы", callback_data="9help_b
 # btn_help99 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="9help_btn9")
 btn_help109 = InlineKeyboardButton(text="Функции", callback_data="9help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
 btn_helpking9 = InlineKeyboardButton(text="Царь статы", callback_data="9help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
+btn_helpflame9 = InlineKeyboardButton(text="Огонёк сообщений", callback_data="9help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
 
 btn_help11119 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="9help_editprofile")
 btn_help5123123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
@@ -364,11 +366,11 @@ inline_keyboard = [
     [btn_helpcomm9],
     [btn_help109],
     [btn_helpking9],
+    [btn_helpflame9],
     [btn_help29, btn_help39],
     [btn_help59],
     [btn_help_farm],
     [btn_help5123123],
-    [btn_help_rel],
     #[btn_help49],
     # [btn_help69],  # Разкомментируйте, если нужно
     [btn_help119]
@@ -415,7 +417,6 @@ inline_keyboard = [
     [btn_market_inline],
     [btn_help_farm],
     [btn_help5123123123],
-    [btn_help_rel],
     #[btn_marriages_inline],
     [btn_hide_inline]
 ]
@@ -454,6 +455,7 @@ btn_balancegroup = InlineKeyboardButton(text="Баланс групп" , callbac
                 icon_custom_emoji_id="5425098093521571791")
 btn_topmarry = InlineKeyboardButton(text="🌷 Браки" , callback_data="marry1213")
 btn_close = InlineKeyboardButton(text="Скрыть" , callback_data="help_deletestate", style="default" ,icon_custom_emoji_id="5226660202035554522")
+btn_topflame = InlineKeyboardButton(text="Лучшие огоньки", callback_data="flametop", style="default", icon_custom_emoji_id="5354962501643578130")
 
 # Создание inline_keyboard
 inline_keyboard = [ [ btn_topcutes ] ,
@@ -464,6 +466,7 @@ inline_keyboard = [ [ btn_topcutes ] ,
                     [ btn_winsamount ] ,
                     [ btn_topstate ] ,
                     [ btn_invite ] ,
+                    [ btn_topflame ] ,
                     [ btn_close ] ]
 
 # Создание InlineKeyboardMarkup

@@ -12088,12 +12088,18 @@ def _is_valid_bns_callback(data: str) -> bool:
 # ХРАНИЛИЩЕ ВЛАДЕЛЬЦЕВ БОНУСНЫХ СООБЩЕНИЙ
 # ═════════════════════════════════════════════════════════════
 bonus_owner: Dict[int, int] = LazyGameStore("_bonus_owner")  # message_id -> user_id
+bonus_gift_mode: Dict[int, dict] = LazyGameStore("_bonus_gift_mode")  # message_id -> gift conf
 
 
-def set_bonus_owner(message_id: int, user_id: int) -> None:
+def set_bonus_owner(message_id: int, user_id: int, gift_conf: dict | None = None) -> None:
     """Запомнить, что сообщение с bonus_message принадлежит user_id."""
-    bonus_owner[int(message_id)] = int(user_id)
-    _log(f"[OWNER] set owner msg_id={message_id} user_id={user_id}")
+    mid = int(message_id)
+    bonus_owner[mid] = int(user_id)
+    if gift_conf:
+        bonus_gift_mode[mid] = dict(gift_conf)
+    else:
+        bonus_gift_mode.pop(mid, None)
+    _log(f"[OWNER] set owner msg_id={message_id} user_id={user_id} gift={bool(gift_conf)}")
 
 
 def check_bonus_owner(callback: CallbackQuery) -> bool:
@@ -12113,7 +12119,9 @@ def check_bonus_owner(callback: CallbackQuery) -> bool:
 
 
 def remove_bonus_owner(message_id: int) -> None:
-    bonus_owner.pop(int(message_id), None)
+    mid = int(message_id)
+    bonus_owner.pop(mid, None)
+    bonus_gift_mode.pop(mid, None)
     _log(f"[OWNER] removed owner msg_id={message_id}")
 
 
@@ -12271,8 +12279,23 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
 
         next_open_ts_num = bns_to_unix_ts(next_open_ts)
 
-        # Кулдаун активен → таймер
-        if last_bonus_open is not None and next_open_ts_num is not None and now_ts < float(next_open_ts_num):
+        gift_board = bool(bonus_gift_mode.get(int(message_id)))
+        flame_pass = False
+        on_bonus_cooldown = (
+            not gift_board
+            and last_bonus_open is not None
+            and next_open_ts_num is not None
+            and now_ts < float(next_open_ts_num)
+        )
+        if on_bonus_cooldown:
+            try:
+                from bot.funcs.flame import has_bonus_token
+                flame_pass = await has_bonus_token(db, user_id)
+            except Exception:
+                flame_pass = False
+
+        # Кулдаун активен → таймер. Подарок огонька / предмет 🎁 пропускают ожидание.
+        if on_bonus_cooldown and not flame_pass:
             _bonus_requests[(user_id, message_id)] = True
             rem_sec = int(float(next_open_ts_num) - now_ts)
             h, rem = divmod(rem_sec, 3600)
@@ -12345,7 +12368,7 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         # Кулдауна нет → начисляем бонус
         _bonus_requests[(user_id, message_id)] = True
 
-        if last_bonus_open is None or next_open_ts_num is None:
+        if not gift_board and (last_bonus_open is None or next_open_ts_num is None):
             next_open_ts_num = now_ts + float(timebonus)
             try:
                 await db.add_bonus(
@@ -12365,14 +12388,14 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             await callback_query.answer("💭 Ошибка данных бонуса.", show_alert=True)
             return
 
-        # ×2 проверка
+        # ×2 проверка (предмет 🎁 уже заложил умножение в сумму клетки)
         premium_ok = has_premium(callback_query.from_user)
         try:
             bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
         except Exception:
             bio_ok = False
         ref_count, ref_ok = await _get_ref_progress(user_id)
-        has_full_x2 = premium_ok and bio_ok and ref_ok
+        has_full_x2 = (not gift_board) and premium_ok and bio_ok and ref_ok
 
         if has_full_x2:
             bonus_amount *= 2
@@ -12383,15 +12406,72 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         try:
             balance = await db.get_user_balance(user_id)
             await db.update_user_balance(user_id, balance + bonus_amount)
-            await db.cutehistory_plus(user_id, bonus_amount, "бонус")
+            await db.cutehistory_plus(user_id, bonus_amount, "🎁 бонус" if gift_board else "бонус")
             await db.add_bonusbet(user_id, new_first_name, bonus_amount, chat_id, chat_name, now_dt)
+            if flame_pass:
+                try:
+                    from bot.funcs.flame import take_bonus_token
+                    gift = await take_bonus_token(db, user_id)
+                except Exception:
+                    gift = ""
+                if gift == "x2" and not has_full_x2:
+                    try:
+                        balance = await db.get_user_balance(user_id)
+                        await db.update_user_balance(user_id, balance + bonus_amount)
+                        await db.cutehistory_plus(user_id, bonus_amount, "огонёк ×2")
+                        bonus_amount *= 2
+                        has_full_x2 = True
+                        formatted_bonus_amount = "{:,.0f}".format(bonus_amount)
+                    except Exception as extra_err:
+                        bns_dbg(f"[БОНУС][FLAME][ERROR] {type(extra_err).__name__}: {extra_err}")
             await callback_query.answer(f"✅ Бонус: {formatted_bonus_amount} кут", show_alert=False)
         except Exception as e:
             bns_dbg(f"[БОНУС][CREDIT][ERROR] {type(e).__name__}: {e}")
             await callback_query.answer("⚠️ Бонус обработан, но запись баланса временно недоступна.", show_alert=True)
 
-        # Предмет при ×2
-        if has_full_x2:
+        # Предмет при ×2 / доп. дроп с подарочного 🎁
+        gift_conf_now = bonus_gift_mode.get(int(message_id)) or {}
+        if gift_conf_now:
+            try:
+                from bot.funcs.flame import gift_extra, note_gift_loot
+                extra = gift_extra(gift_conf_now)
+                if extra and extra.get("kind") == "item" and extra.get("item_name"):
+                    item_name = extra["item_name"]
+                    item_emoji = await db.find_emoji_by_item_name(item_name)
+                    await db.set_items(user_id, item_name, 1)
+                    await note_gift_loot(db, user_id, "item", 1, item_name, item_name)
+                    item_text = (
+                        f"<tg-emoji emoji-id='5787166284705699232'>🎁</tg-emoji> | "
+                        f"<b>+<code>{item_emoji}</code> {item_name}</b>"
+                    )
+                    try:
+                        await message.reply(item_text, parse_mode="HTML")
+                    except Exception:
+                        pass
+                elif extra and extra.get("kind") == "kuty":
+                    add = int(extra.get("amount") or 0)
+                    if add > 0:
+                        bal2 = await db.get_user_balance(user_id)
+                        await db.update_user_balance(user_id, int(bal2 or 0) + add)
+                        await db.cutehistory_plus(user_id, add, "🎁 бонус")
+                        await note_gift_loot(db, user_id, "kuty", add, "", f"{add} кут")
+                        try:
+                            await message.reply(
+                                f"<tg-emoji emoji-id='5787166284705699232'>🎁</tg-emoji> | "
+                                f"<b>+{add} кут</b>",
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+                try:
+                    await note_gift_loot(
+                        db, user_id, "kuty", int(bonus_amount), "", f"{int(bonus_amount)} кут"
+                    )
+                except Exception:
+                    pass
+            except Exception as e:
+                bns_dbg(f"[БОНУС][GIFT][ERROR] {type(e).__name__}: {e}")
+        elif has_full_x2:
             try:
                 item_name = await db.get_random_bonus_gift_item_by_chance()
                 if item_name:
@@ -12521,7 +12601,12 @@ def _extract_emoji_id123(emoji_text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def bonus_board_keyboard(emojis: List[str], multiplier: int, show_x2_hint: bool = False) -> InlineKeyboardMarkup:
+def bonus_board_keyboard(
+    emojis: List[str],
+    multiplier: int,
+    show_x2_hint: bool = False,
+    gift_conf: dict | None = None,
+) -> InlineKeyboardMarkup:
     """Создаёт клавиатуру с премиум-эмодзи (кастомными иконками) для игрового поля."""
     buttons = []
     for emoji in emojis:
@@ -12532,7 +12617,15 @@ def bonus_board_keyboard(emojis: List[str], multiplier: int, show_x2_hint: bool 
             else:
                 emoji_id = None
 
-        callback_data = f"{_random_stake()}_+"
+        if gift_conf:
+            try:
+                from bot.funcs.flame import gift_stake
+                stake = int(gift_stake(gift_conf)) * max(1, int(multiplier or 1))
+            except Exception:
+                stake = _random_stake() * max(1, int(multiplier or 1))
+            callback_data = f"{stake}_+"
+        else:
+            callback_data = f"{_random_stake()}_+"
 
         if emoji_id:
             button = InlineKeyboardButton(
@@ -12827,16 +12920,22 @@ async def process_bonus_request(
     reply_to: Optional[types.Message] = None,
     require_x2: bool = False,
     edit_message: Optional[types.Message] = None,
+    *,
+    from_gift_item: bool = False,
+    gift_conf: Optional[dict] = None,
 ):
     user_id = user.id
     premium = has_premium(user)
     bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
     ref_count, ref_ok = await _get_ref_progress(user_id)
-    _log(f"process_bonus user={user_id}, require_x2={require_x2}, premium={premium}, bio={bio_ok}, refs={ref_count}")
+    _log(
+        f"process_bonus user={user_id}, require_x2={require_x2}, premium={premium}, "
+        f"bio={bio_ok}, refs={ref_count}, gift={from_gift_item}"
+    )
 
-    if not enabled_bonus:
+    if not enabled_bonus and not from_gift_item:
         await bot1.send_message(chat_id, "🍓 <b>Бонусы временно отключены</b>", parse_mode="HTML")
-        return
+        return False
 
     if len(emojisbonus) >= 9:
         selected_emojis = emojisbonus[:9]
@@ -12845,45 +12944,78 @@ async def process_bonus_request(
         while len(selected_emojis) < 9:
             selected_emojis.append(random.choice(emojisbonus))
 
-    # 1. Приписка (через единую _has_family_tag)
+    # 1. Приписка Cute — нужна и обычному бонусу, и предмету 🎁
     if not _has_family_tag(user):
-        await _show_no_family_tag(user_id, chat_id, reply_to, edit_message)
-        return
-
-    # 2. Победа
-    if not await _check_game_win(user_id):
-        await _show_no_win(user_id, chat_id, reply_to, edit_message)
-        return
-
-    # 3. Кулдаун
-    last_open, next_open = await db.get_bonus_times(user_id)
-    if last_open and next_open:
-        if isinstance(next_open, datetime):
-            next_dt = next_open
-        elif isinstance(next_open, str):
+        if from_gift_item:
+            shown = html.escape((user.first_name or "имя").strip() or "имя")
+            text = (
+                "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
+                "<b>Чтобы открыть 🎁, в имени должно быть слово Cute</b>\n"
+                f"Сейчас имя: <b>{shown}</b>\n"
+                "Например: <code>Имя Cute</code>\n"
+                "Предмет остался у вас. Когда имя готово — снова напишите «использовать 🎁»."
+            )
             try:
-                next_dt = datetime.strptime(next_open, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                next_dt = datetime.fromisoformat(next_open)
-        else:
-            next_dt = datetime.fromisoformat(str(next_open))
+                await bot1.send_message(
+                    chat_id,
+                    text,
+                    parse_mode="HTML",
+                    reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
+                )
+            except Exception:
+                await bot1.send_message(chat_id, text, parse_mode="HTML")
+            return False
+        await _show_no_family_tag(user_id, chat_id, reply_to, edit_message)
+        return False
 
-        if await _check_cooldown(user_id, next_dt):
-            await _show_cooldown_timer(user_id, next_dt, chat_id, reply_to, edit_message)
-            return
+    # 2. Победа в игре — только для обычного бонуса
+    if not from_gift_item and not await _check_game_win(user_id):
+        await _show_no_win(user_id, chat_id, reply_to, edit_message)
+        return False
 
-    # 4. Логика ×2
-    can_x2 = premium and bio_ok and ref_ok
+    # 3. Кулдаун — предмет 🎁 открывается сразу
+    if not from_gift_item:
+        last_open, next_open = await db.get_bonus_times(user_id)
+        if last_open and next_open:
+            if isinstance(next_open, datetime):
+                next_dt = next_open
+            elif isinstance(next_open, str):
+                try:
+                    next_dt = datetime.strptime(next_open, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    next_dt = datetime.fromisoformat(next_open)
+            else:
+                next_dt = datetime.fromisoformat(str(next_open))
 
-    if require_x2:
-        if not can_x2:
-            await _show_x2_requirements(user, edit_message, chat_id, reply_to)
-            return
-        multiplier = 2
-        bonus_label = "2×"
+            if await _check_cooldown(user_id, next_dt):
+                flame_pass = False
+                try:
+                    from bot.funcs.flame import has_bonus_token
+                    flame_pass = await has_bonus_token(db, user_id)
+                except Exception:
+                    flame_pass = False
+                if not flame_pass:
+                    await _show_cooldown_timer(user_id, next_dt, chat_id, reply_to, edit_message)
+                    return False
+
+    # 4. Умножение
+    gift = gift_conf or {}
+    if from_gift_item:
+        multiplier = max(1, int(gift.get("mult") or 1))
+        bonus_label = f"Подарочный ×{multiplier}" if multiplier > 1 else "Подарочный"
         show_hint = False
+        kuty_lo = max(1, int(gift.get("kuty_min") or 1)) * multiplier
+        kuty_hi = max(kuty_lo, int(gift.get("kuty_max") or kuty_lo) * multiplier)
     else:
-        if can_x2:
+        can_x2 = premium and bio_ok and ref_ok
+        if require_x2:
+            if not can_x2:
+                await _show_x2_requirements(user, edit_message, chat_id, reply_to)
+                return False
+            multiplier = 2
+            bonus_label = "2×"
+            show_hint = False
+        elif can_x2:
             multiplier = 2
             bonus_label = "2×"
             show_hint = False
@@ -12891,26 +13023,49 @@ async def process_bonus_request(
             multiplier = 1
             bonus_label = "Ежедневный"
             show_hint = True
+        kuty_lo = 1 * multiplier
+        kuty_hi = 3 * multiplier
 
     # 5. Открытие доски
     random.shuffle(selected_emojis)
-    board = bonus_board_keyboard(selected_emojis, multiplier, show_x2_hint=show_hint)
+    board = bonus_board_keyboard(
+        selected_emojis,
+        multiplier,
+        show_x2_hint=show_hint and not from_gift_item,
+        gift_conf=gift if from_gift_item else None,
+    )
     header = (
         f"<b>🎁 {bonus_label} бонус</b>\n"
-        f"×{multiplier} | +{1 * multiplier}…{3 * multiplier} кут\n"
+        f"×{multiplier} | +{kuty_lo}…{kuty_hi} кут\n"
     )
-    if multiplier == 1:
+    if from_gift_item:
+        header += (
+            "Нажмите любую клетку — куты придут сразу.\n"
+            "Победа в игре не нужна. Слово Cute в имени уже есть.\n"
+            "Если выпадет ещё награда, она придёт отдельным сообщением."
+        )
+    elif multiplier == 1:
         header += "<i>Нажмите 🔥 ×2 Бонус, чтобы удвоить</i>"
     full_text = f"{header}\n{random.choice(textfraza)}"
+    board_text = full_text if from_gift_item else "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>"
 
     if edit_message:
-        await edit_message.delete()
-    msg = await bot1.send_message(chat_id, "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>",
-                                  reply_markup=board, parse_mode="HTML")
-    bns_add_request(user_id, msg.message_id, reason=f"bonus_board_x{multiplier}")
-    set_bonus_owner(msg.message_id, user_id)
+        try:
+            await edit_message.delete()
+        except Exception:
+            pass
+    msg = await bot1.send_message(
+        chat_id,
+        board_text,
+        reply_markup=board,
+        parse_mode="HTML",
+        reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
+    )
+    bns_add_request(user_id, msg.message_id, reason=f"bonus_board_x{multiplier}{'gift' if from_gift_item else ''}")
+    set_bonus_owner(msg.message_id, user_id, gift if from_gift_item else None)
     if BONUS_DEBUG:
         bns_dump_user(user_id)
+    return True
 
 
 # ─────────────────────────────────────────────────────────────
@@ -38427,7 +38582,7 @@ async def add_firstname_to_usercheck_balance(message: Message):
             await task1
 
         marrytext = {'поженится','пожениться','свадьба','сделать предложение',"развод" , "Развод","развестись","разорвать отношения","разорвать брак" , 'Инфо' , 'инфо' , 'Брак' , 'брак' , "Мой брак" , 'мой брак'}
-        if any(text_lower.startswith(keyword) for keyword in marrytext):
+        if False and any(text_lower.startswith(keyword) for keyword in marrytext):
             from bot.funcs.marriage import cmd_start , my_marriage_info
 
             # Создаем асинхронные задачи для обработки команд
@@ -40872,6 +41027,12 @@ async def botmain():
             print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
 
         try:
+            from bot.funcs.flame import start_flame_worker
+            start_flame_worker(db)
+        except Exception as e:
+            print(f"[FLAME][WARN] worker start: {type(e).__name__}: {e}")
+
+        try:
             from bot.runtime.nika.worker import start_nika_worker
             start_nika_worker(db, bot1)
         except Exception as e:
@@ -40944,6 +41105,11 @@ async def botmain():
                 )
             except Exception as e:
                 print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
+            try:
+                from bot.funcs.flame import start_flame_worker
+                start_flame_worker(db)
+            except Exception as e:
+                print(f"[FLAME][WARN] worker start: {type(e).__name__}: {e}")
             try:
                 from bot.runtime.nika.worker import start_nika_worker
                 start_nika_worker(db, bot1)

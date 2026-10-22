@@ -1,0 +1,332 @@
+.flame-page {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 48rem);
+  min-width: 0;
+}
+
+.flame-hero {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.flame-hero h2 {
+  margin: 0 0 6px;
+}
+
+.flame-hero p,
+.flame-note,
+.flame-empty {
+  margin: 0;
+  color: var(--e-text-2, #c4c4c8);
+  line-height: 1.45;
+}
+
+.flame-orb {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 62%, #fff6d8 0 18%, #ffb020 28%, #ff5a1f 58%, transparent 70%);
+  filter: drop-shadow(0 0 12px rgba(255, 120, 40, 0.55));
+  animation: flame-breathe 2.4s ease-in-out infinite;
+}
+
+.flame-error {
+  margin: 0;
+  color: #ffb4b4;
+}
+
+.flame-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.flame-stats article,
+.flame-card,
+.flame-preview {
+  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--e-plate, #17171b);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.flame-stats strong {
+  display: block;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.flame-stats span {
+  color: var(--e-text-2, #c4c4c8);
+  font-size: 0.86rem;
+}
+
+.flame-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flame-tab {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.flame-tab.is-on {
+  border-color: rgba(255, 140, 40, 0.55);
+  background: linear-gradient(180deg, rgba(255, 140, 40, 0.22), rgba(255, 80, 20, 0.12));
+  box-shadow: 0 0 0 1px rgba(255, 140, 40, 0.12);
+}
+
+.flame-card {
+  display: grid;
+  gap: 12px;
+}
+
+.flame-card h3,
+.flame-preview h4 {
+  margin: 0;
+}
+
+.flame-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.flame-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.flame-field,
+.flame-rows label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.flame-field span,
+.flame-rows label span {
+  font-size: 0.78rem;
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.flame-field input,
+.flame-rows input,
+.flame-rows select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  padding: 0 12px;
+}
+
+.flame-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.flame-rows {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flame-rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.flame-rows.is-reward li,
+.flame-rows.is-warm li,
+.flame-rows.is-gift li {
+  grid-template-columns: minmax(4.5rem, 0.7fr) minmax(0, 1.2fr) minmax(4.5rem, 0.7fr) auto;
+}
+
+.flame-rows.is-title li {
+  grid-template-columns: minmax(4.5rem, 0.6fr) minmax(0, 1.4fr) auto;
+}
+
+.flame-rows .is-wide {
+  grid-column: 1 / -2;
+}
+
+.flame-drop {
+  min-height: 44px !important;
+}
+
+.flame-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flame-actions > .sec-btn,
+.flame-card > .sec-btn {
+  justify-self: start;
+  min-height: 44px;
+}
+
+.flame-people,
+.flame-loot,
+.flame-preview-items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flame-people {
+  padding-left: 1.2rem;
+  list-style: decimal;
+}
+
+.flame-people li,
+.flame-loot li,
+.flame-preview-items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.flame-loot li {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.flame-loot li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.flame-loot span,
+.flame-people span,
+.flame-preview-items span,
+.flame-preview article span {
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.flame-loot em {
+  font-style: normal;
+  text-align: right;
+  color: #ffd7a8;
+}
+
+.flame-preview {
+  display: grid;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(255, 140, 40, 0.16), transparent 45%),
+    var(--e-plate, #17171b);
+}
+
+.flame-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.flame-preview-grid article {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.flame-preview-grid strong {
+  display: block;
+  font-size: 1.25rem;
+}
+
+.flame-rise {
+  animation: flame-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes flame-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes flame-rise {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 720px) {
+  .flame-stats,
+  .flame-grid-2,
+  .flame-preview-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .flame-rows li,
+  .flame-rows.is-reward li,
+  .flame-rows.is-warm li,
+  .flame-rows.is-gift li,
+  .flame-rows.is-title li {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .flame-drop,
+  .flame-rows .is-wide {
+    grid-column: 1 / -1;
+  }
+
+  .flame-card > .sec-btn,
+  .flame-card-head .sec-btn,
+  .flame-actions > .sec-btn {
+    width: 100%;
+  }
+
+  .flame-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flame-tab {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .flame-stats,
+  .flame-preview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flame-orb,
+  .flame-rise {
+    animation: none;
+  }
+}

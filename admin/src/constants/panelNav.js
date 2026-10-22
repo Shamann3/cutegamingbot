@@ -55,6 +55,11 @@ export const PANEL_SECTIONS = [
     blurb: 'Создание и контроль розыгрышей призов для игроков.',
   },
   {
+    id: 'flame', label: 'Flame', labelRu: 'Огонёк', group: 'content',
+    ownerOnly: true, creatorOnly: true,
+    blurb: 'Серия сообщений в официальных группах: норма, рост нормы и награды за дни. Только создатель.',
+  },
+  {
     id: 'tiktok', label: 'TikTok', labelRu: 'TikTok', group: 'content',
     blurb: 'Очередь скринов и видео: копии, просмотры, начисление кут.',
   },
@@ -183,6 +188,7 @@ export const SECTION_HINTS = {
   farm: 'Грядки и рост',
   content: 'Предметы и крафт',
   giveaways: 'Розыгрыши призов',
+  flame: 'Огонёк сообщений: норма и награды',
   tiktok: 'Проверка видео и начисление',
   botQuests: 'Задания в Telegram',
   groupBalanceLevel: 'Уровни баланса группы',

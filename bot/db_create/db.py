@@ -21203,6 +21203,11 @@ class Database:
                             int(cid), int(cnt),
                         )
             _vdbg(f"[MSG_COUNTER][FLUSH][OK] users={len(user_items)} chats={len(chat_items)}")
+            try:
+                from bot.funcs.flame import note_flushed
+                asyncio.get_running_loop().create_task(note_flushed(self, list(user_items)))
+            except Exception as flame_err:
+                _vdbg(f"[FLAME][FLUSH][WARN] {type(flame_err).__name__}: {flame_err}")
         except Exception as e:
             # Возвращаем дельты обратно в буфер, чтобы не потерять счётчики.
             for key, cnt in user_snapshot.items():

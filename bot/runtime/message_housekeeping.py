@@ -273,10 +273,23 @@ def schedule_message_housekeeping(db, message: Any, *, start_balance: int, bot) 
 
     # Засчитываем только «содержательные» сообщения от MESSAGE_MIN_WORDS слов.
     # Короткие односложные («привет») и команды/игровые триггеры в статистику не идут.
-    if (
+    # Огонёк дополнительно режет копипаст подряд и может поднять порог слов.
+    counts = (
         _message_word_count(message) >= _min_words_for_count()
         and not _is_bot_related_or_game_trigger(message)
-    ):
+    )
+    if counts:
+        try:
+            from bot.funcs.flame import filter_counts
+            counts = filter_counts(db, message, min_words_fallback=_min_words_for_count())
+        except Exception:
+            pass
+    if counts:
         db.record_message(user_id, chat_id)
+        try:
+            from bot.funcs.flame import note_live_message
+            asyncio.create_task(note_live_message(db, user_id, chat_id))
+        except Exception:
+            pass
 
     asyncio.create_task(_light_user_chat_touch(db, message, start_balance, bot))

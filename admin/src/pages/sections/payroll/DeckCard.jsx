@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import PhotoLook from '../../../components/PhotoLook'
 import { loadTgPhotoUrl } from '../../../components/TgPhoto'
 import { fetchDeedPulse, getAdminToken, isPanelPreviewMode } from '../../../lib/adminClient'
@@ -334,10 +333,10 @@ export function useToastInView() {
   return useRef(null)
 }
 
-/** Плашка «Вернуть» в body — иначе fixed ломается от transform/backdrop у колоды. */
+/** Плашка «Вернуть» сразу под кнопками, в потоке страницы. */
 export function DeckFlash({ flash, locked = false, onUndo }) {
-  if (!flash || typeof document === 'undefined') return null
-  return createPortal(
+  if (!flash) return null
+  return (
     <p key={flash.key} className="deed-flash deck-toast" role="status">
       <span>{flash.text}</span>
       {flash.undoId ? (
@@ -350,8 +349,7 @@ export function DeckFlash({ flash, locked = false, onUndo }) {
           Вернуть
         </button>
       ) : null}
-    </p>,
-    document.body,
+    </p>
   )
 }
 
@@ -365,29 +363,10 @@ export function DeckActions({
   extra = null,
 }) {
   const barRef = useRef(null)
-  const slotRef = useRef(null)
 
   useEffect(() => {
     const bar = barRef.current
-    const slot = slotRef.current
     if (!bar) return undefined
-    const root = document.documentElement
-
-    const syncFloor = () => {
-      const height = Math.ceil(bar.getBoundingClientRect().height)
-      if (height > 0) {
-        if (slot) slot.style.minHeight = `${height}px`
-        root.style.setProperty('--deck-actions-h', `${height}px`)
-      }
-    }
-
-    syncFloor()
-    let ro = null
-    if (typeof ResizeObserver === 'function') {
-      ro = new ResizeObserver(syncFloor)
-      ro.observe(bar)
-    }
-
     const quiet = motionQuiet()
     const timer = window.setTimeout(() => {
       try {
@@ -400,12 +379,7 @@ export function DeckActions({
         /* старый webview */
       }
     }, 80)
-
-    return () => {
-      window.clearTimeout(timer)
-      ro?.disconnect()
-      root.style.removeProperty('--deck-actions-h')
-    }
+    return () => window.clearTimeout(timer)
   }, [waiting, choices, extra])
 
   if (!choices.length) return null
@@ -418,14 +392,12 @@ export function DeckActions({
   ].filter(Boolean).join(' ')
 
   return (
-    <>
-      <div ref={slotRef} className="deck-actions-slot" aria-hidden="true" />
-      <div
-        ref={barRef}
-        className={classes}
-        role="group"
-        aria-label="Ответ по наказанию"
-      >
+    <div
+      ref={barRef}
+      className={classes}
+      role="group"
+      aria-label="Ответ по наказанию"
+    >
         {waiting && waitHint ? (
           <p className="deck-actions-wait" role="status">{waitHint}</p>
         ) : null}
@@ -448,8 +420,7 @@ export function DeckActions({
           </button>
         ))}
         {extra}
-      </div>
-    </>
+    </div>
   )
 }
 

@@ -2894,8 +2894,12 @@ async def shop_op(message: Message):
         print(f"Информация о предмете: {item_info}")
 
         try:
+            from bot.funcs.marriage_live import SHOWN_TO_USERS as _marriages_shown
+        except Exception:
+            _marriages_shown = True
+        try:
             from bot.funcs.marriage_design import place_hint
-            hint = place_hint(item_info.get("name1"))
+            hint = place_hint(item_info.get("name1")) if _marriages_shown else None
         except Exception:
             hint = None
         if hint:
@@ -2911,6 +2915,12 @@ async def shop_op(message: Message):
 
         dish_code = str(item_info.get("name1") or "")
         if dish_code in ("mrgjuice", "mrgsoup", "mrgsalad"):
+            if not _marriages_shown:
+                await message.reply(
+                    "<tg-emoji emoji-id='5226660202035554522'>✖️</tg-emoji> <b>Этот предмет сейчас нельзя использовать</b>",
+                    parse_mode="HTML",
+                )
+                return
             await _serve_dish(message, user_id, dish_code, item_emoji)
             return
 
@@ -2941,6 +2951,12 @@ async def shop_op(message: Message):
         # Обработка использования предмета
         second_name = item_info [ 'name1' ]
         print(f"Второе название предмета: {second_name}")
+        gift_face = str(item_info.get("emoji") or item_emoji or "")
+        if "🎁" in gift_face or "freebonus" in str(second_name) or str(second_name).strip() == "BonusPlus":
+            opened = await freebonus(user_id, message)
+            if opened:
+                await db.delete_user_inventory1(user_id, item_name)
+            return
         if str(second_name).strip() == "Russian":
             from bot.funcs.flag_book import normalize_flag
             catalog_emoji = normalize_flag(item_info.get("emoji") or "") or item_emoji
@@ -3455,8 +3471,9 @@ async def shop_op(message: Message):
             await hui(user_id , message)
             #await db.delete_user_inventory1(user_id , item_name)
         elif "freebonus" in str(second_name):
-            await freebonus(user_id , message)
-            #await db.delete_user_inventory1(user_id , item_name)
+            opened = await freebonus(user_id , message)
+            if opened:
+                await db.delete_user_inventory1(user_id , item_name)
         elif "ringtggift" in str(second_name):
             await ringtggift(user_id , message)
             #await db.delete_user_inventory1(user_id , item_name)

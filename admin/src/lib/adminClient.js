@@ -592,6 +592,34 @@ export async function fetchCaseBoard() {
   return adminRequest('/cases')
 }
 
+export async function fetchFlame() {
+  return adminRequest('/flame')
+}
+
+export async function saveFlameSettings(body) {
+  return adminRequest('/flame/settings', { method: 'POST', body })
+}
+
+export async function saveFlameSteps(body) {
+  return adminRequest('/flame/steps', { method: 'POST', body })
+}
+
+export async function saveFlameRewards(body) {
+  return adminRequest('/flame/rewards', { method: 'POST', body })
+}
+
+export async function saveFlameTitles(body) {
+  return adminRequest('/flame/titles', { method: 'POST', body })
+}
+
+export async function saveFlameWarmRewards(body) {
+  return adminRequest('/flame/warm-rewards', { method: 'POST', body })
+}
+
+export async function saveFlameGiftDrops(body) {
+  return adminRequest('/flame/gift-drops', { method: 'POST', body })
+}
+
 export async function saveCaseRules(rules) {
   return adminRequest('/cases/rules', {
     method: 'POST',

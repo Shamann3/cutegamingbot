@@ -222,6 +222,23 @@ def _top_save_store(store , store_name: str):
     except Exception as e:
         top_debug_print(f"❌ [ТОП] Ошибка {store_name}.save(): {e}")
 @dp.message()
+@dp.callback_query(lambda c: c.data == "flametop")
+async def callback_flame_top(call: types.CallbackQuery):
+    from bot.db_create.db import db
+    from bot.funcs.flame import top_text
+    from bot.design.buttons import btn_backtop123
+    try:
+        await call.answer()
+        await call.message.edit_text(
+            text=await top_text(db),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=btn_backtop123,
+        )
+    except Exception:
+        await call.answer("Не удалось открыть огоньки", show_alert=True)
+
+
 async def top(message: Message):
     from bot.design.buttons import btn_top
 

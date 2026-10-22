@@ -87,7 +87,7 @@ CALLBACK_MODULES: Tuple[str, ...] = (
     'server.admin_bot',
 )
 
-# prefix -> (module, handler): 398
+# prefix -> (module, handler): 400
 PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'ajdfiasjoaskdokasdqwqkpфыафывйц': ('main', 'send_styles'),
     'callbroulletanswermultiplier': ('bot.games.Fortuna', 'fortuna_multiplier_info'),
@@ -210,6 +210,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     '123refprofile1': ('bot.funcs.reklama', 'process_callback_kb1btn1'),
     '1tic_tac_join:': ('bot.design.inlinetictac2', 'inline_tic_tac_join_game_callback'),
     '9back_to_menu1': ('main', 'handle_back_to_menu'),
+    '9help_btnflame': ('bot.funcs.help', 'callback_help_flame_9'),
     'ach_grant_off:': ('main', 'achievements_callbacks'),
     'back_to_stars_': ('main', 'back_to_stars_handler'),
     'back_to_x2_req': ('main', 'back_to_x2_requirements_handler'),
@@ -249,6 +250,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'finish_battle': ('bot.buisnesses.clan_filter', 'process_finish_battle'),
     'gift_confirm|': ('main', 'gift_confirm_callback'),
     'help_btnadmin': ('bot.funcs.help', 'admin_help_callback'),
+    'help_btnflame': ('bot.funcs.help', 'callback_help_flame'),
     'helpstarthelp': ('main', 'callback_top'),
     'induel_create': ('bot.design.induel', 'induel_create_game_callback'),
     'inlinechange:': ('bot.design.schahinline', 'change_piece_callback'),
@@ -489,7 +491,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'wh:': ('bot.funcs.Shep', 'open_whisper_button'),
 }
 
-# exact callback_data -> (module, handler): 181
+# exact callback_data -> (module, handler): 182
 EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     '1st6': ('bot.funcs.BlackGack', 'range_callback'),
     '1to9': ('bot.funcs.BlackGack', 'range_callback'),
@@ -559,6 +561,7 @@ EXACT_HANDLERS: Dict[str, Tuple[str, str]] = {
     'deletehistorymoneybuttons': ('bot.funcs.history', 'process_buy_callback'),
     'deletehistorymoneybuttons1': ('bot.funcs.history', 'process_buy_callback'),
     'donesub': ('main', 'sub_channel_done'),
+    'flametop': ('bot.funcs.top', 'callback_flame_top'),
     'fullstate123': ('bot.funcs.top', 'cb_stats_all'),
     'gbl_cap_status': ('bot.handlers.chatbalance', 'gbl_cap_status'),
     'gbl_more_close': ('bot.handlers.chatbalance', 'gbl_more_close_handler'),

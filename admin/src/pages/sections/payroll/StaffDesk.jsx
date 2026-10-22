@@ -200,7 +200,6 @@ export default function StaffDesk({ onCount }) {
 
   return (
     <div className="work-desk">
-      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
       <div className={`work-grid${card ? ' has-card' : ''}`}>
         <div className="work-head deck-copy">
           {waiting > 0 && (
@@ -277,6 +276,7 @@ export default function StaffDesk({ onCount }) {
           </div>
         )}
       </div>
+      <DeckFlash flash={flash} locked={locked} onUndo={undo} />
     </div>
   )
 }
