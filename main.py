@@ -12442,7 +12442,7 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                     await note_gift_loot(db, user_id, "item", 1, item_name, item_name)
                     item_text = (
                         f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
-                        f"<b>Ещё подарок</b>\n"
+                        f"<b>Дополнительная награда</b>\n"
                         f"<code>{item_emoji}</code> <b>{item_name}</b>"
                     )
                     try:
@@ -12459,7 +12459,7 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                         try:
                             await message.reply(
                                 f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
-                                f"<b>Ещё +{add} кут</b>",
+                                f"<b>Дополнительно +{add} кут</b>",
                                 parse_mode="HTML",
                             )
                         except Exception:
@@ -12951,10 +12951,10 @@ async def process_bonus_request(
             shown = html.escape((user.first_name or "имя").strip() or "имя")
             text = (
                 "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
-                "<b>Нужна приписка <code>Cute</code></b>\n"
+                "<b>Чтобы открыть 🎁, добавьте в имя <code>Cute</code></b>\n"
                 f"<blockquote>Сейчас: <b>{shown}</b>\n"
                 "Пример: <code>Имя Cute</code></blockquote>\n"
-                "<i>🎁 остался у тебя</i>"
+                "<i>Предмет остался у вас. Когда имя готово — снова «использовать 🎁».</i>"
             )
             try:
                 await bot1.send_message(
@@ -13039,8 +13039,9 @@ async def process_bonus_request(
         header = (
             f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
             f"<b>{bonus_label}</b>\n"
-            f"<blockquote>×{multiplier} · <b>+{kuty_lo}…{kuty_hi}</b> кут</blockquote>\n"
-            "<i>Жми клетку — куты сразу</i>"
+            f"<blockquote>×{multiplier} · <b>+{kuty_lo}…{kuty_hi}</b> кут\n"
+            "Нажмите любую клетку — куты придут сразу.\n"
+            "Победа в игре не нужна.</blockquote>"
         )
         full_text = header
         board_text = full_text

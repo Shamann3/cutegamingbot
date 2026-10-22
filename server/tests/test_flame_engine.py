@@ -61,10 +61,12 @@ def test_help_lists_rewards_and_warm_hour():
     assert "200" in html
     assert "с 7-го — <b>250</b>" in html
     assert "3 дня" in html
-    assert "<b>50</b> кут" in html
+    assert "50 кут" in html
     assert "Тёплый час" in html
     assert "18:00" in html
     assert "🎁" in html
+    assert "Как работает" in html
+    assert "официальных группах" in html
 
 
 def test_gift_preview_shows_average():
