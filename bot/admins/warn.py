@@ -82,6 +82,7 @@ from bot.admins.mute import (
   _reply_person,
   _has_command_text,
   _has_proof_media,
+  _actor_may_punish_here,
   _is_staff_chat,
   live_staff_chat_ids,
   official_chats_now,
@@ -2252,7 +2253,7 @@ async def expire_timed_warn(warn_id: int, payload: Dict[str, Any]) -> None:
   notify_chats: List[int] = []
   if scope == "all":
     notify_chats = [cid for cid in await official_chats_now() if _is_staff_chat(cid)]
-  if source_chat_id and _is_staff_chat(source_chat_id) and source_chat_id not in notify_chats:
+  if source_chat_id and int(source_chat_id) < 0 and source_chat_id not in notify_chats:
     notify_chats.append(source_chat_id)
 
   for group_chat_id in notify_chats:
@@ -3488,7 +3489,7 @@ async def warn_kind_rows(user_id: int) -> List[str]:
   for g_chat_id, items in sorted(chat_buckets.items(), key=lambda kv: (-len(kv[1]), kv[0])):
     lines.append("")
     lines.append(_warn_kind_row("chat", len(items)))
-    if g_chat_id and _is_staff_chat(g_chat_id):
+    if g_chat_id and int(g_chat_id) < 0:
       disp = await _get_chat_display(g_chat_id)
       group_label = _chat_link_inline(disp)
     else:
@@ -3758,7 +3759,7 @@ async def warn_process(message: Message) -> bool:
         return True
       if perm != "allowed":
         return await deny_permission(message, "cancel_warn")
-      if not _is_staff_chat(message.chat.id):
+      if not _actor_may_punish_here(message.chat.id, uid):
         return False
       pending_data = pending_get(_pending_warns, uid)
       if not pending_data:
@@ -3911,7 +3912,7 @@ async def on_warn_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(WarnText.CB_STALE, show_alert=True)
     return
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(WarnText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -3946,7 +3947,7 @@ async def on_warn_revoke(callback: CallbackQuery) -> None:
   raw_mode = parts[4] if len(parts) >= 5 else "chat"
   mode: Mode = raw_mode if raw_mode in ("chat", "all", "full") else "chat"
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(WarnText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -4044,11 +4045,11 @@ class WarnMiddleware(BaseMiddleware):
     await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_warns, uid)
-    staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
+    command_group = _actor_may_punish_here(msg.chat.id, uid)
 
     media_command = (
       not pending
-      and staff_group
+      and command_group
       and _has_proof_media(msg)
       and _is_warn_related_message(msg)
     )

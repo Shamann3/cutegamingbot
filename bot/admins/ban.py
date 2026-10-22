@@ -79,6 +79,7 @@ from bot.admins.mute import (
   _reply_person,
   _has_command_text,
   _has_proof_media,
+  _actor_may_punish_here,
   _is_staff_chat,
   live_staff_chat_ids,
   official_chats_now,
@@ -1252,7 +1253,7 @@ async def _scan_expired_bans() -> None:
       "scope": "chat",
     })
     entry["all_cids"].append(cid)
-    if _is_staff_chat(cid):
+    if cid < 0:
       if cid not in entry["chats"]:
         entry["chats"].append(cid)
       entry["rows"][cid] = row
@@ -1409,11 +1410,12 @@ async def _validate_ban_before(
   *,
   scope: Scope,
   source_chat_id: int,
+  actor_id: int = 0,
 ) -> Optional[str]:
   """Предпроверка бана: только блокирующая ошибка (бот/создатель/админ) или текст об охвате."""
   chat_ids = list(await official_chats_now()) if scope == "all" else [source_chat_id]
   for cid in chat_ids:
-    if scope == "chat" and not _is_staff_chat(cid):
+    if scope == "chat" and not _actor_may_punish_here(cid, actor_id):
       return "команда доступна только в официальных группах проекта"
     err = await _validate_ban_target_in_chat(cid, target_id)
     if err in _BLOCKING_BAN_ERRORS:
@@ -1443,7 +1445,7 @@ async def _ban_with_scope(
         BanDebug.log("TG", "project strip skip", err=str(e), user_id=target_id)
     return count, ids, errors
 
-  if not _is_staff_chat(source_chat_id):
+  if not _actor_may_punish_here(source_chat_id, actor_id):
     return 0, [], ["команда доступна только в официальных группах проекта"]
 
   if hold_seats:
@@ -2306,6 +2308,7 @@ async def _handle_ban_command(message: Message) -> bool:
     parsed.target_id,
     scope=parsed.scope,
     source_chat_id=chat_id,
+    actor_id=message.from_user.id,
   )
   if block_err:
     await message.reply(
@@ -2717,7 +2720,7 @@ async def _execute_unban_core(
 
   if mode == "chat":
     # Снимаем блокировку ТОЛЬКО в текущей группе.
-    if _is_staff_chat(chat_id):
+    if _actor_may_punish_here(chat_id, actor_id):
       status_val = None
       try:
         member = await _bot().get_chat_member(chat_id, target_id)
@@ -2932,7 +2935,7 @@ async def ban_process(message: Message) -> bool:
       if perm != "allowed":
         await _send_no_permission(message, "ban")
         return True
-      if not _is_staff_chat(message.chat.id):
+      if not _actor_may_punish_here(message.chat.id, uid):
         return False
       pending_data = pending_get(_pending_bans, uid)
       if not pending_data:
@@ -3095,7 +3098,7 @@ async def on_ban_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(BanText.CB_STALE, show_alert=True)
     return
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(BanText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -3132,7 +3135,7 @@ async def on_ban_revoke(callback: CallbackQuery) -> None:
     return
   mode: Mode = parts[4] if len(parts) == 5 and parts[4] in ("chat", "all", "full") else "full"
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(BanText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -3319,11 +3322,11 @@ class BanMiddleware(BaseMiddleware):
     await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_bans, uid)
-    staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
+    command_group = _actor_may_punish_here(msg.chat.id, uid)
 
     media_command = (
       not pending
-      and staff_group
+      and command_group
       and _has_proof_media(msg)
       and _is_ban_related_message(msg)
     )

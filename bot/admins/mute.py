@@ -49,6 +49,7 @@ from bot.admins.punish_clause import (
   is_strong_user_token,
   mention_id,
 )
+from bot.funcs.creator_join import is_project_creator
 
 from bot.db_create.pklcode import LazyGameStore
 
@@ -1726,6 +1727,17 @@ def invalidate_seat_cache() -> None:
   _seat_cache.clear()
 
 
+def _creator_punish_grant(user_id: Optional[int], action: str) -> bool:
+  """Создатель проекта наказывает без должности и без строки в staff_rules.
+
+  Только наказания и их снятие. Остальные права сотрудника сюда не входят.
+  """
+  if not is_project_creator(user_id):
+    return False
+  key = _permission_action((action or "").strip().lower())
+  return key in _STAFF_RULES_PERMISSION_NAMES
+
+
 async def punish_access(
   user_id: int, action: str, chat_id: Optional[int],
 ) -> Tuple[str, Optional[GroupSeat]]:
@@ -1735,6 +1747,8 @@ async def punish_access(
 
   Иначе ('denied', seat или None) или ('db_unavailable', None).
   """
+  if _creator_punish_grant(user_id, action):
+    return "allowed", None
   staff = await check_staff_permission(user_id, action)
   if staff == "allowed":
     return "allowed", None
@@ -2573,11 +2587,8 @@ async def refresh_official_chats(force: bool = False) -> None:
     _official_at = now
 
 
-def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
-  """Официальная группа проекта, где разрешены команды мута/кика/размута."""
-  # Принудительно считаем чат официальным для заданного пользователя
-  if user_id == 6801702632:
-    return True
+def _is_staff_chat(chat_id: int) -> bool:
+  """Официальная группа проекта. Список «везде по проекту» смотрит только сюда."""
   chat_is_official, _merged = _official_rules()
   return chat_is_official(
     chat_id,
@@ -2587,26 +2598,38 @@ def _is_staff_chat(chat_id: int , user_id: int = None) -> bool:
   )
 
 
+def _actor_may_punish_here(chat_id: Any, actor_id: Optional[int] = None) -> bool:
+  """Можно ли этому человеку наказать именно в этой группе.
+
+  Официальная группа — как раньше, для любого сотрудника с правом.
+  Создатель проекта — в любой группе, где стоит бот, даже если группа
+  не официальная и даже если модерация там для остальных выключена.
+  В личке нельзя: Telegram не банит и не мутит оттуда.
+  """
+  try:
+    cid = int(chat_id)
+  except (TypeError, ValueError):
+    return False
+  if cid < 0 and is_project_creator(actor_id):
+    return True
+  return _is_staff_chat(cid)
+
+
 async def _require_staff_chat(message: Message) -> bool:
   """True - чат разрешён для модерации; False - уже отправлен ответ сотруднику."""
   await refresh_official_chats()
   chat_id = message.chat.id
-  if _is_moderation_excluded_chat(chat_id):
-    staff = await StaffRef.from_message(message)
-    await message.reply(
-      MuteText.STAFF_CHAT_EXCLUDED.format(
-        greeting=staff.greeting, staff_line=staff.line,
-      ),
-      parse_mode="HTML", link_preview_options=NO_PREVIEW,
-    )
-    return False
-  if _is_staff_chat(chat_id):
+  actor = message.from_user.id if message.from_user else None
+  if _actor_may_punish_here(chat_id, actor):
     return True
   staff = await StaffRef.from_message(message)
+  template = (
+    MuteText.STAFF_CHAT_EXCLUDED
+    if _is_moderation_excluded_chat(chat_id)
+    else MuteText.STAFF_CHAT_ONLY
+  )
   await message.reply(
-    MuteText.STAFF_CHAT_ONLY.format(
-      greeting=staff.greeting, staff_line=staff.line,
-    ),
+    template.format(greeting=staff.greeting, staff_line=staff.line),
     parse_mode="HTML", link_preview_options=NO_PREVIEW,
   )
   return False
@@ -3075,7 +3098,7 @@ async def _resolve_mute_scope(user_id: int) -> Tuple [ bool , List [ int ] ]:
           cid = int(r [ "chat_id" ])
           if (r [ "scope" ] or "") == "all" or cid == 0:
             global_scope = True
-          if _is_staff_chat(cid) and cid not in seen:
+          if cid < 0 and cid not in seen:
             seen.add(cid)
             chats.append(cid)
         urow = await conn.fetchrow(
@@ -3093,7 +3116,7 @@ async def _resolve_mute_scope(user_id: int) -> Tuple [ bool , List [ int ] ]:
       _chat_mutes.pop(key , None)
       continue
     cid , uid = key
-    if uid == user_id and _is_staff_chat(cid) and cid not in seen:
+    if uid == user_id and cid < 0 and cid not in seen:
       seen.add(cid)
       chats.append(cid)
 
@@ -3126,7 +3149,7 @@ async def _expire_mute(
   if known_chats is not None:
     # Точный набор от фоновой очистки: снимаем ТОЛЬКО эти чаты,
     # чтобы не задеть ещё активный мут в другой группе.
-    exact = [c for c in known_chats if _is_staff_chat(c)]
+    exact = [c for c in known_chats if c < 0]
     if not global_scope:
       chats = exact
     else:
@@ -3136,7 +3159,7 @@ async def _expire_mute(
   if not chats:
     if global_scope:
       chats = [c for c in await official_chats_now() if _is_staff_chat(c)]
-    elif _is_staff_chat(trigger_chat_id):
+    elif trigger_chat_id < 0:
       chats = [trigger_chat_id]
 
   if global_scope:
@@ -3153,13 +3176,17 @@ async def _expire_mute(
       MuteDebug.error("AUTO", "db clear", e, user_id=user_id)
     await _delete_active_mutes(user_id)
     await _unrestrict_in_all_staff_chats(user_id)
+    for cid in chats:
+      if cid < 0 and not _is_staff_chat(cid):
+        _clear_chat_mute(cid, user_id)
+        await _unrestrict_in_chat(cid, user_id)
   else:
     for cid in chats:
       _clear_chat_mute(cid, user_id)
       await _delete_active_mutes(user_id, cid)
       await _unrestrict_in_chat(cid, user_id)
 
-  log_chat = trigger_chat_id if _is_staff_chat(trigger_chat_id) else (chats[0] if chats else 0)
+  log_chat = trigger_chat_id if trigger_chat_id < 0 else (chats[0] if chats else 0)
   await _log_auto_unmute_db(user_id, target_name, log_chat, scope=("all" if global_scope else "chat"))
 
   try:
@@ -3169,7 +3196,7 @@ async def _expire_mute(
     pass
 
   if notify and chats:
-    src = trigger_chat_id if _is_staff_chat(trigger_chat_id) else chats[0]
+    src = trigger_chat_id if trigger_chat_id < 0 else chats[0]
     await _notify_unmute(
       src, user_id, target_name,
       event="expired",
@@ -4795,7 +4822,7 @@ async def _apply_mute_restrictions(
   """Применяет ограничение в Telegram с учётом охвата команды."""
   if scope == "all":
     return await _restrict_in_all_staff_chats(user_id, until, actor_id=actor_id)
-  if not _is_staff_chat(source_chat_id):
+  if not _actor_may_punish_here(source_chat_id, actor_id):
     return False
   ok = await _restrict_in_chat(source_chat_id, user_id, until, actor_id=actor_id)
   if ok:
@@ -5003,15 +5030,17 @@ async def _is_player_muted_in_db(user_id: int) -> bool:
 # Постоянный учёт активных мутов (active_mutes) - источник для сводки «наказания»
 # ---------------------------------------------------------------------------
 
-def _mute_record_chat_ids(scope: Scope, source_chat_id: int) -> List[int]:
+def _mute_record_chat_ids(
+  scope: Scope, source_chat_id: int, actor_id: int = 0,
+) -> List[int]:
   """Группы, для которых сохраняем запись об активном муте.
 
   • scope='all'  → один обобщённый ряд chat_id = 0 («во всех группах»);
-  • scope='chat' → конкретная официальная группа (если это staff-чат).
+  • scope='chat' → эта группа, если здесь можно было выдать мут.
   """
   if scope == "all":
     return [0]
-  if _is_staff_chat(source_chat_id):
+  if _actor_may_punish_here(source_chat_id, actor_id):
     return [source_chat_id]
   return []
 
@@ -5025,7 +5054,7 @@ async def _record_active_mute(
   admin_role: Optional[str],
 ) -> None:
   """Сохраняет активный мут для сводки «наказания» и восстановления после рестарта."""
-  chat_ids = _mute_record_chat_ids(parsed.scope, source_chat_id)
+  chat_ids = _mute_record_chat_ids(parsed.scope, source_chat_id, admin_user_id)
   if not chat_ids:
     return
   await _ensure_mute_schema()
@@ -5254,7 +5283,7 @@ async def _resolve_player_mute_state(user_id: int) -> PlayerMuteState:
 
 
 def _register_chat_mute(chat_id: int, user_id: int, until: datetime) -> None:
-  if chat_id < 0 and _is_staff_chat(chat_id):
+  if chat_id < 0:
     _chat_mutes[(chat_id, user_id)] = until
     MuteDebug.log("CHAT_MUTE", "registered", chat_id=chat_id, user_id=user_id, until=str(until))
 
@@ -5557,7 +5586,7 @@ async def _notify_mute_groups(
 
 
 async def _notify_violator_muted(parsed: ParsedMute, chat_id: int) -> None:
-  if not _is_staff_chat(chat_id):
+  if chat_id >= 0:
     return
   try:
     player = PlayerRef.from_parsed(parsed)
@@ -6242,6 +6271,10 @@ async def _execute_unmute_core(
       return "db_error"
 
     await _unrestrict_in_all_staff_chats(target_id)
+    for cid in affected_chats or []:
+      if cid < 0 and not _is_staff_chat(cid):
+        await _unrestrict_in_chat(cid, target_id)
+        _clear_chat_mute(cid, target_id)
   if not target_username:
     try:
       async with _db().pool.acquire() as conn:
@@ -6468,7 +6501,7 @@ async def mute_process(message: Message) -> bool:
       if perm != "allowed":
         await _send_no_permission(message, "cancel_pending")
         return True
-      if not _is_staff_chat(message.chat.id):
+      if not _actor_may_punish_here(message.chat.id, uid):
         return False
       pending_data = pending_get(_pending_mutes, uid)
       if not pending_data:
@@ -7815,6 +7848,7 @@ class MuteMiddleware(BaseMiddleware):
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_mutes, uid)
     staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
+    command_group = _actor_may_punish_here(msg.chat.id, uid)
 
     # Одношаговый мут: фото-пруф + подпись-команда («мут @user 10сек причина»).
     # main.py (обработчик F.text) такие сообщения не видит - у фото нет .text, -
@@ -7822,12 +7856,12 @@ class MuteMiddleware(BaseMiddleware):
     # ровно как в бан/варн/кик.
     media_command = (
       not pending
-      and staff_group
+      and command_group
       and _has_proof_media(msg)
       and _is_mute_related_message(msg)
     )
 
-    if not pending and not staff_group:
+    if not pending and not staff_group and not media_command:
       return await handler(event, data)
 
     try:
@@ -7944,7 +7978,7 @@ async def mute_cancel_callback(callback: CallbackQuery) -> None:
     await callback.answer(MuteText.CB_STALE, show_alert=True)
     return
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(MuteText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -7979,7 +8013,7 @@ async def mute_revoke_callback(callback: CallbackQuery) -> None:
     await callback.answer(MuteText.CB_BAD_DATA, show_alert=True)
     return
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(MuteText.CB_WRONG_CHAT, show_alert=True)
     return
 

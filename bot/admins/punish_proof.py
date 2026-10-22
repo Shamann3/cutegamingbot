@@ -273,11 +273,14 @@ def proof_place_ok(here: Any, origin: Any, official: bool) -> bool:
 
 async def proof_in_origin(message: Any, pending_chat_id: Any) -> bool:
   """Сверяет чат фото со свежим списком официальных групп."""
-  from bot.admins.mute import _is_staff_chat, refresh_official_chats
+  from bot.admins.mute import _actor_may_punish_here, refresh_official_chats
 
   await refresh_official_chats(force=True)
   chat_id = getattr(getattr(message, "chat", None), "id", None)
-  return proof_place_ok(chat_id, pending_chat_id, _is_staff_chat(chat_id))
+  actor_id = getattr(getattr(message, "from_user", None), "id", None)
+  return proof_place_ok(
+    chat_id, pending_chat_id, _actor_may_punish_here(chat_id, actor_id),
+  )
 
 
 def caption_is_punish_command(text: str) -> bool:

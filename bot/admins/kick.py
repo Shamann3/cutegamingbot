@@ -68,6 +68,7 @@ from bot.admins.mute import (
   _reply_person,
   _has_command_text,
   _has_proof_media,
+  _actor_may_punish_here,
   _is_staff_chat,
   live_staff_chat_ids,
   official_chats_now,
@@ -591,12 +592,13 @@ async def _validate_kick_before(
   *,
   scope: Scope,
   source_chat_id: int,
+  actor_id: int = 0,
 ) -> Tuple[Optional[str], bool]:
   """Предпроверка кика: блокирующая ошибка и состоит ли пользователь в целевых группах."""
   chat_ids = list(await official_chats_now()) if scope == "all" else [source_chat_id]
   any_member = False
   for cid in chat_ids:
-    if scope == "chat" and not _is_staff_chat(cid):
+    if scope == "chat" and not _actor_may_punish_here(cid, actor_id):
       return "команда доступна только в официальных группах проекта", False
     err = await _validate_kick_target_in_chat(cid, target_id)
     if err in _BLOCKING_KICK_ERRORS:
@@ -613,12 +615,13 @@ async def _kick_with_scope(
   *,
   scope: Scope,
   source_chat_id: int,
+  actor_id: int = 0,
 ) -> Tuple[int, List[int], List[str]]:
   """Исключает пользователя из одной группы или из всех групп проекта."""
   if scope == "all":
     return await _kick_in_all_staff_chats(target_id)
 
-  if not _is_staff_chat(source_chat_id):
+  if not _actor_may_punish_here(source_chat_id, actor_id):
     return 0, [], ["команда доступна только в официальных группах проекта"]
 
   err = await _validate_kick_target_in_chat(source_chat_id, target_id)
@@ -890,6 +893,7 @@ async def _finalize_kick(
     parsed.target_id,
     scope=parsed.scope,
     source_chat_id=chat_id,
+    actor_id=message.from_user.id,
   )
   admin_name, admin_role, _ = await _resolve_admin_identity(message)
   await _send_success_kick(message, parsed, chat_id, kicked_count, kicked_ids, errors)
@@ -1152,6 +1156,7 @@ async def _handle_kick_command(message: Message) -> bool:
     parsed.target_id,
     scope=parsed.scope,
     source_chat_id=chat_id,
+    actor_id=message.from_user.id,
   )
   if block_err:
     await message.reply(
@@ -1368,7 +1373,7 @@ async def kick_process(message: Message) -> bool:
       if perm != "allowed":
         await _send_no_permission(message, "kick")
         return True
-      if not _is_staff_chat(message.chat.id):
+      if not _actor_may_punish_here(message.chat.id, uid):
         return False
       pending_data = pending_get(_pending_kicks, uid)
       if not pending_data:
@@ -1495,7 +1500,7 @@ async def on_kick_pending_cancel(callback: CallbackQuery) -> None:
     await callback.answer(KickText.CB_STALE, show_alert=True)
     return
 
-  if not _is_staff_chat(callback.message.chat.id):
+  if not _actor_may_punish_here(callback.message.chat.id, callback.from_user.id):
     await callback.answer(KickText.CB_WRONG_CHAT, show_alert=True)
     return
 
@@ -1531,11 +1536,11 @@ class KickMiddleware(BaseMiddleware):
     await warm_official_chats(msg.chat.id)
     from bot.admins.punish_proof import pending_contains
     pending = pending_contains(_pending_kicks, uid)
-    staff_group = msg.chat.id < 0 and _is_staff_chat(msg.chat.id)
+    command_group = _actor_may_punish_here(msg.chat.id, uid)
 
     media_command = (
       not pending
-      and staff_group
+      and command_group
       and _has_proof_media(msg)
       and _is_kick_related_message(msg)
     )

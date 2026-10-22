@@ -1143,7 +1143,12 @@ async def _open_seek(message, user_id: int) -> None:
         _button(word("seek_no"), stamp_callback(f"wg:seekno:{int(offer_id)}", user_id), "danger"),
         _button(seek_yes_label(fee), stamp_callback(f"wg:seekyes:{int(offer_id)}", user_id), "success"),
     ]])
-    await message.reply(text, parse_mode="HTML", reply_markup=markup)
+    await message.reply(
+        text,
+        parse_mode="HTML",
+        reply_markup=markup,
+        disable_web_page_preview=True,
+    )
 
 
 async def _leave_seek(call, offer_id: int) -> None:
