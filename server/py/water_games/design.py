@@ -1401,7 +1401,10 @@ def seek_person_html(name: str, username: str = "", user_id: int = 0) -> str:
 
 
 def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
-    """Сколько кут получит именно тот, кто обливает."""
+    """Сколько кут получит обливающий с баланса именно этого человека.
+
+    Число то же, что на экране ответа на сообщение: уже после комиссии.
+    """
     del gross
     if kind == "hit":
         return f"Вы получите с него <b>{_seek_money(payout)}</b> кут."
@@ -1418,33 +1421,6 @@ def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
     return ""
 
 
-def seek_other_gain(rules: dict | None) -> int:
-    """Сколько кут получит обливающий с другого человека за один удачный выстрел.
-
-    Это потолок по текущим правилам: меньшее из лимита за раз и за сутки,
-    уже после комиссии. С человека, у которого кут меньше, сумма будет меньше.
-    """
-    rules = rules or {}
-    try:
-        low = int(rules.get("percentLow") or 0)
-        high = int(rules.get("percentHigh") or 0)
-        cap = max(0, int(rules.get("shotCap") or 0))
-        day = max(0, int(rules.get("dayCap") or 0))
-        poor = int(rules.get("poorBalance") or 0)
-        rate = int(rules.get("commissionPercent") or 0)
-    except (TypeError, ValueError):
-        return 0
-    room = cap if day < 1 else min(cap, day)
-    if room < 1 or high < 1:
-        return 0
-    balance = max(poor, room, 1) * 100
-    _small, large = pour_bounds(
-        balance, low or high, high, cap=cap, day_left=day or room, poor=poor,
-    )
-    payout, _fee = split_take(large, rate)
-    return max(0, int(payout))
-
-
 def seek_ask_text(
     name: str,
     fee: int,
@@ -1452,7 +1428,6 @@ def seek_ask_text(
     take: str = "",
     username: str = "",
     user_id: int = 0,
-    elsewhere: int = 0,
     spare: bool = False,
 ) -> str:
     who = seek_person_html(name, username, user_id)
@@ -1463,16 +1438,10 @@ def seek_ask_text(
     else:
         bill = "За поиск пользователя плата не нужна."
     loot = " ".join(str(take or "").split())
-    other = ""
-    if spare and int(elsewhere or 0) > 0:
-        other = (
-            "Если обольёте этого пользователя, вы можете получить до "
-            f"<b>{_seek_money(elsewhere)}</b> кут."
-        )
     spared = "Попытка поиска не спишется." if spare else ""
     lines = [
         line for line in (
-            loot, other, bill, spared,
+            loot, bill, spared,
             f"На подобные облития у вас {seek_left_phrase(left)}.",
         ) if line
     ]
@@ -1509,6 +1478,34 @@ def default_rules() -> dict:
         "seekFee": 500,
         "seekFeeChatId": SEEK_FEE_CHAT,
     }
+
+
+def splash_from_balance(
+    balance: int,
+    *,
+    percent: int,
+    cap: int,
+    day_left: int,
+    poor: int,
+    commission: int,
+) -> dict:
+    """Сколько выстрел снимет с этого баланса и сколько получит обливающий.
+
+    Тот же порядок, что у ответа на сообщение: сначала порог «нечего брать»,
+    потом суточный потолок, потом процент, потолок за раз и комиссия.
+    """
+    wallet = int(balance or 0)
+    floor = int(poor or 0)
+    left = int(day_left or 0)
+    if wallet < floor:
+        return {"kind": "broke", "amount": 0, "payout": 0, "fee": 0}
+    if left < 1:
+        return {"kind": "day", "amount": 0, "payout": 0, "fee": 0}
+    gross = take_amount(wallet, int(percent), cap=int(cap), day_left=left, poor=floor)
+    if gross < 1:
+        return {"kind": "dry", "amount": 0, "payout": 0, "fee": 0}
+    payout, fee = split_take(gross, int(commission))
+    return {"kind": "hit", "amount": int(gross), "payout": int(payout), "fee": int(fee)}
 
 
 def split_take(amount: int, commission: int) -> tuple[int, int]:

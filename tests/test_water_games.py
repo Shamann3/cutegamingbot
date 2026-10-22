@@ -52,11 +52,11 @@ from water_games.design import (
     pistol_seek_query,
     seek_ask_text,
     seek_loot_line,
-    seek_other_gain,
     seek_spares_attempt,
     seek_yes_label,
     times_word,
     pour_bounds,
+    splash_from_balance,
     split_take,
     take_amount,
     take_one_item,
@@ -376,16 +376,20 @@ def test_seek_by_name_is_paid_and_counted_in_russian():
     assert not seek_spares_attempt("shield")
     empty = seek_ask_text(
         "Igoryan", 500, 3, seek_loot_line("dry", 0, 0),
-        username="Stremlenue", elsewhere=1350, spare=True,
+        username="Stremlenue", spare=True,
     )
     assert "С этого пользователя сейчас нечего взять." in empty
-    assert "Если обольёте этого пользователя, вы можете получить до <b>1 350</b> кут." in empty
+    assert "можете получить до" not in empty
     assert "Попытка поиска не спишется." in empty
     assert "Попытка поиска не спишется." not in ask
-    assert seek_other_gain({
-        "percentLow": 4, "percentHigh": 8, "shotCap": 1500, "dayCap": 4000,
-        "poorBalance": 50, "commissionPercent": 10,
-    }) == 1350
+    rich = splash_from_balance(1000, percent=8, cap=1500, day_left=4000, poor=50, commission=10)
+    assert rich == {"kind": "hit", "amount": 80, "payout": 72, "fee": 8}
+    assert seek_loot_line("hit", rich["amount"], rich["payout"]) == "Вы получите с него <b>72</b> кут."
+    poor = splash_from_balance(40, percent=8, cap=1500, day_left=4000, poor=50, commission=10)
+    assert poor["kind"] == "broke" and poor["payout"] == 0
+    capped = splash_from_balance(100_000, percent=8, cap=1500, day_left=4000, poor=50, commission=10)
+    assert capped["amount"] == 1500 and capped["payout"] == 1350
+    assert splash_from_balance(10_000, percent=8, cap=1500, day_left=0, poor=50, commission=10)["kind"] == "day"
     marked = stamp_callback("wg:seekyes:4", 42)
     assert button_owner(marked) == 42
     assert strip_callback_owner(marked) == "wg:seekyes:4"

@@ -46,7 +46,6 @@ from bot.funcs.water_games_design import (
     seek_ask_text,
     seek_handle_from_link,
     seek_loot_line,
-    seek_other_gain,
     seek_rules_line,
     seek_spares_attempt,
     seek_yes_label,
@@ -70,6 +69,7 @@ from bot.funcs.water_games_design import (
     left_clock,
     screen_text,
     settle_umbrella,
+    splash_from_balance,
     split_take,
     word,
     shields_in_bag,
@@ -1141,7 +1141,6 @@ async def _open_seek(message, user_id: int) -> None:
         seek_loot_line(quote["kind"], quote["amount"], quote["payout"]),
         username=str(row["username"] or hinted_name or ""),
         user_id=int(row["user_id"]),
-        elsewhere=seek_other_gain(rules) if spare else 0,
         spare=spare,
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[[
@@ -1346,9 +1345,16 @@ async def _calm_of(user_id: int) -> dict:
         }
 
 
-async def _quote_shot(target_id: int, rules: dict, now) -> dict:
-    """Сколько этот человек отдаст прямо сейчас. Тот же расчёт, что у выстрела."""
-    empty = {"kind": "unknown", "amount": 0, "percent": 0, "payout": 0, "shield": None}
+async def _quote_shot(target_id: int, rules: dict, now, *, day_start=None, locked=None) -> dict:
+    """Сколько обливающий получит с баланса этого человека прямо сейчас.
+
+    И поиск, и ответ на сообщение считают здесь. Баланс читается из users,
+    затем процент, потолки и комиссия — как у кнопки «Облить».
+    """
+    empty = {
+        "kind": "unknown", "amount": 0, "percent": 0, "payout": 0, "fee": 0,
+        "balance": 0, "shield": None, "calm": None,
+    }
     target_shield = await _shield(target_id)
     if _still(target_shield):
         return {**empty, "kind": "shield", "shield": target_shield}
@@ -1358,90 +1364,84 @@ async def _quote_shot(target_id: int, rules: dict, now) -> dict:
     enemy = await _inventory(target_id)
     if enemy["row"] is None:
         return empty
-    if enemy["balance"] < rules["poorBalance"]:
-        return {**empty, "kind": "broke"}
+    balance = int(enemy["balance"] or 0)
+    since = day_start if day_start is not None else now - timedelta(hours=24)
     taken_today = int(await db.pool.fetchval(
         """
         SELECT COALESCE(SUM(amount), 0) FROM water_splashes
         WHERE target_id = $1 AND outcome = 'hit' AND created_at > $2
         """,
-        int(target_id), now - timedelta(hours=24),
+        int(target_id), since,
     ) or 0)
-    day_left = max(0, rules["dayCap"] - taken_today)
-    if day_left < 1:
-        return {**empty, "kind": "day"}
-    percent = random.randint(rules["percentLow"], rules["percentHigh"])
-    amount = take_amount(
-        enemy["balance"], percent,
-        cap=rules["shotCap"], day_left=day_left, poor=rules["poorBalance"],
+    day_left = max(0, int(rules["dayCap"]) - taken_today)
+    locked = locked or {}
+    percent = int(locked.get("percent") or 0)
+    if percent < 1:
+        percent = random.randint(int(rules["percentLow"]), int(rules["percentHigh"]))
+    percent = max(int(rules["percentLow"]), min(int(rules["percentHigh"]), percent))
+    cut = splash_from_balance(
+        balance,
+        percent=percent,
+        cap=int(rules["shotCap"]),
+        day_left=day_left,
+        poor=int(rules["poorBalance"]),
+        commission=int(rules["commissionPercent"]),
     )
-    if amount < 1:
-        return {**empty, "kind": "dry"}
-    payout, _cut = split_take(amount, rules["commissionPercent"])
+    amount = int(cut["amount"])
+    payout = int(cut["payout"])
+    fee = int(cut["fee"])
+    kind = str(cut["kind"])
+    stored = int(locked.get("amount") or 0)
+    if kind == "hit" and stored > 0:
+        amount = min(stored, amount)
+        payout, fee = split_take(amount, int(rules["commissionPercent"]))
+        if amount < 1:
+            kind, payout, fee = "dry", 0, 0
     return {
-        "kind": "hit", "amount": int(amount), "percent": int(percent),
-        "payout": int(payout), "shield": None,
+        "kind": kind, "amount": amount, "percent": int(percent),
+        "payout": int(payout), "fee": int(fee), "balance": balance,
+        "shield": None, "calm": None,
     }
+
+
+async def _show_shot(message, text: str, markup=None, edit_call=None) -> None:
+    if edit_call is not None:
+        await _edit_call(edit_call, text, markup)
+        return
+    await message.reply(text, parse_mode="HTML", reply_markup=markup)
 
 
 async def _preview_shot(message, user_id: int, target_id: int, now, day_start, edit_call=None, locked=None) -> None:
     """Показывает сумму или срок защиты. Вода списывается только после «Облить»."""
     rules = await _shot_rules()
-    locked = locked or {}
-    target_shield = await _shield(target_id)
-    kind = "hit"
-    amount = 0
-    percent = 0
-    if _still(target_shield):
-        kind = "shield"
-    else:
-        calm = await _calm_of(target_id)
-        if calm["calm"]:
-            text = await _calm_words(target_id, calm, message)
-            if edit_call is not None:
-                await _edit_call(edit_call, text)
-                return
-            await message.reply(text, parse_mode="HTML")
-            return
-        enemy = await _inventory(target_id)
-        if enemy["row"] is None:
-            await message.reply(screen_text("shot_unknown"), parse_mode="HTML")
-            return
-        if enemy["balance"] < rules["poorBalance"]:
-            kind = "broke"
-        else:
-            taken_today = int(await db.pool.fetchval(
-                """
-                SELECT COALESCE(SUM(amount), 0) FROM water_splashes
-                WHERE target_id = $1 AND outcome = 'hit' AND created_at > $2
-                """,
-                int(target_id), day_start,
-            ) or 0)
-            day_left = max(0, rules["dayCap"] - taken_today)
-            if day_left < 1:
-                await message.reply(screen_text("shot_day"), parse_mode="HTML")
-                return
-            percent = int(locked.get("percent") or 0) or random.randint(rules["percentLow"], rules["percentHigh"])
-            percent = max(rules["percentLow"], min(rules["percentHigh"], percent))
-            amount = take_amount(
-                enemy["balance"], percent,
-                cap=rules["shotCap"], day_left=day_left, poor=rules["poorBalance"],
-            )
-            stored = int(locked.get("amount") or 0)
-            if stored > 0:
-                amount = min(stored, amount)
-            if amount < 1:
-                await message.reply(screen_text("shot_dry"), parse_mode="HTML")
-                return
+    quote = await _quote_shot(
+        target_id, rules, now, day_start=day_start, locked=locked,
+    )
+    kind = str(quote["kind"])
+    if kind == "calm":
+        await _show_shot(message, await _calm_words(target_id, quote["calm"], message), edit_call=edit_call)
+        return
+    if kind == "unknown":
+        await _show_shot(message, screen_text("shot_unknown"), edit_call=edit_call)
+        return
+    if kind == "day":
+        await _show_shot(message, screen_text("shot_day"), edit_call=edit_call)
+        return
+    if kind == "dry":
+        await _show_shot(message, screen_text("shot_dry"), edit_call=edit_call)
+        return
+    amount = int(quote["amount"])
+    percent = int(quote["percent"])
     offer_id = await db.pool.fetchval(
         """
         INSERT INTO water_shot_offers (shooter_id, target_id, chat_id, amount, percent, kind)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         """,
-        int(user_id), int(target_id), int(message.chat.id), int(amount), int(percent), kind,
+        int(user_id), int(target_id), int(message.chat.id), amount, percent, kind,
     )
     if kind == "shield":
+        target_shield = quote["shield"]
         view = _kind_view(target_shield["kind"])
         text = screen_text(
             "shot_guard",
@@ -1452,20 +1452,15 @@ async def _preview_shot(message, user_id: int, target_id: int, now, day_start, e
     elif kind == "broke":
         text = screen_text("shot_ask_broke")
     else:
-        payout, fee = split_take(amount, rules["commissionPercent"])
         text = screen_text("shot_ask", amount=_money(amount))
-        if fee:
+        if int(quote["fee"]):
             text = text + "\n" + screen_text(
                 "shot_fee",
-                payout=_money(payout),
-                fee=_money(fee),
+                payout=_money(int(quote["payout"])),
+                fee=_money(int(quote["fee"])),
                 group=fee_group_name(rules["feeChatId"]),
             )
-    markup = _ask_markup(offer_id, user_id)
-    if edit_call is not None:
-        await _edit_call(edit_call, text, markup)
-        return
-    await message.reply(text, parse_mode="HTML", reply_markup=markup)
+    await _show_shot(message, text, _ask_markup(offer_id, user_id), edit_call)
 
 
 async def _apply_hit(user_id: int, target_id: int, chat_id: int, amount: int, now) -> tuple[str, object]:
