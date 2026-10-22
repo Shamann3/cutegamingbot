@@ -46,7 +46,9 @@ from bot.funcs.water_games_design import (
     seek_ask_text,
     seek_handle_from_link,
     seek_loot_line,
+    seek_other_gain,
     seek_rules_line,
+    seek_spares_attempt,
     seek_yes_label,
     extend_empty_text,
     extend_list_text,
@@ -1120,6 +1122,7 @@ async def _open_seek(message, user_id: int) -> None:
         return
     fee = max(0, int(rules.get("seekFee") or 0))
     quote = await _quote_shot(int(row["user_id"]), rules, now)
+    spare = seek_spares_attempt(quote["kind"])
     offer_id = await db.pool.fetchval(
         """
         INSERT INTO water_seek_offers (shooter_id, target_id, chat_id, fee, amount, percent, kind)
@@ -1138,6 +1141,8 @@ async def _open_seek(message, user_id: int) -> None:
         seek_loot_line(quote["kind"], quote["amount"], quote["payout"]),
         username=str(row["username"] or hinted_name or ""),
         user_id=int(row["user_id"]),
+        elsewhere=seek_other_gain(rules) if spare else 0,
+        spare=spare,
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[[
         _button(word("seek_no"), stamp_callback(f"wg:seekno:{int(offer_id)}", user_id), "danger"),
@@ -1200,6 +1205,14 @@ async def _agree_seek(call, offer_id: int) -> None:
         await call.answer()
         return
     fee = max(0, int(rules.get("seekFee") or 0))
+    spare = seek_spares_attempt(str(row["kind"] or ""))
+    live = None
+    try:
+        live = await _quote_shot(target_id, rules, now)
+    except Exception:
+        log.exception("water seek quote")
+    else:
+        spare = seek_spares_attempt(str(live.get("kind") or ""))
     if fee > 0:
         bag = await _inventory(user_id)
         if int(bag["balance"] or 0) < fee:
@@ -1215,22 +1228,32 @@ async def _agree_seek(call, offer_id: int) -> None:
             await db.cutehistory_plus(user_id, -fee, "поиск для облития")
         except Exception:
             log.exception("water seek history")
-    await db.pool.execute(
-        """
-        INSERT INTO water_seeks (shooter_id, target_id, chat_id, fee)
-        VALUES ($1, $2, $3, $4)
-        """,
-        user_id, target_id, chat_id, fee,
-    )
+    if not spare:
+        await db.pool.execute(
+            """
+            INSERT INTO water_seeks (shooter_id, target_id, chat_id, fee)
+            VALUES ($1, $2, $3, $4)
+            """,
+            user_id, target_id, chat_id, fee,
+        )
+    locked = None
+    if not spare and str(row["kind"] or "") == "hit":
+        locked = {
+            "kind": "hit",
+            "amount": int(row["amount"] or 0),
+            "percent": int(row["percent"] or 0),
+        }
+    elif not spare and live and str(live.get("kind") or "") == "hit":
+        locked = {
+            "kind": "hit",
+            "amount": int(live.get("amount") or 0),
+            "percent": int(live.get("percent") or 0),
+        }
     try:
         await _preview_shot(
             call.message, user_id, target_id, now, now - timedelta(hours=24),
             edit_call=call,
-            locked={
-                "kind": str(row["kind"] or ""),
-                "amount": int(row["amount"] or 0),
-                "percent": int(row["percent"] or 0),
-            },
+            locked=locked,
         )
     except Exception:
         log.exception("water seek preview")

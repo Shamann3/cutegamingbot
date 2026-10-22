@@ -239,7 +239,7 @@ WORDS = {
     "leave": "Уйти",
     "pour": "Облить",
     "seek_no": "Отказаться",
-    "seek_yes": "Согласиться | − {fee} кут",
+    "seek_yes": "Ok | − {fee} кут",
     "offer_gone": "Это уже решено",
     "missing_pistol": "Нужен Пистолетик.",
     "missing_water": "Нужна Вода: один выстрел списывает одну.",
@@ -1304,9 +1304,14 @@ def seek_left_phrase(count: int) -> str:
 def seek_yes_label(fee: int) -> str:
     amount = max(0, int(fee or 0))
     if amount < 1:
-        return "Согласиться"
+        return "Ok"
     shown = f"{amount:,}".replace(",", " ")
     return word("seek_yes", fee=shown)
+
+
+def seek_spares_attempt(kind: str) -> bool:
+    """С человека нечего взять — поиск не тратит попытку за сутки."""
+    return str(kind or "") in {"broke", "dry"}
 
 
 _SEEK_LINK_SKIP = {
@@ -1413,7 +1418,43 @@ def seek_loot_line(kind: str, gross: int = 0, payout: int = 0) -> str:
     return ""
 
 
-def seek_ask_text(name: str, fee: int, left: int, take: str = "", username: str = "", user_id: int = 0) -> str:
+def seek_other_gain(rules: dict | None) -> int:
+    """Сколько кут получит обливающий с другого человека за один удачный выстрел.
+
+    Это потолок по текущим правилам: меньшее из лимита за раз и за сутки,
+    уже после комиссии. С человека, у которого кут меньше, сумма будет меньше.
+    """
+    rules = rules or {}
+    try:
+        low = int(rules.get("percentLow") or 0)
+        high = int(rules.get("percentHigh") or 0)
+        cap = max(0, int(rules.get("shotCap") or 0))
+        day = max(0, int(rules.get("dayCap") or 0))
+        poor = int(rules.get("poorBalance") or 0)
+        rate = int(rules.get("commissionPercent") or 0)
+    except (TypeError, ValueError):
+        return 0
+    room = cap if day < 1 else min(cap, day)
+    if room < 1 or high < 1:
+        return 0
+    balance = max(poor, room, 1) * 100
+    _small, large = pour_bounds(
+        balance, low or high, high, cap=cap, day_left=day or room, poor=poor,
+    )
+    payout, _fee = split_take(large, rate)
+    return max(0, int(payout))
+
+
+def seek_ask_text(
+    name: str,
+    fee: int,
+    left: int,
+    take: str = "",
+    username: str = "",
+    user_id: int = 0,
+    elsewhere: int = 0,
+    spare: bool = False,
+) -> str:
     who = seek_person_html(name, username, user_id)
     pay = max(0, int(fee or 0))
     shown = _seek_money(pay)
@@ -1422,7 +1463,19 @@ def seek_ask_text(name: str, fee: int, left: int, take: str = "", username: str 
     else:
         bill = "За поиск пользователя плата не нужна."
     loot = " ".join(str(take or "").split())
-    lines = [line for line in (loot, bill, f"На подобные облития у вас {seek_left_phrase(left)}.") if line]
+    other = ""
+    if spare and int(elsewhere or 0) > 0:
+        other = (
+            "Если обольёте этого пользователя, вы можете получить до "
+            f"<b>{_seek_money(elsewhere)}</b> кут."
+        )
+    spared = "Попытка поиска не спишется." if spare else ""
+    lines = [
+        line for line in (
+            loot, other, bill, spared,
+            f"На подобные облития у вас {seek_left_phrase(left)}.",
+        ) if line
+    ]
     return (
         "<tg-emoji emoji-id='5222486447306602688'>🔫</tg-emoji> "
         f"<b>Вы можете облить {who}</b>\n"

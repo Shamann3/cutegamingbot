@@ -52,6 +52,8 @@ from water_games.design import (
     pistol_seek_query,
     seek_ask_text,
     seek_loot_line,
+    seek_other_gain,
+    seek_spares_attempt,
     seek_yes_label,
     times_word,
     pour_bounds,
@@ -367,8 +369,23 @@ def test_seek_by_name_is_paid_and_counted_in_russian():
     assert "Вы получите с него <b>40</b> кут." in plain
     one = seek_ask_text("Вася", 500, 1)
     assert "остался <b>1</b> раз" in one
-    assert seek_yes_label(500) == "Согласиться | − 500 кут"
-    assert seek_yes_label(0) == "Согласиться"
+    assert seek_yes_label(500) == "Ok | − 500 кут"
+    assert seek_yes_label(0) == "Ok"
+    assert seek_spares_attempt("broke") and seek_spares_attempt("dry")
+    assert not seek_spares_attempt("hit")
+    assert not seek_spares_attempt("shield")
+    empty = seek_ask_text(
+        "Igoryan", 500, 3, seek_loot_line("dry", 0, 0),
+        username="Stremlenue", elsewhere=1350, spare=True,
+    )
+    assert "С этого пользователя сейчас нечего взять." in empty
+    assert "Если обольёте этого пользователя, вы можете получить до <b>1 350</b> кут." in empty
+    assert "Попытка поиска не спишется." in empty
+    assert "Попытка поиска не спишется." not in ask
+    assert seek_other_gain({
+        "percentLow": 4, "percentHigh": 8, "shotCap": 1500, "dayCap": 4000,
+        "poorBalance": 50, "commissionPercent": 10,
+    }) == 1350
     marked = stamp_callback("wg:seekyes:4", 42)
     assert button_owner(marked) == 42
     assert strip_callback_owner(marked) == "wg:seekyes:4"
