@@ -6,12 +6,14 @@ import random
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+import flame_copy
+
 MSK = timezone(timedelta(hours=3))
 KINDS = ("bonus", "bonus_x2", "item", "kuty")
 WARM_KINDS = ("bonus", "bonus_x2", "item", "kuty")
 GIFT_KINDS = ("kuty", "item")
-EMOJI = "5355118129783553944"
-STATUS_EMOJI = "5355118129783553944"
+EMOJI = flame_copy.EMOJI
+STATUS_EMOJI = flame_copy.STATUS_EMOJI
 
 _DEFAULTS = {
     "enabled": False,
@@ -31,6 +33,11 @@ _DEFAULTS = {
     "gift_mult": 1,
     "gift_kuty_min": 1,
     "gift_kuty_max": 3,
+    "restore_enabled": False,
+    "restore_kuty": 0,
+    "restore_item": "",
+    "restore_item_count": 1,
+    "restore_within": 2,
 }
 
 
@@ -114,15 +121,8 @@ def profile_line(days: int, titles: list[dict] | None = None) -> str:
     badge = title_for(days, titles or [])
     label = span_label(days)
     if badge:
-        eid = badge["emoji_id"] or STATUS_EMOJI
-        return (
-            f"<tg-emoji emoji-id='{eid}'>⚫️</tg-emoji> "
-            f"<b>{badge['title']}</b> · огонёк уже <b>{label}</b>"
-        )
-    return (
-        f"<tg-emoji emoji-id='{EMOJI}'>⚫️</tg-emoji> "
-        f"<b>Огонёк уже {label}</b>"
-    )
+        return flame_copy.profile_line(label, badge["title"], badge["emoji_id"] or STATUS_EMOJI)
+    return flame_copy.profile_line(label)
 
 
 def _reward_line(row: dict) -> str:
@@ -139,16 +139,7 @@ def _reward_line(row: dict) -> str:
 
 
 def _kind_words(kind: str, amount: int, item: str = "") -> str:
-    amount = max(1, int(amount or 1))
-    if kind == "bonus":
-        return "бесплатное открытие бонуса" if amount == 1 else f"бесплатных открытий бонуса: {amount}"
-    if kind == "bonus_x2":
-        return "бесплатное открытие бонуса ×2" if amount == 1 else f"бесплатных открытий бонуса ×2: {amount}"
-    if kind == "kuty":
-        return f"{amount} кут"
-    if kind == "item" and item:
-        return item if amount == 1 else f"{item} ×{amount}"
-    return ""
+    return flame_copy.kind_words(kind, amount, item)
 
 
 def help_html(board: dict) -> str:
@@ -162,22 +153,6 @@ def help_html(board: dict) -> str:
     words = int(settings.get("min_words") or 2)
     enabled = bool(settings.get("enabled"))
 
-    parts = [
-        f"<tg-emoji emoji-id='{EMOJI}'>⚫️</tg-emoji> <b>Огонёк сообщений</b>",
-        "",
-        "<blockquote>"
-        f"Пишите в <b>официальных группах</b>.\n"
-        f"За сутки по Москве нужно <b>{base}</b> сообщений от <b>{words}</b> слов.\n"
-        "Не считаются команды, игры и один и тот же текст подряд."
-        "</blockquote>",
-        "",
-        "<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> <b>Как работает</b>",
-        "· норма закрыта → в 00:00 серия <b>+1 день</b>",
-        "· день пропущен → огонёк <b>гаснет</b>, серия с нуля",
-    ]
-    if not enabled:
-        parts += ["", "<i>Сейчас огонёк временно выключен</i>"]
-
     rises = []
     for step in sorted(steps, key=lambda row: int(row.get("from_day") or 0)):
         start = int(step.get("from_day") or 0)
@@ -185,55 +160,43 @@ def help_html(board: dict) -> str:
         if start <= 1 or messages < 1:
             continue
         rises.append(f"с {start}-го — <b>{messages}</b>")
-    if rises:
-        parts += [
-            "",
-            "<tg-emoji emoji-id='5438449312893792440'>🚀</tg-emoji> <b>Норма растёт</b>",
-            " · ".join(rises),
-        ]
 
     lines = [_reward_line(row) for row in sorted(rewards, key=lambda row: int(row.get("day") or 0))]
     lines = [line for line in lines if line]
-    parts += ["", "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Награды за дни</b>"]
-    if lines:
-        parts.append("<i>Один раз за день серии · сразу в личные сообщения</i>")
-        parts.extend(lines)
-    else:
-        parts.append("<i>Награды скоро появятся — серия уже считается</i>")
+    title_lines = []
+    for row in sorted(titles, key=lambda t: int(t.get("from_day") or 0)):
+        title_lines.append(f"· с {span_label(int(row['from_day']))} — <b>{row['title']}</b>")
 
-    if titles:
-        parts += [
-            "",
-            "<tg-emoji emoji-id='5233479338791281256'>⭐️</tg-emoji> <b>Статус в профиле</b>",
-            "<i>Виден всем, пока огонёк жив</i>",
-        ]
-        for row in sorted(titles, key=lambda t: int(t.get("from_day") or 0)):
-            parts.append(f"· с {span_label(int(row['from_day']))} — <b>{row['title']}</b>")
+    warm_hour = ""
+    if warm.get("hour") is not None:
+        hour = int(warm["hour"])
+        warm_hour = f"{hour:02d}:00–{(hour + 1) % 24:02d}:00"
 
-    if warm.get("enabled"):
-        parts += [
-            "",
-            "<tg-emoji emoji-id='5296561370303592127'>🌟</tg-emoji> <b>Тёплый час</b>",
-            f"С серии <b>{span_label(int(warm.get('min_day') or 3))}</b>: "
-            f"каждые <b>{int(warm.get('every') or 40)}</b> сообщений в удачный час "
-            f"— ещё награда (до <b>{int(warm.get('cap') or 3)}</b> раз за день).",
-        ]
-        if warm.get("hour") is not None:
-            hour = int(warm["hour"])
-            parts.append(f"Сегодня: <code>{hour:02d}:00–{(hour + 1) % 24:02d}:00</code> МСК")
+    restore_line = ""
+    if restore_open(settings):
+        restore_line = flame_copy.restore_help_line(
+            days=int(settings.get("restore_within") or 2),
+            kuty=int(settings.get("restore_kuty") or 0),
+            item=str(settings.get("restore_item") or "").strip(),
+            count=int(settings.get("restore_item_count") or 1),
+        )
 
-    if gift.get("enabled"):
-        mult = int(gift.get("mult") or 1)
-        mult_bit = f" Куты с доски уже ×{mult}." if mult > 1 else ""
-        parts += [
-            "",
-            "<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> <b>Предмет 🎁</b>",
-            f"Напишите «использовать 🎁» — откроется доска, как у бонуса.{mult_bit}",
-            "Нужна приписка <code>Cute</code> в имени. Победа в игре не нужна.",
-        ]
-
-    parts += ["", "<i>Держите серию — награды ваши</i>"]
-    return "\n".join(parts)
+    return flame_copy.screen_help(
+        base=base,
+        words=words,
+        enabled=enabled,
+        rises=rises,
+        rewards=lines,
+        titles=title_lines,
+        warm_on=bool(warm.get("enabled")),
+        warm_from=span_label(int(warm.get("min_day") or 3)),
+        warm_every=int(warm.get("every") or 40),
+        warm_cap=int(warm.get("cap") or 3),
+        warm_hour=warm_hour,
+        gift_on=bool(gift.get("enabled")),
+        gift_mult=int(gift.get("mult") or 1),
+        restore_line=restore_line,
+    )
 
 
 async def _add_column(pool, table: str, column: str, spec: str) -> None:
@@ -282,6 +245,11 @@ async def ensure_tables(pool) -> None:
         ("gift_mult", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_min", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_max", "INT NOT NULL DEFAULT 3"),
+        ("restore_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("restore_kuty", "INT NOT NULL DEFAULT 0"),
+        ("restore_item", "TEXT NOT NULL DEFAULT ''"),
+        ("restore_item_count", "INT NOT NULL DEFAULT 1"),
+        ("restore_within", "INT NOT NULL DEFAULT 2"),
     ):
         await _add_column(pool, "flame_settings", column, spec)
 
@@ -361,6 +329,8 @@ async def ensure_tables(pool) -> None:
         ("warm_count", "INT NOT NULL DEFAULT 0"),
         ("warm_hits", "INT NOT NULL DEFAULT 0"),
         ("profit_day", "DATE"),
+        ("ember_days", "INT NOT NULL DEFAULT 0"),
+        ("ember_on", "DATE"),
     ):
         await _add_column(pool, "flame_users", column, spec)
 
@@ -400,15 +370,19 @@ def _row_settings(row) -> dict:
     out["base_messages"] = int(row["base_messages"] or 200)
     for key in (
         "warm_enabled", "status_enabled", "profit_enabled", "block_dup", "gift_enabled",
+        "restore_enabled",
     ):
         if key in row.keys():
             out[key] = bool(row[key])
     for key in (
         "warm_min_day", "warm_every", "warm_cap", "warm_from", "warm_to",
         "profit_hour", "min_words", "gift_mult", "gift_kuty_min", "gift_kuty_max",
+        "restore_kuty", "restore_item_count", "restore_within",
     ):
         if key in row.keys() and row[key] is not None:
             out[key] = int(row[key])
+    if "restore_item" in row.keys() and row["restore_item"] is not None:
+        out["restore_item"] = str(row["restore_item"]).strip()[:80]
     out["warm_from"] = max(0, min(23, out["warm_from"]))
     out["warm_to"] = max(out["warm_from"] + 1, min(24, out["warm_to"]))
     out["gift_kuty_min"] = max(1, out["gift_kuty_min"])
@@ -419,6 +393,9 @@ def _row_settings(row) -> dict:
     out["warm_cap"] = max(1, min(50, out["warm_cap"]))
     out["warm_min_day"] = max(1, min(100_000, out["warm_min_day"]))
     out["profit_hour"] = max(0, min(23, out["profit_hour"]))
+    out["restore_kuty"] = max(0, min(1_000_000, out["restore_kuty"]))
+    out["restore_item_count"] = max(1, min(100, out["restore_item_count"]))
+    out["restore_within"] = max(1, min(30, out["restore_within"]))
     return out
 
 
@@ -631,6 +608,16 @@ async def save_settings(pool, body: dict) -> None:
         "gift_kuty_min": "gift_kuty_min",
         "giftKutyMax": "gift_kuty_max",
         "gift_kuty_max": "gift_kuty_max",
+        "restoreEnabled": "restore_enabled",
+        "restore_enabled": "restore_enabled",
+        "restoreKuty": "restore_kuty",
+        "restore_kuty": "restore_kuty",
+        "restoreItem": "restore_item",
+        "restore_item": "restore_item",
+        "restoreItemCount": "restore_item_count",
+        "restore_item_count": "restore_item_count",
+        "restoreWithin": "restore_within",
+        "restore_within": "restore_within",
     }
     for src, dst in mapping.items():
         if src in body:
@@ -642,9 +629,11 @@ async def save_settings(pool, body: dict) -> None:
             id, enabled, base_messages,
             warm_enabled, warm_min_day, warm_every, warm_cap, warm_from, warm_to,
             status_enabled, profit_enabled, profit_hour, min_words, block_dup,
-            gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max
+            gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max,
+            restore_enabled, restore_kuty, restore_item, restore_item_count, restore_within
         ) VALUES (
-            1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+            1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+            $18, $19, $20, $21, $22
         )
         ON CONFLICT (id) DO UPDATE SET
             enabled = EXCLUDED.enabled,
@@ -663,7 +652,12 @@ async def save_settings(pool, body: dict) -> None:
             gift_enabled = EXCLUDED.gift_enabled,
             gift_mult = EXCLUDED.gift_mult,
             gift_kuty_min = EXCLUDED.gift_kuty_min,
-            gift_kuty_max = EXCLUDED.gift_kuty_max
+            gift_kuty_max = EXCLUDED.gift_kuty_max,
+            restore_enabled = EXCLUDED.restore_enabled,
+            restore_kuty = EXCLUDED.restore_kuty,
+            restore_item = EXCLUDED.restore_item,
+            restore_item_count = EXCLUDED.restore_item_count,
+            restore_within = EXCLUDED.restore_within
         """,
         clean["enabled"],
         clean["base_messages"],
@@ -682,6 +676,11 @@ async def save_settings(pool, body: dict) -> None:
         clean["gift_mult"],
         clean["gift_kuty_min"],
         clean["gift_kuty_max"],
+        clean["restore_enabled"],
+        clean["restore_kuty"],
+        clean["restore_item"],
+        clean["restore_item_count"],
+        clean["restore_within"],
     )
 
 
@@ -997,16 +996,136 @@ async def rollover(pool, today: date | None = None) -> int:
         """
         UPDATE flame_users
         SET best_days = GREATEST(best_days, streak_days),
+            ember_days = streak_days,
+            ember_on = $2,
             streak_days = 0
         WHERE streak_days > 0
           AND (last_kept IS NULL OR last_kept < $1)
         """,
         day - timedelta(days=1),
+        day,
     )
     try:
         return int(str(status).split()[-1])
     except Exception:
         return 0
+
+
+def restore_open(settings: dict | None) -> bool:
+    conf = settings or {}
+    if not conf.get("restore_enabled"):
+        return False
+    kuty = int(conf.get("restore_kuty") or 0)
+    item = str(conf.get("restore_item") or "").strip()
+    return kuty > 0 or bool(item)
+
+
+def restore_ways(settings: dict | None) -> list[dict]:
+    conf = settings or {}
+    ways = []
+    kuty = int(conf.get("restore_kuty") or 0)
+    if kuty > 0:
+        ways.append({"id": "kuty", "price": kuty, "label": flame_copy.button_kuty(kuty)})
+    item = str(conf.get("restore_item") or "").strip()
+    count = max(1, int(conf.get("restore_item_count") or 1))
+    if item:
+        ways.append({
+            "id": "item",
+            "item": item,
+            "count": count,
+            "label": flame_copy.button_item(item, count),
+        })
+    return ways
+
+
+def restore_view(
+    *,
+    streak: int,
+    ember_days: int,
+    ember_on: date | None,
+    today: date,
+    settings: dict,
+) -> dict:
+    """Что сказать человеку, который пишет «вернуть огонёк».
+
+    kind: off | alive | none | late | offer
+    """
+    if not restore_open(settings):
+        return {"kind": "off", "text": flame_copy.screen_restore_off(), "ways": []}
+    if int(streak or 0) > 0:
+        return {"kind": "alive", "text": flame_copy.screen_restore_alive(), "ways": []}
+    days = int(ember_days or 0)
+    if days < 1 or ember_on is None:
+        return {"kind": "none", "text": flame_copy.screen_restore_none(), "ways": []}
+    within = max(1, int(settings.get("restore_within") or 2))
+    last_day = ember_on + timedelta(days=within - 1)
+    if today > last_day:
+        return {"kind": "late", "text": flame_copy.screen_restore_late(), "ways": []}
+    ways = restore_ways(settings)
+    price = " или ".join(way["label"].removeprefix("За ") for way in ways)
+    left = (last_day - today).days + 1
+    return {
+        "kind": "offer",
+        "days": days,
+        "label": span_label(days),
+        "text": flame_copy.screen_restore_offer(span_label(days), left, price),
+        "ways": ways,
+    }
+
+
+async def ember_of(pool, user_id: int) -> dict:
+    await ensure_tables(pool)
+    row = await pool.fetchrow(
+        """
+        SELECT streak_days, ember_days, ember_on
+        FROM flame_users WHERE user_id = $1
+        """,
+        int(user_id),
+    )
+    if not row:
+        return {"streak": 0, "ember_days": 0, "ember_on": None}
+    return {
+        "streak": int(row["streak_days"] or 0),
+        "ember_days": int(row["ember_days"] or 0),
+        "ember_on": row["ember_on"],
+    }
+
+
+async def claim_restore(pool, user_id: int, today: date | None = None) -> int:
+    """Возвращает длину серии, если погасший огонёк ещё можно поднять. Иначе 0.
+
+    Оплата проверяется снаружи. Здесь серия встаёт на вчера, чтобы сегодняшняя
+    норма ещё была нужна, и повторный возврат уже не проходит.
+    """
+    await ensure_tables(pool)
+    day = today or msk_today()
+    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    if not restore_open(settings):
+        return 0
+    within = max(1, int(settings["restore_within"]))
+    earliest = day - timedelta(days=within - 1)
+    row = await pool.fetchrow(
+        """
+        UPDATE flame_users
+        SET streak_days = ember_days,
+            last_kept = $2,
+            best_days = GREATEST(best_days, ember_days),
+            ember_days = 0,
+            ember_on = NULL
+        WHERE user_id = $1
+          AND streak_days = 0
+          AND ember_days > 0
+          AND ember_on IS NOT NULL
+          AND ember_on >= $3
+        RETURNING streak_days
+        """,
+        int(user_id),
+        day - timedelta(days=1),
+        earliest,
+    )
+    if not row:
+        return 0
+    return int(row["streak_days"] or 0)
 
 
 def _pick_weighted(rows: list[dict]) -> dict | None:
@@ -1255,6 +1374,19 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
             if last == day:
                 return None
             if last is not None and last < day - timedelta(days=1):
+                if streak > 0 and row:
+                    await conn.execute(
+                        """
+                        UPDATE flame_users
+                        SET best_days = GREATEST(best_days, streak_days),
+                            ember_days = streak_days,
+                            ember_on = $2,
+                            streak_days = 0
+                        WHERE user_id = $1 AND streak_days > 0
+                        """,
+                        int(user_id),
+                        day,
+                    )
                 streak = 0
             target = streak + 1
             if count < need_for(target, settings["base_messages"], steps):
@@ -1264,7 +1396,8 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
                 await conn.execute(
                     """
                     UPDATE flame_users
-                    SET streak_days = $2, best_days = $3, last_kept = $4
+                    SET streak_days = $2, best_days = $3, last_kept = $4,
+                        ember_days = 0, ember_on = NULL
                     WHERE user_id = $1
                     """,
                     int(user_id), target, best, day,

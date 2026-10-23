@@ -46,6 +46,11 @@ class SettingsBody(BaseModel):
     giftMult: int = Field(1, ge=1, le=10)
     giftKutyMin: int = Field(1, ge=1, le=1_000_000)
     giftKutyMax: int = Field(3, ge=1, le=1_000_000)
+    restoreEnabled: bool = False
+    restoreKuty: int = Field(0, ge=0, le=1_000_000)
+    restoreItem: str = ""
+    restoreItemCount: int = Field(1, ge=1, le=100)
+    restoreWithin: int = Field(2, ge=1, le=30)
     model_config = {"extra": "forbid"}
 
 

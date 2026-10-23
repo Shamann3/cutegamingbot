@@ -26,7 +26,7 @@ function slideClassForMode(nextMode) {
   return nextMode === 'register' ? 'auth-form-from-right' : 'auth-form-from-left'
 }
 
-export default function AuthPage({ displayName, onAuthenticated, initialMode = 'login', fortress = false, onBack }) {
+export default function AuthPage({ displayName, onAuthenticated, initialMode = 'login', fortress = false, onBack, embedded = false, deferEntry = false }) {
   const [mode, setMode] = useState(initialMode === 'register' ? 'register' : 'login')
   const [slideClass, setSlideClass] = useState('auth-form-from-left')
   const [loading, setLoading] = useState(false)
@@ -41,7 +41,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
   const modeRef = useRef(initialMode === 'register' ? 'register' : 'login')
   const personal = fortress && accentIsPersonal(loadStoredAccent())
   const [creatorEntry, setCreatorEntry] = useState(() => (
-    initialMode !== 'register' && Boolean(rememberedPortrait()?.isProjectCreator)
+    !deferEntry && initialMode !== 'register' && Boolean(rememberedPortrait()?.isProjectCreator)
   ))
 
   const mounted = useRef(true)
@@ -80,7 +80,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     const endedReason = takeSessionEndedReason()
     if (endedReason && !rememberedPortrait()?.isProjectCreator) setError(endedReason)
 
-    if (modeRef.current === 'login' && rememberedPortrait()?.isProjectCreator) {
+    if (!deferEntry && modeRef.current === 'login' && rememberedPortrait()?.isProjectCreator) {
       openAsCreator()
       return () => { cancelled = true }
     }
@@ -89,7 +89,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
       .then((status) => {
         if (cancelled) return
         setRegistered(Boolean(status.registered))
-        if (status.isProjectCreator && modeRef.current === 'login') {
+        if (!deferEntry && status.isProjectCreator && modeRef.current === 'login') {
           rememberPortrait(portraitFrom(status))
           openAsCreator()
           return
@@ -106,7 +106,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
     return () => {
       cancelled = true
     }
-  }, [openAsCreator])
+  }, [deferEntry, openAsCreator])
 
   useEffect(() => {
     if (regStage !== 'waiting') return undefined
@@ -348,6 +348,7 @@ export default function AuthPage({ displayName, onAuthenticated, initialMode = '
       lead={creatorEntry ? WORDS.creatorLead : WORDS.staffLead}
       personal={personal && fortress}
       onBack={onBack}
+      embedded={embedded}
     >
         {!creatorEntry && <AuthTabs mode={mode} onChange={handleTabChange} />}
 

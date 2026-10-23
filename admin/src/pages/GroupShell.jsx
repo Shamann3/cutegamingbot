@@ -54,6 +54,7 @@ import EliteTopbar from '../components/EliteTopbar'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import AccentAura from '../components/AccentAura'
+import EpsilonMechanism from '../components/EpsilonMechanism'
 import AccentPalette from '../components/AccentPalette'
 import DarkPick from '../components/DarkPick'
 import FocusWindow from '../components/FocusWindow'
@@ -933,6 +934,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
   if (phase === 'list') {
     return (
       <div className={shellClass} data-viewport={viewport}>
+        <EpsilonMechanism />
         <GroupEnter
           groups={groups}
           leavingId={leavingId}
@@ -950,6 +952,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
     const sealGroup = groups.find((group) => group.chatId === chatId) || groups[0]
     return (
       <div className={shellClass} data-viewport={viewport}>
+        <EpsilonMechanism />
         <GroupSeal title={sealGroup?.title} position={sealGroup?.position} onEnter={enterCabinet} />
       </div>
     )
@@ -957,6 +960,7 @@ export default function GroupShell({ portrait, onLeave, onStaffApply, preview = 
 
   return (
     <div ref={shellRef} className={shellClass} data-viewport={viewport}>
+      <EpsilonMechanism />
       <GroupMuteLock rootRef={shellRef} lock={summary?.muteLock} />
       <AccentAura />
       {banner}

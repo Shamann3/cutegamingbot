@@ -13,10 +13,15 @@ _SERVER = Path(__file__).resolve().parents[2] / "server"
 if str(_SERVER) not in sys.path:
     sys.path.insert(0, str(_SERVER))
 
+from aiogram import F, Router
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+
 from flame_engine import (  # noqa: E402
     advance,
     bonus_tokens,
+    claim_restore,
     consume_bonus,
+    ember_of,
     gift_config,
     help_html,
     leaderboard,
@@ -25,13 +30,18 @@ from flame_engine import (  # noqa: E402
     msk_today,
     profile_line,
     profit_targets,
+    restore_view,
     roll_gift_extra,
     roll_gift_stake,
     rollover,
     streak_of,
     titles_list,
     try_warm_hit,
+    _row_settings,
 )
+import flame_copy  # noqa: E402
+
+flame_router = Router(name="flame")
 
 _MSK = timezone(timedelta(hours=3))
 _started = False
@@ -194,33 +204,12 @@ async def _tell_streak(user_id: int, result: dict) -> None:
     gifts = _gift_words(result.get("rewards") or [])
     title = str(result.get("title") or "").strip()
     label = result.get("label") or "1 день"
-    head = f"<b>{title}</b>\n" if title else ""
-    extra = (
-        f"\n\n<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> "
-        f"Вам: <b>{gifts}</b>"
-        if gifts
-        else ""
-    )
-    text = (
-        f"<tg-emoji emoji-id='5355118129783553944'>⚫️</tg-emoji> "
-        f"<b>Огонёк уже {label}</b>\n"
-        f"{head}"
-        f"<blockquote>День закрыт.\n"
-        "Завтра снова наберите норму — серия продолжится.</blockquote>"
-        f"{extra}"
-    )
-    await _dm(user_id, text)
+    await _dm(user_id, flame_copy.screen_streak(label, title, gifts))
 
 
 async def _tell_warm(user_id: int, gift: dict) -> None:
     label = gift.get("label") or _gift_words([gift])
-    text = (
-        f"<tg-emoji emoji-id='5296561370303592127'>🌟</tg-emoji> "
-        f"<b>Тёплый час</b>\n"
-        f"<blockquote>Вы писали в удачный час — вот награда.</blockquote>\n"
-        f"<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>{label}</b>"
-    )
-    await _dm(user_id, text)
+    await _dm(user_id, flame_copy.screen_warm(label))
 
 
 async def _dm(user_id: int, text: str) -> None:
@@ -289,30 +278,21 @@ async def top_text(db) -> str:
         except Exception:
             people = []
     if not people:
-        return (
-            "<tg-emoji emoji-id='5354962501643578130'>⚫️</tg-emoji> "
-            "<b>Лучшие огоньки</b>\n"
-            "<blockquote>Здесь самые длинные серии.\n"
-            "<i>Пока пусто — закройте норму дня, и вы появитесь в списке.</i></blockquote>"
-        )
+        return flame_copy.screen_top_empty()
     from bot.funcs.top import stat_person_html
-    lines = [
-        "<tg-emoji emoji-id='5354962501643578130'>⚫️</tg-emoji> <b>Лучшие огоньки</b>",
-        "<i>Самые длинные живые серии</i>",
-        "",
-    ]
     medals = {
         1: "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji>",
         2: "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>",
         3: "<tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji>",
     }
+    rows = []
     for index, person in enumerate(people, start=1):
         name = stat_person_html(person["name"], person.get("username"), person["userId"])
         mark = " · <i>личный рекорд</i>" if person.get("record") else ""
         title = f" · <b>{person['title']}</b>" if person.get("title") else ""
         prefix = medals.get(index, f"<b>{index}.</b>")
-        lines.append(f"{prefix} {name} — <b>{person['label']}</b>{title}{mark}")
-    return "\n".join(lines)
+        rows.append(f"{prefix} {name} — <b>{person['label']}</b>{title}{mark}")
+    return flame_copy.screen_top(rows)
 
 
 async def load_gift(db) -> dict:
@@ -356,41 +336,25 @@ async def _profit_loop(db) -> None:
 
 
 async def _send_profit(card: dict) -> None:
+    from flame_engine import _kind_words, span_label
     streak = card.get("label") or "1 день"
     title = str(card.get("title") or "").strip()
-    head = f"<b>{title}</b>\n" if title else ""
-    next_line = ""
     nxt = card.get("next")
     if nxt:
-        from flame_engine import _kind_words, span_label
         left = int(nxt["day"]) - int(card.get("streak") or 0)
         gift = _kind_words(nxt["kind"], nxt["amount"], nxt.get("item_name") or "")
         day_word = "день" if left == 1 else ("дня" if 2 <= left <= 4 else "дней")
-        next_line = (
-            f"\n<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> "
-            f"До награды за <b>{span_label(int(nxt['day']))}</b> — ещё <b>{left}</b> {day_word}: {gift}"
-        )
+        next_line = flame_copy.profit_next(span_label(int(nxt["day"])), left, day_word, gift)
     else:
-        next_line = "\n<i>Все дневные награды уже собраны — держите серию дальше</i>"
-    loot_rows = card.get("loot") or []
-    if loot_rows:
-        loot_line = (
-            "\nСегодня получили: "
-            + " · ".join(f"<b>{row['label']}</b>" for row in loot_rows if row.get("label"))
-        )
-    else:
-        loot_line = ""
-    kept = (
-        "<tg-emoji emoji-id='5321021153219732362'>⚡️</tg-emoji> норма дня <b>закрыта</b>"
-        if card.get("keptToday")
-        else "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> норма дня <b>ещё открыта</b>"
-    )
-    text = (
-        f"<tg-emoji emoji-id='5355118129783553944'>⚫️</tg-emoji> "
-        f"<b>Ваш огонёк сегодня</b>\n{head}"
-        f"<blockquote>Серия: <b>{streak}</b> · место: <b>#{card.get('rank') or '—'}</b>\n"
-        f"{kept}</blockquote>"
-        f"{next_line}{loot_line}"
+        next_line = flame_copy.profit_next_done()
+    labels = [row["label"] for row in (card.get("loot") or []) if row.get("label")]
+    text = flame_copy.screen_profit(
+        title=title,
+        streak=streak,
+        rank=str(card.get("rank") or "—"),
+        kept=bool(card.get("keptToday")),
+        next_line=next_line,
+        loot_line=flame_copy.profit_loot(labels),
     )
     await _dm(int(card["userId"]), text)
 
@@ -407,6 +371,156 @@ async def _loop(db) -> None:
         now = datetime.now(_MSK)
         nxt = (now + timedelta(days=1)).replace(hour=0, minute=0, second=8, microsecond=0)
         await asyncio.sleep(max(30, (nxt - now).total_seconds()))
+
+
+RESTORE_WORDS = {
+    "вернуть огонёк",
+    "вернуть огонек",
+    "восстановить огонёк",
+    "восстановить огонек",
+    "/flameback",
+}
+
+
+def is_restore_text(text: str | None) -> bool:
+    return (text or "").strip().lower() in RESTORE_WORDS
+
+
+def _restore_keyboard(user_id: int, ways: list[dict]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=str(way["label"])[:64], callback_data=f"flback:{int(user_id)}:{way['id']}")]
+        for way in ways
+    ]
+    rows.append([InlineKeyboardButton(text="Отказаться", callback_data=f"flback:{int(user_id)}:no")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _fresh_settings(db) -> dict:
+    pool = _pool(db)
+    if pool is None:
+        return {}
+    from flame_engine import ensure_tables
+    await ensure_tables(pool)
+    row = await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1")
+    return _row_settings(row)
+
+
+async def offer_restore(message: Message, db) -> None:
+    user = message.from_user
+    if user is None:
+        return
+    pool = _pool(db)
+    if pool is None:
+        return
+    settings = await _fresh_settings(db)
+    state = await ember_of(pool, int(user.id))
+    view = restore_view(
+        streak=state["streak"],
+        ember_days=state["ember_days"],
+        ember_on=state["ember_on"],
+        today=msk_today(),
+        settings=settings,
+    )
+    markup = _restore_keyboard(int(user.id), view["ways"]) if view["kind"] == "offer" else None
+    await message.reply(
+        view["text"],
+        parse_mode="HTML",
+        reply_markup=markup,
+        disable_web_page_preview=True,
+    )
+
+
+async def _item_count(db, user_id: int, name: str) -> int:
+    from bot.db_create.items_codec import decode_items
+    row = await db.pool.fetchrow("SELECT items FROM users WHERE user_id = $1", int(user_id))
+    if not row:
+        return 0
+    return int(decode_items(row["items"]).get(name) or 0)
+
+
+async def finish_restore(db, user_id: int, way: str) -> str:
+    pool = _pool(db)
+    if pool is None:
+        return flame_copy.screen_restore_off()
+    settings = await _fresh_settings(db)
+    state = await ember_of(pool, int(user_id))
+    view = restore_view(
+        streak=state["streak"],
+        ember_days=state["ember_days"],
+        ember_on=state["ember_on"],
+        today=msk_today(),
+        settings=settings,
+    )
+    if view["kind"] != "offer":
+        return view["text"]
+    allowed = {item["id"] for item in view["ways"]}
+    if way not in allowed:
+        return view["text"]
+
+    charged = False
+    if way == "kuty":
+        price = int(settings["restore_kuty"])
+        balance = int(await db.get_user_balance(user_id) or 0)
+        if balance < price:
+            return flame_copy.screen_restore_poor(price)
+        await db.update_user_balance(user_id, balance - price)
+        charged = True
+        try:
+            await db.cutehistory_plus(user_id, -price, "вернуть огонёк")
+        except Exception:
+            pass
+    else:
+        name = str(settings["restore_item"] or "").strip()
+        count = int(settings["restore_item_count"] or 1)
+        if await _item_count(db, user_id, name) < count:
+            return flame_copy.screen_restore_no_item(name, count)
+        await db.remove_items_craft(user_id, name, count)
+        charged = True
+        price = 0
+
+    try:
+        got = await claim_restore(pool, int(user_id))
+    except Exception:
+        got = 0
+    if got < 1:
+        if charged and way == "kuty":
+            back = int(await db.get_user_balance(user_id) or 0) + price
+            await db.update_user_balance(user_id, back)
+            try:
+                await db.cutehistory_plus(user_id, price, "вернуть огонёк")
+            except Exception:
+                pass
+        elif charged:
+            await db.add_item_to_inventory(user_id, name, count)
+        return flame_copy.screen_restore_busy()
+    from flame_engine import span_label
+    return flame_copy.screen_restore_done(span_label(got))
+
+
+@flame_router.callback_query(F.data.startswith("flback:"))
+async def on_restore_click(call: CallbackQuery) -> None:
+    parts = (call.data or "").split(":")
+    if len(parts) != 3 or call.from_user is None or call.message is None:
+        await call.answer()
+        return
+    _, owner, way = parts
+    if str(call.from_user.id) != owner:
+        await call.answer("Эта кнопка не ваша", show_alert=True)
+        return
+    from bot.db_create.db import db
+    if way == "no":
+        await call.answer()
+        try:
+            await call.message.edit_text(flame_copy.screen_restore_cancel(), parse_mode="HTML")
+        except Exception:
+            pass
+        return
+    text = await finish_restore(db, int(call.from_user.id), way)
+    await call.answer()
+    try:
+        await call.message.edit_text(text, parse_mode="HTML")
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML")
 
 
 def start_flame_worker(db) -> None:

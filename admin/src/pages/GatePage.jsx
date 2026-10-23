@@ -3,6 +3,7 @@ import { fetchAdminAuthStatus } from '../lib/adminClient'
 import { accentIsPersonal, applyAccentToDocument, loadStoredAccent, persistAccent } from '../lib/accentTheme'
 import { portraitFrom, rememberPortrait } from '../lib/gateRecovery'
 import EpsilonLogo from '../components/EpsilonLogo'
+import ArrivalStage from '../components/ArrivalStage'
 import AccentPalette from '../components/AccentPalette'
 import MatrixRain from '../components/MatrixRain'
 import { useOutsideDismiss } from '../lib/outsideDismiss'
@@ -40,7 +41,16 @@ function CuteBrand() {
   return <span className="gate-brand-word">CuteGamingBot</span>
 }
 
-export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onGroupApply, fault = '' }) {
+export default function GatePage({
+  onStaffEnter,
+  onStaffApply,
+  onGroupEnter,
+  onGroupApply,
+  fault = '',
+  auth = null,
+  authMode = '',
+  focusAuth = false,
+}) {
   const [personal, setPersonal] = useState(() => accentIsPersonal(loadStoredAccent()))
   const [accent, setAccent] = useState(() => loadStoredAccent())
   const [colorOpen, setColorOpen] = useState(false)
@@ -57,6 +67,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
   const requestId = useRef(0)
   const flight = useRef(Promise.resolve(GUEST_PORTRAIT))
   const pressLock = useRef(false)
+  const rootRef = useRef(null)
 
   useEffect(() => {
     playMeme('gate')
@@ -214,8 +225,42 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
     }
   }
 
+  const focused = useRef(false)
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return undefined
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    const behavior = reduce ? 'auto' : 'smooth'
+    if (!focusAuth) {
+      if (!focused.current) return undefined
+      focused.current = false
+      const timer = window.setTimeout(() => root.scrollTo({ top: 0, behavior }), 40)
+      return () => window.clearTimeout(timer)
+    }
+    focused.current = true
+    const id = authMode === 'register' ? 'register' : 'enter'
+    const el = root.querySelector(`[data-arrival="${id}"]`)
+    if (!el) return undefined
+    const timer = window.setTimeout(() => {
+      el.scrollIntoView({ behavior, block: 'start' })
+    }, 40)
+    return () => window.clearTimeout(timer)
+  }, [focusAuth, authMode])
+
+  const askEnter = () => {
+    if (staffKnown) {
+      pressStaff()
+      return
+    }
+    onStaffEnter()
+  }
+
+  const askRegister = () => {
+    onStaffApply()
+  }
+
   return (
-    <div className={`gate-root gate-anim${personal ? ' is-personal' : ''}`}>
+    <div ref={rootRef} className={`gate-root gate-anim is-arrival${personal ? ' is-personal' : ''}`}>
       <MatrixRain
         className="gate-matrix"
         paused={still}
@@ -225,9 +270,19 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
       />
       <div className="gate-veil" aria-hidden="true" />
       <div className="gate-frame" aria-hidden="true" />
+      <ArrivalStage
+        scrollerRef={rootRef}
+        revision={authMode || 'door'}
+        chapters={[
+          { id: 'arrive', label: 'Приход' },
+          { id: 'doors', label: 'Двери' },
+          { id: 'enter', label: 'Вход', onPick: authMode === 'login' ? undefined : askEnter },
+          { id: 'register', label: 'Регистрация', onPick: authMode === 'register' ? undefined : askRegister },
+        ]}
+      />
       <div className={`gate-sheet${colorOpen ? ' is-color' : ''}`}>
         <div className="gate-stage">
-        <header className="gate-head">
+        <header className="gate-head" data-arrival="arrive">
           <span className="gate-rise gate-logo-slot" style={{ '--rise': 0 }}>
             <EpsilonLogo size="sm" decorative />
           </span>
@@ -247,6 +302,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
           <p className="gate-status gate-status-error" role="alert">{note}</p>
         )}
 
+        <div data-arrival="doors">
         {pass === 'staff' || pass === 'group' ? (
           <AcceptedPass
             kind={pass}
@@ -294,6 +350,7 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             />
           </div>
         )}
+        </div>
 
         <div className="gate-palette-slot gate-rise" style={{ '--rise': 6 }} ref={paletteRef}>
           <div className="gate-tools">
@@ -329,6 +386,30 @@ export default function GatePage({ onStaffEnter, onStaffApply, onGroupEnter, onG
             </div>
           )}
         </div>
+
+        <section className="arrival-chapter" data-arrival="enter">
+          <h2>Вход сотрудника</h2>
+          <p>Ключ, затем шесть цифр из приложения. Кнопка «Войти» в конце этой части.</p>
+          {authMode === 'login' && auth ? (
+            <div className="arrival-dock">{auth}</div>
+          ) : (
+            <button type="button" className="auth-btn auth-btn-primary" onClick={askEnter}>
+              Перейти ко входу
+            </button>
+          )}
+        </section>
+
+        <section className="arrival-chapter" data-arrival="register">
+          <h2>Регистрация</h2>
+          <p>Ключ от создателя, код из приложения, затем заявка. Отправка стоит в конце.</p>
+          {authMode === 'register' && auth ? (
+            <div className="arrival-dock">{auth}</div>
+          ) : (
+            <button type="button" className="auth-btn auth-btn-primary" onClick={askRegister}>
+              Перейти к регистрации
+            </button>
+          )}
+        </section>
         </div>
       </div>
     </div>

@@ -23,6 +23,39 @@
   line-height: 1.45;
 }
 
+.flame-quote {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 140, 40, 0.08);
+  border: 1px solid rgba(255, 140, 40, 0.22);
+  color: inherit;
+}
+
+.flame-rules {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--e-text-2, #c4c4c8);
+  line-height: 1.45;
+}
+
+.flame-field select {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  padding: 0 12px;
+}
+
+.flame-field input:disabled {
+  opacity: 0.45;
+}
+
 .flame-orb {
   flex: none;
   width: 46px;
@@ -283,9 +316,12 @@
 
 @media (max-width: 720px) {
   .flame-stats,
-  .flame-grid-2,
   .flame-preview-grid {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .flame-grid-2 {
+    grid-template-columns: 1fr;
   }
 
   .flame-rows li,

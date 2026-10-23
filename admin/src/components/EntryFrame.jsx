@@ -3,9 +3,9 @@ import EpsilonLogo from './EpsilonLogo'
 import PanelAppearance from './PanelAppearance'
 
 /** Общая карточка входа: те же цвет, ширина и низ, что у панели сотрудника. */
-export default function EntryFrame({ title, lead, personal = false, onBack, children }) {
+export default function EntryFrame({ title, lead, personal = false, onBack, children, embedded = false }) {
   return (
-    <div className={`auth-screen auth-screen-panel auth-screen-fortress${personal ? ' is-personal' : ''}`}>
+    <div className={`auth-screen auth-screen-panel auth-screen-fortress${personal ? ' is-personal' : ''}${embedded ? ' is-arrival' : ''}`}>
       <AccentAura />
       <div className="auth-card entry-card entry-stable">
         <header className="auth-header">

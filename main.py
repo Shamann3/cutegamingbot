@@ -37662,6 +37662,14 @@ async def add_firstname_to_usercheck_balance(message: Message):
         await task1
         return
 
+    from bot.funcs.flame import is_restore_text, offer_restore
+    if is_restore_text(text_lower):
+        try:
+            await offer_restore(message, db)
+        except Exception as e:
+            print(f"[FLAME] restore: {type(e).__name__}: {e}")
+        return
+
     # Проверка на точное совпадение с ключевым словом - система мута
     mute_cmd_text = {"мут" , "mute" , "замутить" , "/mute" , "/замутить" , "размутить" , "размут" , "unmute" ,
         "/unmute" , "/размутить" , }
@@ -41033,7 +41041,11 @@ async def botmain():
             print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
 
         try:
-            from bot.funcs.flame import start_flame_worker
+            from bot.funcs.flame import flame_router, start_flame_worker
+            try:
+                dp.include_router(flame_router)
+            except Exception:
+                pass
             start_flame_worker(db)
         except Exception as e:
             print(f"[FLAME][WARN] worker start: {type(e).__name__}: {e}")
@@ -41112,7 +41124,11 @@ async def botmain():
             except Exception as e:
                 print(f"[KING][WARN] worker start: {type(e).__name__}: {e}")
             try:
-                from bot.funcs.flame import start_flame_worker
+                from bot.funcs.flame import flame_router, start_flame_worker
+                try:
+                    dp.include_router(flame_router)
+                except Exception:
+                    pass
                 start_flame_worker(db)
             except Exception as e:
                 print(f"[FLAME][WARN] worker start: {type(e).__name__}: {e}")
