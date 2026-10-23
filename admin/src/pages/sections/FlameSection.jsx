@@ -8,28 +8,25 @@ import {
   saveFlameTitles,
   saveFlameWarmRewards,
 } from '../../lib/adminClient'
+import DarkPick from '../../components/DarkPick'
+import DexItemSearchPicker from '../../components/DexItemSearchPicker'
 import '../../styles/flame.css'
+
+const KIND_OPTIONS = [
+  { value: 'bonus', label: 'Обычный бонус' },
+  { value: 'bonus_x2', label: 'Бонус ×2' },
+  { value: 'kuty', label: 'Куты' },
+  { value: 'item', label: 'Предмет' },
+]
 
 const TABS = [
   { id: 'norm', label: 'Норма', hint: 'Сколько писать' },
   { id: 'rewards', label: 'Награды', hint: 'За дни серии' },
   { id: 'warm', label: 'Тёплый час', hint: 'Случайный час' },
   { id: 'status', label: 'Статусы', hint: 'Строка в профиле' },
-  { id: 'gift', label: 'Предмет 🎁', hint: 'Доска без победы' },
+  { id: 'gift', label: 'Бонус +', hint: 'Предмет 🎁' },
   { id: 'restore', label: 'Вернуть', hint: 'Куты или предмет' },
   { id: 'live', label: 'Живое', hint: 'Серии и награды' },
-]
-
-const KINDS = [
-  { id: 'bonus', label: 'Обычный бонус' },
-  { id: 'bonus_x2', label: 'Бонус ×2' },
-  { id: 'kuty', label: 'Куты' },
-  { id: 'item', label: 'Предмет' },
-]
-
-const GIFT_KINDS = [
-  { id: 'kuty', label: 'Куты' },
-  { id: 'item', label: 'Предмет' },
 ]
 
 function digits(value) {
@@ -37,7 +34,26 @@ function digits(value) {
 }
 
 function kindLabel(kind) {
-  return KINDS.find((row) => row.id === kind)?.label || 'Награда'
+  return KIND_OPTIONS.find((row) => row.value === kind)?.label || 'Награда'
+}
+
+function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel = 'Выберите предмет', catalog = [] }) {
+  return (
+    <div className="flame-item-pick">
+      <DexItemSearchPicker
+        label={label}
+        value={value || ''}
+        onChange={onChange}
+        valueMode="name"
+        catalog={catalog}
+        compact
+        clearable
+        emptyLabel={emptyLabel}
+        placeholder="Название или эмодзи…"
+        hint="Каталог предметов. Ищите по эмодзи, названию, коду или id."
+      />
+    </div>
+  )
 }
 
 function sourceLabel(source) {
@@ -80,6 +96,13 @@ export default function FlameSection() {
       giftMult: String(s.gift_mult || 1),
       giftKutyMin: String(s.gift_kuty_min || 1),
       giftKutyMax: String(s.gift_kuty_max || 3),
+      giftExtraKutyOn: s.gift_extra_kuty_on !== false,
+      giftExtraKutyChance: String(s.gift_extra_kuty_chance ?? 35),
+      giftExtraKutyMin: String(s.gift_extra_kuty_min ?? 5),
+      giftExtraKutyMax: String(s.gift_extra_kuty_max ?? 25),
+      giftItemOn: s.gift_item_on !== false,
+      giftItemChance: String(s.gift_item_chance ?? 40),
+      giftFallbackPct: String(s.gift_fallback_pct ?? 30),
       restoreEnabled: s.restore_enabled !== false,
       restoreDays: String(s.restore_days || 3),
       restoreKuty: String(s.restore_kuty ?? 500),
@@ -159,6 +182,13 @@ export default function FlameSection() {
     giftMult: Math.max(1, Number(form.giftMult) || 1),
     giftKutyMin: Math.max(1, Number(form.giftKutyMin) || 1),
     giftKutyMax: Math.max(1, Number(form.giftKutyMax) || 1),
+    giftExtraKutyOn: Boolean(form.giftExtraKutyOn),
+    giftExtraKutyChance: Math.max(0, Math.min(100, Number(form.giftExtraKutyChance) || 0)),
+    giftExtraKutyMin: Math.max(0, Number(form.giftExtraKutyMin) || 0),
+    giftExtraKutyMax: Math.max(0, Number(form.giftExtraKutyMax) || 0),
+    giftItemOn: Boolean(form.giftItemOn),
+    giftItemChance: Math.max(0, Math.min(100, Number(form.giftItemChance) || 0)),
+    giftFallbackPct: Math.max(1, Math.min(100, Number(form.giftFallbackPct) || 30)),
     restoreEnabled: Boolean(form.restoreEnabled),
     restoreDays: Math.max(1, Math.min(30, Number(form.restoreDays) || 3)),
     restoreKuty: Math.max(0, Number(form.restoreKuty) || 0),
@@ -166,9 +196,16 @@ export default function FlameSection() {
     restoreItemCount: Math.max(1, Math.min(100, Number(form.restoreItemCount) || 1)),
   }))
 
-  const items = board?.items || []
   const preview = board?.gift?.preview || {}
   const warmHour = board?.warm?.hour
+  const catalog = useMemo(() => {
+    const rows = board?.items || []
+    if (!rows.length) return []
+    if (typeof rows[0] === 'string') {
+      return rows.map((name) => ({ id: name, name, name1: '', emoji: '📦', price: 0 }))
+    }
+    return rows
+  }, [board?.items])
 
   const restoreHint = useMemo(() => {
     if (!form.restoreEnabled) {
@@ -201,8 +238,8 @@ export default function FlameSection() {
         <div>
           <h2>Огонёк</h2>
           <p>
-            Норма, награды, тёплый час, статусы, предмет 🎁 и возврат серии.
-            Числа меняются здесь. Слова — в одном файле.
+            Норма, награды, тёплый час, статусы, Бонус + (🎁) и возврат серии.
+            Числа здесь. Слова Бонуса + — в <code>server/flame_bonus_plus_copy.py</code>.
           </p>
         </div>
       </header>
@@ -349,15 +386,13 @@ export default function FlameSection() {
                         setRewards((rows) => rows.map((item, i) => i === index ? { ...item, day: value } : item))
                       }} />
                     </label>
-                    <label>
-                      <span>Что дать</span>
-                      <select value={row.kind} onChange={(e) => {
-                        const kind = e.target.value
-                        setRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))
-                      }}>
-                        {KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
-                      </select>
-                    </label>
+                    <DarkPick
+                      label="Что дать"
+                      value={row.kind}
+                      options={KIND_OPTIONS}
+                      searchable={false}
+                      onChange={(kind) => setRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
+                    />
                     <label>
                       <span>{row.kind === 'item' ? 'Штук' : row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
                       <input inputMode="numeric" value={row.amount} onChange={(e) => {
@@ -366,16 +401,13 @@ export default function FlameSection() {
                       }} />
                     </label>
                     {row.kind === 'item' && (
-                      <label className="is-wide">
-                        <span>Предмет</span>
-                        <select value={row.itemName} onChange={(e) => {
-                          const itemName = e.target.value
-                          setRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))
-                        }}>
-                          <option value="">Выберите</option>
-                          {items.map((name) => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                      </label>
+                      <div className="is-wide">
+                        <FlameItemPick
+                          catalog={catalog}
+                          value={row.itemName}
+                          onChange={(itemName) => setRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))}
+                        />
+                      </div>
                     )}
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" aria-label={`Убрать ${kindLabel(row.kind)}`} onClick={() => setRewards((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
@@ -434,15 +466,13 @@ export default function FlameSection() {
               <ul className="flame-rows is-warm">
                 {warmRewards.map((row, index) => (
                   <li key={`warm-${index}`}>
-                    <label>
-                      <span>Что</span>
-                      <select value={row.kind} onChange={(e) => {
-                        const kind = e.target.value
-                        setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))
-                      }}>
-                        {KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
-                      </select>
-                    </label>
+                    <DarkPick
+                      label="Что"
+                      value={row.kind}
+                      options={KIND_OPTIONS}
+                      searchable={false}
+                      onChange={(kind) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
+                    />
                     <label>
                       <span>Сколько</span>
                       <input inputMode="numeric" value={row.amount} onChange={(e) => {
@@ -458,16 +488,13 @@ export default function FlameSection() {
                       }} />
                     </label>
                     {row.kind === 'item' && (
-                      <label className="is-wide">
-                        <span>Предмет</span>
-                        <select value={row.itemName} onChange={(e) => {
-                          const itemName = e.target.value
-                          setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))
-                        }}>
-                          <option value="">Выберите</option>
-                          {items.map((name) => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                      </label>
+                      <div className="is-wide">
+                        <FlameItemPick
+                          catalog={catalog}
+                          value={row.itemName}
+                          onChange={(itemName) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))}
+                        />
+                      </div>
                     )}
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setWarmRewards((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
@@ -553,19 +580,20 @@ export default function FlameSection() {
           {tab === 'gift' && (
             <section className="flame-card flame-rise">
               <div className="flame-card-head">
-                <h3>Предмет 🎁</h3>
+                <h3>Бонус + · предмет 🎁</h3>
                 <label className="flame-switch">
                   <input type="checkbox" checked={form.giftEnabled} onChange={(e) => patch('giftEnabled', e.target.checked)} />
                   <span>{form.giftEnabled ? 'Работает' : 'Выключен'}</span>
                 </label>
               </div>
               <p className="flame-note">
-                Тот же интерфейс, что у «бонус». Нужна приписка Cute. Победа в игре не нужна.
-                Предмет в магазине должен иметь код <code>freebonus</code>.
+                Увеличенный бонус: больше кут, чем обычный, и независимый шанс предмета.
+                Куты и предметы могут выпасть вместе. Предмет код <code>freebonus</code>.
+                Слова и эмодзи — <code>server/flame_bonus_plus_copy.py</code>.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">
-                  <span>Умножение</span>
+                  <span>Умножение клеток</span>
                   <input inputMode="numeric" value={form.giftMult} onChange={(e) => patch('giftMult', digits(e.target.value))} />
                 </label>
                 <label className="flame-field">
@@ -576,39 +604,81 @@ export default function FlameSection() {
                   <span>Куты на клетке: до</span>
                   <input inputMode="numeric" value={form.giftKutyMax} onChange={(e) => patch('giftKutyMax', digits(e.target.value))} />
                 </label>
+                <label className="flame-field">
+                  <span>Запасные куты, % от цены предмета</span>
+                  <input inputMode="numeric" value={form.giftFallbackPct} onChange={(e) => patch('giftFallbackPct', digits(e.target.value))} />
+                </label>
+              </div>
+              <p className="flame-note">
+                Если ни одного предмета из списка нет в магазине и на бирже, игрок получит процент от цены
+                как «дополнительные куты от самого проекта» — без слова про процент.
+                Деньги на награды снимаются с технических групп.
+              </p>
+
+              <div className="flame-card-head">
+                <h3>Доп. куты</h3>
+                <label className="flame-switch">
+                  <input type="checkbox" checked={Boolean(form.giftExtraKutyOn)} onChange={(e) => patch('giftExtraKutyOn', e.target.checked)} />
+                  <span>{form.giftExtraKutyOn ? 'Включены' : 'Выключены'}</span>
+                </label>
+              </div>
+              <div className="flame-grid-2">
+                <label className="flame-field">
+                  <span>Шанс, %</span>
+                  <input inputMode="numeric" value={form.giftExtraKutyChance} onChange={(e) => patch('giftExtraKutyChance', digits(e.target.value))} />
+                </label>
+                <label className="flame-field">
+                  <span>От</span>
+                  <input inputMode="numeric" value={form.giftExtraKutyMin} onChange={(e) => patch('giftExtraKutyMin', digits(e.target.value))} />
+                </label>
+                <label className="flame-field">
+                  <span>До</span>
+                  <input inputMode="numeric" value={form.giftExtraKutyMax} onChange={(e) => patch('giftExtraKutyMax', digits(e.target.value))} />
+                </label>
               </div>
 
+              <div className="flame-card-head">
+                <h3>Предметы</h3>
+                <label className="flame-switch">
+                  <input type="checkbox" checked={Boolean(form.giftItemOn)} onChange={(e) => patch('giftItemOn', e.target.checked)} />
+                  <span>{form.giftItemOn ? 'Включены' : 'Выключены'}</span>
+                </label>
+              </div>
+              <div className="flame-grid-2">
+                <label className="flame-field">
+                  <span>Шанс предмета, %</span>
+                  <input inputMode="numeric" value={form.giftItemChance} onChange={(e) => patch('giftItemChance', digits(e.target.value))} />
+                </label>
+              </div>
+              <p className="flame-note">
+                Сначала код ищет выбранный предмет в магазине, потом на бирже и покупает за техгруппы.
+                Если его нет — берёт другой из этого списка. Куты и предмет могут выпасть в одном открытии.
+              </p>
+
               <div className="flame-preview">
-                <h4>Что увидит игрок в среднем</h4>
+                <h4>Клетка сейчас</h4>
                 <div className="flame-preview-grid">
                   <article>
                     <strong>{preview.kutyMin ?? '—'}–{preview.kutyMax ?? '—'}</strong>
                     <span>кут с клетки</span>
                   </article>
                   <article>
-                    <strong>{preview.avgPerOpen ?? '—'}</strong>
-                    <span>кут за одно открытие</span>
+                    <strong>{form.giftExtraKutyOn ? `${form.giftExtraKutyChance}%` : 'выкл'}</strong>
+                    <span>доп. куты</span>
                   </article>
                   <article>
-                    <strong>{preview.avgPer100 ?? '—'}</strong>
-                    <span>кут за 100 открытий</span>
-                  </article>
-                  <article>
-                    <strong>{preview.itemChancePct ?? 0}%</strong>
+                    <strong>{form.giftItemOn ? `${form.giftItemChance}%` : 'выкл'}</strong>
                     <span>шанс предмета</span>
                   </article>
+                  <article>
+                    <strong>{form.giftFallbackPct}%</strong>
+                    <span>запасные куты</span>
+                  </article>
                 </div>
-                {(preview.items || []).length > 0 && (
-                  <ul className="flame-preview-items">
-                    {preview.items.map((row) => (
-                      <li key={row.name}><strong>{row.name}</strong><span>{row.chance}%</span></li>
-                    ))}
-                  </ul>
-                )}
               </div>
 
               <div className="flame-card-head">
-                <h3>Доп. дроп после открытия</h3>
+                <h3>Пул предметов</h3>
                 <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setGiftDrops((rows) => [...rows, { kind: 'item', amountMin: '1', amountMax: '1', itemName: '', weight: '1' }])}>
                   Добавить
                 </button>
@@ -617,56 +687,27 @@ export default function FlameSection() {
                 {giftDrops.map((row, index) => (
                   <li key={`gift-${index}`}>
                     <label>
-                      <span>Тип</span>
-                      <select value={row.kind} onChange={(e) => {
-                        const kind = e.target.value
-                        setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))
-                      }}>
-                        {GIFT_KINDS.map((kind) => <option key={kind.id} value={kind.id}>{kind.label}</option>)}
-                      </select>
-                    </label>
-                    <label>
                       <span>Вес</span>
                       <input inputMode="numeric" value={row.weight} onChange={(e) => {
                         const value = digits(e.target.value)
-                        setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, weight: value } : item))
+                        setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, weight: value, kind: 'item' } : item))
                       }} />
                     </label>
-                    {row.kind === 'kuty' ? (
-                      <>
-                        <label>
-                          <span>От</span>
-                          <input inputMode="numeric" value={row.amountMin} onChange={(e) => {
-                            const value = digits(e.target.value)
-                            setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, amountMin: value } : item))
-                          }} />
-                        </label>
-                        <label>
-                          <span>До</span>
-                          <input inputMode="numeric" value={row.amountMax} onChange={(e) => {
-                            const value = digits(e.target.value)
-                            setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, amountMax: value } : item))
-                          }} />
-                        </label>
-                      </>
-                    ) : (
-                      <label className="is-wide">
-                        <span>Предмет</span>
-                        <select value={row.itemName} onChange={(e) => {
-                          const itemName = e.target.value
-                          setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))
-                        }}>
-                          <option value="">Выберите</option>
-                          {items.map((name) => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                      </label>
-                    )}
+                    <div className="is-wide">
+                      <FlameItemPick
+                        catalog={catalog}
+                        value={row.itemName}
+                        onChange={(itemName) => setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, itemName, kind: 'item' } : item))}
+                      />
+                    </div>
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setGiftDrops((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
                 ))}
               </ul>
               <div className="flame-actions">
-                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>Сохранить умножение</button>
+                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
+                  {busy === 'settings' ? 'Сохраняем…' : 'Сохранить Бонус +'}
+                </button>
                 <button
                   type="button"
                   className="sec-btn"
@@ -674,16 +715,16 @@ export default function FlameSection() {
                   onClick={() => run('gift', () => saveFlameGiftDrops({
                     drops: giftDrops
                       .map((row) => ({
-                        kind: row.kind,
-                        amountMin: Math.max(1, Number(row.amountMin) || 1),
-                        amountMax: Math.max(1, Number(row.amountMax) || 1),
-                        itemName: row.kind === 'item' ? row.itemName : '',
+                        kind: 'item',
+                        amountMin: 1,
+                        amountMax: 1,
+                        itemName: row.itemName,
                         weight: Math.max(1, Number(row.weight) || 1),
                       }))
-                      .filter((row) => row.kind && (row.kind !== 'item' || row.itemName)),
+                      .filter((row) => row.itemName),
                   }))}
                 >
-                  {busy === 'gift' ? 'Сохраняем…' : 'Сохранить дроп'}
+                  {busy === 'gift' ? 'Сохраняем…' : 'Сохранить пул предметов'}
                 </button>
               </div>
             </section>
@@ -717,18 +758,13 @@ export default function FlameSection() {
                 </label>
               </div>
               <div className="flame-grid-2">
-                <label className="flame-field">
-                  <span>Предмет, пусто — этот способ выключен</span>
-                  <select value={form.restoreItem || ''} onChange={(e) => patch('restoreItem', e.target.value)}>
-                    <option value="">Не брать предмет</option>
-                    {form.restoreItem && !(items || []).includes(form.restoreItem) && (
-                      <option value={form.restoreItem}>{form.restoreItem}</option>
-                    )}
-                    {(items || []).map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </label>
+                <FlameItemPick
+                  catalog={catalog}
+                  label="Предмет, пусто — этот способ выключен"
+                  value={form.restoreItem || ''}
+                  emptyLabel="Не брать предмет"
+                  onChange={(restoreItem) => patch('restoreItem', restoreItem)}
+                />
                 <label className="flame-field">
                   <span>Сколько предметов списать</span>
                   <input

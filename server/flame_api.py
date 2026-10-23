@@ -16,7 +16,7 @@ from flame_engine import (
     save_steps,
     save_titles,
     save_warm_rewards,
-    shop_names,
+    shop_catalog,
 )
 
 router = APIRouter(prefix="/admin/api/flame", tags=["flame"])
@@ -46,6 +46,13 @@ class SettingsBody(BaseModel):
     giftMult: int = Field(1, ge=1, le=10)
     giftKutyMin: int = Field(1, ge=1, le=1_000_000)
     giftKutyMax: int = Field(3, ge=1, le=1_000_000)
+    giftExtraKutyOn: bool = True
+    giftExtraKutyChance: int = Field(35, ge=0, le=100)
+    giftExtraKutyMin: int = Field(5, ge=0, le=1_000_000)
+    giftExtraKutyMax: int = Field(25, ge=0, le=1_000_000)
+    giftItemOn: bool = True
+    giftItemChance: int = Field(40, ge=0, le=100)
+    giftFallbackPct: int = Field(30, ge=1, le=100)
     restoreEnabled: bool = True
     restoreDays: int = Field(3, ge=1, le=30)
     restoreKuty: int = Field(500, ge=0, le=10_000_000)
@@ -123,7 +130,7 @@ def _pool():
 
 async def _board() -> dict:
     board = await load_board(_pool())
-    board["items"] = await shop_names(_pool())
+    board["items"] = await shop_catalog(_pool())
     return board
 
 

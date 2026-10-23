@@ -12238,7 +12238,8 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
     else:
         last_open_time, data_open = hist_res
 
-    if last_open_time is None or data_open is None:
+    gift_board_early = bool(bonus_gift_mode.get(int(message_id)))
+    if (last_open_time is None or data_open is None) and not gift_board_early:
         bns_dbg("[БОНУС] WINS_GATE: пользователь не побеждал ни разу")
         # 1. Сначала показываем уведомление
         await bns_safe_answer(callback_query, "❕ Сначала победите противника в любой игре", alert=True)
@@ -12247,15 +12248,16 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         return
 
     # ══════════════════  ПОДПИСКИ  ══════════════════
-    ok_subs = await bns_subs_gate_bonus(
-        callback_query=callback_query,
-        message=message,
-        user_id=user_id,
-        required_chats=required_chats_bonus,
-        original_data=raw_data,
-    )
-    if not ok_subs:
-        return
+    if not gift_board_early:
+        ok_subs = await bns_subs_gate_bonus(
+            callback_query=callback_query,
+            message=message,
+            user_id=user_id,
+            required_chats=required_chats_bonus,
+            original_data=raw_data,
+        )
+        if not ok_subs:
+            return
 
     # ══════════════════  ЛОК НАЧИСЛЕНИЯ  ══════════════════
     if not bns_try_award_lock(user_id):
@@ -12402,11 +12404,36 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
 
         formatted_bonus_amount = "{:,.0f}".format(bonus_amount)
 
-        # Начисление на баланс
+        # Начисление: обычный бонус — как раньше; Бонус + — с технических групп.
+        gift_conf_now = bonus_gift_mode.get(int(message_id)) or {}
+        if gift_board:
+            try:
+                from bot.funcs.flame_bonus_plus import apply_cell_rewards
+                outcome = await apply_cell_rewards(db, user_id, bonus_amount, gift_conf_now)
+                paid = int(outcome.get("board_kuty") or 0)
+                formatted_bonus_amount = "{:,.0f}".format(paid or bonus_amount)
+                try:
+                    await db.add_bonusbet(user_id, new_first_name, paid or bonus_amount, chat_id, chat_name, now_dt)
+                except Exception:
+                    pass
+                await callback_query.answer(f"✅ Бонус +: {formatted_bonus_amount} кут", show_alert=False)
+                try:
+                    await message.edit_text(outcome.get("text") or "", parse_mode="HTML", reply_markup=None)
+                except Exception:
+                    try:
+                        await message.reply(outcome.get("text") or "", parse_mode="HTML")
+                    except Exception:
+                        pass
+            except Exception as e:
+                bns_dbg(f"[БОНУС][GIFT+][ERROR] {type(e).__name__}: {e}")
+                await callback_query.answer("⚠️ Не удалось выдать Бонус +.", show_alert=True)
+            remove_bonus_owner(message_id)
+            return
+
         try:
             balance = await db.get_user_balance(user_id)
             await db.update_user_balance(user_id, balance + bonus_amount)
-            await db.cutehistory_plus(user_id, bonus_amount, "🎁 бонус" if gift_board else "бонус")
+            await db.cutehistory_plus(user_id, bonus_amount, "бонус")
             await db.add_bonusbet(user_id, new_first_name, bonus_amount, chat_id, chat_name, now_dt)
             if flame_pass:
                 try:
@@ -12429,50 +12456,8 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             bns_dbg(f"[БОНУС][CREDIT][ERROR] {type(e).__name__}: {e}")
             await callback_query.answer("⚠️ Бонус обработан, но запись баланса временно недоступна.", show_alert=True)
 
-        # Предмет при ×2 / доп. дроп с подарочного 🎁
-        gift_conf_now = bonus_gift_mode.get(int(message_id)) or {}
-        if gift_conf_now:
-            try:
-                from bot.funcs.flame import gift_extra, note_gift_loot
-                extra = gift_extra(gift_conf_now)
-                if extra and extra.get("kind") == "item" and extra.get("item_name"):
-                    item_name = extra["item_name"]
-                    item_emoji = await db.find_emoji_by_item_name(item_name)
-                    await db.set_items(user_id, item_name, 1)
-                    await note_gift_loot(db, user_id, "item", 1, item_name, item_name)
-                    item_text = (
-                        f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
-                        f"<b>Дополнительная награда</b>\n"
-                        f"<code>{item_emoji}</code> <b>{item_name}</b>"
-                    )
-                    try:
-                        await message.reply(item_text, parse_mode="HTML")
-                    except Exception:
-                        pass
-                elif extra and extra.get("kind") == "kuty":
-                    add = int(extra.get("amount") or 0)
-                    if add > 0:
-                        bal2 = await db.get_user_balance(user_id)
-                        await db.update_user_balance(user_id, int(bal2 or 0) + add)
-                        await db.cutehistory_plus(user_id, add, "🎁 бонус")
-                        await note_gift_loot(db, user_id, "kuty", add, "", f"{add} кут")
-                        try:
-                            await message.reply(
-                                f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
-                                f"<b>Дополнительно +{add} кут</b>",
-                                parse_mode="HTML",
-                            )
-                        except Exception:
-                            pass
-                try:
-                    await note_gift_loot(
-                        db, user_id, "kuty", int(bonus_amount), "", f"{int(bonus_amount)} кут"
-                    )
-                except Exception:
-                    pass
-            except Exception as e:
-                bns_dbg(f"[БОНУС][GIFT][ERROR] {type(e).__name__}: {e}")
-        elif has_full_x2:
+        # Предмет при ×2 обычного бонуса
+        if has_full_x2:
             try:
                 item_name = await db.get_random_bonus_gift_item_by_chance()
                 if item_name:
@@ -12949,13 +12934,17 @@ async def process_bonus_request(
     if not _has_family_tag(user):
         if from_gift_item:
             shown = html.escape((user.first_name or "имя").strip() or "имя")
-            text = (
-                "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
-                "<b>Чтобы открыть 🎁, добавьте в имя <code>Cute</code></b>\n"
-                f"<blockquote>Сейчас: <b>{shown}</b>\n"
-                "Пример: <code>Имя Cute</code></blockquote>\n"
-                "<i>Предмет остался у вас. Когда имя готово — снова «использовать 🎁».</i>"
-            )
+            try:
+                from flame_bonus_plus_copy import screen_need_cute
+                text = screen_need_cute(shown)
+            except Exception:
+                text = (
+                    "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
+                    "<b>Чтобы открыть Бонус +, добавьте в имя <code>Cute</code></b>\n"
+                    f"<blockquote>Сейчас: <b>{shown}</b>\n"
+                    "Пример: <code>Имя Cute</code></blockquote>\n"
+                    "<i>Предмет остался у вас.</i>"
+                )
             try:
                 await bot1.send_message(
                     chat_id,
@@ -13036,15 +13025,18 @@ async def process_bonus_request(
         gift_conf=gift if from_gift_item else None,
     )
     if from_gift_item:
-        header = (
-            f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
-            f"<b>{bonus_label}</b>\n"
-            f"<blockquote>×{multiplier} · <b>+{kuty_lo}…{kuty_hi}</b> кут\n"
-            "Нажмите любую клетку — куты придут сразу.\n"
-            "Победа в игре не нужна.</blockquote>"
-        )
-        full_text = header
-        board_text = full_text
+        try:
+            from flame_bonus_plus_copy import screen_board
+            board_text = screen_board(mult=multiplier, kuty_lo=kuty_lo, kuty_hi=kuty_hi)
+        except Exception:
+            board_text = (
+                f"<tg-emoji emoji-id='5438458242130806642'>🎁</tg-emoji> "
+                f"<b>{bonus_label}</b>\n"
+                f"<blockquote>×{multiplier} · <b>+{kuty_lo}…{kuty_hi}</b> кут\n"
+                "Нажмите любую клетку — куты придут сразу.\n"
+                "Победа в игре не нужна.</blockquote>"
+            )
+        full_text = board_text
     else:
         header = (
             f"<b>🎁 {bonus_label} бонус</b>\n"

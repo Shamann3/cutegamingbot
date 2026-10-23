@@ -2946,16 +2946,36 @@ body {
 }
 
 .dex-item-search-dropdown {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 0.35rem);
-  z-index: 30;
-  padding: 0.55rem;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(12, 18, 28, 0.98);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.65rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 22, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.dex-item-search-picker.is-compact .dex-item-search-label {
+  font-size: 0.74rem;
+}
+
+.dex-item-search-picker.is-compact .dex-item-search-current {
+  min-height: 44px;
+  padding: 0.4rem 0.65rem;
+}
+
+.dex-item-search-query-clear {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .dex-item-search-selected {
@@ -3050,13 +3070,26 @@ body {
   max-width: 100%;
 }
 
-.dex-item-search-option-name1 {
+.dex-item-search-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  max-width: 100%;
+}
+
+.dex-item-search-option-name1,
+.dex-item-search-option-price {
   font-size: 0.7rem;
   opacity: 0.7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.dex-item-search-option-price {
+  opacity: 0.85;
+  color: #ffd7a8;
 }
 
 .dex-item-search-option-id {
@@ -3077,11 +3110,16 @@ body {
 }
 
 .dex-item-search-list {
-  max-height: 14rem;
+  max-height: min(18rem, 50vh);
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  padding-right: 0.15rem;
+}
+
+.dex-item-search-dropdown.is-compact .dex-item-search-list {
+  max-height: min(14rem, 42vh);
 }
 
 .dex-item-search-option {

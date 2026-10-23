@@ -130,6 +130,33 @@
   line-height: 1.45;
 }
 
+.flame-item-pick {
+  min-width: 0;
+}
+
+.flame-item-pick .dex-item-search-picker {
+  margin: 0;
+}
+
+.flame-item-pick .dex-item-search-label {
+  font-size: 0.78rem;
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.flame-rows .dark-pick,
+.flame-rows .flame-item-pick {
+  align-self: end;
+}
+
+.flame-rows .dark-pick-label {
+  font-size: 0.78rem;
+}
+
+.flame-rows .dark-pick-btn {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
 .flame-tab.is-on {
   border-color: rgba(255, 140, 40, 0.55);
   background: linear-gradient(180deg, rgba(255, 140, 40, 0.22), rgba(255, 80, 20, 0.12));
@@ -201,6 +228,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow: visible;
 }
 
 .flame-rows li {
@@ -208,6 +236,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
+  overflow: visible;
 }
 
 .flame-rows.is-reward li,

@@ -31,6 +31,13 @@ _DEFAULTS = {
     "gift_mult": 1,
     "gift_kuty_min": 1,
     "gift_kuty_max": 3,
+    "gift_extra_kuty_on": True,
+    "gift_extra_kuty_chance": 35,
+    "gift_extra_kuty_min": 5,
+    "gift_extra_kuty_max": 25,
+    "gift_item_on": True,
+    "gift_item_chance": 40,
+    "gift_fallback_pct": 30,
     "restore_enabled": True,
     "restore_days": 3,
     "restore_kuty": 500,
@@ -316,6 +323,13 @@ async def ensure_tables(pool) -> None:
         ("gift_mult", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_min", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_max", "INT NOT NULL DEFAULT 3"),
+        ("gift_extra_kuty_on", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("gift_extra_kuty_chance", "INT NOT NULL DEFAULT 35"),
+        ("gift_extra_kuty_min", "INT NOT NULL DEFAULT 5"),
+        ("gift_extra_kuty_max", "INT NOT NULL DEFAULT 25"),
+        ("gift_item_on", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("gift_item_chance", "INT NOT NULL DEFAULT 40"),
+        ("gift_fallback_pct", "INT NOT NULL DEFAULT 30"),
         ("restore_enabled", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("restore_days", "INT NOT NULL DEFAULT 3"),
         ("restore_kuty", "INT NOT NULL DEFAULT 500"),
@@ -442,13 +456,15 @@ def _row_settings(row) -> dict:
     keys = set(row.keys())
     for key in (
         "warm_enabled", "status_enabled", "profit_enabled", "block_dup", "gift_enabled",
-        "restore_enabled",
+        "gift_extra_kuty_on", "gift_item_on", "restore_enabled",
     ):
         if key in keys:
             out[key] = bool(row[key])
     for key in (
         "warm_min_day", "warm_every", "warm_cap", "warm_from", "warm_to",
         "profit_hour", "min_words", "gift_mult", "gift_kuty_min", "gift_kuty_max",
+        "gift_extra_kuty_chance", "gift_extra_kuty_min", "gift_extra_kuty_max",
+        "gift_item_chance", "gift_fallback_pct",
         "restore_days", "restore_kuty", "restore_item_count",
     ):
         if key in keys and row[key] is not None:
@@ -460,6 +476,11 @@ def _row_settings(row) -> dict:
     out["gift_kuty_min"] = max(1, out["gift_kuty_min"])
     out["gift_kuty_max"] = max(out["gift_kuty_min"], out["gift_kuty_max"])
     out["gift_mult"] = max(1, min(10, out["gift_mult"]))
+    out["gift_extra_kuty_chance"] = max(0, min(100, int(out.get("gift_extra_kuty_chance") or 0)))
+    out["gift_extra_kuty_min"] = max(0, int(out.get("gift_extra_kuty_min") or 0))
+    out["gift_extra_kuty_max"] = max(out["gift_extra_kuty_min"], int(out.get("gift_extra_kuty_max") or 0))
+    out["gift_item_chance"] = max(0, min(100, int(out.get("gift_item_chance") or 0)))
+    out["gift_fallback_pct"] = max(1, min(100, int(out.get("gift_fallback_pct") or 30)))
     out["min_words"] = max(1, min(20, out["min_words"]))
     out["warm_every"] = max(1, min(10_000, out["warm_every"]))
     out["warm_cap"] = max(1, min(50, out["warm_cap"]))
@@ -620,6 +641,13 @@ async def load_board(pool) -> dict:
         "mult": settings["gift_mult"],
         "kuty_min": settings["gift_kuty_min"],
         "kuty_max": settings["gift_kuty_max"],
+        "extra_kuty_on": settings["gift_extra_kuty_on"],
+        "extra_kuty_chance": settings["gift_extra_kuty_chance"],
+        "extra_kuty_min": settings["gift_extra_kuty_min"],
+        "extra_kuty_max": settings["gift_extra_kuty_max"],
+        "item_on": settings["gift_item_on"],
+        "item_chance": settings["gift_item_chance"],
+        "fallback_pct": settings["gift_fallback_pct"],
         "drops": gift_drops,
         "preview": gift_preview(
             gift_drops,
@@ -681,6 +709,20 @@ async def save_settings(pool, body: dict) -> None:
         "gift_kuty_min": "gift_kuty_min",
         "giftKutyMax": "gift_kuty_max",
         "gift_kuty_max": "gift_kuty_max",
+        "giftExtraKutyOn": "gift_extra_kuty_on",
+        "gift_extra_kuty_on": "gift_extra_kuty_on",
+        "giftExtraKutyChance": "gift_extra_kuty_chance",
+        "gift_extra_kuty_chance": "gift_extra_kuty_chance",
+        "giftExtraKutyMin": "gift_extra_kuty_min",
+        "gift_extra_kuty_min": "gift_extra_kuty_min",
+        "giftExtraKutyMax": "gift_extra_kuty_max",
+        "gift_extra_kuty_max": "gift_extra_kuty_max",
+        "giftItemOn": "gift_item_on",
+        "gift_item_on": "gift_item_on",
+        "giftItemChance": "gift_item_chance",
+        "gift_item_chance": "gift_item_chance",
+        "giftFallbackPct": "gift_fallback_pct",
+        "gift_fallback_pct": "gift_fallback_pct",
         "restoreEnabled": "restore_enabled",
         "restore_enabled": "restore_enabled",
         "restoreDays": "restore_days",
@@ -703,10 +745,12 @@ async def save_settings(pool, body: dict) -> None:
             warm_enabled, warm_min_day, warm_every, warm_cap, warm_from, warm_to,
             status_enabled, profit_enabled, profit_hour, min_words, block_dup,
             gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max,
+            gift_extra_kuty_on, gift_extra_kuty_chance, gift_extra_kuty_min, gift_extra_kuty_max,
+            gift_item_on, gift_item_chance, gift_fallback_pct,
             restore_enabled, restore_days, restore_kuty, restore_item, restore_item_count
         ) VALUES (
             1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-            $18, $19, $20, $21, $22
+            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29
         )
         ON CONFLICT (id) DO UPDATE SET
             enabled = EXCLUDED.enabled,
@@ -726,6 +770,13 @@ async def save_settings(pool, body: dict) -> None:
             gift_mult = EXCLUDED.gift_mult,
             gift_kuty_min = EXCLUDED.gift_kuty_min,
             gift_kuty_max = EXCLUDED.gift_kuty_max,
+            gift_extra_kuty_on = EXCLUDED.gift_extra_kuty_on,
+            gift_extra_kuty_chance = EXCLUDED.gift_extra_kuty_chance,
+            gift_extra_kuty_min = EXCLUDED.gift_extra_kuty_min,
+            gift_extra_kuty_max = EXCLUDED.gift_extra_kuty_max,
+            gift_item_on = EXCLUDED.gift_item_on,
+            gift_item_chance = EXCLUDED.gift_item_chance,
+            gift_fallback_pct = EXCLUDED.gift_fallback_pct,
             restore_enabled = EXCLUDED.restore_enabled,
             restore_days = EXCLUDED.restore_days,
             restore_kuty = EXCLUDED.restore_kuty,
@@ -749,6 +800,13 @@ async def save_settings(pool, body: dict) -> None:
         clean["gift_mult"],
         clean["gift_kuty_min"],
         clean["gift_kuty_max"],
+        clean["gift_extra_kuty_on"],
+        clean["gift_extra_kuty_chance"],
+        clean["gift_extra_kuty_min"],
+        clean["gift_extra_kuty_max"],
+        clean["gift_item_on"],
+        clean["gift_item_chance"],
+        clean["gift_fallback_pct"],
         clean["restore_enabled"],
         clean["restore_days"],
         clean["restore_kuty"],
@@ -890,17 +948,39 @@ async def save_gift_drops(pool, drops: list[dict]) -> None:
                 )
 
 
-async def shop_names(pool) -> list[str]:
+async def shop_catalog(pool) -> list[dict]:
+    """Предметы для выбора в панели: имя, эмодзи, id."""
     try:
-        rows = await pool.fetch("SELECT name FROM dex WHERE name IS NOT NULL ORDER BY name LIMIT 400")
+        rows = await pool.fetch(
+            """
+            SELECT id, name, name1, emoji, COALESCE(price, 0) AS price
+            FROM dex
+            WHERE name IS NOT NULL AND BTRIM(name) <> ''
+            ORDER BY name ASC NULLS LAST, id ASC
+            LIMIT 1200
+            """
+        )
     except Exception:
         return []
-    names = []
+    out = []
+    seen = set()
     for row in rows:
         name = str(row["name"] or "").strip()
-        if name and name not in names:
-            names.append(name)
-    return names
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append({
+            "id": str(row["id"]),
+            "name": name,
+            "name1": str(row["name1"] or "").strip(),
+            "emoji": str(row["emoji"] or "").strip() or "📦",
+            "price": int(row["price"] or 0),
+        })
+    return out
+
+
+async def shop_names(pool) -> list[str]:
+    return [row["name"] for row in await shop_catalog(pool)]
 
 
 async def leaderboard(pool, limit: int = 15, titles: list[dict] | None = None) -> list[dict]:
@@ -1223,6 +1303,13 @@ async def gift_config(pool) -> dict:
         "mult": settings["gift_mult"],
         "kuty_min": settings["gift_kuty_min"],
         "kuty_max": settings["gift_kuty_max"],
+        "extra_kuty_on": settings["gift_extra_kuty_on"],
+        "extra_kuty_chance": settings["gift_extra_kuty_chance"],
+        "extra_kuty_min": settings["gift_extra_kuty_min"],
+        "extra_kuty_max": settings["gift_extra_kuty_max"],
+        "item_on": settings["gift_item_on"],
+        "item_chance": settings["gift_item_chance"],
+        "fallback_pct": settings["gift_fallback_pct"],
         "drops": drops,
         "preview": gift_preview(
             drops, settings["gift_mult"], settings["gift_kuty_min"], settings["gift_kuty_max"]

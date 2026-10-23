@@ -2962,9 +2962,8 @@ async def shop_op(message: Message):
         print(f"Второе название предмета: {second_name}")
         gift_face = str(item_info.get("emoji") or item_emoji or "")
         if "🎁" in gift_face or "freebonus" in str(second_name) or str(second_name).strip() == "BonusPlus":
-            opened = await freebonus(user_id, message)
-            if opened:
-                await db.delete_user_inventory1(user_id, item_name)
+            # Списание 🎁 — только после кнопки «Открыть Бонус +».
+            await freebonus(user_id, message, item_name=item_name)
             return
         if str(second_name).strip() == "Russian":
             from bot.funcs.flag_book import normalize_flag
@@ -3480,9 +3479,7 @@ async def shop_op(message: Message):
             await hui(user_id , message)
             #await db.delete_user_inventory1(user_id , item_name)
         elif "freebonus" in str(second_name):
-            opened = await freebonus(user_id , message)
-            if opened:
-                await db.delete_user_inventory1(user_id , item_name)
+            await freebonus(user_id, message, item_name=item_name)
         elif "ringtggift" in str(second_name):
             await ringtggift(user_id , message)
             #await db.delete_user_inventory1(user_id , item_name)

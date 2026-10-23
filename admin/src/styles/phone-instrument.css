@@ -4757,17 +4757,48 @@ html[data-viewport="phone"] .panel-shell .metric-tile {
 .dark-pick.is-open .dark-pick-btn {
   border-color: rgba(255, 255, 255, 0.42);
 }
+.dark-pick-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: var(--e-overlay, rgba(16, 16, 20, 0.98));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.36);
+}
+.dark-pick-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+.dark-pick-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
 .dark-pick-list {
   list-style: none;
   margin: 0;
-  padding: 6px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 14px;
-  background: var(--e-overlay, rgba(24, 24, 28, 0.94));
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  max-height: min(16rem, 48vh);
+  overflow: auto;
 }
 .dark-pick-list button {
   display: flex;

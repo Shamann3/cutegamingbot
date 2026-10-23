@@ -108,13 +108,17 @@ def screen_help(
         if warm_hour:
             parts.append(f"Сегодня: <code>{warm_hour}</code> МСК")
     if gift_on:
-        mult_bit = f" Куты с доски уже ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
-        parts += [
-            "",
-            f"{emoji('5438458242130806642', '🎁')} <b>Предмет 🎁</b>",
-            f"Напишите «использовать 🎁» — откроется доска, как у бонуса.{mult_bit}",
-            "Нужна приписка <code>Cute</code> в имени. Победа в игре не нужна.",
-        ]
+        try:
+            from flame_bonus_plus_copy import help_block
+            parts += ["", help_block(mult=int(gift_mult or 1))]
+        except Exception:
+            mult_bit = f" Куты с доски уже ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
+            parts += [
+                "",
+                f"{emoji('5438458242130806642', '🎁')} <b>Бонус +</b>",
+                f"Напишите «использовать 🎁» — откроется увеличенный бонус.{mult_bit}",
+                "Нужна приписка <code>Cute</code> в имени. Победа в игре не нужна.",
+            ]
     if restore_line:
         parts += [
             "",

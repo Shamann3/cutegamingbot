@@ -60,6 +60,7 @@ MANUAL_PREFIX: dict[str, tuple[str, str]] = {
     # Живые браки: кнопки без @callback_query — только hot-dispatch.
     "mrg:": ("bot.funcs.marriage_live", "dispatch"),
     "fl:": ("bot.funcs.flame", "flame_click"),
+    "bp:": ("bot.funcs.flame_bonus_plus", "bonus_plus_click"),
 }
 
 

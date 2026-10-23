@@ -1394,47 +1394,24 @@ async def pistoletik(db, user_id, message):
     await splash_from_item(message)
 
 
-async def freebonus(user_id, message):
-    """Предмет 🎁: тот же интерфейс, что у «бонус», но без победы в игре.
-
-    Возвращает True, если доска открылась — тогда предмет можно списать.
-    """
-    user = message.from_user
+async def freebonus(user_id, message, item_name: str = ""):
+    """Предмет 🎁 → экран Бонус +. Предмет списывается только после «Открыть»."""
     try:
-        from bot.funcs.flame import load_gift
+        from bot.funcs.flame_bonus_plus import show_intro
         from bot.db_create.db import db as _db
-        conf = await load_gift(_db)
+        return await show_intro(message, _db, item_name=item_name or "")
     except Exception as exc:
-        print(f"[FLAME][GIFT] load: {exc}")
-        conf = {"enabled": False}
-
-    if not conf.get("enabled"):
-        await message.reply(
-            "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
-            "<b>Предмет 🎁 сейчас недоступен</b>\n"
-            "<i>Попробуйте позже — предмет остался у вас.</i>",
-            parse_mode="HTML",
-        )
-        return False
-
-    try:
-        from main import process_bonus_request
-        ok = await process_bonus_request(
-            user=user,
-            chat_id=message.chat.id,
-            reply_to=message,
-            from_gift_item=True,
-            gift_conf=conf,
-        )
-        return bool(ok)
-    except Exception as exc:
-        print(f"[FLAME][GIFT] open: {exc}")
-        await message.reply(
-            "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
-            "<b>Не удалось открыть 🎁</b>\n"
-            "<i>Попробуйте ещё раз — предмет остался у вас.</i>",
-            parse_mode="HTML",
-        )
+        print(f"[FLAME][GIFT] intro: {exc}")
+        try:
+            from bot.funcs.flame_bonus_plus_design import screen_fail
+            await message.reply(screen_fail(), parse_mode="HTML")
+        except Exception:
+            await message.reply(
+                "<tg-emoji emoji-id='5467519850576354798'>❕</tg-emoji> "
+                "<b>Не удалось открыть Бонус +</b>\n"
+                "<i>Предмет остался у вас.</i>",
+                parse_mode="HTML",
+            )
         return False
 
 

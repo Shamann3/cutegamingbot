@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import AdminSelect from '../../components/AdminSelect'
 import AdminActionModal from '../../components/AdminActionModal'
+import DexItemSearchPicker from '../../components/DexItemSearchPicker'
 import { notifyAdmin } from '../../lib/notify'
 import {
   fetchGiveawaysAdmin,
@@ -412,12 +413,16 @@ export default function GiveawaysSection() {
                     />
                   )}
                   {cond.kind === 'item_count' && (
-                    <input
-                      className="panel-users-input"
-                      placeholder="id предмета"
-                      value={cond.itemId}
-                      onChange={(e) => updateCondition(idx, { itemId: e.target.value })}
-                    />
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                      <DexItemSearchPicker
+                        label="Предмет"
+                        value={cond.itemId}
+                        onChange={(itemId) => updateCondition(idx, { itemId })}
+                        compact
+                        emptyLabel="Выберите предмет"
+                        hint="Поиск по эмодзи, названию или id"
+                      />
+                    </div>
                   )}
                   {cond.kind === 'channel_sub' && (
                     <input
