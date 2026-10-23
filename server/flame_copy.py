@@ -62,20 +62,30 @@ def screen_help(
     gift_on: bool,
     gift_mult: int,
     restore_line: str,
+    gift_item_count: int = 1,
 ) -> str:
-    # Справка по кнопке «Огонёк». Списки наград и статусов приходят уже строками.
+    # Сначала — что дадут за дни. Потом коротко, как работает.
     parts = [
         f"{emoji(EMOJI)} <b>Огонёк сообщений</b>",
         "",
+        f"{emoji('5438440765908874600', '🎁')} <b>Награды за дни</b>",
+    ]
+    if rewards:
+        parts.append("<i>Всё сразу в личку · один раз за этот день серии</i>")
+        parts.extend(rewards)
+    else:
+        parts.append("<i>Награды скоро появятся — серия уже считается</i>")
+    parts += [
+        "",
         "<blockquote>"
-        f"Пишите в <b>официальных группах</b>.\n"
-        f"За сутки по Москве нужно <b>{base}</b> сообщений от <b>{words}</b> слов.\n"
-        "Не считаются команды, игры и один и тот же текст подряд."
+        f"Пишите в <b>официальных группах</b>: "
+        f"<b>{base}</b> сообщений от <b>{words}</b> слов за сутки (МСК).\n"
+        "Не считаются команды, игры и один текст подряд."
         "</blockquote>",
         "",
         f"{emoji('5321021153219732362', '⚡️')} <b>Как работает</b>",
         "· норма закрыта → в 00:00 серия <b>+1 день</b>",
-        "· день пропущен → огонёк <b>гаснет</b>, серия с нуля",
+        "· день пропущен → огонёк <b>гаснет</b>",
     ]
     if not enabled:
         parts += ["", "<i>Сейчас огонёк временно выключен</i>"]
@@ -85,39 +95,32 @@ def screen_help(
             f"{emoji('5438449312893792440', '🚀')} <b>Норма растёт</b>",
             " · ".join(rises),
         ]
-    parts += ["", f"{emoji('5438440765908874600', '🎁')} <b>Награды за дни</b>"]
-    if rewards:
-        parts.append("<i>Один раз за день серии · сразу в личные сообщения</i>")
-        parts.extend(rewards)
-    else:
-        parts.append("<i>Награды скоро появятся — серия уже считается</i>")
     if titles:
         parts += [
             "",
             f"{emoji('5233479338791281256', '⭐️')} <b>Статус в профиле</b>",
-            "<i>Виден всем, пока огонёк жив</i>",
             *titles,
         ]
     if warm_on:
         parts += [
             "",
             f"{emoji('5296561370303592127', '🌟')} <b>Тёплый час</b>",
-            f"С серии <b>{warm_from}</b>: каждые <b>{warm_every}</b> сообщений в удачный час "
-            f"— ещё награда (до <b>{warm_cap}</b> раз за день).",
+            f"С <b>{warm_from}</b>: каждые <b>{warm_every}</b> сообщений в удачный час "
+            f"— ещё награда (до <b>{warm_cap}</b>/день).",
         ]
         if warm_hour:
             parts.append(f"Сегодня: <code>{warm_hour}</code> МСК")
     if gift_on:
         try:
             from flame_bonus_plus_copy import help_block
-            parts += ["", help_block(mult=int(gift_mult or 1))]
+            parts += ["", help_block(mult=int(gift_mult or 1), item_count=int(gift_item_count or 1))]
         except Exception:
-            mult_bit = f" Куты с доски уже ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
+            mult_bit = f" Куты уже ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
             parts += [
                 "",
                 f"{emoji('5438458242130806642', '🎁')} <b>Бонус +</b>",
-                f"Напишите «использовать 🎁» — откроется увеличенный бонус.{mult_bit}",
-                "Нужна приписка <code>Cute</code> в имени. Победа в игре не нужна.",
+                f"«использовать 🎁» — увеличенный бонус.{mult_bit}",
+                "Нужна приписка <code>Cute</code>. Победа не нужна.",
             ]
     if restore_line:
         parts += [

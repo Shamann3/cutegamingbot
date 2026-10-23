@@ -63,19 +63,24 @@ def test_help_lists_rewards_and_warm_hour():
         "rewards": [
             {"day": 3, "kind": "bonus", "amount": 1, "item_name": ""},
             {"day": 7, "kind": "kuty", "amount": 50, "item_name": ""},
+            {"day": 7, "kind": "item", "amount": 1, "item_name": "Купон"},
         ],
         "titles": [{"from_day": 7, "title": "Живой огонь"}],
         "warm": {"enabled": True, "min_day": 3, "every": 40, "cap": 3, "hour": 18},
-        "gift": {"enabled": True, "mult": 2},
+        "gift": {"enabled": True, "mult": 2, "item_count": 2},
     })
     assert "200" in html
     assert "с 7-го — <b>250</b>" in html
     assert "3 дня" in html
     assert "50 кут" in html
+    assert "Купон" in html
+    # День 7 — один пакет: куты и предмет в одной строке
+    day7 = [line for line in html.split("\n") if "7 дней" in line and "50 кут" in line]
+    assert day7 and "Купон" in day7[0]
+    assert html.index("Награды за дни") < html.index("Как работает")
     assert "Тёплый час" in html
     assert "18:00" in html
     assert "🎁" in html
-    assert "Как работает" in html
     assert "официальных группах" in html
 
 

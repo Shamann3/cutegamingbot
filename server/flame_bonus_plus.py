@@ -29,6 +29,7 @@ def gift_plus_defaults(settings: dict | None = None) -> dict:
         "extra_kuty_max": max(0, int(_pick(raw, "extra_kuty_max", "gift_extra_kuty_max", default=25) or 0)),
         "item_on": bool(_pick(raw, "item_on", "gift_item_on", default=True)),
         "item_chance": max(0, min(100, int(_pick(raw, "item_chance", "gift_item_chance", default=40) or 0))),
+        "item_count": max(1, min(5, int(_pick(raw, "item_count", "gift_item_count", default=1) or 1))),
         "fallback_pct": max(1, min(100, int(_pick(raw, "fallback_pct", "gift_fallback_pct", default=30) or 30))),
         "drops": list(raw.get("drops") or []),
     }
@@ -48,39 +49,63 @@ def roll_board_kuty(conf: dict) -> int:
     return random.randint(lo, hi) * mult
 
 
+def _item_rows(drops: list) -> list[dict]:
+    rows = []
+    for row in drops or []:
+        name = str(row.get("item_name") or row.get("itemName") or "").strip()
+        if str(row.get("kind") or "") != "item" or not name:
+            continue
+        rows.append({
+            "kind": "item",
+            "item_name": name,
+            "weight": max(1, int(row.get("weight") or 1)),
+        })
+    return rows
+
+
+def _names_with_fallback(preferred: str, pool_rows: list[dict]) -> list[str]:
+    names = []
+    if preferred:
+        names.append(preferred)
+    for row in pool_rows:
+        name = str(row.get("item_name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def roll_extra_bundle(conf: dict) -> dict:
-    """Независимые шансы: доп. куты и предмет могут выпасть вместе."""
+    """Независимые шансы: доп. куты и до N предметов могут выпасть вместе."""
     conf = gift_plus_defaults(conf)
-    out = {"extra_kuty": 0, "want_item": False, "item_names": []}
+    out = {
+        "extra_kuty": 0,
+        "want_item": False,
+        "item_names": [],
+        "item_picks": [],
+    }
     if conf["extra_kuty_on"] and conf["extra_kuty_chance"] > 0:
         if random.randint(1, 100) <= conf["extra_kuty_chance"]:
             lo, hi = _clamp_range(conf["extra_kuty_min"], conf["extra_kuty_max"])
             if hi >= 1:
                 out["extra_kuty"] = random.randint(max(1, lo), hi)
     if conf["item_on"] and conf["item_chance"] > 0 and conf["drops"]:
-        item_rows = [
-            row for row in conf["drops"]
-            if str(row.get("kind") or "") == "item" and str(row.get("item_name") or row.get("itemName") or "").strip()
-        ]
-        if item_rows and random.randint(1, 100) <= conf["item_chance"]:
-            out["want_item"] = True
-            # Предпочтительный предмет по весу, остальные — запасные.
-            preferred = _pick_weighted([
-                {
-                    "kind": "item",
-                    "item_name": str(row.get("item_name") or row.get("itemName") or "").strip(),
-                    "weight": max(1, int(row.get("weight") or 1)),
-                }
-                for row in item_rows
-            ])
-            names = []
-            if preferred:
-                names.append(preferred["item_name"])
-            for row in item_rows:
-                name = str(row.get("item_name") or row.get("itemName") or "").strip()
-                if name and name not in names:
-                    names.append(name)
-            out["item_names"] = names
+        remaining = _item_rows(conf["drops"])
+        all_rows = list(remaining)
+        slots = max(1, int(conf["item_count"] or 1))
+        for _ in range(slots):
+            if not remaining:
+                break
+            if random.randint(1, 100) > conf["item_chance"]:
+                continue
+            preferred = _pick_weighted(remaining)
+            if not preferred:
+                break
+            name = preferred["item_name"]
+            out["item_picks"].append(_names_with_fallback(name, all_rows))
+            remaining = [row for row in remaining if row["item_name"] != name]
+        out["want_item"] = bool(out["item_picks"])
+        if out["item_picks"]:
+            out["item_names"] = list(out["item_picks"][0])
     # Старый формат: weighted kuty drops в таблице тоже учитываем как доп. куты
     # только если отдельный extra_kuty выключен и выпал kuty-дроп.
     if not conf["extra_kuty_on"]:
@@ -345,7 +370,8 @@ async def acquire_bonus_item(pool, user_id: int, names: list[str], fallback_pct:
                 if got:
                     got["history"] = HISTORY_BUY
                     return got
-            # 2) Ничего нет — запасные куты = pct% от цены первого известного предмета.
+            # 2) Ничего нет — запасные куты = pct% от реальной цены предмета.
+            # Без цены и без остатка на техгруппах ничего не выдаём «из воздуха».
             ref_price = 0
             for name in wanted:
                 dex = await _dex_by_name(conn, name)
@@ -353,8 +379,7 @@ async def acquire_bonus_item(pool, user_id: int, names: list[str], fallback_pct:
                     ref_price = int(dex["price"])
                     break
             if ref_price < 1:
-                # Без цены — мягкий минимум, чтобы халява всё же была.
-                ref_price = 100
+                return {"ok": False}
             gift = max(1, int(round(ref_price * pct / 100.0)))
             paid = await _take_technical(conn, gift)
             if paid < 1:
@@ -372,6 +397,21 @@ async def acquire_bonus_item(pool, user_id: int, names: list[str], fallback_pct:
                 "line": "",
                 "history": HISTORY_PROJECT,
             }
+
+
+async def acquire_bonus_items(
+    pool,
+    user_id: int,
+    picks: list[list[str]],
+    fallback_pct: int,
+) -> list[dict]:
+    """Купить несколько слотов предметов подряд. Каждый слот — свой список предпочтений."""
+    results = []
+    for names in picks or []:
+        got = await acquire_bonus_item(pool, int(user_id), list(names or []), int(fallback_pct or 30))
+        if got.get("ok"):
+            results.append(got)
+    return results
 
 
 async def pay_user_from_tech(pool, user_id: int, amount: int) -> int:

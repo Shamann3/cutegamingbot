@@ -22,22 +22,22 @@ def emoji(eid: str, fallback: str = "🎁") -> str:
     return f"<tg-emoji emoji-id='{eid}'>{fallback}</tg-emoji>"
 
 
-def screen_intro(*, mult: int, kuty_lo: int, kuty_hi: int, items_on: bool) -> str:
-    # Первый экран после «использовать 🎁».
-    mult_bit = f" · уже ×{int(mult)}" if int(mult or 1) > 1 else ""
-    extra = (
-        f"\n{emoji(STAR, '⭐️')} Иногда рядом — ещё предмет от проекта."
-        if items_on
-        else ""
-    )
+def screen_intro(*, mult: int, kuty_lo: int, kuty_hi: int, items_on: bool, item_count: int = 1) -> str:
+    mult_bit = f" · ×{int(mult)}" if int(mult or 1) > 1 else ""
+    slots = max(1, int(item_count or 1))
+    if items_on:
+        if slots > 1:
+            extra = f"\n{emoji(STAR, '⭐️')} Иногда рядом — до <b>{slots}</b> предметов."
+        else:
+            extra = f"\n{emoji(STAR, '⭐️')} Иногда рядом — ещё предмет."
+    else:
+        extra = ""
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>{mult_bit}\n"
         "<blockquote>"
-        "Это увеличенный бонус.\n"
-        f"С клетки вы получите больше кут, чем в обычном бонусе: "
-        f"<b>+{int(kuty_lo)}…{int(kuty_hi)}</b>."
+        f"С клетки: <b>+{int(kuty_lo)}…{int(kuty_hi)}</b> кут."
         f"{extra}\n"
-        "Спасибо, что играете с нами — это маленькая халява от проекта."
+        "Халява от проекта — спасибо, что вы с нами."
         "</blockquote>"
     )
 
@@ -53,42 +53,49 @@ def button_later() -> str:
 def screen_later() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Бонус + отложен</b>\n"
-        "<blockquote>Предмет 🎁 остался у вас.\n"
+        "<blockquote>🎁 остался у вас.\n"
         "Когда будете готовы — снова «использовать 🎁».</blockquote>"
     )
 
 
 def screen_board(*, mult: int, kuty_lo: int, kuty_hi: int) -> str:
-    # Заголовок над клетками.
     mult_bit = f"×{int(mult)} · " if int(mult or 1) > 1 else ""
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
         f"<blockquote>{mult_bit}<b>+{int(kuty_lo)}…{int(kuty_hi)}</b> кут\n"
-        "Нажмите любую клетку — награда придёт сразу.\n"
+        "Нажмите клетку — награда сразу.\n"
         "Победа в игре не нужна.</blockquote>"
     )
 
 
 def screen_need_cute(name: str) -> str:
     return (
-        f"{emoji(NOTE, '❕')} <b>Чтобы открыть Бонус +, добавьте в имя <code>Cute</code></b>\n"
+        f"{emoji(NOTE, '❕')} <b>Добавьте в имя <code>Cute</code></b>\n"
         f"<blockquote>Сейчас: <b>{name}</b>\n"
         "Пример: <code>Имя Cute</code></blockquote>\n"
-        "<i>Предмет остался у вас.</i>"
+        "<i>🎁 остался у вас.</i>"
     )
 
 
 def screen_off() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Бонус + сейчас недоступен</b>\n"
-        "<i>Попробуйте позже — предмет 🎁 остался у вас.</i>"
+        "<i>Попробуйте позже — 🎁 остался у вас.</i>"
     )
 
 
 def screen_fail() -> str:
     return (
-        f"{emoji(NOTE, '❕')} <b>Не удалось открыть Бонус +</b>\n"
-        "<i>Попробуйте ещё раз — предмет остался у вас.</i>"
+        f"{emoji(NOTE, '❕')} <b>Не удалось открыть</b>\n"
+        "<i>Попробуйте ещё раз — 🎁 остался у вас.</i>"
+    )
+
+
+def screen_dry() -> str:
+    return (
+        f"{emoji(NOTE, '❕')} <b>Сейчас наградить нечем</b>\n"
+        "<blockquote>Куты и предметы берутся из запасов проекта.\n"
+        "Попробуйте чуть позже.</blockquote>"
     )
 
 
@@ -98,19 +105,26 @@ def screen_result(
     extra_kuty: int = 0,
     project_kuty: int = 0,
     item_line: str = "",
+    item_lines: list[str] | None = None,
 ) -> str:
-    # Итог после клетки. project_kuty — запасной подарок без слова «процент».
-    parts = [
-        f"{emoji(GIFT)} <b>Бонус + ваш</b>",
-        f"<blockquote>{emoji(SPARK, '⚡️')} С клетки: <b>+{int(board_kuty)}</b> кут</blockquote>",
-    ]
+    lines = [str(x) for x in (item_lines or []) if str(x).strip()]
+    if item_line and item_line not in lines:
+        lines.insert(0, item_line)
+    paid_any = int(board_kuty or 0) > 0 or int(extra_kuty or 0) > 0 or int(project_kuty or 0) > 0 or bool(lines)
+    if not paid_any:
+        return screen_dry()
+    parts = [f"{emoji(GIFT)} <b>Бонус + ваш</b>"]
+    if int(board_kuty or 0) > 0:
+        parts.append(
+            f"<blockquote>{emoji(SPARK, '⚡️')} С клетки: <b>+{int(board_kuty)}</b> кут</blockquote>"
+        )
     if int(extra_kuty or 0) > 0:
         parts.append(f"{emoji(STAR, '⭐️')} Ещё куты: <b>+{int(extra_kuty)}</b>")
-    if item_line:
-        parts.append(f"{emoji(GIFT)} {item_line}")
+    for line in lines:
+        parts.append(f"{emoji(GIFT)} {line}")
     if int(project_kuty or 0) > 0:
         parts.append(
-            f"{emoji(STAR, '⭐️')} <b>+ дополнительные куты от самого проекта</b>: "
+            f"{emoji(STAR, '⭐️')} <b>Дополнительные куты от проекта</b>: "
             f"<b>+{int(project_kuty)}</b>"
         )
     parts.append("<i>Спасибо, что вы с нами</i>")
@@ -130,13 +144,18 @@ def alert_gone() -> str:
     return "Открытие уже неактуально. Снова «использовать 🎁»."
 
 
-def help_block(*, mult: int) -> str:
-    mult_bit = f" Куты с доски уже ×{int(mult)}." if int(mult or 1) > 1 else ""
+def help_block(*, mult: int, item_count: int = 1) -> str:
+    mult_bit = f" Куты уже ×{int(mult)}." if int(mult or 1) > 1 else ""
+    slots = max(1, int(item_count or 1))
+    items = (
+        f" Иногда — до <b>{slots}</b> предметов."
+        if slots > 1
+        else " Иногда — предмет."
+    )
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
-        f"Напишите «использовать 🎁» — откроется увеличенный бонус.{mult_bit}\n"
-        "Больше кут, чем в обычном бонусе, и иногда подарок-предмет от проекта.\n"
-        "Нужна приписка <code>Cute</code> в имени. Победа в игре не нужна."
+        f"«использовать 🎁» — увеличенный бонус.{mult_bit}{items}\n"
+        "Нужна приписка <code>Cute</code>. Победа не нужна."
     )
 
 

@@ -13,7 +13,7 @@ if str(_SERVER) not in sys.path:
     sys.path.insert(0, str(_SERVER))
 
 from flame_bonus_plus import (  # noqa: E402
-    acquire_bonus_item,
+    acquire_bonus_items,
     board_range,
     gift_plus_defaults,
     pay_user_from_tech,
@@ -80,7 +80,13 @@ def intro_text(conf: dict) -> str:
         str(row.get("kind")) == "item" and str(row.get("item_name") or row.get("itemName") or "").strip()
         for row in (clean.get("drops") or [])
     ))
-    return screen_intro(mult=clean["mult"], kuty_lo=lo, kuty_hi=hi, items_on=items_on)
+    return screen_intro(
+        mult=clean["mult"],
+        kuty_lo=lo,
+        kuty_hi=hi,
+        items_on=items_on,
+        item_count=int(clean.get("item_count") or 1),
+    )
 
 
 async def show_intro(message, db, *, item_name: str) -> bool:
@@ -118,21 +124,17 @@ async def open_board_for(user, chat_id: int, reply_to, conf: dict) -> bool:
 
 
 async def apply_cell_rewards(db, user_id: int, board_amount: int, conf: dict) -> dict:
-    """Начислить куты с клетки и независимые доп. награды. Деньги — с техгрупп."""
+    """Начислить куты с клетки и независимые доп. награды.
+
+    Куты — только с техгрупп. Предметы — магазин/биржа за техгруппы.
+    Ничего не создаём «из воздуха».
+    """
     pool = _pool(db)
     conf = gift_plus_defaults({**(conf or {}), "drops": (conf or {}).get("drops") or []})
     need = max(0, int(board_amount or 0))
     board_paid = 0
     if pool is not None and need > 0:
         board_paid = await pay_user_from_tech(pool, int(user_id), need)
-    if board_paid < need and need > 0:
-        # Техгруппы не покрыли клетку — всё равно отдадим сумму, чтобы 🎁 не пропал впустую.
-        try:
-            bal = await db.get_user_balance(int(user_id))
-            await db.update_user_balance(int(user_id), int(bal or 0) + (need - board_paid))
-            board_paid = need
-        except Exception as exc:
-            print(f"[BONUS+] board fallback {user_id}: {exc}")
 
     if board_paid > 0:
         try:
@@ -150,25 +152,31 @@ async def apply_cell_rewards(db, user_id: int, board_amount: int, conf: dict) ->
             except Exception:
                 pass
 
-    item_line = ""
+    item_lines: list[str] = []
     project_kuty = 0
-    if pool is not None and bundle.get("want_item") and bundle.get("item_names"):
-        got = await acquire_bonus_item(
+    picks = list(bundle.get("item_picks") or [])
+    if not picks and bundle.get("want_item") and bundle.get("item_names"):
+        picks = [list(bundle["item_names"])]
+    if pool is not None and picks:
+        got_list = await acquire_bonus_items(
             pool,
             int(user_id),
-            list(bundle["item_names"]),
+            picks,
             int(conf.get("fallback_pct") or 30),
         )
-        if got.get("ok"):
+        for got in got_list:
             if got.get("source") == "project_kuty":
-                project_kuty = int(got.get("project_kuty") or got.get("paid") or 0)
-                if project_kuty > 0:
+                add = int(got.get("project_kuty") or got.get("paid") or 0)
+                project_kuty += add
+                if add > 0:
                     try:
-                        await db.cutehistory_plus(int(user_id), project_kuty, HISTORY_PROJECT)
+                        await db.cutehistory_plus(int(user_id), add, HISTORY_PROJECT)
                     except Exception:
                         pass
             else:
-                item_line = str(got.get("line") or "")
+                line = str(got.get("line") or "")
+                if line:
+                    item_lines.append(line)
                 try:
                     from bot.funcs.flame import note_gift_loot
                     await note_gift_loot(
@@ -195,12 +203,13 @@ async def apply_cell_rewards(db, user_id: int, board_amount: int, conf: dict) ->
         "board_kuty": board_paid,
         "extra_kuty": extra_paid,
         "project_kuty": project_kuty,
-        "item_line": item_line,
+        "item_line": item_lines[0] if item_lines else "",
+        "item_lines": item_lines,
         "text": screen_result(
-            board_kuty=board_paid or int(board_amount or 0),
+            board_kuty=board_paid,
             extra_kuty=extra_paid,
             project_kuty=project_kuty,
-            item_line=item_line,
+            item_lines=item_lines,
         ),
     }
 
@@ -255,7 +264,6 @@ async def bonus_plus_click(call) -> None:
     item_name = str(pending.get("item_name") or "")
     chat_id = int(pending.get("chat_id") or call.message.chat.id)
 
-    # Cute в имени
     user = call.from_user
     try:
         from main import _has_family_tag

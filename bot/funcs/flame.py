@@ -183,21 +183,50 @@ async def note_live_message(db, user_id: int, chat_id: int) -> None:
 
 
 async def _pay(db, user_id: int, rewards: list[dict]) -> None:
+    """Выдать награды серии/тёплого часа.
+
+    Куты — только с технических групп.
+    Предметы — покупка из магазина/биржи за техгруппы (или запасные куты %).
+    Ничего не создаём «из воздуха».
+    """
+    pool = _pool(db)
+    fallback_pct = 30
+    if pool is not None:
+        try:
+            conf = await gift_config(pool)
+            fallback_pct = int(conf.get("fallback_pct") or 30)
+        except Exception:
+            pass
     for reward in rewards:
         kind = reward.get("kind")
         amount = int(reward.get("amount") or 1)
         try:
             if kind == "kuty":
-                balance = await db.get_user_balance(user_id)
-                await db.update_user_balance(user_id, int(balance or 0) + amount)
-                try:
-                    await db.cutehistory_plus(user_id, amount, HISTORY_GRANT)
-                except Exception:
-                    pass
+                if pool is None or amount < 1:
+                    continue
+                from flame_bonus_plus import pay_user_from_tech
+                paid = await pay_user_from_tech(pool, int(user_id), amount)
+                if paid > 0:
+                    try:
+                        await db.cutehistory_plus(user_id, paid, HISTORY_GRANT)
+                    except Exception:
+                        pass
             elif kind == "item":
                 name = str(reward.get("item_name") or "").strip()
-                if name:
-                    await db.add_item_to_inventory(user_id, name, amount)
+                if not name or pool is None:
+                    continue
+                from flame_bonus_plus import acquire_bonus_item
+                for _ in range(max(1, amount)):
+                    got = await acquire_bonus_item(pool, int(user_id), [name], fallback_pct)
+                    if not got.get("ok"):
+                        break
+                    if got.get("source") == "project_kuty":
+                        add = int(got.get("project_kuty") or got.get("paid") or 0)
+                        if add > 0:
+                            try:
+                                await db.cutehistory_plus(user_id, add, HISTORY_GRANT)
+                            except Exception:
+                                pass
         except Exception as exc:
             print(f"[FLAME] pay {user_id} {kind}: {exc}")
 

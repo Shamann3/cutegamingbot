@@ -37,6 +37,7 @@ _DEFAULTS = {
     "gift_extra_kuty_max": 25,
     "gift_item_on": True,
     "gift_item_chance": 40,
+    "gift_item_count": 1,
     "gift_fallback_pct": 30,
     "restore_enabled": True,
     "restore_days": 3,
@@ -145,6 +146,28 @@ def _reward_line(row: dict) -> str:
     return f"· <b>{span_label(day)}</b> — {gift}"
 
 
+def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
+    """Одна строка на день: все подарки этого дня через «·»."""
+    by_day: dict[int, list[str]] = {}
+    for row in sorted(rewards or [], key=lambda item: (int(item.get("day") or 0), int(item.get("id") or 0))):
+        day = int(row.get("day") or 0)
+        if day < 1:
+            continue
+        kind = str(row.get("kind") or "")
+        amount = max(1, int(row.get("amount") or 1))
+        item = str(row.get("item_name") or row.get("itemName") or "").strip()
+        gift = _kind_words(kind, amount, item)
+        if not gift:
+            continue
+        by_day.setdefault(day, []).append(gift)
+    lines = []
+    for day in sorted(by_day):
+        gifts = by_day[day]
+        body = " · ".join(gifts)
+        lines.append(f"· <b>{span_label(day)}</b> — {body}")
+    return lines
+
+
 def _kind_words(kind: str, amount: int, item: str = "") -> str:
     from flame_copy import kind_words
 
@@ -238,7 +261,7 @@ def help_html(board: dict) -> str:
         if start <= 1 or messages < 1:
             continue
         rises.append(f"с {start}-го — <b>{messages}</b>")
-    lines = [_reward_line(row) for row in sorted(rewards, key=lambda row: int(row.get("day") or 0))]
+    lines = _reward_lines_grouped(rewards)
     title_lines = []
     for row in sorted(titles, key=lambda item: int(item.get("from_day") or 0)):
         start = int(row.get("from_day") or 0)
@@ -264,7 +287,7 @@ def help_html(board: dict) -> str:
         words=int(settings.get("min_words") or 2),
         enabled=bool(settings.get("enabled")),
         rises=rises,
-        rewards=[line for line in lines if line],
+        rewards=lines,
         titles=title_lines,
         warm_on=bool(warm.get("enabled")),
         warm_from=span_label(int(warm.get("min_day") or 3)),
@@ -273,6 +296,7 @@ def help_html(board: dict) -> str:
         warm_hour=warm_hour,
         gift_on=bool(gift.get("enabled")),
         gift_mult=int(gift.get("mult") or 1),
+        gift_item_count=int(gift.get("item_count") or settings.get("gift_item_count") or 1),
         restore_line=restore_line,
     )
 
@@ -329,6 +353,7 @@ async def ensure_tables(pool) -> None:
         ("gift_extra_kuty_max", "INT NOT NULL DEFAULT 25"),
         ("gift_item_on", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("gift_item_chance", "INT NOT NULL DEFAULT 40"),
+        ("gift_item_count", "INT NOT NULL DEFAULT 1"),
         ("gift_fallback_pct", "INT NOT NULL DEFAULT 30"),
         ("restore_enabled", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("restore_days", "INT NOT NULL DEFAULT 3"),
@@ -464,7 +489,7 @@ def _row_settings(row) -> dict:
         "warm_min_day", "warm_every", "warm_cap", "warm_from", "warm_to",
         "profit_hour", "min_words", "gift_mult", "gift_kuty_min", "gift_kuty_max",
         "gift_extra_kuty_chance", "gift_extra_kuty_min", "gift_extra_kuty_max",
-        "gift_item_chance", "gift_fallback_pct",
+        "gift_item_chance", "gift_item_count", "gift_fallback_pct",
         "restore_days", "restore_kuty", "restore_item_count",
     ):
         if key in keys and row[key] is not None:
@@ -480,6 +505,7 @@ def _row_settings(row) -> dict:
     out["gift_extra_kuty_min"] = max(0, int(out.get("gift_extra_kuty_min") or 0))
     out["gift_extra_kuty_max"] = max(out["gift_extra_kuty_min"], int(out.get("gift_extra_kuty_max") or 0))
     out["gift_item_chance"] = max(0, min(100, int(out.get("gift_item_chance") or 0)))
+    out["gift_item_count"] = max(1, min(5, int(out.get("gift_item_count") or 1)))
     out["gift_fallback_pct"] = max(1, min(100, int(out.get("gift_fallback_pct") or 30)))
     out["min_words"] = max(1, min(20, out["min_words"]))
     out["warm_every"] = max(1, min(10_000, out["warm_every"]))
@@ -520,11 +546,18 @@ async def ensure_warm_hour(pool, today: date | None = None, settings: dict | Non
     return int(again["hour"]) if again else hour
 
 
-def gift_preview(drops: list[dict], mult: int, kuty_min: int, kuty_max: int) -> dict:
+def gift_preview(
+    drops: list[dict],
+    mult: int,
+    kuty_min: int,
+    kuty_max: int,
+    item_count: int = 1,
+) -> dict:
     """Средний профит за одно открытие и за 100 открытий."""
     mult = max(1, int(mult or 1))
     lo = max(1, int(kuty_min or 1))
     hi = max(lo, int(kuty_max or lo))
+    slots = max(1, min(5, int(item_count or 1)))
     board_avg = ((lo + hi) / 2.0) * mult
     weight_sum = 0
     item_chance = 0.0
@@ -555,6 +588,7 @@ def gift_preview(drops: list[dict], mult: int, kuty_min: int, kuty_max: int) -> 
         "boardAvg": round(board_avg, 2),
         "extraKutyAvg": round(extra_kuty, 2),
         "itemChancePct": round(item_chance * 100, 2),
+        "itemCount": slots,
         "avgPerOpen": round(per, 2),
         "avgPer100": round(per * 100, 1),
         "items": items,
@@ -647,6 +681,7 @@ async def load_board(pool) -> dict:
         "extra_kuty_max": settings["gift_extra_kuty_max"],
         "item_on": settings["gift_item_on"],
         "item_chance": settings["gift_item_chance"],
+        "item_count": settings["gift_item_count"],
         "fallback_pct": settings["gift_fallback_pct"],
         "drops": gift_drops,
         "preview": gift_preview(
@@ -654,6 +689,7 @@ async def load_board(pool) -> dict:
             settings["gift_mult"],
             settings["gift_kuty_min"],
             settings["gift_kuty_max"],
+            item_count=settings["gift_item_count"],
         ),
     }
     board = {
@@ -721,6 +757,8 @@ async def save_settings(pool, body: dict) -> None:
         "gift_item_on": "gift_item_on",
         "giftItemChance": "gift_item_chance",
         "gift_item_chance": "gift_item_chance",
+        "giftItemCount": "gift_item_count",
+        "gift_item_count": "gift_item_count",
         "giftFallbackPct": "gift_fallback_pct",
         "gift_fallback_pct": "gift_fallback_pct",
         "restoreEnabled": "restore_enabled",
@@ -746,11 +784,11 @@ async def save_settings(pool, body: dict) -> None:
             status_enabled, profit_enabled, profit_hour, min_words, block_dup,
             gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max,
             gift_extra_kuty_on, gift_extra_kuty_chance, gift_extra_kuty_min, gift_extra_kuty_max,
-            gift_item_on, gift_item_chance, gift_fallback_pct,
+            gift_item_on, gift_item_chance, gift_item_count, gift_fallback_pct,
             restore_enabled, restore_days, restore_kuty, restore_item, restore_item_count
         ) VALUES (
             1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29
+            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
         )
         ON CONFLICT (id) DO UPDATE SET
             enabled = EXCLUDED.enabled,
@@ -776,6 +814,7 @@ async def save_settings(pool, body: dict) -> None:
             gift_extra_kuty_max = EXCLUDED.gift_extra_kuty_max,
             gift_item_on = EXCLUDED.gift_item_on,
             gift_item_chance = EXCLUDED.gift_item_chance,
+            gift_item_count = EXCLUDED.gift_item_count,
             gift_fallback_pct = EXCLUDED.gift_fallback_pct,
             restore_enabled = EXCLUDED.restore_enabled,
             restore_days = EXCLUDED.restore_days,
@@ -806,6 +845,7 @@ async def save_settings(pool, body: dict) -> None:
         clean["gift_extra_kuty_max"],
         clean["gift_item_on"],
         clean["gift_item_chance"],
+        clean["gift_item_count"],
         clean["gift_fallback_pct"],
         clean["restore_enabled"],
         clean["restore_days"],
@@ -1309,10 +1349,15 @@ async def gift_config(pool) -> dict:
         "extra_kuty_max": settings["gift_extra_kuty_max"],
         "item_on": settings["gift_item_on"],
         "item_chance": settings["gift_item_chance"],
+        "item_count": settings["gift_item_count"],
         "fallback_pct": settings["gift_fallback_pct"],
         "drops": drops,
         "preview": gift_preview(
-            drops, settings["gift_mult"], settings["gift_kuty_min"], settings["gift_kuty_max"]
+            drops,
+            settings["gift_mult"],
+            settings["gift_kuty_min"],
+            settings["gift_kuty_max"],
+            item_count=settings["gift_item_count"],
         ),
     }
 

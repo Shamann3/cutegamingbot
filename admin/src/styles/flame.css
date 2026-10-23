@@ -73,6 +73,7 @@
   border-radius: 16px;
   background: rgba(255, 140, 40, 0.08);
   border: 1px solid rgba(255, 140, 40, 0.22);
+  transition: border-color 220ms ease, background 220ms ease;
 }
 
 .flame-map p {
@@ -84,6 +85,48 @@
   font-size: 0.86em;
 }
 
+.flame-map-loot {
+  color: #ffd7a8;
+}
+
+.flame-day-list {
+  display: grid;
+  gap: 12px;
+}
+
+.flame-day-pack {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: flame-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.flame-day-pack-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.flame-day-num {
+  width: min(100%, 8.5rem);
+}
+
+.flame-consequence {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 140, 40, 0.1);
+  border: 1px solid rgba(255, 140, 40, 0.2);
+  color: #ffd7a8;
+  line-height: 1.4;
+  font-size: 0.92rem;
+}
+
 .flame-work {
   display: grid;
   gap: 14px;
@@ -93,6 +136,7 @@
   display: grid;
   gap: 14px;
   min-width: 0;
+  animation: flame-rise 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .flame-tabs {
@@ -114,6 +158,13 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.flame-tab:active {
+  transform: scale(0.98);
 }
 
 .flame-tab small {
@@ -420,7 +471,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .flame-orb,
-  .flame-rise {
+  .flame-rise,
+  .flame-pane,
+  .flame-day-pack {
     animation: none;
+  }
+
+  .flame-tab,
+  .flame-map {
+    transition: none;
   }
 }

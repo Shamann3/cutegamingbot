@@ -21,13 +21,55 @@ const KIND_OPTIONS = [
 
 const TABS = [
   { id: 'norm', label: 'Норма', hint: 'Сколько писать' },
-  { id: 'rewards', label: 'Награды', hint: 'За дни серии' },
+  { id: 'rewards', label: 'Награды', hint: 'Что дадут за дни' },
   { id: 'warm', label: 'Тёплый час', hint: 'Случайный час' },
   { id: 'status', label: 'Статусы', hint: 'Строка в профиле' },
-  { id: 'gift', label: 'Бонус +', hint: 'Предмет 🎁' },
+  { id: 'gift', label: 'Бонус +', hint: '🎁 · несколько предметов' },
   { id: 'restore', label: 'Вернуть', hint: 'Куты или предмет' },
   { id: 'live', label: 'Живое', hint: 'Серии и награды' },
 ]
+
+const TAB_EFFECT = {
+  norm: 'Меняет, сколько сообщений нужно в день и как растёт норма.',
+  rewards: 'В выбранный день серии человек получит все подарки этого дня сразу.',
+  warm: 'В удачный час — ещё случайная награда из списка (вес = шанс).',
+  status: 'Титул в профиле и топе, пока огонёк жив.',
+  gift: 'Предмет 🎁: куты с клетки + до N предметов из пула. Всё с техгрупп / магазина / биржи.',
+  restore: 'Команда «вернуть огонёк» поднимает погасшую серию за куты или предмет.',
+  live: 'Только просмотр: живые серии и последние выдачи.',
+}
+
+function giftWords(row) {
+  if (row.kind === 'kuty') return `${Math.max(1, Number(row.amount) || 1)} кут`
+  if (row.kind === 'item') {
+    const name = String(row.itemName || '').trim() || 'предмет'
+    const n = Math.max(1, Number(row.amount) || 1)
+    return n === 1 ? name : `${name} ×${n}`
+  }
+  if (row.kind === 'bonus_x2') {
+    const n = Math.max(1, Number(row.amount) || 1)
+    return n === 1 ? 'бонус ×2' : `бонус ×2 ×${n}`
+  }
+  if (row.kind === 'bonus') {
+    const n = Math.max(1, Number(row.amount) || 1)
+    return n === 1 ? 'обычный бонус' : `обычный бонус ×${n}`
+  }
+  return kindLabel(row.kind)
+}
+
+function groupRewardDays(rows) {
+  const order = []
+  const map = new Map()
+  rows.forEach((row, index) => {
+    const key = String(row.day ?? '').trim() === '' ? `__empty_${index}` : String(row.day)
+    if (!map.has(key)) {
+      map.set(key, { key, day: row.day, gifts: [] })
+      order.push(key)
+    }
+    map.get(key).gifts.push({ ...row, _index: index })
+  })
+  return order.map((key) => map.get(key))
+}
 
 function digits(value) {
   return String(value ?? '').replace(/[^\d]/g, '')
@@ -102,6 +144,7 @@ export default function FlameSection() {
       giftExtraKutyMax: String(s.gift_extra_kuty_max ?? 25),
       giftItemOn: s.gift_item_on !== false,
       giftItemChance: String(s.gift_item_chance ?? 40),
+      giftItemCount: String(s.gift_item_count ?? 1),
       giftFallbackPct: String(s.gift_fallback_pct ?? 30),
       restoreEnabled: s.restore_enabled !== false,
       restoreDays: String(s.restore_days || 3),
@@ -188,6 +231,7 @@ export default function FlameSection() {
     giftExtraKutyMax: Math.max(0, Number(form.giftExtraKutyMax) || 0),
     giftItemOn: Boolean(form.giftItemOn),
     giftItemChance: Math.max(0, Math.min(100, Number(form.giftItemChance) || 0)),
+    giftItemCount: Math.max(1, Math.min(5, Number(form.giftItemCount) || 1)),
     giftFallbackPct: Math.max(1, Math.min(100, Number(form.giftFallbackPct) || 30)),
     restoreEnabled: Boolean(form.restoreEnabled),
     restoreDays: Math.max(1, Math.min(30, Number(form.restoreDays) || 3)),
@@ -231,6 +275,47 @@ export default function FlameSection() {
     return `Сегодня тёплый час: ${String(warmHour).padStart(2, '0')}:00–${String(next).padStart(2, '0')}:00 МСК`
   }, [form.warmEnabled, warmHour])
 
+  const rewardDays = useMemo(() => groupRewardDays(rewards), [rewards])
+
+  const rewardPreview = useMemo(() => {
+    return rewardDays
+      .filter((pack) => String(pack.day || '').trim() !== '')
+      .map((pack) => {
+        const gifts = pack.gifts.map(giftWords).filter(Boolean)
+        if (!gifts.length) return null
+        return `день ${pack.day}: ${gifts.join(' · ')}`
+      })
+      .filter(Boolean)
+  }, [rewardDays])
+
+  const patchReward = (index, patch) => {
+    setRewards((rows) => rows.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+  }
+
+  const setDayForPack = (pack, value) => {
+    const indexes = new Set(pack.gifts.map((g) => g._index))
+    setRewards((rows) => rows.map((item, i) => (indexes.has(i) ? { ...item, day: value } : item)))
+  }
+
+  const addDayPack = () => {
+    const last = rewards.reduce((max, row) => Math.max(max, Number(row.day) || 0), 0)
+    setRewards((rows) => [...rows, { day: String(last + 1 || 1), kind: 'kuty', amount: '10', itemName: '' }])
+  }
+
+  const addGiftToPack = (pack) => {
+    setRewards((rows) => [...rows, {
+      day: pack.day || '',
+      kind: 'item',
+      amount: '1',
+      itemName: '',
+    }])
+  }
+
+  const removePack = (pack) => {
+    const indexes = new Set(pack.gifts.map((g) => g._index))
+    setRewards((rows) => rows.filter((_, i) => !indexes.has(i)))
+  }
+
   return (
     <section className="flame-page">
       <header className="flame-hero">
@@ -238,8 +323,8 @@ export default function FlameSection() {
         <div>
           <h2>Огонёк</h2>
           <p>
-            Норма, награды, тёплый час, статусы, Бонус + (🎁) и возврат серии.
-            Числа здесь. Слова Бонуса + — в <code>server/flame_bonus_plus_copy.py</code>.
+            Награды за дни, тёплый час, статусы, Бонус + (🎁) и возврат.
+            Куты и предметы — только из техгрупп / магазина / биржи.
           </p>
         </div>
       </header>
@@ -250,24 +335,27 @@ export default function FlameSection() {
       {board && (
         <>
           <div className="flame-stats">
-            <article>
+            <article className="flame-rise">
               <strong>{board.alive || 0}</strong>
               <span>живых серий</span>
             </article>
-            <article>
+            <article className="flame-rise" style={{ animationDelay: '60ms' }}>
               <strong>{board.keptToday || 0}</strong>
               <span>закрыли сегодня</span>
             </article>
-            <article>
+            <article className="flame-rise" style={{ animationDelay: '120ms' }}>
               <strong>{warmHour == null ? '—' : `${String(warmHour).padStart(2, '0')}:00`}</strong>
               <span>тёплый час</span>
             </article>
           </div>
 
           <aside className="flame-map">
-            <p><b>Числа и включение</b> — здесь. Кнопка «Сохранить настройки» пишет норму, тёплый час, статусы, 🎁 и возврат разом. Списки наград, ступеней и дропа — своими кнопками.</p>
-            <p><b>Слова, кнопки и карточки</b> — файл <code>server/flame_copy.py</code>. После правки перезапустите бота.</p>
-            <p><b>Серия и окно возврата</b> — <code>server/flame_engine.py</code>, функция <code>restore_view</code>.</p>
+            <p><b>Сейчас:</b> {TAB_EFFECT[tab]}</p>
+            <p><b>Сохранить настройки</b> — норма, тёплый час, статусы, 🎁 и возврат. Списки наград / ступеней / пула — своими кнопками.</p>
+            <p><b>Слова людям</b> — <code>flame_copy.py</code> и <code>flame_bonus_plus_copy.py</code>. После правки перезапустите бота.</p>
+            {rewardPreview.length > 0 && tab === 'rewards' && (
+              <p className="flame-map-loot"><b>Люди увидят:</b> {rewardPreview.join(' · ')}</p>
+            )}
           </aside>
 
           <div className="flame-work">
@@ -278,13 +366,14 @@ export default function FlameSection() {
                 type="button"
                 className={`flame-tab${tab === row.id ? ' is-on' : ''}`}
                 onClick={() => setTab(row.id)}
+                aria-current={tab === row.id ? 'page' : undefined}
               >
                 <span>{row.label}</span>
                 <small>{row.hint}</small>
               </button>
             ))}
           </nav>
-          <div className="flame-pane">
+          <div className="flame-pane" key={tab}>
 
           {tab === 'norm' && (
             <section className="flame-card flame-rise">
@@ -371,48 +460,87 @@ export default function FlameSection() {
             <section className="flame-card flame-rise">
               <div className="flame-card-head">
                 <h3>Награды за дни серии</h3>
-                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setRewards((rows) => [...rows, { day: '', kind: 'kuty', amount: '1', itemName: '' }])}>
-                  Добавить
+                <button type="button" className="sec-btn sec-btn-ghost" onClick={addDayPack}>
+                  Добавить день
                 </button>
               </div>
-              <p className="flame-note">Один раз в тот день. Фраза другу: «за 7 дней огонька мне дали бесплатный ×2».</p>
-              <ul className="flame-rows is-reward">
-                {rewards.map((row, index) => (
-                  <li key={`reward-${index}`}>
-                    <label>
-                      <span>День</span>
-                      <input inputMode="numeric" value={row.day} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setRewards((rows) => rows.map((item, i) => i === index ? { ...item, day: value } : item))
-                      }} />
-                    </label>
-                    <DarkPick
-                      label="Что дать"
-                      value={row.kind}
-                      options={KIND_OPTIONS}
-                      searchable={false}
-                      onChange={(kind) => setRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
-                    />
-                    <label>
-                      <span>{row.kind === 'item' ? 'Штук' : row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
-                      <input inputMode="numeric" value={row.amount} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setRewards((rows) => rows.map((item, i) => i === index ? { ...item, amount: value } : item))
-                      }} />
-                    </label>
-                    {row.kind === 'item' && (
-                      <div className="is-wide">
-                        <FlameItemPick
-                          catalog={catalog}
-                          value={row.itemName}
-                          onChange={(itemName) => setRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))}
-                        />
+              <p className="flame-note">
+                Один день = один пакет. В пакет можно положить несколько подарков — все выдадутся сразу.
+                Куты и предметы берутся из техгрупп / магазина / биржи, не «из воздуха».
+              </p>
+              {rewardDays.length === 0 && (
+                <p className="flame-empty">Пока пусто. Добавьте день — люди увидят награды в справке первыми.</p>
+              )}
+              <div className="flame-day-list">
+                {rewardDays.map((pack) => {
+                  const summary = pack.gifts.map(giftWords).filter(Boolean).join(' · ')
+                  return (
+                    <article key={pack.key} className="flame-day-pack">
+                      <div className="flame-day-pack-head">
+                        <label className="flame-field flame-day-num">
+                          <span>День серии</span>
+                          <input
+                            inputMode="numeric"
+                            value={pack.day}
+                            onChange={(e) => setDayForPack(pack, digits(e.target.value))}
+                          />
+                        </label>
+                        <div className="flame-actions">
+                          <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addGiftToPack(pack)}>
+                            + подарок
+                          </button>
+                          <button type="button" className="sec-btn sec-btn-ghost" onClick={() => removePack(pack)}>
+                            Убрать день
+                          </button>
+                        </div>
                       </div>
-                    )}
-                    <button type="button" className="sec-btn sec-btn-ghost flame-drop" aria-label={`Убрать ${kindLabel(row.kind)}`} onClick={() => setRewards((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
-                  </li>
-                ))}
-              </ul>
+                      {summary && (
+                        <p className="flame-consequence">
+                          Получат: <b>{summary}</b>
+                        </p>
+                      )}
+                      <ul className="flame-rows is-reward">
+                        {pack.gifts.map((row) => (
+                          <li key={`reward-${row._index}`}>
+                            <DarkPick
+                              label="Что дать"
+                              value={row.kind}
+                              options={KIND_OPTIONS}
+                              searchable={false}
+                              onChange={(kind) => patchReward(row._index, { kind })}
+                            />
+                            <label>
+                              <span>{row.kind === 'item' ? 'Штук' : row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
+                              <input
+                                inputMode="numeric"
+                                value={row.amount}
+                                onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
+                              />
+                            </label>
+                            {row.kind === 'item' && (
+                              <div className="is-wide">
+                                <FlameItemPick
+                                  catalog={catalog}
+                                  value={row.itemName}
+                                  onChange={(itemName) => patchReward(row._index, { itemName })}
+                                />
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              className="sec-btn sec-btn-ghost flame-drop"
+                              aria-label={`Убрать ${kindLabel(row.kind)}`}
+                              onClick={() => setRewards((rows) => rows.filter((_, i) => i !== row._index))}
+                            >
+                              Убрать
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </article>
+                  )
+                })}
+              </div>
               <button
                 type="button"
                 className="sec-btn"
@@ -587,9 +715,9 @@ export default function FlameSection() {
                 </label>
               </div>
               <p className="flame-note">
-                Увеличенный бонус: больше кут, чем обычный, и независимый шанс предмета.
-                Куты и предметы могут выпасть вместе. Предмет код <code>freebonus</code>.
-                Слова и эмодзи — <code>server/flame_bonus_plus_copy.py</code>.
+                Увеличенный бонус (код <code>freebonus</code>). Куты с клетки + до N предметов за одно открытие.
+                Всё списывается с техгрупп / покупается в магазине или на бирже — без выдачи «из воздуха».
+                Слова — <code>flame_bonus_plus_copy.py</code>.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">
@@ -605,14 +733,13 @@ export default function FlameSection() {
                   <input inputMode="numeric" value={form.giftKutyMax} onChange={(e) => patch('giftKutyMax', digits(e.target.value))} />
                 </label>
                 <label className="flame-field">
-                  <span>Запасные куты, % от цены предмета</span>
+                  <span>Запасные куты, % от цены</span>
                   <input inputMode="numeric" value={form.giftFallbackPct} onChange={(e) => patch('giftFallbackPct', digits(e.target.value))} />
                 </label>
               </div>
               <p className="flame-note">
-                Если ни одного предмета из списка нет в магазине и на бирже, игрок получит процент от цены
-                как «дополнительные куты от самого проекта» — без слова про процент.
-                Деньги на награды снимаются с технических групп.
+                Нет предмета в магазине и на бирже → процент от цены как «куты от проекта», только если на техгруппах есть баланс.
+                Иначе слот пустой.
               </p>
 
               <div className="flame-card-head">
@@ -646,17 +773,21 @@ export default function FlameSection() {
               </div>
               <div className="flame-grid-2">
                 <label className="flame-field">
-                  <span>Шанс предмета, %</span>
+                  <span>Шанс на каждый слот, %</span>
                   <input inputMode="numeric" value={form.giftItemChance} onChange={(e) => patch('giftItemChance', digits(e.target.value))} />
+                </label>
+                <label className="flame-field">
+                  <span>Сколько предметов за раз (1–5)</span>
+                  <input inputMode="numeric" value={form.giftItemCount} onChange={(e) => patch('giftItemCount', digits(e.target.value))} />
                 </label>
               </div>
               <p className="flame-note">
-                Сначала код ищет выбранный предмет в магазине, потом на бирже и покупает за техгруппы.
-                Если его нет — берёт другой из этого списка. Куты и предмет могут выпасть в одном открытии.
+                Каждый слот роллится отдельно. Один и тот же предмет в одном открытии не повторится.
+                Сначала магазин, потом биржа — покупка за техгруппы. Куты и предметы могут выпасть вместе.
               </p>
 
               <div className="flame-preview">
-                <h4>Клетка сейчас</h4>
+                <h4>Что увидит человек</h4>
                 <div className="flame-preview-grid">
                   <article>
                     <strong>{preview.kutyMin ?? '—'}–{preview.kutyMax ?? '—'}</strong>
@@ -667,8 +798,8 @@ export default function FlameSection() {
                     <span>доп. куты</span>
                   </article>
                   <article>
-                    <strong>{form.giftItemOn ? `${form.giftItemChance}%` : 'выкл'}</strong>
-                    <span>шанс предмета</span>
+                    <strong>{form.giftItemOn ? `${form.giftItemChance}% ×${Math.max(1, Number(form.giftItemCount) || 1)}` : 'выкл'}</strong>
+                    <span>слоты предметов</span>
                   </article>
                   <article>
                     <strong>{form.giftFallbackPct}%</strong>
