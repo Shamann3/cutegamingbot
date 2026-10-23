@@ -35,10 +35,12 @@ def screen_intro(*, mult: int, kuty_lo: int, kuty_hi: int, items_on: bool, item_
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>{mult_bit}\n"
         "<blockquote>"
+        "<b>Это улучшенный бонус, с более крутыми подарками</b>\n"
         f"С клетки: <b>+{int(kuty_lo)}…{int(kuty_hi)}</b> кут."
         f"{extra}\n"
-        "Халява от проекта — спасибо, что вы с нами."
-        "</blockquote>"
+        "<i>Спасибо, что вы с нами.</i>"
+        "</blockquote>\n"
+        "<b>Нажмите на одну из кнопок.</b>"
     )
 
 
@@ -52,9 +54,9 @@ def button_later() -> str:
 
 def screen_later() -> str:
     return (
-        f"{emoji(NOTE, '❕')} <b>Бонус + отложен</b>\n"
-        "<blockquote>🎁 остался у вас.\n"
-        "Когда будете готовы — снова «использовать 🎁».</blockquote>"
+        "<code>🎁</code> <b>Предмет остался у вас.</b>\n"
+        "<i>Когда будете готовы — напишите</i> "
+        "«<code>использовать 🎁</code>» <i>снова.</i>"
     )
 
 

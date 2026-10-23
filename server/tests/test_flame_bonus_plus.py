@@ -64,6 +64,8 @@ def test_multi_item_slots_without_duplicate_preferred():
 def test_copy_mentions_bigger_bonus_and_project_kuty():
     text = screen_intro(mult=2, kuty_lo=10, kuty_hi=30, items_on=True, item_count=2)
     assert "Бонус +" in text
+    assert "улучшенный бонус" in text
+    assert "Нажмите на одну из кнопок" in text
     assert "10" in text and "30" in text
     assert "2" in text
     result = screen_result(
