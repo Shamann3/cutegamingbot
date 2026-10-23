@@ -241,7 +241,6 @@ export default function FlameSection() {
     restoreItemCount: Math.max(1, Math.min(100, Number(form.restoreItemCount) || 1)),
   }))
 
-  const preview = board?.gift?.preview || {}
   const warmHour = board?.warm?.hour
   const catalog = useMemo(() => {
     const rows = board?.items || []
@@ -277,6 +276,52 @@ export default function FlameSection() {
   }, [form.warmEnabled, warmHour])
 
   const rewardDays = useMemo(() => groupRewardDays(rewards), [rewards])
+
+  const playerReveal = useMemo(() => {
+    const mult = Math.max(1, Math.min(10, Number(form.giftMult) || 1))
+    const lo = Math.max(1, Number(form.giftKutyMin) || 1) * mult
+    const hi = Math.max(lo, (Number(form.giftKutyMax) || lo) * mult)
+    const kuty = []
+    kuty.push(lo === hi ? `+${lo} кут с клетки` : `+${lo}…${hi} кут с клетки`)
+    if (form.giftExtraKutyOn) {
+      const chance = Math.max(0, Math.min(100, Number(form.giftExtraKutyChance) || 0))
+      let a = Math.max(0, Number(form.giftExtraKutyMin) || 0)
+      let b = Math.max(a, Number(form.giftExtraKutyMax) || 0)
+      if (chance >= 1 && b >= 1) {
+        a = Math.max(1, a)
+        b = Math.max(a, b)
+        const bit = a === b ? `+${a} кут` : `+${a}…${b} кут`
+        kuty.push(chance >= 100 ? `ещё ${bit}` : `иногда ещё ${bit}`)
+      }
+    }
+    const shown = form.giftItemOn
+      ? giftDrops.filter((row) => row.showPreview && String(row.itemName || '').trim()).map((row) => row.itemName)
+      : []
+    const hidden = form.giftItemOn
+      ? giftDrops
+        .filter((row) => !row.showPreview && String(row.itemName || '').trim())
+        .map((row) => row.itemName)
+      : []
+    const unique = (rows) => [...new Set(rows)]
+    const shownNames = unique(shown)
+    const hiddenNames = unique(hidden).filter((name) => !shownNames.includes(name))
+    const slots = shownNames.length
+      ? Math.min(Math.max(1, Math.min(5, Number(form.giftItemCount) || 1)), shownNames.length)
+      : 0
+    return { kuty, shownNames, hiddenNames, slots, enabled: Boolean(form.giftEnabled) }
+  }, [
+    form.giftEnabled,
+    form.giftMult,
+    form.giftKutyMin,
+    form.giftKutyMax,
+    form.giftExtraKutyOn,
+    form.giftExtraKutyChance,
+    form.giftExtraKutyMin,
+    form.giftExtraKutyMax,
+    form.giftItemOn,
+    form.giftItemCount,
+    giftDrops,
+  ])
 
   const rewardPreview = useMemo(() => {
     return rewardDays
@@ -716,9 +761,9 @@ export default function FlameSection() {
                 </label>
               </div>
               <p className="flame-note">
-                Код предмета <code>freebonus</code>. В интро человек <b>не видит</b> точные награды.
-                Галочка у предмета включает его в кнопку «Что можно получить?» — там видно список и сколько максимум можно взять за раз.
-                Без галочки предмет всё равно может выпасть, но скрыт из списка.
+                Код предмета <code>freebonus</code>. Интро без цифр.
+                Кнопка «Что можно получить?» берёт куты из полей ниже и предметы с галочкой «В списке».
+                Без галочки предмет может выпасть, но в списке его не будет.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">
@@ -783,39 +828,40 @@ export default function FlameSection() {
               </div>
 
               <div className="flame-preview">
-                <h4>Для вас (не для игрока)</h4>
-                <div className="flame-preview-grid">
-                  <article>
-                    <strong>{preview.kutyMin ?? '—'}–{preview.kutyMax ?? '—'}</strong>
-                    <span>кут с клетки</span>
-                  </article>
-                  <article>
-                    <strong>{form.giftExtraKutyOn ? `${form.giftExtraKutyChance}%` : 'выкл'}</strong>
-                    <span>доп. куты</span>
-                  </article>
-                  <article>
-                    <strong>{form.giftItemOn ? `${form.giftItemChance}% ×${Math.max(1, Number(form.giftItemCount) || 1)}` : 'выкл'}</strong>
-                    <span>слоты предметов</span>
-                  </article>
-                  <article>
-                    <strong>{giftDrops.filter((row) => row.showPreview && row.itemName).length}</strong>
-                    <span>в «Что можно получить?»</span>
-                  </article>
-                </div>
-                {giftDrops.some((row) => row.showPreview && row.itemName) ? (
-                  <p className="flame-consequence">
-                    Игрок увидит до{' '}
-                    <b>
-                      {Math.min(
-                        Math.max(1, Number(form.giftItemCount) || 1),
-                        giftDrops.filter((row) => row.showPreview && row.itemName).length,
-                      )}
-                    </b>
-                    {' '}из:{' '}
-                    {giftDrops.filter((row) => row.showPreview && row.itemName).map((row) => row.itemName).join(' · ')}
-                  </p>
-                ) : (
-                  <p className="flame-note">Нет галочек — кнопки «Что можно получить?» не будет.</p>
+                <h4>Кнопка «Что можно получить?»</h4>
+                <p className="flame-note">
+                  Так увидит игрок после сохранения. Кнопка стоит под «Открыть Бонус +».
+                </p>
+                {!playerReveal.enabled && <p className="flame-note">Бонус + выключен — кнопки не будет.</p>}
+                {playerReveal.enabled && (
+                  <>
+                    <p className="flame-consequence">
+                      <b>Куты</b><br />
+                      {playerReveal.kuty.map((line) => (
+                        <span key={line} className="flame-reveal-line">· {line}</span>
+                      ))}
+                    </p>
+                    {playerReveal.shownNames.length > 0 ? (
+                      <p className="flame-consequence">
+                        <b>
+                          {playerReveal.slots <= 1
+                            ? 'Предмет · до 1 за раз'
+                            : `Предметы · до ${playerReveal.slots} за раз`}
+                          {playerReveal.hiddenNames.length > 0 ? ' · в списке не всё' : ''}
+                        </b>
+                        {playerReveal.shownNames.map((name) => (
+                          <span key={name} className="flame-reveal-line">· {name}</span>
+                        ))}
+                      </p>
+                    ) : (
+                      <p className="flame-note">В списке предметов пусто — игрок увидит только куты.</p>
+                    )}
+                    {playerReveal.hiddenNames.length > 0 && (
+                      <p className="flame-note">
+                        Скрыто от списка, но может выпасть: {playerReveal.hiddenNames.join(' · ')}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 

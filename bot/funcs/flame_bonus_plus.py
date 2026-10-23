@@ -16,6 +16,9 @@ from flame_bonus_plus import (  # noqa: E402
     acquire_bonus_items,
     gift_plus_defaults,
     pay_user_from_tech,
+    preview_has_content,
+    preview_hidden_names,
+    preview_kuty_lines,
     preview_max_gifts,
     preview_show_names,
     roll_extra_bundle,
@@ -64,7 +67,8 @@ def peek_pending(user_id: int) -> dict | None:
 
 
 def _has_what_button(conf: dict) -> bool:
-    return bool(preview_show_names(conf))
+    # Под «Открыть Бонус +» — всегда, пока система включена.
+    return preview_has_content(conf)
 
 
 def intro_markup(user_id: int, *, show_what: bool) -> InlineKeyboardMarkup:
@@ -142,15 +146,18 @@ async def _faces_for_names(db, names: list[str]) -> dict[str, str]:
 
 
 async def possible_text(db, conf: dict) -> str:
-    names = preview_show_names(conf)
+    clean = gift_plus_defaults(conf)
+    names = preview_show_names(clean)
     faces = await _faces_for_names(db, names)
-    lines = [
+    item_lines = [
         preview_item_line(faces.get(name, "🎁"), html.escape(name))
         for name in names
     ]
     return screen_possible(
-        max_gifts=preview_max_gifts(conf) or int(gift_plus_defaults(conf).get("item_count") or 1),
-        lines=lines,
+        max_gifts=preview_max_gifts(clean),
+        lines=item_lines,
+        kuty_lines=preview_kuty_lines(clean),
+        hidden=bool(preview_hidden_names(clean)),
     )
 
 

@@ -70,7 +70,8 @@ def test_help_lists_rewards_and_warm_hour():
         "gift": {"enabled": True, "mult": 2, "item_count": 2},
     })
     assert "200" in html
-    assert "с 7-го — <b>250</b>" in html
+    assert "Норма сообщений для продлевания огонька будет расти со временем" in html
+    assert "с 7-го — <b>250</b>" not in html
     assert "3 дня" in html
     assert "50 кут" in html
     assert "Купон" in html

@@ -7,6 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from flame_bonus_plus import (
     board_range,
     gift_plus_defaults,
+    preview_has_content,
+    preview_hidden_names,
+    preview_kuty_lines,
     preview_max_gifts,
     preview_show_names,
     roll_extra_bundle,
@@ -71,6 +74,12 @@ def test_preview_only_checked_items():
     conf = gift_plus_defaults({
         "gift_item_on": True,
         "gift_item_count": 3,
+        "gift_kuty_min": 10,
+        "gift_kuty_max": 20,
+        "gift_mult": 1,
+        "gift_extra_kuty_on": True,
+        "gift_extra_kuty_min": 5,
+        "gift_extra_kuty_max": 25,
         "drops": [
             {"kind": "item", "item_name": "Купон", "weight": 1, "show_preview": True},
             {"kind": "item", "item_name": "Секрет", "weight": 1, "show_preview": False},
@@ -79,6 +88,15 @@ def test_preview_only_checked_items():
     })
     assert preview_show_names(conf) == ["Купон", "Вода"]
     assert preview_max_gifts(conf) == 2
+    assert preview_has_content(conf) is True
+    assert preview_hidden_names(conf) == ["Секрет"]
+    kuty = preview_kuty_lines(conf)
+    assert any("10" in line and "20" in line for line in kuty)
+    assert any("иногда" in line and "5" in line and "25" in line for line in kuty)
+    sure = gift_plus_defaults({**conf, "extra_kuty_chance": 100})
+    assert any(line.startswith("ещё ") for line in preview_kuty_lines(sure))
+    silent = gift_plus_defaults({**conf, "extra_kuty_chance": 0})
+    assert len(preview_kuty_lines(silent)) == 1
 
 
 def test_copy_keeps_intro_mysterious():
@@ -91,10 +109,14 @@ def test_copy_keeps_intro_mysterious():
     possible = screen_possible(
         max_gifts=2,
         lines=["<code>🎁</code> <b>Купон</b>", "<code>💧</code> <b>Вода</b>"],
+        kuty_lines=["<b>+10…30</b> кут с клетки", "иногда ещё <b>+5…25</b> кут"],
+        hidden=True,
     )
     assert "до <b>2</b>" in possible
     assert "Купон" in possible and "Вода" in possible
-    assert "узнаете после открытия" in possible
+    assert "10…30" in possible
+    assert "в списке не всё" in possible
+    assert "после открытия" in possible
 
 
 def test_copy_mentions_project_kuty():

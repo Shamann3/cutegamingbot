@@ -58,23 +58,38 @@ def screen_later() -> str:
     )
 
 
-def screen_possible(*, max_gifts: int, lines: list[str]) -> str:
-    slots = max(1, int(max_gifts or 1))
-    if slots == 1:
-        cap = "За открытие — <b>1</b> подарок из списка."
-    else:
-        cap = f"За открытие — до <b>{slots}</b> подарков из списка."
-    body = "\n".join(f"· {line}" for line in lines if str(line).strip())
-    if not body:
-        body = "<i>Список пока скрыт.</i>"
-    return (
-        f"{emoji(GIFT)} <b>Что можно получить</b>\n"
-        f"<blockquote>{cap}\n"
-        "Что именно выпадет — узнаете после открытия."
-        "</blockquote>\n"
-        f"{body}\n"
-        "<b>Нажмите на одну из кнопок.</b>"
-    )
+def screen_possible(
+    *,
+    max_gifts: int,
+    lines: list[str],
+    kuty_lines: list[str] | None = None,
+    hidden: bool = False,
+) -> str:
+    """Экран кнопки. Куты и отмеченные предметы — из вкладки «Огонёк → Бонус +»."""
+    slots = max(0, int(max_gifts or 0))
+    kuty = [str(x) for x in (kuty_lines or []) if str(x).strip()]
+    gifts = [str(x) for x in (lines or []) if str(x).strip()]
+    parts = [
+        f"{emoji(GIFT)} <b>Что можно получить</b>",
+        "<blockquote>Числа и предметы — как настроено для Бонуса +.\n"
+        "Что выпадет именно вам — после открытия.</blockquote>",
+    ]
+    if kuty:
+        parts.append(f"{emoji(SPARK, '⚡️')} <b>Куты</b>")
+        parts.extend(f"· {line}" for line in kuty)
+    if gifts:
+        if slots <= 1:
+            title = "Предмет · до <b>1</b> за раз"
+        else:
+            title = f"Предметы · до <b>{slots}</b> за раз"
+        if hidden:
+            title += " · в списке не всё"
+        parts.append(f"{emoji(GIFT)} <b>{title}</b>")
+        parts.extend(f"· {line}" for line in gifts)
+    elif not kuty:
+        parts.append("<i>Список пока пуст.</i>")
+    parts.append("<b>Нажмите на одну из кнопок.</b>")
+    return "\n".join(parts)
 
 
 def screen_board(*, mult: int, kuty_lo: int, kuty_hi: int) -> str:
@@ -175,7 +190,7 @@ def help_block(*, mult: int, item_count: int = 1) -> str:
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
         f"«использовать 🎁» — улучшенный бонус.{mult_bit}\n"
-        "Перед открытием можно глянуть, что бывает в призе.\n"
+        "Кнопка «Что можно получить?» — куты и предметы из настройки.\n"
         "Нужна приписка <code>Cute</code>."
     )
 

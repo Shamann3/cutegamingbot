@@ -458,6 +458,52 @@ def preview_show_names(conf: dict | None) -> list[str]:
     return names
 
 
+def preview_kuty_lines(conf: dict | None) -> list[str]:
+    """Строки про куты — те же числа, что во вкладке «Бонус +»."""
+    conf = gift_plus_defaults(conf or {})
+    lo, hi = board_range(conf)
+    if lo == hi:
+        lines = [f"<b>+{lo}</b> кут с клетки"]
+    else:
+        lines = [f"<b>+{lo}…{hi}</b> кут с клетки"]
+    if not conf.get("extra_kuty_on"):
+        return lines
+    chance = int(conf.get("extra_kuty_chance") or 0)
+    if chance < 1:
+        return lines
+    a = max(0, int(conf.get("extra_kuty_min") or 0))
+    b = max(a, int(conf.get("extra_kuty_max") or 0))
+    if b < 1:
+        return lines
+    a = max(1, a)
+    b = max(a, b)
+    bit = f"<b>+{a}</b> кут" if a == b else f"<b>+{a}…{b}</b> кут"
+    if chance >= 100:
+        lines.append(f"ещё {bit}")
+    else:
+        lines.append(f"иногда ещё {bit}")
+    return lines
+
+
+def preview_hidden_names(conf: dict | None) -> list[str]:
+    """Предметы пула без галочки: могут выпасть, в списке игрока их нет."""
+    conf = gift_plus_defaults(conf or {})
+    if not conf.get("item_on"):
+        return []
+    shown = set(preview_show_names(conf))
+    hidden: list[str] = []
+    seen: set[str] = set()
+    for row in conf.get("drops") or []:
+        if str(row.get("kind") or "") != "item":
+            continue
+        name = str(row.get("item_name") or row.get("itemName") or "").strip()
+        if not name or name in seen or name in shown:
+            continue
+        seen.add(name)
+        hidden.append(name)
+    return hidden
+
+
 def preview_max_gifts(conf: dict | None) -> int:
     conf = gift_plus_defaults(conf or {})
     if not conf.get("item_on"):
@@ -466,3 +512,9 @@ def preview_max_gifts(conf: dict | None) -> int:
     if not names:
         return 0
     return min(int(conf.get("item_count") or 1), len(names))
+
+
+def preview_has_content(conf: dict | None) -> bool:
+    """Кнопка «Что можно получить?» — всегда, пока Бонус + включён."""
+    conf = gift_plus_defaults(conf or {})
+    return bool(conf.get("enabled", True))

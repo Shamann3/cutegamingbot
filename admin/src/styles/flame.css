@@ -116,6 +116,11 @@
   width: min(100%, 8.5rem);
 }
 
+.flame-reveal-line {
+  display: block;
+  margin-top: 2px;
+}
+
 .flame-consequence {
   margin: 0;
   padding: 8px 12px;
