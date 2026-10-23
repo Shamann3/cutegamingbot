@@ -236,7 +236,8 @@ async def callback_flame_top(call: types.CallbackQuery):
             reply_markup=btn_backtop123,
         )
     except Exception:
-        await call.answer("Не удалось открыть огоньки", show_alert=True)
+        from bot.funcs.flame_design import alert_top_failed
+        await call.answer(alert_top_failed(), show_alert=True)
 
 
 async def top(message: Message):

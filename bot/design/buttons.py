@@ -5,6 +5,7 @@ from collections import defaultdict
 from bot.db_create.db import *
 from bot.config.config import *
 from bot.funcs.webapp_links import FARM_ICON_ID, farm_url
+from bot.funcs.flame_design import button_help as _flame_help, button_top as _flame_top
 from pathlib import Path
 
 #mystic_inline_keyboard = InlineKeyboardMarkup()
@@ -293,7 +294,7 @@ btn_help6 = InlineKeyboardButton(text="🛡 Кланы", callback_data="help_btn
 # btn_help9 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="help_btn9")
 btn_help10 = InlineKeyboardButton(text="Функции", callback_data="help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
 btn_helpking = InlineKeyboardButton(text="Царь статы", callback_data="help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
-btn_helpflame = InlineKeyboardButton(text="Огонёк сообщений", callback_data="help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
+btn_helpflame = InlineKeyboardButton(text=_flame_help(), callback_data="help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
 
 btn_help1111 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="help_editprofile")
 
@@ -353,7 +354,7 @@ btn_help69 = InlineKeyboardButton(text="🛡 Кланы", callback_data="9help_b
 # btn_help99 = InlineKeyboardButton(text="🧑🏼‍🌾 Фермерство", callback_data="9help_btn9")
 btn_help109 = InlineKeyboardButton(text="Функции", callback_data="9help_btnfunk", style="default" ,icon_custom_emoji_id="5206482003297342650")
 btn_helpking9 = InlineKeyboardButton(text="Царь статы", callback_data="9help_btnking", style="default" ,icon_custom_emoji_id="5262924479226473498")
-btn_helpflame9 = InlineKeyboardButton(text="Огонёк сообщений", callback_data="9help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
+btn_helpflame9 = InlineKeyboardButton(text=_flame_help(), callback_data="9help_btnflame", style="default", icon_custom_emoji_id="5357065356286405053")
 
 btn_help11119 = InlineKeyboardButton(text="🩵 Оформление профиля", callback_data="9help_editprofile")
 btn_help5123123 = InlineKeyboardButton(text="Админы", callback_data="help_btnadmin", style="default" ,icon_custom_emoji_id="5352668069984510307")
@@ -455,7 +456,7 @@ btn_balancegroup = InlineKeyboardButton(text="Баланс групп" , callbac
                 icon_custom_emoji_id="5425098093521571791")
 btn_topmarry = InlineKeyboardButton(text="🌷 Браки" , callback_data="marry1213")
 btn_close = InlineKeyboardButton(text="Скрыть" , callback_data="help_deletestate", style="default" ,icon_custom_emoji_id="5226660202035554522")
-btn_topflame = InlineKeyboardButton(text="Лучшие огоньки", callback_data="flametop", style="default", icon_custom_emoji_id="5354962501643578130")
+btn_topflame = InlineKeyboardButton(text=_flame_top(), callback_data="flametop", style="default", icon_custom_emoji_id="5354962501643578130")
 
 # Создание inline_keyboard
 inline_keyboard = [ [ btn_topcutes ] ,

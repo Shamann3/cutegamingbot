@@ -13,15 +13,39 @@ _SERVER = Path(__file__).resolve().parents[2] / "server"
 if str(_SERVER) not in sys.path:
     sys.path.insert(0, str(_SERVER))
 
-from aiogram import F, Router
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-
+from flame_copy import (  # noqa: E402
+    HISTORY_GRANT,
+    HISTORY_RESTORE,
+    alert_no_item,
+    alert_poor,
+    alert_stranger,
+    button_cancel,
+    button_item,
+    button_kuty,
+    is_restore_command,
+    profit_loot,
+    profit_next,
+    profit_next_done,
+    restore_ways,
+    screen_profit,
+    screen_restore_alive,
+    screen_restore_busy,
+    screen_restore_cancel,
+    screen_restore_done,
+    screen_restore_late,
+    screen_restore_none,
+    screen_restore_off,
+    screen_restore_offer,
+    screen_streak,
+    screen_top,
+    screen_top_empty,
+    screen_warm,
+    top_row,
+)
 from flame_engine import (  # noqa: E402
     advance,
     bonus_tokens,
-    claim_restore,
     consume_bonus,
-    ember_of,
     gift_config,
     help_html,
     leaderboard,
@@ -30,6 +54,7 @@ from flame_engine import (  # noqa: E402
     msk_today,
     profile_line,
     profit_targets,
+    restore_state,
     restore_view,
     roll_gift_extra,
     roll_gift_stake,
@@ -39,9 +64,6 @@ from flame_engine import (  # noqa: E402
     try_warm_hit,
     _row_settings,
 )
-import flame_copy  # noqa: E402
-
-flame_router = Router(name="flame")
 
 _MSK = timezone(timedelta(hours=3))
 _started = False
@@ -169,7 +191,7 @@ async def _pay(db, user_id: int, rewards: list[dict]) -> None:
                 balance = await db.get_user_balance(user_id)
                 await db.update_user_balance(user_id, int(balance or 0) + amount)
                 try:
-                    await db.cutehistory_plus(user_id, amount, "огонёк")
+                    await db.cutehistory_plus(user_id, amount, HISTORY_GRANT)
                 except Exception:
                     pass
             elif kind == "item":
@@ -201,15 +223,18 @@ def _gift_words(rewards: list[dict]) -> str:
 
 
 async def _tell_streak(user_id: int, result: dict) -> None:
-    gifts = _gift_words(result.get("rewards") or [])
-    title = str(result.get("title") or "").strip()
-    label = result.get("label") or "1 день"
-    await _dm(user_id, flame_copy.screen_streak(label, title, gifts))
+    await _dm(
+        user_id,
+        screen_streak(
+            result.get("label") or "1 день",
+            str(result.get("title") or "").strip(),
+            _gift_words(result.get("rewards") or []),
+        ),
+    )
 
 
 async def _tell_warm(user_id: int, gift: dict) -> None:
-    label = gift.get("label") or _gift_words([gift])
-    await _dm(user_id, flame_copy.screen_warm(label))
+    await _dm(user_id, screen_warm(gift.get("label") or _gift_words([gift])))
 
 
 async def _dm(user_id: int, text: str) -> None:
@@ -278,21 +303,19 @@ async def top_text(db) -> str:
         except Exception:
             people = []
     if not people:
-        return flame_copy.screen_top_empty()
+        return screen_top_empty()
     from bot.funcs.top import stat_person_html
-    medals = {
-        1: "<tg-emoji emoji-id='5294001020039363545'>🏆</tg-emoji>",
-        2: "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>",
-        3: "<tg-emoji emoji-id='5469967260380612012'>🏆</tg-emoji>",
-    }
     rows = []
     for index, person in enumerate(people, start=1):
         name = stat_person_html(person["name"], person.get("username"), person["userId"])
-        mark = " · <i>личный рекорд</i>" if person.get("record") else ""
-        title = f" · <b>{person['title']}</b>" if person.get("title") else ""
-        prefix = medals.get(index, f"<b>{index}.</b>")
-        rows.append(f"{prefix} {name} — <b>{person['label']}</b>{title}{mark}")
-    return flame_copy.screen_top(rows)
+        rows.append(top_row(
+            index,
+            name,
+            person["label"],
+            person.get("title") or "",
+            bool(person.get("record")),
+        ))
+    return screen_top(rows)
 
 
 async def load_gift(db) -> dict:
@@ -336,27 +359,28 @@ async def _profit_loop(db) -> None:
 
 
 async def _send_profit(card: dict) -> None:
-    from flame_engine import _kind_words, span_label
-    streak = card.get("label") or "1 день"
-    title = str(card.get("title") or "").strip()
     nxt = card.get("next")
     if nxt:
-        left = int(nxt["day"]) - int(card.get("streak") or 0)
-        gift = _kind_words(nxt["kind"], nxt["amount"], nxt.get("item_name") or "")
+        from flame_engine import _kind_words, span_label
+        left = max(1, int(nxt["day"]) - int(card.get("streak") or 0))
         day_word = "день" if left == 1 else ("дня" if 2 <= left <= 4 else "дней")
-        next_line = flame_copy.profit_next(span_label(int(nxt["day"])), left, day_word, gift)
+        next_line = profit_next(
+            span_label(int(nxt["day"])),
+            left,
+            day_word,
+            _kind_words(nxt["kind"], nxt["amount"], nxt.get("item_name") or ""),
+        )
     else:
-        next_line = flame_copy.profit_next_done()
+        next_line = profit_next_done()
     labels = [row["label"] for row in (card.get("loot") or []) if row.get("label")]
-    text = flame_copy.screen_profit(
-        title=title,
-        streak=streak,
+    await _dm(int(card["userId"]), screen_profit(
+        title=str(card.get("title") or "").strip(),
+        streak=card.get("label") or "1 день",
         rank=str(card.get("rank") or "—"),
         kept=bool(card.get("keptToday")),
         next_line=next_line,
-        loot_line=flame_copy.profit_loot(labels),
-    )
-    await _dm(int(card["userId"]), text)
+        loot_line=profit_loot(labels),
+    ))
 
 
 async def _loop(db) -> None:
@@ -373,156 +397,6 @@ async def _loop(db) -> None:
         await asyncio.sleep(max(30, (nxt - now).total_seconds()))
 
 
-RESTORE_WORDS = {
-    "вернуть огонёк",
-    "вернуть огонек",
-    "восстановить огонёк",
-    "восстановить огонек",
-    "/flameback",
-}
-
-
-def is_restore_text(text: str | None) -> bool:
-    return (text or "").strip().lower() in RESTORE_WORDS
-
-
-def _restore_keyboard(user_id: int, ways: list[dict]) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton(text=str(way["label"])[:64], callback_data=f"flback:{int(user_id)}:{way['id']}")]
-        for way in ways
-    ]
-    rows.append([InlineKeyboardButton(text="Отказаться", callback_data=f"flback:{int(user_id)}:no")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-async def _fresh_settings(db) -> dict:
-    pool = _pool(db)
-    if pool is None:
-        return {}
-    from flame_engine import ensure_tables
-    await ensure_tables(pool)
-    row = await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1")
-    return _row_settings(row)
-
-
-async def offer_restore(message: Message, db) -> None:
-    user = message.from_user
-    if user is None:
-        return
-    pool = _pool(db)
-    if pool is None:
-        return
-    settings = await _fresh_settings(db)
-    state = await ember_of(pool, int(user.id))
-    view = restore_view(
-        streak=state["streak"],
-        ember_days=state["ember_days"],
-        ember_on=state["ember_on"],
-        today=msk_today(),
-        settings=settings,
-    )
-    markup = _restore_keyboard(int(user.id), view["ways"]) if view["kind"] == "offer" else None
-    await message.reply(
-        view["text"],
-        parse_mode="HTML",
-        reply_markup=markup,
-        disable_web_page_preview=True,
-    )
-
-
-async def _item_count(db, user_id: int, name: str) -> int:
-    from bot.db_create.items_codec import decode_items
-    row = await db.pool.fetchrow("SELECT items FROM users WHERE user_id = $1", int(user_id))
-    if not row:
-        return 0
-    return int(decode_items(row["items"]).get(name) or 0)
-
-
-async def finish_restore(db, user_id: int, way: str) -> str:
-    pool = _pool(db)
-    if pool is None:
-        return flame_copy.screen_restore_off()
-    settings = await _fresh_settings(db)
-    state = await ember_of(pool, int(user_id))
-    view = restore_view(
-        streak=state["streak"],
-        ember_days=state["ember_days"],
-        ember_on=state["ember_on"],
-        today=msk_today(),
-        settings=settings,
-    )
-    if view["kind"] != "offer":
-        return view["text"]
-    allowed = {item["id"] for item in view["ways"]}
-    if way not in allowed:
-        return view["text"]
-
-    charged = False
-    if way == "kuty":
-        price = int(settings["restore_kuty"])
-        balance = int(await db.get_user_balance(user_id) or 0)
-        if balance < price:
-            return flame_copy.screen_restore_poor(price)
-        await db.update_user_balance(user_id, balance - price)
-        charged = True
-        try:
-            await db.cutehistory_plus(user_id, -price, "вернуть огонёк")
-        except Exception:
-            pass
-    else:
-        name = str(settings["restore_item"] or "").strip()
-        count = int(settings["restore_item_count"] or 1)
-        if await _item_count(db, user_id, name) < count:
-            return flame_copy.screen_restore_no_item(name, count)
-        await db.remove_items_craft(user_id, name, count)
-        charged = True
-        price = 0
-
-    try:
-        got = await claim_restore(pool, int(user_id))
-    except Exception:
-        got = 0
-    if got < 1:
-        if charged and way == "kuty":
-            back = int(await db.get_user_balance(user_id) or 0) + price
-            await db.update_user_balance(user_id, back)
-            try:
-                await db.cutehistory_plus(user_id, price, "вернуть огонёк")
-            except Exception:
-                pass
-        elif charged:
-            await db.add_item_to_inventory(user_id, name, count)
-        return flame_copy.screen_restore_busy()
-    from flame_engine import span_label
-    return flame_copy.screen_restore_done(span_label(got))
-
-
-@flame_router.callback_query(F.data.startswith("flback:"))
-async def on_restore_click(call: CallbackQuery) -> None:
-    parts = (call.data or "").split(":")
-    if len(parts) != 3 or call.from_user is None or call.message is None:
-        await call.answer()
-        return
-    _, owner, way = parts
-    if str(call.from_user.id) != owner:
-        await call.answer("Эта кнопка не ваша", show_alert=True)
-        return
-    from bot.db_create.db import db
-    if way == "no":
-        await call.answer()
-        try:
-            await call.message.edit_text(flame_copy.screen_restore_cancel(), parse_mode="HTML")
-        except Exception:
-            pass
-        return
-    text = await finish_restore(db, int(call.from_user.id), way)
-    await call.answer()
-    try:
-        await call.message.edit_text(text, parse_mode="HTML")
-    except Exception:
-        await call.message.answer(text, parse_mode="HTML")
-
-
 def start_flame_worker(db) -> None:
     global _started
     if _started:
@@ -535,3 +409,280 @@ def start_flame_worker(db) -> None:
         loop.create_task(cached_settings(db))
     except RuntimeError:
         _started = False
+
+
+def is_restore_text(text: str) -> bool:
+    return is_restore_command(text)
+
+
+def _restore_screen(view: dict) -> str:
+    code = view.get("code")
+    if code == "ready":
+        return screen_restore_offer(
+            view.get("label") or "серия",
+            int(view.get("days_left") or 1),
+            restore_ways(
+                kuty=int(view.get("kuty") or 0),
+                item=str(view.get("item") or ""),
+                count=int(view.get("count") or 1),
+            ),
+        )
+    if code == "alive":
+        return screen_restore_alive()
+    if code == "late":
+        return screen_restore_late()
+    if code == "none":
+        return screen_restore_none()
+    return screen_restore_off()
+
+
+def _restore_keyboard(user_id: int, view: dict):
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = []
+    if int(view.get("kuty") or 0) > 0:
+        rows.append([InlineKeyboardButton(
+            text=button_kuty(int(view["kuty"]))[:64],
+            callback_data=f"fl:kuty:{int(user_id)}",
+            style="success",
+        )])
+    if view.get("item"):
+        rows.append([InlineKeyboardButton(
+            text=button_item(str(view["item"]), int(view.get("count") or 1))[:64],
+            callback_data=f"fl:item:{int(user_id)}",
+            style="primary",
+        )])
+    rows.append([InlineKeyboardButton(
+        text=button_cancel()[:64],
+        callback_data=f"fl:no:{int(user_id)}",
+        style="danger",
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def restore_command(message, db) -> None:
+    user = getattr(message, "from_user", None)
+    pool = _pool(db)
+    if user is None or pool is None:
+        return
+    try:
+        view = await restore_state(pool, int(user.id))
+    except Exception as exc:
+        print(f"[FLAME] restore {user.id}: {exc}")
+        return
+    markup = _restore_keyboard(user.id, view) if view.get("code") == "ready" else None
+    try:
+        await message.reply(
+            _restore_screen(view),
+            parse_mode="HTML",
+            reply_markup=markup,
+            disable_web_page_preview=True,
+        )
+    except Exception as exc:
+        print(f"[FLAME] restore reply {user.id}: {exc}")
+
+
+async def _locked_restore(conn, user_id: int, day):
+    settings = _row_settings(await conn.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    row = await conn.fetchrow(
+        """
+        SELECT streak_days, best_days, lost_streak, lost_on
+        FROM flame_users WHERE user_id = $1 FOR UPDATE
+        """,
+        int(user_id),
+    )
+    view = restore_view(
+        int(row["streak_days"] or 0) if row else 0,
+        int(row["lost_streak"] or 0) if row else 0,
+        row["lost_on"] if row else None,
+        settings,
+        day,
+    )
+    return row, view
+
+
+async def _write_restored(conn, user_id: int, row, view, day) -> None:
+    streak = int(view["streak"])
+    best = max(int(row["best_days"] or 0), streak)
+    await conn.execute(
+        """
+        UPDATE flame_users
+        SET streak_days = $2,
+            best_days = $3,
+            last_kept = $4,
+            lost_streak = 0,
+            lost_on = NULL
+        WHERE user_id = $1
+        """,
+        int(user_id),
+        streak,
+        best,
+        day - timedelta(days=1),
+    )
+
+
+async def _charge_restore(db, user_id: int, pay: str) -> dict:
+    pool = _pool(db)
+    if pool is None:
+        return {"code": "off"}
+    day = msk_today()
+    if pay == "kuty":
+        view = await restore_state(pool, int(user_id), day)
+        price = int(view.get("kuty") or 0)
+        if view.get("code") != "ready" or price < 1:
+            if view.get("code") == "ready":
+                view["code"] = "off"
+            return view
+        charged = await db.update_user_balance(int(user_id), f"-{price}")
+        if charged is None:
+            view["code"] = "poor"
+            return view
+        try:
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    row, fresh = await _locked_restore(conn, int(user_id), day)
+                    if fresh.get("code") != "ready" or row is None:
+                        raise _RestoreClosed(fresh)
+                    await _write_restored(conn, int(user_id), row, fresh, day)
+                    fresh["ok"] = True
+                    fresh["paid"] = "kuty"
+                    view = fresh
+        except _RestoreClosed as closed:
+            await _refund_kuty(db, int(user_id), price)
+            return closed.view
+        except Exception:
+            await _refund_kuty(db, int(user_id), price)
+            raise
+        return view
+    if pay != "item":
+        return {"code": "off"}
+
+    from bot.db_create.items_codec import decode_items, encode_items
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row, view = await _locked_restore(conn, int(user_id), day)
+            if view.get("code") != "ready" or row is None:
+                return view
+            name = str(view.get("item") or "").strip()
+            count = int(view.get("count") or 0)
+            if not name or count < 1:
+                view["code"] = "off"
+                return view
+            inv = await conn.fetchrow(
+                "SELECT items FROM users WHERE user_id = $1 FOR UPDATE",
+                int(user_id),
+            )
+            items = decode_items(inv["items"] if inv else None)
+            have = int(items.get(name) or 0)
+            if have < count:
+                view["code"] = "no_item"
+                return view
+            left = have - count
+            if left <= 0:
+                items.pop(name, None)
+            else:
+                items[name] = left
+            await conn.execute(
+                "UPDATE users SET items = $1 WHERE user_id = $2",
+                encode_items(items),
+                int(user_id),
+            )
+            await _write_restored(conn, int(user_id), row, view, day)
+            view["ok"] = True
+            view["paid"] = "item"
+            return view
+
+
+class _RestoreClosed(Exception):
+    def __init__(self, view: dict):
+        self.view = view
+
+
+async def _refund_kuty(db, user_id: int, price: int) -> None:
+    try:
+        await db.update_user_balance(int(user_id), f"+{int(price)}")
+    except Exception as exc:
+        print(f"[FLAME] restore refund {user_id}: {exc}")
+
+
+async def _edit_restore(call, text: str, markup) -> None:
+    try:
+        await call.message.edit_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+    except Exception:
+        try:
+            await call.message.answer(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+        except Exception:
+            pass
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
+
+async def flame_click(call) -> None:
+    data = str(getattr(call, "data", "") or "")
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != "fl":
+        return
+    action, owner = parts[1], parts[2]
+    clicker = int(getattr(getattr(call, "from_user", None), "id", 0) or 0)
+    if not owner.isdigit() or int(owner) != clicker:
+        try:
+            await call.answer(alert_stranger(), show_alert=True)
+        except Exception:
+            pass
+        return
+    if action == "no":
+        await _edit_restore(call, screen_restore_cancel(), None)
+        return
+    if action not in ("kuty", "item"):
+        try:
+            await call.answer()
+        except Exception:
+            pass
+        return
+    from main import db
+    try:
+        view = await _charge_restore(db, clicker, action)
+    except Exception as exc:
+        print(f"[FLAME] restore pay {clicker}: {exc}")
+        try:
+            await call.answer(screen_restore_busy(), show_alert=True)
+        except Exception:
+            pass
+        return
+    if view.get("ok"):
+        if view.get("paid") == "kuty":
+            try:
+                await db.cutehistory_plus(clicker, -int(view.get("kuty") or 0), HISTORY_RESTORE)
+            except Exception:
+                pass
+        await _edit_restore(call, screen_restore_done(view.get("label") or "серия"), None)
+        return
+    if view.get("code") == "poor":
+        try:
+            await call.answer(alert_poor(int(view.get("kuty") or 0)), show_alert=True)
+        except Exception:
+            pass
+        return
+    if view.get("code") == "no_item":
+        try:
+            await call.answer(
+                alert_no_item(str(view.get("item") or "предмет"), int(view.get("count") or 1)),
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+    await _edit_restore(call, _restore_screen(view), None)

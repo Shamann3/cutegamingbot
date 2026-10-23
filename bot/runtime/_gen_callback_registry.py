@@ -59,6 +59,7 @@ MANUAL_PREFIX: dict[str, tuple[str, str]] = {
     "skipcb:": ("main", "gift_send_request"),  # gift filter раньше; prep тоже умеет
     # Живые браки: кнопки без @callback_query — только hot-dispatch.
     "mrg:": ("bot.funcs.marriage_live", "dispatch"),
+    "fl:": ("bot.funcs.flame", "flame_click"),
 }
 
 

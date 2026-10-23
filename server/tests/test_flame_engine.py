@@ -5,7 +5,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from flame_engine import gift_preview, help_html, need_for, profile_line, restore_view, span_label, title_for
+from flame_copy import is_restore_command
+from flame_engine import (
+    gap_starts_new_series,
+    gift_preview,
+    help_html,
+    need_for,
+    profile_line,
+    restore_view,
+    span_label,
+    title_for,
+)
 
 
 def test_span_label_days_months_years():
@@ -69,6 +79,57 @@ def test_help_lists_rewards_and_warm_hour():
     assert "официальных группах" in html
 
 
+def test_help_offers_restore_from_the_one_text_file():
+    html = help_html({
+        "settings": {
+            "enabled": True,
+            "base_messages": 200,
+            "min_words": 2,
+            "restore_enabled": True,
+            "restore_days": 3,
+            "restore_kuty": 500,
+            "restore_item": "Купон",
+            "restore_item_count": 2,
+        },
+        "steps": [],
+        "rewards": [],
+        "titles": [],
+        "warm": {"enabled": False},
+        "gift": {"enabled": False},
+    })
+    assert "вернуть огонёк" in html
+    assert "<b>500</b> кут" in html
+    assert "Купон ×2" in html
+    assert "новой серии" in html
+
+
+def test_restore_window_and_blocks():
+    today = date(2026, 10, 25)
+    priced = {
+        "restore_enabled": True,
+        "restore_days": 3,
+        "restore_kuty": 500,
+        "restore_item": "",
+        "restore_item_count": 1,
+    }
+    ready = restore_view(0, 10, date(2026, 10, 23), priced, today)
+    assert ready["code"] == "ready"
+    assert ready["streak"] == 10
+    assert ready["days_left"] == 1
+    assert ready["label"] == "10 дней"
+    assert restore_view(0, 10, date(2026, 10, 22), priced, today)["code"] == "late"
+    assert restore_view(4, 10, date(2026, 10, 24), priced, today)["code"] == "alive"
+    assert restore_view(0, 0, None, priced, today)["code"] == "none"
+    bare = {**priced, "restore_kuty": 0}
+    assert restore_view(0, 10, date(2026, 10, 24), bare, today)["code"] == "off"
+    switched = {**priced, "restore_enabled": False}
+    assert restore_view(0, 10, date(2026, 10, 24), switched, today)["code"] == "off"
+    assert gap_starts_new_series(date(2026, 10, 20), today) is True
+    assert gap_starts_new_series(date(2026, 10, 24), today) is False
+    assert is_restore_command("Вернуть Огонёк") is True
+    assert is_restore_command("просто огонёк") is False
+
+
 def test_gift_preview_shows_average():
     preview = gift_preview(
         [
@@ -84,90 +145,6 @@ def test_gift_preview_shows_average():
     assert preview["kutyMax"] == 6
     assert preview["itemChancePct"] == 50.0
     assert preview["avgPerOpen"] > 0
-
-
-def test_restore_window_and_prices():
-    settings = {
-        "restore_enabled": True,
-        "restore_kuty": 500,
-        "restore_item": "Купон",
-        "restore_item_count": 2,
-        "restore_within": 2,
-    }
-    today = date(2026, 10, 23)
-    offer = restore_view(
-        streak=0,
-        ember_days=10,
-        ember_on=date(2026, 10, 22),
-        today=today,
-        settings=settings,
-    )
-    assert offer["kind"] == "offer"
-    assert "10 дней" in offer["text"]
-    assert "500" in offer["text"]
-    assert "Купон ×2" in offer["text"]
-    assert {way["id"] for way in offer["ways"]} == {"kuty", "item"}
-
-    late = restore_view(
-        streak=0,
-        ember_days=10,
-        ember_on=date(2026, 10, 21),
-        today=today,
-        settings=settings,
-    )
-    assert late["kind"] == "late"
-
-    alive = restore_view(
-        streak=1,
-        ember_days=10,
-        ember_on=today,
-        today=today,
-        settings=settings,
-    )
-    assert alive["kind"] == "alive"
-
-    off = restore_view(
-        streak=0,
-        ember_days=10,
-        ember_on=today,
-        today=today,
-        settings={**settings, "restore_enabled": False},
-    )
-    assert off["kind"] == "off"
-
-    empty_price = restore_view(
-        streak=0,
-        ember_days=10,
-        ember_on=today,
-        today=today,
-        settings={**settings, "restore_kuty": 0, "restore_item": ""},
-    )
-    assert empty_price["kind"] == "off"
-
-
-def test_help_mentions_restore_only_when_priced():
-    board = {
-        "settings": {
-            "enabled": True,
-            "base_messages": 200,
-            "min_words": 2,
-            "restore_enabled": True,
-            "restore_kuty": 500,
-            "restore_item": "",
-            "restore_item_count": 1,
-            "restore_within": 2,
-        },
-        "steps": [],
-        "rewards": [],
-        "titles": [],
-        "warm": {},
-        "gift": {},
-    }
-    html = help_html(board)
-    assert "вернуть огонёк" in html
-    assert "500" in html
-    quiet = help_html({**board, "settings": {**board["settings"], "restore_enabled": False}})
-    assert "вернуть огонёк" not in quiet
 
 
 def test_missed_day_is_before_yesterday():

@@ -56,7 +56,6 @@ import RulesGateModal from '../components/RulesGateModal'
 import PanelBackgroundMusic from '../components/PanelBackgroundMusic'
 import PanelDrawerOverlay from '../components/PanelDrawerOverlay'
 import AccentAura from '../components/AccentAura'
-import EpsilonMechanism from '../components/EpsilonMechanism'
 import { MetricSheetProvider } from '../components/MetricSheet'
 import { usePerfMode } from '../lib/perfMode'
 import { useMusicMode } from '../lib/musicMode'
@@ -562,7 +561,6 @@ export default function PanelShell({ onLogout, onChangeDoor }) {
     <PanelBackgroundMusic volume={musicVolume} />
     <MetricSheetProvider>
     <div className={`panel-shell panel-shell-${viewport}${fresh ? ' is-fresh' : ''}`} data-viewport={viewport}>
-      <EpsilonMechanism />
       <AccentAura />
       {coach && (
         <FirstRun

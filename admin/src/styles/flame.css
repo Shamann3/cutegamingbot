@@ -1,7 +1,7 @@
 .flame-page {
   display: grid;
   gap: 14px;
-  width: min(100%, 48rem);
+  width: min(100%, 68rem);
   min-width: 0;
 }
 
@@ -21,39 +21,6 @@
   margin: 0;
   color: var(--e-text-2, #c4c4c8);
   line-height: 1.45;
-}
-
-.flame-quote {
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(255, 140, 40, 0.08);
-  border: 1px solid rgba(255, 140, 40, 0.22);
-  color: inherit;
-}
-
-.flame-rules {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--e-text-2, #c4c4c8);
-  line-height: 1.45;
-}
-
-.flame-field select {
-  width: 100%;
-  min-height: 44px;
-  box-sizing: border-box;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: inherit;
-  font: inherit;
-  padding: 0 12px;
-}
-
-.flame-field input:disabled {
-  opacity: 0.45;
 }
 
 .flame-orb {
@@ -99,6 +66,35 @@
   font-size: 0.86rem;
 }
 
+.flame-map {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 140, 40, 0.08);
+  border: 1px solid rgba(255, 140, 40, 0.22);
+}
+
+.flame-map p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.flame-map code {
+  font-size: 0.86em;
+}
+
+.flame-work {
+  display: grid;
+  gap: 14px;
+}
+
+.flame-pane {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .flame-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -106,14 +102,32 @@
 }
 
 .flame-tab {
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 999px;
+  display: grid;
+  justify-items: start;
+  gap: 1px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.04);
   color: inherit;
   font: inherit;
+  text-align: left;
   cursor: pointer;
+}
+
+.flame-tab small {
+  font-size: 0.72rem;
+  color: var(--e-text-2, #c4c4c8);
+  font-weight: 400;
+}
+
+.flame-preview-line {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  line-height: 1.45;
 }
 
 .flame-tab.is-on {
@@ -161,6 +175,7 @@
 }
 
 .flame-field input,
+.flame-field select,
 .flame-rows input,
 .flame-rows select {
   width: 100%;
@@ -314,14 +329,28 @@
   to { opacity: 1; transform: none; }
 }
 
-@media (max-width: 720px) {
-  .flame-stats,
-  .flame-preview-grid {
-    grid-template-columns: 1fr 1fr;
+@media (min-width: 960px) {
+  .flame-work {
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    align-items: start;
   }
 
-  .flame-grid-2 {
-    grid-template-columns: 1fr;
+  .flame-tabs {
+    position: sticky;
+    top: 12px;
+    display: grid;
+  }
+
+  .flame-tab {
+    width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .flame-stats,
+  .flame-grid-2,
+  .flame-preview-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .flame-rows li,

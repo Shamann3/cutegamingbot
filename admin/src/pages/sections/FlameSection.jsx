@@ -11,13 +11,13 @@ import {
 import '../../styles/flame.css'
 
 const TABS = [
-  { id: 'norm', label: 'Норма' },
-  { id: 'restore', label: 'Вернуть' },
-  { id: 'rewards', label: 'Награды' },
-  { id: 'warm', label: 'Тёплый час' },
-  { id: 'status', label: 'Статусы' },
-  { id: 'gift', label: 'Предмет 🎁' },
-  { id: 'live', label: 'Живое' },
+  { id: 'norm', label: 'Норма', hint: 'Сколько писать' },
+  { id: 'rewards', label: 'Награды', hint: 'За дни серии' },
+  { id: 'warm', label: 'Тёплый час', hint: 'Случайный час' },
+  { id: 'status', label: 'Статусы', hint: 'Строка в профиле' },
+  { id: 'gift', label: 'Предмет 🎁', hint: 'Доска без победы' },
+  { id: 'restore', label: 'Вернуть', hint: 'Куты или предмет' },
+  { id: 'live', label: 'Живое', hint: 'Серии и награды' },
 ]
 
 const KINDS = [
@@ -38,22 +38,6 @@ function digits(value) {
 
 function kindLabel(kind) {
   return KINDS.find((row) => row.id === kind)?.label || 'Награда'
-}
-
-function restoreSentence(form) {
-  if (!form.restoreEnabled) {
-    return 'Возврат выключен. Игроки не смогут поднять погасшую серию.'
-  }
-  const ways = []
-  const kuty = Number(form.restoreKuty) || 0
-  const count = Math.max(1, Number(form.restoreItemCount) || 1)
-  if (kuty > 0) ways.push(`${kuty} кут`)
-  if (form.restoreItem) ways.push(count > 1 ? `${form.restoreItem} ×${count}` : form.restoreItem)
-  const days = Math.max(1, Number(form.restoreWithin) || 1)
-  if (!ways.length) {
-    return 'Укажите цену в кутах или предмет. Пока цена пустая, команда ничего не продаст.'
-  }
-  return `Игрок пишет «вернуть огонёк» и выбирает: ${ways.join(' или ')}. Срок — ${days} дн. после того, как огонёк погас, и только пока новая серия не началась.`
 }
 
 function sourceLabel(source) {
@@ -96,11 +80,11 @@ export default function FlameSection() {
       giftMult: String(s.gift_mult || 1),
       giftKutyMin: String(s.gift_kuty_min || 1),
       giftKutyMax: String(s.gift_kuty_max || 3),
-      restoreEnabled: Boolean(s.restore_enabled),
-      restoreKuty: String(s.restore_kuty ?? 0),
+      restoreEnabled: s.restore_enabled !== false,
+      restoreDays: String(s.restore_days || 3),
+      restoreKuty: String(s.restore_kuty ?? 500),
       restoreItem: s.restore_item || '',
       restoreItemCount: String(s.restore_item_count || 1),
-      restoreWithin: String(s.restore_within || 2),
     })
     setSteps((data?.steps || []).map((row) => ({
       fromDay: String(row.from_day),
@@ -176,15 +160,32 @@ export default function FlameSection() {
     giftKutyMin: Math.max(1, Number(form.giftKutyMin) || 1),
     giftKutyMax: Math.max(1, Number(form.giftKutyMax) || 1),
     restoreEnabled: Boolean(form.restoreEnabled),
+    restoreDays: Math.max(1, Math.min(30, Number(form.restoreDays) || 3)),
     restoreKuty: Math.max(0, Number(form.restoreKuty) || 0),
-    restoreItem: form.restoreItem || '',
-    restoreItemCount: Math.max(1, Number(form.restoreItemCount) || 1),
-    restoreWithin: Math.max(1, Math.min(30, Number(form.restoreWithin) || 2)),
+    restoreItem: String(form.restoreItem || '').trim(),
+    restoreItemCount: Math.max(1, Math.min(100, Number(form.restoreItemCount) || 1)),
   }))
 
   const items = board?.items || []
   const preview = board?.gift?.preview || {}
   const warmHour = board?.warm?.hour
+
+  const restoreHint = useMemo(() => {
+    if (!form.restoreEnabled) {
+      return 'Возврат выключен. Команда «вернуть огонёк» ответит, что купить серию нельзя.'
+    }
+    const ways = []
+    const kuty = Number(form.restoreKuty) || 0
+    if (kuty > 0) ways.push(`${kuty} кут`)
+    const item = String(form.restoreItem || '').trim()
+    const count = Math.max(1, Number(form.restoreItemCount) || 1)
+    if (item) ways.push(count === 1 ? item : `${item} ×${count}`)
+    const days = Math.max(1, Number(form.restoreDays) || 1)
+    if (!ways.length) {
+      return 'Возврат включён, но цены нет. Поставьте куты больше нуля или выберите предмет.'
+    }
+    return `«вернуть огонёк» живёт ${days} дн. после того, как серия погасла. Цена: ${ways.join(' или ')}. Новая серия сжигает старую.`
+  }, [form.restoreEnabled, form.restoreKuty, form.restoreItem, form.restoreItemCount, form.restoreDays])
 
   const warmHint = useMemo(() => {
     if (!form.warmEnabled) return 'Тёплый час выключен.'
@@ -200,9 +201,8 @@ export default function FlameSection() {
         <div>
           <h2>Огонёк</h2>
           <p>
-            Серия, награды, тёплый час, статусы, предмет 🎁 и возврат погасшего огонька.
-            Фразы, которые видят игроки, лежат в одном файле <code>server/flame_copy.py</code> —
-            правьте их там, как тексты браков. Цены и предметы — здесь.
+            Норма, награды, тёплый час, статусы, предмет 🎁 и возврат серии.
+            Числа меняются здесь. Слова — в одном файле.
           </p>
         </div>
       </header>
@@ -227,6 +227,13 @@ export default function FlameSection() {
             </article>
           </div>
 
+          <aside className="flame-map">
+            <p><b>Числа и включение</b> — здесь. Кнопка «Сохранить настройки» пишет норму, тёплый час, статусы, 🎁 и возврат разом. Списки наград, ступеней и дропа — своими кнопками.</p>
+            <p><b>Слова, кнопки и карточки</b> — файл <code>server/flame_copy.py</code>. После правки перезапустите бота.</p>
+            <p><b>Серия и окно возврата</b> — <code>server/flame_engine.py</code>, функция <code>restore_view</code>.</p>
+          </aside>
+
+          <div className="flame-work">
           <nav className="flame-tabs" aria-label="Разделы огонька">
             {TABS.map((row) => (
               <button
@@ -235,10 +242,12 @@ export default function FlameSection() {
                 className={`flame-tab${tab === row.id ? ' is-on' : ''}`}
                 onClick={() => setTab(row.id)}
               >
-                {row.label}
+                <span>{row.label}</span>
+                <small>{row.hint}</small>
               </button>
             ))}
           </nav>
+          <div className="flame-pane">
 
           {tab === 'norm' && (
             <section className="flame-card flame-rise">
@@ -318,59 +327,6 @@ export default function FlameSection() {
                   {busy === 'steps' ? 'Сохраняем…' : 'Сохранить ступени'}
                 </button>
               </div>
-            </section>
-          )}
-
-          {tab === 'restore' && (
-            <section className="flame-card flame-rise">
-              <div className="flame-card-head">
-                <h3>Вернуть погасший огонёк</h3>
-                <label className="flame-switch">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(form.restoreEnabled)}
-                    onChange={(e) => patch('restoreEnabled', e.target.checked)}
-                  />
-                  <span>{form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}</span>
-                </label>
-              </div>
-              <p className="flame-quote">{restoreSentence(form)}</p>
-              <div className="flame-grid-2">
-                <label className="flame-field">
-                  <span>Кут за возврат</span>
-                  <input inputMode="numeric" value={form.restoreKuty} onChange={(e) => patch('restoreKuty', digits(e.target.value))} />
-                </label>
-                <label className="flame-field">
-                  <span>Срок, дней</span>
-                  <input inputMode="numeric" value={form.restoreWithin} onChange={(e) => patch('restoreWithin', digits(e.target.value))} />
-                </label>
-                <label className="flame-field">
-                  <span>Или предмет</span>
-                  <select value={form.restoreItem} onChange={(e) => patch('restoreItem', e.target.value)}>
-                    <option value="">Без предмета</option>
-                    {items.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label className="flame-field">
-                  <span>Сколько предметов</span>
-                  <input
-                    inputMode="numeric"
-                    value={form.restoreItemCount}
-                    disabled={!form.restoreItem}
-                    onChange={(e) => patch('restoreItemCount', digits(e.target.value))}
-                  />
-                </label>
-              </div>
-              <ul className="flame-rules">
-                <li>Игрок пишет «вернуть огонёк». Кнопки показывают только те цены, которые вы задали.</li>
-                <li>0 кут — оплата кутами выключена. Пустой предмет — оплата предметом выключена.</li>
-                <li>Если заданы оба, игрок выбирает один способ. «Отказаться» ничего не списывает.</li>
-                <li>После возврата серия снова горит, но сегодняшнюю норму всё равно нужно закрыть.</li>
-                <li>Как только началась новая серия, старую уже не вернуть.</li>
-              </ul>
-              <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
-                {busy === 'settings' ? 'Сохраняем…' : 'Сохранить возврат'}
-              </button>
             </section>
           )}
 
@@ -733,6 +689,65 @@ export default function FlameSection() {
             </section>
           )}
 
+          {tab === 'restore' && (
+            <section className="flame-card flame-rise">
+              <div className="flame-card-head">
+                <h3>Вернуть погасший огонёк</h3>
+                <label className="flame-switch">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.restoreEnabled)}
+                    onChange={(e) => patch('restoreEnabled', e.target.checked)}
+                  />
+                  <span>{form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}</span>
+                </label>
+              </div>
+              <p className="flame-note">
+                Человек пишет «вернуть огонёк». Серия поднимается на столько дней, сколько сгорело.
+                Сегодня норму всё равно нужно закрыть. Как только начнётся новая серия, старую уже не купить.
+              </p>
+              <div className="flame-grid-2">
+                <label className="flame-field">
+                  <span>Сколько дней можно вернуть</span>
+                  <input inputMode="numeric" value={form.restoreDays} onChange={(e) => patch('restoreDays', digits(e.target.value))} />
+                </label>
+                <label className="flame-field">
+                  <span>Цена в кутах, 0 — этот способ выключен</span>
+                  <input inputMode="numeric" value={form.restoreKuty} onChange={(e) => patch('restoreKuty', digits(e.target.value))} />
+                </label>
+              </div>
+              <div className="flame-grid-2">
+                <label className="flame-field">
+                  <span>Предмет, пусто — этот способ выключен</span>
+                  <select value={form.restoreItem || ''} onChange={(e) => patch('restoreItem', e.target.value)}>
+                    <option value="">Не брать предмет</option>
+                    {form.restoreItem && !(items || []).includes(form.restoreItem) && (
+                      <option value={form.restoreItem}>{form.restoreItem}</option>
+                    )}
+                    {(items || []).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flame-field">
+                  <span>Сколько предметов списать</span>
+                  <input
+                    inputMode="numeric"
+                    value={form.restoreItemCount}
+                    disabled={!form.restoreItem}
+                    onChange={(e) => patch('restoreItemCount', digits(e.target.value))}
+                  />
+                </label>
+              </div>
+              <p className="flame-preview-line">{restoreHint}</p>
+              <div className="flame-actions">
+                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
+                  {busy === 'settings' ? 'Сохраняем…' : 'Сохранить возврат'}
+                </button>
+              </div>
+            </section>
+          )}
+
           {tab === 'live' && (
             <>
               <section className="flame-card flame-rise">
@@ -765,6 +780,8 @@ export default function FlameSection() {
               </section>
             </>
           )}
+          </div>
+          </div>
         </>
       )}
     </section>

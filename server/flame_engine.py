@@ -6,14 +6,12 @@ import random
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-import flame_copy
-
 MSK = timezone(timedelta(hours=3))
 KINDS = ("bonus", "bonus_x2", "item", "kuty")
 WARM_KINDS = ("bonus", "bonus_x2", "item", "kuty")
 GIFT_KINDS = ("kuty", "item")
-EMOJI = flame_copy.EMOJI
-STATUS_EMOJI = flame_copy.STATUS_EMOJI
+EMOJI = "5355118129783553944"
+STATUS_EMOJI = "5355118129783553944"
 
 _DEFAULTS = {
     "enabled": False,
@@ -33,11 +31,11 @@ _DEFAULTS = {
     "gift_mult": 1,
     "gift_kuty_min": 1,
     "gift_kuty_max": 3,
-    "restore_enabled": False,
-    "restore_kuty": 0,
+    "restore_enabled": True,
+    "restore_days": 3,
+    "restore_kuty": 500,
     "restore_item": "",
     "restore_item_count": 1,
-    "restore_within": 2,
 }
 
 
@@ -118,11 +116,13 @@ def title_for(days: int, titles: list[dict]) -> dict | None:
 def profile_line(days: int, titles: list[dict] | None = None) -> str:
     if int(days or 0) <= 0:
         return ""
+    from flame_copy import profile_line as draw
+
     badge = title_for(days, titles or [])
     label = span_label(days)
     if badge:
-        return flame_copy.profile_line(label, badge["title"], badge["emoji_id"] or STATUS_EMOJI)
-    return flame_copy.profile_line(label)
+        return draw(label, badge["title"], badge["emoji_id"] or STATUS_EMOJI)
+    return draw(label)
 
 
 def _reward_line(row: dict) -> str:
@@ -139,20 +139,91 @@ def _reward_line(row: dict) -> str:
 
 
 def _kind_words(kind: str, amount: int, item: str = "") -> str:
-    return flame_copy.kind_words(kind, amount, item)
+    from flame_copy import kind_words
+
+    return kind_words(kind, amount, item)
+
+
+def restore_price(settings: dict | None) -> dict:
+    """Цена возврата из вкладки. enabled — только если есть чем платить."""
+    raw = settings or {}
+    asked = bool(raw.get("restore_enabled"))
+    days = max(1, min(30, int(raw.get("restore_days") or 3)))
+    kuty = max(0, min(10_000_000, int(raw.get("restore_kuty") or 0)))
+    item = str(raw.get("restore_item") or "").strip()[:80]
+    count = max(1, min(100, int(raw.get("restore_item_count") or 1)))
+    if not item:
+        count = 0
+    buyable = asked and (kuty > 0 or bool(item))
+    return {
+        "enabled": buyable,
+        "days": days,
+        "kuty": kuty if asked else 0,
+        "item": item if asked else "",
+        "count": count if asked and item else 0,
+    }
+
+
+def _as_date(value) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def gap_starts_new_series(last: date | None, today: date) -> bool:
+    """Пропуск дня начинает новую серию и сжигает право вернуть старую."""
+    kept = _as_date(last)
+    if kept is None:
+        return False
+    return kept < today - timedelta(days=1)
+
+
+def restore_view(
+    streak: int,
+    lost: int,
+    lost_on,
+    settings: dict | None,
+    today: date,
+) -> dict:
+    """off | alive | none | late | ready. Оплата сюда не входит."""
+    price = restore_price(settings)
+    view = {**price, "code": "off", "label": "", "days_left": 0, "streak": 0}
+    if not price["enabled"]:
+        return view
+    if int(streak or 0) > 0:
+        view["code"] = "alive"
+        return view
+    lost_days = int(lost or 0)
+    died = _as_date(lost_on)
+    if lost_days < 1 or died is None:
+        view["code"] = "none"
+        return view
+    age = (today - died).days
+    if age < 0 or age >= price["days"]:
+        view["code"] = "late"
+        return view
+    view.update({
+        "code": "ready",
+        "label": span_label(lost_days),
+        "days_left": price["days"] - age,
+        "streak": lost_days,
+    })
+    return view
 
 
 def help_html(board: dict) -> str:
+    from flame_copy import restore_help_line, screen_help
+
     settings = board.get("settings") or {}
     steps = board.get("steps") or []
     rewards = board.get("rewards") or []
     titles = board.get("titles") or []
     warm = board.get("warm") or {}
     gift = board.get("gift") or {}
-    base = int(settings.get("base_messages") or 200)
-    words = int(settings.get("min_words") or 2)
-    enabled = bool(settings.get("enabled"))
-
     rises = []
     for step in sorted(steps, key=lambda row: int(row.get("from_day") or 0)):
         start = int(step.get("from_day") or 0)
@@ -160,33 +231,33 @@ def help_html(board: dict) -> str:
         if start <= 1 or messages < 1:
             continue
         rises.append(f"с {start}-го — <b>{messages}</b>")
-
     lines = [_reward_line(row) for row in sorted(rewards, key=lambda row: int(row.get("day") or 0))]
-    lines = [line for line in lines if line]
     title_lines = []
-    for row in sorted(titles, key=lambda t: int(t.get("from_day") or 0)):
-        title_lines.append(f"· с {span_label(int(row['from_day']))} — <b>{row['title']}</b>")
-
+    for row in sorted(titles, key=lambda item: int(item.get("from_day") or 0)):
+        start = int(row.get("from_day") or 0)
+        name = str(row.get("title") or "").strip()
+        if start < 1 or not name:
+            continue
+        title_lines.append(f"· с {span_label(start)} — <b>{name}</b>")
     warm_hour = ""
     if warm.get("hour") is not None:
         hour = int(warm["hour"])
         warm_hour = f"{hour:02d}:00–{(hour + 1) % 24:02d}:00"
-
+    price = restore_price(settings)
     restore_line = ""
-    if restore_open(settings):
-        restore_line = flame_copy.restore_help_line(
-            days=int(settings.get("restore_within") or 2),
-            kuty=int(settings.get("restore_kuty") or 0),
-            item=str(settings.get("restore_item") or "").strip(),
-            count=int(settings.get("restore_item_count") or 1),
+    if price["enabled"]:
+        restore_line = restore_help_line(
+            days=price["days"],
+            kuty=price["kuty"],
+            item=price["item"],
+            count=price["count"],
         )
-
-    return flame_copy.screen_help(
-        base=base,
-        words=words,
-        enabled=enabled,
+    return screen_help(
+        base=int(settings.get("base_messages") or 200),
+        words=int(settings.get("min_words") or 2),
+        enabled=bool(settings.get("enabled")),
         rises=rises,
-        rewards=lines,
+        rewards=[line for line in lines if line],
         titles=title_lines,
         warm_on=bool(warm.get("enabled")),
         warm_from=span_label(int(warm.get("min_day") or 3)),
@@ -245,11 +316,11 @@ async def ensure_tables(pool) -> None:
         ("gift_mult", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_min", "INT NOT NULL DEFAULT 1"),
         ("gift_kuty_max", "INT NOT NULL DEFAULT 3"),
-        ("restore_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
-        ("restore_kuty", "INT NOT NULL DEFAULT 0"),
+        ("restore_enabled", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("restore_days", "INT NOT NULL DEFAULT 3"),
+        ("restore_kuty", "INT NOT NULL DEFAULT 500"),
         ("restore_item", "TEXT NOT NULL DEFAULT ''"),
         ("restore_item_count", "INT NOT NULL DEFAULT 1"),
-        ("restore_within", "INT NOT NULL DEFAULT 2"),
     ):
         await _add_column(pool, "flame_settings", column, spec)
 
@@ -329,8 +400,8 @@ async def ensure_tables(pool) -> None:
         ("warm_count", "INT NOT NULL DEFAULT 0"),
         ("warm_hits", "INT NOT NULL DEFAULT 0"),
         ("profit_day", "DATE"),
-        ("ember_days", "INT NOT NULL DEFAULT 0"),
-        ("ember_on", "DATE"),
+        ("lost_streak", "INT NOT NULL DEFAULT 0"),
+        ("lost_on", "DATE"),
     ):
         await _add_column(pool, "flame_users", column, spec)
 
@@ -368,21 +439,22 @@ def _row_settings(row) -> dict:
         return out
     out["enabled"] = bool(row["enabled"])
     out["base_messages"] = int(row["base_messages"] or 200)
+    keys = set(row.keys())
     for key in (
         "warm_enabled", "status_enabled", "profit_enabled", "block_dup", "gift_enabled",
         "restore_enabled",
     ):
-        if key in row.keys():
+        if key in keys:
             out[key] = bool(row[key])
     for key in (
         "warm_min_day", "warm_every", "warm_cap", "warm_from", "warm_to",
         "profit_hour", "min_words", "gift_mult", "gift_kuty_min", "gift_kuty_max",
-        "restore_kuty", "restore_item_count", "restore_within",
+        "restore_days", "restore_kuty", "restore_item_count",
     ):
-        if key in row.keys() and row[key] is not None:
+        if key in keys and row[key] is not None:
             out[key] = int(row[key])
-    if "restore_item" in row.keys() and row["restore_item"] is not None:
-        out["restore_item"] = str(row["restore_item"]).strip()[:80]
+    if "restore_item" in keys:
+        out["restore_item"] = str(row["restore_item"] or "").strip()[:80]
     out["warm_from"] = max(0, min(23, out["warm_from"]))
     out["warm_to"] = max(out["warm_from"] + 1, min(24, out["warm_to"]))
     out["gift_kuty_min"] = max(1, out["gift_kuty_min"])
@@ -393,9 +465,10 @@ def _row_settings(row) -> dict:
     out["warm_cap"] = max(1, min(50, out["warm_cap"]))
     out["warm_min_day"] = max(1, min(100_000, out["warm_min_day"]))
     out["profit_hour"] = max(0, min(23, out["profit_hour"]))
-    out["restore_kuty"] = max(0, min(1_000_000, out["restore_kuty"]))
-    out["restore_item_count"] = max(1, min(100, out["restore_item_count"]))
-    out["restore_within"] = max(1, min(30, out["restore_within"]))
+    out["restore_days"] = max(1, min(30, int(out.get("restore_days") or 3)))
+    out["restore_kuty"] = max(0, min(10_000_000, int(out.get("restore_kuty") or 0)))
+    out["restore_item"] = str(out.get("restore_item") or "").strip()[:80]
+    out["restore_item_count"] = max(1, min(100, int(out.get("restore_item_count") or 1)))
     return out
 
 
@@ -573,7 +646,7 @@ async def load_board(pool) -> dict:
 
 async def save_settings(pool, body: dict) -> None:
     await ensure_tables(pool)
-    conf = dict(_DEFAULTS)
+    conf = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
     mapping = {
         "enabled": "enabled",
         "baseMessages": "base_messages",
@@ -610,14 +683,14 @@ async def save_settings(pool, body: dict) -> None:
         "gift_kuty_max": "gift_kuty_max",
         "restoreEnabled": "restore_enabled",
         "restore_enabled": "restore_enabled",
+        "restoreDays": "restore_days",
+        "restore_days": "restore_days",
         "restoreKuty": "restore_kuty",
         "restore_kuty": "restore_kuty",
         "restoreItem": "restore_item",
         "restore_item": "restore_item",
         "restoreItemCount": "restore_item_count",
         "restore_item_count": "restore_item_count",
-        "restoreWithin": "restore_within",
-        "restore_within": "restore_within",
     }
     for src, dst in mapping.items():
         if src in body:
@@ -630,7 +703,7 @@ async def save_settings(pool, body: dict) -> None:
             warm_enabled, warm_min_day, warm_every, warm_cap, warm_from, warm_to,
             status_enabled, profit_enabled, profit_hour, min_words, block_dup,
             gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max,
-            restore_enabled, restore_kuty, restore_item, restore_item_count, restore_within
+            restore_enabled, restore_days, restore_kuty, restore_item, restore_item_count
         ) VALUES (
             1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
             $18, $19, $20, $21, $22
@@ -654,10 +727,10 @@ async def save_settings(pool, body: dict) -> None:
             gift_kuty_min = EXCLUDED.gift_kuty_min,
             gift_kuty_max = EXCLUDED.gift_kuty_max,
             restore_enabled = EXCLUDED.restore_enabled,
+            restore_days = EXCLUDED.restore_days,
             restore_kuty = EXCLUDED.restore_kuty,
             restore_item = EXCLUDED.restore_item,
-            restore_item_count = EXCLUDED.restore_item_count,
-            restore_within = EXCLUDED.restore_within
+            restore_item_count = EXCLUDED.restore_item_count
         """,
         clean["enabled"],
         clean["base_messages"],
@@ -677,10 +750,10 @@ async def save_settings(pool, body: dict) -> None:
         clean["gift_kuty_min"],
         clean["gift_kuty_max"],
         clean["restore_enabled"],
+        clean["restore_days"],
         clean["restore_kuty"],
         clean["restore_item"],
         clean["restore_item_count"],
-        clean["restore_within"],
     )
 
 
@@ -988,6 +1061,24 @@ async def messages_on(pool, user_id: int, day: date, chat_ids: list[int]) -> int
     return int(value or 0)
 
 
+async def restore_state(pool, user_id: int, today: date | None = None) -> dict:
+    """Карточка «вернуть огонёк» без оплаты."""
+    await ensure_tables(pool)
+    day = today or msk_today()
+    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    row = await pool.fetchrow(
+        "SELECT streak_days, lost_streak, lost_on FROM flame_users WHERE user_id = $1",
+        int(user_id),
+    )
+    return restore_view(
+        int(row["streak_days"] or 0) if row else 0,
+        int(row["lost_streak"] or 0) if row else 0,
+        row["lost_on"] if row else None,
+        settings,
+        day,
+    )
+
+
 async def rollover(pool, today: date | None = None) -> int:
     await ensure_tables(pool)
     day = today or msk_today()
@@ -996,8 +1087,8 @@ async def rollover(pool, today: date | None = None) -> int:
         """
         UPDATE flame_users
         SET best_days = GREATEST(best_days, streak_days),
-            ember_days = streak_days,
-            ember_on = $2,
+            lost_streak = streak_days,
+            lost_on = $2,
             streak_days = 0
         WHERE streak_days > 0
           AND (last_kept IS NULL OR last_kept < $1)
@@ -1009,123 +1100,6 @@ async def rollover(pool, today: date | None = None) -> int:
         return int(str(status).split()[-1])
     except Exception:
         return 0
-
-
-def restore_open(settings: dict | None) -> bool:
-    conf = settings or {}
-    if not conf.get("restore_enabled"):
-        return False
-    kuty = int(conf.get("restore_kuty") or 0)
-    item = str(conf.get("restore_item") or "").strip()
-    return kuty > 0 or bool(item)
-
-
-def restore_ways(settings: dict | None) -> list[dict]:
-    conf = settings or {}
-    ways = []
-    kuty = int(conf.get("restore_kuty") or 0)
-    if kuty > 0:
-        ways.append({"id": "kuty", "price": kuty, "label": flame_copy.button_kuty(kuty)})
-    item = str(conf.get("restore_item") or "").strip()
-    count = max(1, int(conf.get("restore_item_count") or 1))
-    if item:
-        ways.append({
-            "id": "item",
-            "item": item,
-            "count": count,
-            "label": flame_copy.button_item(item, count),
-        })
-    return ways
-
-
-def restore_view(
-    *,
-    streak: int,
-    ember_days: int,
-    ember_on: date | None,
-    today: date,
-    settings: dict,
-) -> dict:
-    """Что сказать человеку, который пишет «вернуть огонёк».
-
-    kind: off | alive | none | late | offer
-    """
-    if not restore_open(settings):
-        return {"kind": "off", "text": flame_copy.screen_restore_off(), "ways": []}
-    if int(streak or 0) > 0:
-        return {"kind": "alive", "text": flame_copy.screen_restore_alive(), "ways": []}
-    days = int(ember_days or 0)
-    if days < 1 or ember_on is None:
-        return {"kind": "none", "text": flame_copy.screen_restore_none(), "ways": []}
-    within = max(1, int(settings.get("restore_within") or 2))
-    last_day = ember_on + timedelta(days=within - 1)
-    if today > last_day:
-        return {"kind": "late", "text": flame_copy.screen_restore_late(), "ways": []}
-    ways = restore_ways(settings)
-    price = " или ".join(way["label"].removeprefix("За ") for way in ways)
-    left = (last_day - today).days + 1
-    return {
-        "kind": "offer",
-        "days": days,
-        "label": span_label(days),
-        "text": flame_copy.screen_restore_offer(span_label(days), left, price),
-        "ways": ways,
-    }
-
-
-async def ember_of(pool, user_id: int) -> dict:
-    await ensure_tables(pool)
-    row = await pool.fetchrow(
-        """
-        SELECT streak_days, ember_days, ember_on
-        FROM flame_users WHERE user_id = $1
-        """,
-        int(user_id),
-    )
-    if not row:
-        return {"streak": 0, "ember_days": 0, "ember_on": None}
-    return {
-        "streak": int(row["streak_days"] or 0),
-        "ember_days": int(row["ember_days"] or 0),
-        "ember_on": row["ember_on"],
-    }
-
-
-async def claim_restore(pool, user_id: int, today: date | None = None) -> int:
-    """Возвращает длину серии, если погасший огонёк ещё можно поднять. Иначе 0.
-
-    Оплата проверяется снаружи. Здесь серия встаёт на вчера, чтобы сегодняшняя
-    норма ещё была нужна, и повторный возврат уже не проходит.
-    """
-    await ensure_tables(pool)
-    day = today or msk_today()
-    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
-    if not restore_open(settings):
-        return 0
-    within = max(1, int(settings["restore_within"]))
-    earliest = day - timedelta(days=within - 1)
-    row = await pool.fetchrow(
-        """
-        UPDATE flame_users
-        SET streak_days = ember_days,
-            last_kept = $2,
-            best_days = GREATEST(best_days, ember_days),
-            ember_days = 0,
-            ember_on = NULL
-        WHERE user_id = $1
-          AND streak_days = 0
-          AND ember_days > 0
-          AND ember_on IS NOT NULL
-          AND ember_on >= $3
-        RETURNING streak_days
-        """,
-        int(user_id),
-        day - timedelta(days=1),
-        earliest,
-    )
-    if not row:
-        return 0
-    return int(row["streak_days"] or 0)
 
 
 def _pick_weighted(rows: list[dict]) -> dict | None:
@@ -1373,20 +1347,7 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
             last = row["last_kept"] if row else None
             if last == day:
                 return None
-            if last is not None and last < day - timedelta(days=1):
-                if streak > 0 and row:
-                    await conn.execute(
-                        """
-                        UPDATE flame_users
-                        SET best_days = GREATEST(best_days, streak_days),
-                            ember_days = streak_days,
-                            ember_on = $2,
-                            streak_days = 0
-                        WHERE user_id = $1 AND streak_days > 0
-                        """,
-                        int(user_id),
-                        day,
-                    )
+            if gap_starts_new_series(last, day):
                 streak = 0
             target = streak + 1
             if count < need_for(target, settings["base_messages"], steps):
@@ -1397,7 +1358,7 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
                     """
                     UPDATE flame_users
                     SET streak_days = $2, best_days = $3, last_kept = $4,
-                        ember_days = 0, ember_on = NULL
+                        lost_streak = 0, lost_on = NULL
                     WHERE user_id = $1
                     """,
                     int(user_id), target, best, day,

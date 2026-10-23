@@ -225,7 +225,7 @@ export default function App() {
     )
   }
 
-  if (screen === 'gate' || screen === 'auth') {
+  if (screen === 'gate') {
     return (
       <GatePage
         fault={gateFault}
@@ -233,23 +233,6 @@ export default function App() {
         onStaffApply={openStaffApply}
         onGroupEnter={openGroup}
         onGroupApply={openGroupApply}
-        focusAuth={screen === 'auth'}
-        authMode={screen === 'auth' ? authMode : 'login'}
-        auth={(
-          <AuthPage
-            key={screen === 'auth' ? authMode : 'login'}
-            embedded
-            deferEntry={screen !== 'auth'}
-            displayName={displayName}
-            initialMode={screen === 'auth' ? authMode : 'login'}
-            fortress
-            onBack={() => {
-              setAuthMode('login')
-              setScreen('gate')
-            }}
-            onAuthenticated={finishAuth}
-          />
-        )}
       />
     )
   }
@@ -298,6 +281,18 @@ export default function App() {
         portrait={groupPortrait}
         onLeave={() => setScreen('gate')}
         onStaffApply={openStaffApply}
+      />
+    )
+  }
+
+  if (screen === 'auth') {
+    return (
+      <AuthPage
+        displayName={displayName}
+        initialMode={authMode}
+        fortress
+        onBack={() => setScreen('gate')}
+        onAuthenticated={finishAuth}
       />
     )
   }

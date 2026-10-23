@@ -3,12 +3,16 @@
 
 Как править
 -----------
+Этот файл — единственное место со словами. Бот и справка берут фразы отсюда.
 Каждый экран — функция ниже. Слоты в фигурных скобках подставляются сами.
 Эмодзи телеграма лежит в той же строке: не выносите его в другой файл.
-Цены, предметы и срок возврата задаются во вкладке «Огонёк», не здесь.
 
-Не пишите сюда правила наград и норму: их собирает вкладка, а этот файл
-только оборачивает их в фразу.
+Где остальное
+- Вкладка «Огонёк»: включение, норма, награды, цены и срок возврата.
+- server/flame_engine.py: серия, полночь и окно возврата (функция restore_view).
+
+Цены, предметы и срок возврата задаются во вкладке, не здесь.
+После правки этого файла перезапустите бота.
 """
 from __future__ import annotations
 
@@ -121,15 +125,20 @@ def screen_help(
     return "\n".join(parts)
 
 
-def restore_help_line(*, days: int, kuty: int, item: str, count: int) -> str:
-    # Одна строка в справке. Цены приходят из вкладки.
+def restore_ways(*, kuty: int, item: str, count: int) -> str:
+    # «500 кут или Купон ×1». Пустая строка — возвращать нечем.
     ways = []
     if int(kuty or 0) > 0:
         ways.append(f"<b>{int(kuty)}</b> кут")
     if item:
         piece = item if int(count or 1) == 1 else f"{item} ×{int(count)}"
         ways.append(f"<b>{piece}</b>")
-    price = " или ".join(ways)
+    return " или ".join(ways)
+
+
+def restore_help_line(*, days: int, kuty: int, item: str, count: int) -> str:
+    # Одна строка в справке. Цены приходят из вкладки.
+    price = restore_ways(kuty=kuty, item=item, count=count)
     return (
         f"Напишите «<b>вернуть огонёк</b>» в течение <b>{int(days)}</b> дн. после того, как он погас. "
         f"Цена: {price}.\n"
@@ -222,6 +231,22 @@ def screen_top(rows: list[str]) -> str:
     return "\n".join(head + rows)
 
 
+def top_mark(index: int) -> str:
+    medals = {
+        1: emoji("5294001020039363545", "🏆"),
+        2: emoji("5458612419116933783", "🏆"),
+        3: emoji("5469967260380612012", "🏆"),
+    }
+    return medals.get(int(index), f"<b>{int(index)}.</b>")
+
+
+def top_row(index: int, name_html: str, label: str, title: str = "", record: bool = False) -> str:
+    # Одна строка топа. {name_html} уже кликабельное имя.
+    mark = " · <i>личный рекорд</i>" if record else ""
+    titled = f" · <b>{title}</b>" if title else ""
+    return f"{top_mark(index)} {name_html} — <b>{label}</b>{titled}{mark}"
+
+
 def screen_restore_offer(label: str, days_left: int, ways: str) -> str:
     # Карточка перед оплатой. {ways} — «500 кут или Купон ×1».
     window = "сегодня" if int(days_left) <= 1 else f"ещё {int(days_left)} дн."
@@ -302,3 +327,51 @@ def button_kuty(price: int) -> str:
 def button_item(name: str, count: int) -> str:
     piece = name if int(count or 1) == 1 else f"{name} ×{int(count)}"
     return f"За {piece}"
+
+
+def button_cancel() -> str:
+    return "Отказаться"
+
+
+def alert_stranger() -> str:
+    return "Эта кнопка не ваша."
+
+
+def alert_poor(price: int) -> str:
+    return f"Нужно {int(price)} кут. Списание не прошло."
+
+
+def alert_no_item(name: str, count: int) -> str:
+    piece = name if int(count or 1) == 1 else f"{name} ×{int(count)}"
+    return f"Нет предмета: {piece}."
+
+
+# Фразы команды. «ё» и регистр не важны — сравнение само приводит к «е».
+RESTORE_COMMANDS = (
+    "вернуть огонек",
+    "восстановить огонек",
+)
+
+
+def is_restore_command(text: str) -> bool:
+    folded = " ".join((text or "").lower().replace("ё", "е").replace("Ё", "е").split())
+    return folded in RESTORE_COMMANDS
+
+
+def button_help() -> str:
+    # Кнопка в меню помощи.
+    return "Огонёк сообщений"
+
+
+def button_top() -> str:
+    # Кнопка в общем топе.
+    return "Лучшие огоньки"
+
+
+def alert_top_failed() -> str:
+    return "Не удалось открыть огоньки."
+
+
+# Как причина пишется в историю кут.
+HISTORY_GRANT = "огонёк"
+HISTORY_RESTORE = "вернуть огонёк"

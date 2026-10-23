@@ -488,6 +488,7 @@ PREFIX_HANDLERS: Dict[str, Tuple[str, str]] = {
     'cs:': ('bot.funcs.case_desk', 'case_click'),
     'gc:': ('bot.funcs.balance', 'gc_info_callback'),
     'wg:': ('bot.funcs.water_games', 'water_click'),
+    'fl:': ('bot.funcs.flame', 'flame_click'),
     'wh:': ('bot.funcs.Shep', 'open_whisper_button'),
 }
 
