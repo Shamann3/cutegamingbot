@@ -513,6 +513,47 @@ def _failure_reason(result) -> str:
     return reason
 
 
+_migrated_chats: dict[int, int] = {}
+
+
+def _current_chat_id(chat_id: int) -> int:
+    seen: set[int] = set()
+    current = int(chat_id)
+    while current in _migrated_chats and current not in seen:
+        seen.add(current)
+        current = int(_migrated_chats[current])
+    return current
+
+
+async def _remember_migrated_chat(campaign_id: int, old_id: int, new_id: int) -> None:
+    """Группа стала супергруппой: дальше пишем уже в новый id."""
+    old_id = int(old_id)
+    new_id = int(new_id)
+    if old_id == new_id:
+        return
+    _migrated_chats[old_id] = new_id
+    try:
+        await db.pool.execute(
+            """
+            UPDATE group_post_campaigns
+            SET chat_ids = (
+                SELECT ARRAY(
+                    SELECT DISTINCT CASE WHEN x = $2 THEN $3 ELSE x END
+                    FROM unnest(chat_ids) AS x
+                )
+            ),
+            updated_at = NOW()
+            WHERE id = $1 AND $2 = ANY(chat_ids)
+            """,
+            int(campaign_id), old_id, new_id,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to retarget migrated chat (campaign_id=%s %s -> %s)",
+            campaign_id, old_id, new_id,
+        )
+
+
 async def _track_sent_message(campaign_id: int, chat_id: int, message_id: int) -> int | None:
     """Регистрирует отправленный пост как «живой». Вызывается сразу после
     успешной отправки и до закрепа: если процесс упадёт следующей же строкой,
@@ -716,30 +757,52 @@ async def _execute_group_post_send(row) -> dict:
     new_file_id: str | None = None
     last_failure_reason: str | None = None
 
-    for chat_id in chat_ids:
+    for raw_chat_id in chat_ids:
+        chat_id = _current_chat_id(int(raw_chat_id))
         chat_delete, chat_pin = _resolve_chat_flags(
             overrides, chat_id, delete_previous=campaign_delete, pin_message=campaign_pin
         )
+        if chat_id != int(raw_chat_id):
+            # Флаги могли быть записаны на старый id.
+            old_delete, old_pin = _resolve_chat_flags(
+                overrides, int(raw_chat_id), delete_previous=campaign_delete, pin_message=campaign_pin
+            )
+            chat_delete, chat_pin = old_delete, old_pin
 
-        if photo_bytes is not None and not file_id and new_file_id is None:
-            result = await send_telegram_photo_bytes(
-                photo_bytes,
-                chat_id=str(chat_id),
-                caption=text,
-                content_type=photo_mime,
-                buttons=buttons,
-            )
-            if result.ok and result.file_id:
-                new_file_id = result.file_id
-        elif photo_bytes is not None:
-            result = await send_telegram_photo_by_file_id(
-                file_id or new_file_id,
-                chat_id=str(chat_id),
-                caption=text,
-                buttons=buttons,
-            )
-        else:
-            result = await send_telegram_message(text, chat_id=str(chat_id), buttons=buttons)
+        async def deliver(target: int):
+            if photo_bytes is not None and not file_id and new_file_id is None:
+                return await send_telegram_photo_bytes(
+                    photo_bytes,
+                    chat_id=str(target),
+                    caption=text,
+                    content_type=photo_mime,
+                    buttons=buttons,
+                )
+            if photo_bytes is not None:
+                return await send_telegram_photo_by_file_id(
+                    file_id or new_file_id,
+                    chat_id=str(target),
+                    caption=text,
+                    buttons=buttons,
+                )
+            return await send_telegram_message(text, chat_id=str(target), buttons=buttons)
+
+        result = await deliver(chat_id)
+        if (
+            not result.ok
+            and result.category == "migrated"
+            and result.migrate_chat_id
+            and int(result.migrate_chat_id) != int(chat_id)
+        ):
+            new_chat = int(result.migrate_chat_id)
+            await _remember_migrated_chat(campaign_id, int(raw_chat_id), new_chat)
+            if chat_id != int(raw_chat_id):
+                await _remember_migrated_chat(campaign_id, chat_id, new_chat)
+            chat_id = new_chat
+            result = await deliver(chat_id)
+
+        if result.ok and result.file_id and new_file_id is None:
+            new_file_id = result.file_id
 
         if not result.ok:
             failed += 1

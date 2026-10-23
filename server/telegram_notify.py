@@ -40,6 +40,7 @@ class TelegramSendResult:
     description: str | None = None
     file_id: str | None = None  # заполняется на успешный sendPhoto с сырыми байтами
     message_id: int | None = None  # id отправленного сообщения (нужен для закрепа/удаления)
+    migrate_chat_id: int | None = None  # новый id, если группу превратили в супергруппу
 
 
 # Категории ошибок, при которых повторять действие бессмысленно: сообщения уже
@@ -47,13 +48,21 @@ class TelegramSendResult:
 # (group_posts.py) закрывает такие записи трекинга, чтобы не долбить Telegram
 # одной и той же обречённой операцией каждый цикл.
 PERMANENT_FAILURE_CATEGORIES = frozenset(
-    {"message_not_found", "cant_delete", "chat_not_found", "deactivated", "blocked"}
+    {
+        "message_not_found",
+        "cant_delete",
+        "chat_not_found",
+        "deactivated",
+        "blocked",
+        "no_rights",
+        "migrated",
+    }
 )
 
-# Личка, которой больше не существует: человек не открывал бота, заблокировал
-# его или удалил аккаунт. На каждого такое письмо писать warning бессмысленно —
-# при рассылке это тысячи одинаковых строк. Считаем пачкой и больше не шлём.
+# Ожидаемые отказы: мёртвая личка, нет прав в чате, группа уже стала супергруппой.
+# По одному на чат это тысячи одинаковых строк. Считаем пачкой.
 QUIET_DM_CATEGORIES = frozenset({"chat_not_found", "blocked", "deactivated"})
+QUIET_CATEGORIES = QUIET_DM_CATEGORIES | frozenset({"no_rights", "migrated"})
 _quiet_lock = threading.Lock()
 _quiet_counts: dict[str, int] = {}
 _quiet_logged_at = 0.0
@@ -76,6 +85,8 @@ def _classify_error(error_code: int | None, description: str) -> str:
     if error_code == 400:
         if "not enough rights" in desc or "not enough permissions" in desc:
             return "no_rights"
+        if "upgraded to a supergroup" in desc:
+            return "migrated"
         if "message to delete not found" in desc or "message to pin not found" in desc:
             return "message_not_found"
         if "message to unpin not found" in desc or "message identifier is not specified" in desc:
@@ -86,8 +97,8 @@ def _classify_error(error_code: int | None, description: str) -> str:
 
 
 def log_each_telegram_error(category: str | None) -> bool:
-    """Ожидаемый отказ лички не печатаем по одному. Остальные ошибки — да."""
-    return category not in QUIET_DM_CATEGORIES
+    """Ожидаемый отказ не печатаем по одному. Остальные ошибки — да."""
+    return category not in QUIET_CATEGORIES
 
 
 def _log_api_error(method: str, chat_id, error_code, description: str, category: str) -> None:
@@ -112,7 +123,7 @@ def _log_api_error(method: str, chat_id, error_code, description: str, category:
     if summary:
         parts = ", ".join(f"{name}={count}" for name, count in sorted(summary.items()))
         logger.info(
-            "Telegram %s: не доставлено %s. Этим людям повторно не пишем.",
+            "Telegram %s: ожидаемые отказы %s.",
             method,
             parts,
         )
@@ -129,7 +140,7 @@ def flush_quiet_send_log(method: str = "sendMessage") -> None:
         return
     parts = ", ".join(f"{name}={count}" for name, count in sorted(summary.items()))
     logger.info(
-        "Telegram %s: не доставлено %s. Этим людям повторно не пишем.",
+        "Telegram %s: ожидаемые отказы %s.",
         method,
         parts,
     )
@@ -323,8 +334,22 @@ def _call_bot_api_sync(
         error_code = result.get("error_code")
         description = result.get("description", "")
         category = _classify_error(error_code, description)
+        params = result.get("parameters") if isinstance(result.get("parameters"), dict) else {}
+        migrate_raw = (params or {}).get("migrate_to_chat_id")
+        migrate_chat_id = None
+        try:
+            if migrate_raw is not None:
+                migrate_chat_id = int(migrate_raw)
+        except (TypeError, ValueError):
+            migrate_chat_id = None
         _log_api_error(method, chat_id, error_code, description, category)
-        return TelegramSendResult(ok=False, category=category, error_code=error_code, description=description)
+        return TelegramSendResult(
+            ok=False,
+            category=category,
+            error_code=error_code,
+            description=description,
+            migrate_chat_id=migrate_chat_id,
+        )
 
     raw = result.get("result")
     message_id = None
