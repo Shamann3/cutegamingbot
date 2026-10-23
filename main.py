@@ -12221,24 +12221,29 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         await bns_safe_answer(callback_query, "❕ Добавьте приписку Cute в ник и повторите.", alert=True)
         return
 
-    # ══════════════════  ПОБЕДЫ  ══════════════════
-    try:
-        hist_res, new_first_name = await asyncio.gather(
-            db.get_historygames_times(user_id),
-            db.get_firstname_by_user_id(user_id),
-        )
-    except Exception as e:
-        bns_dbg(f"[Бонус] Ошибка получения истории/имени: {type(e).__name__}: {e}")
-        await callback_query.answer("💭 Ошибка получения данных. Попробуйте позже.", show_alert=True)
-        return
-
-    if hist_res is None:
+    # Бонус + уже проверил Cute и не зависит от побед — клетку открываем сразу.
+    gift_board_early = bool(bonus_gift_mode.get(int(message_id)))
+    if gift_board_early:
         last_open_time = None
         data_open = None
+        new_first_name = (callback_query.from_user.first_name or "").strip() or str(user_id)
     else:
-        last_open_time, data_open = hist_res
+        # ══════════════════  ПОБЕДЫ  ══════════════════
+        try:
+            hist_res, new_first_name = await asyncio.gather(
+                db.get_historygames_times(user_id),
+                db.get_firstname_by_user_id(user_id),
+            )
+        except Exception as e:
+            bns_dbg(f"[Бонус] Ошибка получения истории/имени: {type(e).__name__}: {e}")
+            await callback_query.answer("💭 Ошибка получения данных. Попробуйте позже.", show_alert=True)
+            return
 
-    gift_board_early = bool(bonus_gift_mode.get(int(message_id)))
+        if hist_res is None:
+            last_open_time = None
+            data_open = None
+        else:
+            last_open_time, data_open = hist_res
     if (last_open_time is None or data_open is None) and not gift_board_early:
         bns_dbg("[БОНУС] WINS_GATE: пользователь не побеждал ни разу")
         # 1. Сначала показываем уведомление
@@ -12266,12 +12271,16 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
 
     try:
         # ══════════════════  КУЛДАУН  ══════════════════
-        try:
-            bonus_times = await db.get_bonus_times(user_id)
-        except Exception as e:
-            bns_dbg(f"[Бонус] Ошибка db.get_bonus_times: {type(e).__name__}: {e}")
-            await callback_query.answer("💭 Ошибка получения времени бонуса.", show_alert=True)
-            return
+        # Предмет 🎁 не ждёт ежедневный бонус и не читает его таймер.
+        if gift_board_early:
+            bonus_times = None
+        else:
+            try:
+                bonus_times = await db.get_bonus_times(user_id)
+            except Exception as e:
+                bns_dbg(f"[Бонус] Ошибка db.get_bonus_times: {type(e).__name__}: {e}")
+                await callback_query.answer("💭 Ошибка получения времени бонуса.", show_alert=True)
+                return
 
         if bonus_times is None:
             last_bonus_open = None
@@ -12391,12 +12400,17 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             return
 
         # ×2 проверка (предмет 🎁 уже заложил умножение в сумму клетки)
-        premium_ok = has_premium(callback_query.from_user)
-        try:
-            bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
-        except Exception:
+        if gift_board:
+            premium_ok = False
             bio_ok = False
-        ref_count, ref_ok = await _get_ref_progress(user_id)
+            ref_count, ref_ok = 0, False
+        else:
+            premium_ok = has_premium(callback_query.from_user)
+            try:
+                bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
+            except Exception:
+                bio_ok = False
+            ref_count, ref_ok = await _get_ref_progress(user_id)
         has_full_x2 = (not gift_board) and premium_ok and bio_ok and ref_ok
 
         if has_full_x2:
@@ -12412,16 +12426,26 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
                 outcome = await apply_cell_rewards(db, user_id, bonus_amount, gift_conf_now)
                 paid = int(outcome.get("board_kuty") or 0)
                 formatted_bonus_amount = "{:,.0f}".format(paid or bonus_amount)
+                prize_text = outcome.get("text") or ""
+                revealed = False
+                try:
+                    await message.edit_text(prize_text, parse_mode="HTML", reply_markup=None)
+                    revealed = True
+                except Exception:
+                    revealed = False
                 try:
                     await db.add_bonusbet(user_id, new_first_name, paid or bonus_amount, chat_id, chat_name, now_dt)
                 except Exception:
                     pass
-                await callback_query.answer(f"✅ Бонус +: {formatted_bonus_amount} кут", show_alert=False)
-                try:
-                    await message.edit_text(outcome.get("text") or "", parse_mode="HTML", reply_markup=None)
-                except Exception:
+                if revealed:
+                    await callback_query.answer()
+                else:
+                    await callback_query.answer(
+                        f"✅ Бонус +: {formatted_bonus_amount} кут",
+                        show_alert=False,
+                    )
                     try:
-                        await message.reply(outcome.get("text") or "", parse_mode="HTML")
+                        await message.reply(prize_text, parse_mode="HTML")
                     except Exception:
                         pass
             except Exception as e:
@@ -12911,9 +12935,14 @@ async def process_bonus_request(
     gift_conf: Optional[dict] = None,
 ):
     user_id = user.id
-    premium = has_premium(user)
-    bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
-    ref_count, ref_ok = await _get_ref_progress(user_id)
+    if from_gift_item:
+        premium = False
+        bio_ok = False
+        ref_count, ref_ok = 0, False
+    else:
+        premium = has_premium(user)
+        bio_ok = await check_bio_contains(user_id, '@CuteGamingBot')
+        ref_count, ref_ok = await _get_ref_progress(user_id)
     _log(
         f"process_bonus user={user_id}, require_x2={require_x2}, premium={premium}, "
         f"bio={bio_ok}, refs={ref_count}, gift={from_gift_item}"
@@ -12923,11 +12952,17 @@ async def process_bonus_request(
         await bot1.send_message(chat_id, "🍓 <b>Бонусы временно отключены</b>", parse_mode="HTML")
         return False
 
-    if len(emojisbonus) >= 9:
+    if from_gift_item:
+        try:
+            from flame_bonus_plus import board_cell_faces
+            selected_emojis = board_cell_faces((gift_conf or {}).get("cell_emojis"))
+        except Exception:
+            selected_emojis = emojisbonus[:9] if len(emojisbonus) >= 9 else list(emojisbonus)
+    elif len(emojisbonus) >= 9:
         selected_emojis = emojisbonus[:9]
     else:
         selected_emojis = emojisbonus.copy()
-        while len(selected_emojis) < 9:
+        while len(selected_emojis) < 9 and emojisbonus:
             selected_emojis.append(random.choice(emojisbonus))
 
     # 1. Приписка Cute — нужна и обычному бонусу, и предмету 🎁
@@ -12946,12 +12981,15 @@ async def process_bonus_request(
                     "<i>Предмет остался у вас.</i>"
                 )
             try:
-                await bot1.send_message(
-                    chat_id,
-                    text,
-                    parse_mode="HTML",
-                    reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
-                )
+                if edit_message is not None:
+                    await edit_message.edit_text(text, parse_mode="HTML")
+                else:
+                    await bot1.send_message(
+                        chat_id,
+                        text,
+                        parse_mode="HTML",
+                        reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
+                    )
             except Exception:
                 await bot1.send_message(chat_id, text, parse_mode="HTML")
             return False
@@ -13016,8 +13054,9 @@ async def process_bonus_request(
         kuty_lo = 1 * multiplier
         kuty_hi = 3 * multiplier
 
-    # 5. Открытие доски
-    random.shuffle(selected_emojis)
+    # 5. Открытие доски. У Бонуса + порядок клеток задаёт вкладка, его не мешаем.
+    if not from_gift_item:
+        random.shuffle(selected_emojis)
     board = bonus_board_keyboard(
         selected_emojis,
         multiplier,
@@ -13047,18 +13086,31 @@ async def process_bonus_request(
         full_text = f"{header}\n{random.choice(textfraza)}"
         board_text = "<tg-emoji emoji-id='5458612419116933783'>🏆</tg-emoji>"
 
-    if edit_message:
+    if from_gift_item and edit_message is not None:
         try:
-            await edit_message.delete()
+            await edit_message.edit_text(board_text, reply_markup=board, parse_mode="HTML")
+            msg = edit_message
         except Exception:
-            pass
-    msg = await bot1.send_message(
-        chat_id,
-        board_text,
-        reply_markup=board,
-        parse_mode="HTML",
-        reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
-    )
+            msg = await bot1.send_message(
+                chat_id,
+                board_text,
+                reply_markup=board,
+                parse_mode="HTML",
+                reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
+            )
+    else:
+        if edit_message:
+            try:
+                await edit_message.delete()
+            except Exception:
+                pass
+        msg = await bot1.send_message(
+            chat_id,
+            board_text,
+            reply_markup=board,
+            parse_mode="HTML",
+            reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
+        )
     bns_add_request(user_id, msg.message_id, reason=f"bonus_board_x{multiplier}{'gift' if from_gift_item else ''}")
     set_bonus_owner(msg.message_id, user_id, gift if from_gift_item else None)
     if BONUS_DEBUG:

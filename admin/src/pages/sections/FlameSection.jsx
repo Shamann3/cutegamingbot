@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchFlame,
   saveFlameGiftDrops,
@@ -24,17 +24,174 @@ const TABS = [
   { id: 'rewards', label: 'Награды', hint: 'Что дадут за дни' },
   { id: 'warm', label: 'Тёплый час', hint: 'Случайный час' },
   { id: 'status', label: 'Статусы', hint: 'Строка в профиле' },
-  { id: 'gift', label: 'Бонус +', hint: '🎁 · несколько предметов' },
+  { id: 'gift', label: 'Бонус +', hint: '🎁 · клетки 3×3' },
   { id: 'restore', label: 'Вернуть', hint: 'Куты или предмет' },
   { id: 'live', label: 'Живое', hint: 'Серии и награды' },
 ]
+
+const DEFAULT_BOARD_CELLS = [
+  { id: '5321218545621706269', alt: '🎈' },
+  { id: '5316569385257702225', alt: '🎒' },
+  { id: '5355073951749927916', alt: '🍭' },
+  { id: '5285257694985352512', alt: '💍' },
+  { id: '5438458242130806642', alt: '🎁' },
+  { id: '5310214083495103551', alt: '🎁' },
+  { id: '5424987025667293801', alt: '🐰' },
+  { id: '5427103061564752778', alt: '🐰' },
+  { id: '5424861140175849850', alt: '🎂' },
+]
+
+function cleanCellAlt(raw) {
+  const text = String(raw || '').replace(/<[^>]+>/g, '').replace(/[<>]/g, '').trim()
+  return (text || '🎁').slice(0, 8)
+}
+
+function parseCellPaste(text) {
+  const src = String(text || '').trim()
+  if (!src) return []
+  const tagged = []
+  const tag = /<tg-emoji\b[^>]*emoji-id\s*=\s*['"](\d{5,32})['"][^>]*>([\s\S]*?)<\/tg-emoji>/gi
+  for (const match of src.matchAll(tag)) {
+    tagged.push({ id: match[1], alt: cleanCellAlt(match[2]) })
+  }
+  if (tagged.length) return tagged.slice(0, 9)
+  if (/^\d{5,32}$/.test(src)) return [{ id: src, alt: '🎁' }]
+  if (/^[\d\s,;]+$/.test(src)) {
+    return (src.match(/\d{5,32}/g) || []).slice(0, 9).map((id) => ({ id, alt: '🎁' }))
+  }
+  return []
+}
+
+function boardCellsFrom(raw) {
+  const items = Array.isArray(raw) ? raw : []
+  return DEFAULT_BOARD_CELLS.map((fallback, index) => {
+    const piece = items[index]
+    const id = String(piece?.id || '').trim()
+    if (/^\d{5,32}$/.test(id)) return { id, alt: cleanCellAlt(piece?.alt) }
+    return { id: fallback.id, alt: fallback.alt }
+  })
+}
+
+function CellBoard({ cells, onChange }) {
+  const ready = boardCellsFrom(cells)
+  const [picked, setPicked] = useState(0)
+  const [draft, setDraft] = useState('')
+  const [hint, setHint] = useState('')
+  const fieldRef = useRef(null)
+  const sameAsDefault = ready.every((cell, index) => (
+    cell.id === DEFAULT_BOARD_CELLS[index].id && cell.alt === DEFAULT_BOARD_CELLS[index].alt
+  ))
+
+  const choose = (index) => {
+    setPicked(index)
+    setDraft('')
+    setHint('')
+    requestAnimationFrame(() => fieldRef.current?.focus())
+  }
+
+  const applyText = (text) => {
+    const found = parseCellPaste(text)
+    if (!found.length) {
+      setHint('Не разобрали. Нужен id или тег tg-emoji.')
+      return
+    }
+    const fromTag = /<tg-emoji/i.test(text)
+    const next = ready.map((cell) => ({ ...cell }))
+    let placed = 0
+    found.forEach((cell, offset) => {
+      const index = picked + offset
+      if (index < 9) {
+        next[index] = {
+          id: cell.id,
+          alt: fromTag ? cell.alt : (next[index].alt || cell.alt),
+        }
+        placed += 1
+      }
+    })
+    onChange(next)
+    setDraft('')
+    setHint(placed > 1 ? `Вставили ${placed} подряд.` : `Клетка ${picked + 1} обновлена.`)
+    setPicked(Math.min(8, picked + placed))
+  }
+
+  return (
+    <div className="flame-cells">
+      <div className="flame-card-head">
+        <h3>Клетки 3×3</h3>
+        <button
+          type="button"
+          className="sec-btn sec-btn-ghost"
+          disabled={sameAsDefault}
+          onClick={() => {
+            onChange(DEFAULT_BOARD_CELLS.map((cell) => ({ ...cell })))
+            setHint('Снова обычные клетки.')
+            setDraft('')
+          }}
+        >
+          Обычные
+        </button>
+      </div>
+      <p className="flame-note">
+        Нажмите клетку и вставьте премиум-эмодзи. Порядок тот же, что у игрока: слева направо, сверху вниз.
+        В панели виден запасной знак, в Telegram на кнопке — сам премиум-эмодзи.
+      </p>
+      <div className="flame-cell-grid" role="group" aria-label="Клетки бонуса">
+        {ready.map((cell, index) => (
+          <button
+            key={`cell-${index}`}
+            type="button"
+            className={index === picked ? 'flame-cell is-on' : 'flame-cell'}
+            aria-pressed={index === picked}
+            title={cell.id}
+            onClick={() => choose(index)}
+          >
+            <strong>{cell.alt}</strong>
+            <small>{index + 1} · …{String(cell.id).slice(-4)}</small>
+          </button>
+        ))}
+      </div>
+      <label className="flame-field">
+        <span>Клетка {picked + 1}</span>
+        <input
+          ref={fieldRef}
+          value={draft}
+          placeholder="id или <tg-emoji emoji-id='…'>🎁</tg-emoji>"
+          onChange={(e) => {
+            setDraft(e.target.value)
+            if (hint) setHint('')
+          }}
+          onPaste={(e) => {
+            const text = e.clipboardData?.getData('text') || ''
+            if (!text.trim()) return
+            e.preventDefault()
+            applyText(text)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              applyText(draft)
+            }
+          }}
+        />
+      </label>
+      <div className="flame-cell-actions">
+        <button type="button" className="sec-btn" onClick={() => applyText(draft)}>
+          Вставить в клетку
+        </button>
+        <p className="flame-note">
+          {hint || 'Несколько тегов подряд заполнят клетки дальше. Сохраняется кнопкой «Сохранить Бонус +».'}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 const TAB_EFFECT = {
   norm: 'Меняет, сколько сообщений нужно в день и как растёт норма.',
   rewards: 'В выбранный день серии человек получит все подарки этого дня сразу.',
   warm: 'В удачный час — ещё случайная награда из списка (вес = шанс).',
   status: 'Титул в профиле и топе, пока огонёк жив.',
-  gift: 'Предмет 🎁: куты с клетки + до N предметов. Галочка — показать в кнопке «Что можно получить?». Всё с техгрупп / магазина / биржи.',
+  gift: 'Предмет 🎁: куты с клетки и предметы. Сетка 3×3 — премиум-эмодзи кнопок, в том же порядке, что у игрока.',
   restore: 'Команда «вернуть огонёк» поднимает погасшую серию за куты или предмет.',
   live: 'Только просмотр: живые серии и последние выдачи.',
 }
@@ -151,6 +308,7 @@ export default function FlameSection() {
       restoreKuty: String(s.restore_kuty ?? 500),
       restoreItem: s.restore_item || '',
       restoreItemCount: String(s.restore_item_count || 1),
+      giftCellEmojis: boardCellsFrom(data?.gift?.cell_emojis),
     })
     setSteps((data?.steps || []).map((row) => ({
       fromDay: String(row.from_day),
@@ -239,6 +397,7 @@ export default function FlameSection() {
     restoreKuty: Math.max(0, Number(form.restoreKuty) || 0),
     restoreItem: String(form.restoreItem || '').trim(),
     restoreItemCount: Math.max(1, Math.min(100, Number(form.restoreItemCount) || 1)),
+    giftCellEmojis: boardCellsFrom(form.giftCellEmojis).map((cell) => ({ id: cell.id, alt: cell.alt })),
   }))
 
   const warmHour = board?.warm?.hour
@@ -765,6 +924,10 @@ export default function FlameSection() {
                 Кнопка «Что можно получить?» берёт куты из полей ниже и предметы с галочкой «В списке».
                 Без галочки предмет может выпасть, но в списке его не будет.
               </p>
+              <CellBoard
+                cells={form.giftCellEmojis}
+                onChange={(giftCellEmojis) => patch('giftCellEmojis', giftCellEmojis)}
+              />
               <div className="flame-grid-2">
                 <label className="flame-field">
                   <span>Умножение клеток</span>

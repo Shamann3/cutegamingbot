@@ -5,8 +5,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from flame_bonus_plus import (
+    board_cell_faces,
+    board_cells,
     board_range,
+    canon_board_cells,
     gift_plus_defaults,
+    parse_cell_paste,
     preview_has_content,
     preview_hidden_names,
     preview_kuty_lines,
@@ -14,7 +18,29 @@ from flame_bonus_plus import (
     preview_show_names,
     roll_extra_bundle,
 )
-from flame_bonus_plus_copy import screen_intro, screen_possible, screen_result
+from flame_bonus_plus_copy import screen_board, screen_intro, screen_possible, screen_result
+
+
+def test_board_cells_follow_the_grid():
+    cells = board_cells("")
+    assert len(cells) == 9
+    assert cells[0]["id"] == "5321218545621706269"
+    assert cells[0]["alt"] == "🎈"
+    pasted = parse_cell_paste(
+        "<tg-emoji emoji-id='5999999999999999991'>🔥</tg-emoji>"
+        "<tg-emoji emoji-id='5999999999999999992'>⭐</tg-emoji>"
+    )
+    assert [item["id"] for item in pasted] == ["5999999999999999991", "5999999999999999992"]
+    assert pasted[0]["alt"] == "🔥"
+    changed = board_cells([{"id": "5999999999999999991", "alt": "🔥"}])
+    assert changed[0] == {"id": "5999999999999999991", "alt": "🔥"}
+    assert changed[1]["id"] == cells[1]["id"]
+    assert board_cells([{"id": "нет", "alt": "🔥"}])[0]["id"] == cells[0]["id"]
+    faces = board_cell_faces(changed)
+    assert faces[0] == "<tg-emoji emoji-id='5999999999999999991'>🔥</tg-emoji>"
+    assert faces[1].startswith(f"<tg-emoji emoji-id='{cells[1]['id']}'>")
+    assert parse_cell_paste("просто текст") == []
+    assert canon_board_cells(changed) == canon_board_cells(canon_board_cells(changed))
 
 
 def test_defaults_and_board_range():
@@ -112,11 +138,13 @@ def test_copy_keeps_intro_mysterious():
         kuty_lines=["<b>+10…30</b> кут с клетки", "иногда ещё <b>+5…25</b> кут"],
         hidden=True,
     )
-    assert "до <b>2</b>" in possible
+    assert "<b>2шт</b>" in possible
     assert "Купон" in possible and "Вода" in possible
     assert "10…30" in possible
     assert "в списке не всё" in possible
-    assert "после открытия" in possible
+    board = screen_board(mult=2, kuty_lo=10, kuty_hi=40)
+    assert "Выберите одну клетку" in board
+    assert "кут" not in board.lower()
 
 
 def test_copy_mentions_project_kuty():

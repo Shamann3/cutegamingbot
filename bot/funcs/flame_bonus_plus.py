@@ -210,12 +210,13 @@ async def show_intro(message, db, *, item_name: str) -> bool:
     return False
 
 
-async def open_board_for(user, chat_id: int, reply_to, conf: dict) -> bool:
+async def open_board_for(user, chat_id: int, reply_to, conf: dict, edit_message=None) -> bool:
     from main import process_bonus_request
     return bool(await process_bonus_request(
         user=user,
         chat_id=int(chat_id),
         reply_to=reply_to,
+        edit_message=edit_message,
         from_gift_item=True,
         gift_conf=conf,
     ))
@@ -448,7 +449,14 @@ async def bonus_plus_click(call) -> None:
         return
 
     try:
-        ok = await open_board_for(user, chat_id, call.message, conf)
+        from bot.funcs.flame import load_gift
+        fresh = await load_gift(db)
+        if fresh.get("cell_emojis"):
+            conf = {**conf, "cell_emojis": fresh["cell_emojis"]}
+    except Exception:
+        pass
+    try:
+        ok = await open_board_for(user, chat_id, call.message, conf, edit_message=call.message)
     except Exception as exc:
         print(f"[BONUS+] open: {exc}")
         remember_pending(
@@ -468,6 +476,11 @@ async def bonus_plus_click(call) -> None:
             pass
         return
 
+    try:
+        await call.answer()
+    except Exception:
+        pass
+
     if ok and item_name:
         try:
             await db.delete_user_inventory1(clicker, item_name)
@@ -481,11 +494,3 @@ async def bonus_plus_click(call) -> None:
             chat_id=chat_id,
             message_id=int(getattr(call.message, "message_id", 0) or 0),
         )
-        try:
-            await call.message.edit_text(screen_fail(), parse_mode="HTML")
-        except Exception:
-            pass
-    try:
-        await call.answer()
-    except Exception:
-        pass

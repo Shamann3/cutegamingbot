@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 EMOJI = "5438458242130806642"
-SPARK = "5321021153219732362"
+SPARK = "5355274926154625762"
 STAR = "5233479338791281256"
 GIFT = "5438458242130806642"
 NOTE = "5467519850576354798"
@@ -30,6 +30,7 @@ def screen_intro(*, mult: int = 1) -> str:
         "<b>Это улучшенный бонус, с более крутыми подарками</b>\n"
         "<i>Спасибо, что вы с нами.</i>"
         "</blockquote>\n"
+        "<b>Нажмите на одну из кнопок.</b>"
     )
 
 
@@ -93,7 +94,8 @@ def screen_board(*, mult: int, kuty_lo: int, kuty_hi: int) -> str:
     _ = (mult, kuty_lo, kuty_hi)
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
-        "<blockquote><b>Нажмите на одну из кнопок.</b></blockquote>"
+        "<blockquote><b>Выберите одну клетку.</b>\n"
+        "Что внутри — узнаете сразу.</blockquote>"
     )
 
 

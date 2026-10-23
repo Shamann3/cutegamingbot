@@ -520,7 +520,79 @@
   }
 
   .flame-tab,
-  .flame-map {
+  .flame-map,
+  .flame-cell {
     transition: none;
+  }
+}
+
+.flame-cells {
+  display: grid;
+  gap: 10px;
+}
+
+.flame-cell-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 92px));
+  gap: 8px;
+  width: min(100%, 292px);
+}
+
+.flame-cell {
+  aspect-ratio: 1;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 4px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.flame-cell strong {
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.flame-cell small {
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.flame-cell.is-on {
+  border-color: #ffb020;
+  box-shadow: 0 0 0 1px #ffb020, 0 0 18px rgba(255, 140, 40, 0.35);
+}
+
+.flame-cell:focus-visible {
+  outline: 2px solid #ffb020;
+  outline-offset: 2px;
+}
+
+.flame-cell-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.flame-cells .flame-field input {
+  font-size: 16px;
+}
+
+@media (max-width: 720px) {
+  .flame-cell-grid {
+    width: 100%;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .flame-cell-actions .sec-btn {
+    width: 100%;
   }
 }

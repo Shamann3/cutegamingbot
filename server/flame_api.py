@@ -28,6 +28,12 @@ def _creator(user_id: int = Depends(get_signed_in_user_id)) -> int:
     return int(user_id)
 
 
+class GiftCellEmojiBody(BaseModel):
+    id: str = ""
+    alt: str = "🎁"
+    model_config = {"extra": "forbid"}
+
+
 class SettingsBody(BaseModel):
     enabled: bool = False
     baseMessages: int = Field(200, ge=1, le=100_000)
@@ -59,6 +65,7 @@ class SettingsBody(BaseModel):
     restoreKuty: int = Field(500, ge=0, le=10_000_000)
     restoreItem: str = ""
     restoreItemCount: int = Field(1, ge=1, le=100)
+    giftCellEmojis: list[GiftCellEmojiBody] = Field(default_factory=list, max_length=9)
     model_config = {"extra": "forbid"}
 
 

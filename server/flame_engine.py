@@ -44,6 +44,7 @@ _DEFAULTS = {
     "restore_kuty": 500,
     "restore_item": "",
     "restore_item_count": 1,
+    "gift_cell_emojis": "",
 }
 
 
@@ -360,6 +361,7 @@ async def ensure_tables(pool) -> None:
         ("restore_kuty", "INT NOT NULL DEFAULT 500"),
         ("restore_item", "TEXT NOT NULL DEFAULT ''"),
         ("restore_item_count", "INT NOT NULL DEFAULT 1"),
+        ("gift_cell_emojis", "TEXT NOT NULL DEFAULT ''"),
     ):
         await _add_column(pool, "flame_settings", column, spec)
 
@@ -474,6 +476,11 @@ async def ensure_tables(pool) -> None:
     )
 
 
+def _board_cells(settings: dict | None) -> list[dict]:
+    from flame_bonus_plus import board_cells
+    return board_cells((settings or {}).get("gift_cell_emojis"))
+
+
 def _row_settings(row) -> dict:
     out = dict(_DEFAULTS)
     if not row:
@@ -498,6 +505,9 @@ def _row_settings(row) -> dict:
             out[key] = int(row[key])
     if "restore_item" in keys:
         out["restore_item"] = str(row["restore_item"] or "").strip()[:80]
+    from flame_bonus_plus import canon_board_cells
+    stored_cells = row["gift_cell_emojis"] if "gift_cell_emojis" in keys else ""
+    out["gift_cell_emojis"] = canon_board_cells(stored_cells)
     out["warm_from"] = max(0, min(23, out["warm_from"]))
     out["warm_to"] = max(out["warm_from"] + 1, min(24, out["warm_to"]))
     out["gift_kuty_min"] = max(1, out["gift_kuty_min"])
@@ -691,6 +701,7 @@ async def load_board(pool) -> dict:
         "item_chance": settings["gift_item_chance"],
         "item_count": settings["gift_item_count"],
         "fallback_pct": settings["gift_fallback_pct"],
+        "cell_emojis": _board_cells(settings),
         "drops": gift_drops,
         "preview": gift_preview(
             gift_drops,
@@ -783,6 +794,10 @@ async def save_settings(pool, body: dict) -> None:
     for src, dst in mapping.items():
         if src in body:
             conf[dst] = body[src]
+    cells = body.get("giftCellEmojis", body.get("gift_cell_emojis"))
+    if cells:
+        from flame_bonus_plus import canon_board_cells
+        conf["gift_cell_emojis"] = canon_board_cells(cells)
     clean = _row_settings(conf)
     await pool.execute(
         """
@@ -793,10 +808,11 @@ async def save_settings(pool, body: dict) -> None:
             gift_enabled, gift_mult, gift_kuty_min, gift_kuty_max,
             gift_extra_kuty_on, gift_extra_kuty_chance, gift_extra_kuty_min, gift_extra_kuty_max,
             gift_item_on, gift_item_chance, gift_item_count, gift_fallback_pct,
-            restore_enabled, restore_days, restore_kuty, restore_item, restore_item_count
+            restore_enabled, restore_days, restore_kuty, restore_item, restore_item_count,
+            gift_cell_emojis
         ) VALUES (
             1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31
         )
         ON CONFLICT (id) DO UPDATE SET
             enabled = EXCLUDED.enabled,
@@ -828,7 +844,8 @@ async def save_settings(pool, body: dict) -> None:
             restore_days = EXCLUDED.restore_days,
             restore_kuty = EXCLUDED.restore_kuty,
             restore_item = EXCLUDED.restore_item,
-            restore_item_count = EXCLUDED.restore_item_count
+            restore_item_count = EXCLUDED.restore_item_count,
+            gift_cell_emojis = EXCLUDED.gift_cell_emojis
         """,
         clean["enabled"],
         clean["base_messages"],
@@ -860,6 +877,7 @@ async def save_settings(pool, body: dict) -> None:
         clean["restore_kuty"],
         clean["restore_item"],
         clean["restore_item_count"],
+        clean["gift_cell_emojis"],
     )
 
 
@@ -1367,6 +1385,7 @@ async def gift_config(pool) -> dict:
         "item_chance": settings["gift_item_chance"],
         "item_count": settings["gift_item_count"],
         "fallback_pct": settings["gift_fallback_pct"],
+        "cell_emojis": _board_cells(settings),
         "drops": drops,
         "preview": gift_preview(
             drops,

@@ -2,11 +2,112 @@
 """Бонус +: ролл наград и покупка предмета за счёт технических групп."""
 from __future__ import annotations
 
+import json
 import random
+import re
 from typing import Any
 
 from flame_bonus_plus_copy import HISTORY_BUY, HISTORY_PROJECT, item_got
 from flame_engine import _pick_weighted
+
+
+# Те же 9, что сейчас стоят на поле Бонуса + (порядок: слева направо, сверху вниз).
+DEFAULT_BOARD_CELLS = (
+    {"id": "5321218545621706269", "alt": "🎈"},
+    {"id": "5316569385257702225", "alt": "🎒"},
+    {"id": "5355073951749927916", "alt": "🍭"},
+    {"id": "5285257694985352512", "alt": "💍"},
+    {"id": "5438458242130806642", "alt": "🎁"},
+    {"id": "5310214083495103551", "alt": "🎁"},
+    {"id": "5424987025667293801", "alt": "🐰"},
+    {"id": "5427103061564752778", "alt": "🐰"},
+    {"id": "5424861140175849850", "alt": "🎂"},
+)
+_CELL_TAG = re.compile(
+    r"<tg-emoji\b[^>]*emoji-id\s*=\s*['\"](\d{5,32})['\"][^>]*>(.*?)</tg-emoji>",
+    re.IGNORECASE | re.DOTALL,
+)
+_CELL_ID = re.compile(r"^\d{5,32}$")
+
+
+def _clean_alt(raw: str) -> str:
+    text = re.sub(r"<[^>]+>", "", str(raw or ""))
+    text = " ".join(text.split()).replace("<", "").replace(">", "")
+    return (text[:8] or "🎁")
+
+
+def parse_cell_paste(text: str) -> list[dict]:
+    """Один или несколько премиум-эмодзи из вставки: тег tg-emoji или голый id."""
+    src = str(text or "").strip()
+    if not src:
+        return []
+    tagged = [
+        {"id": match.group(1), "alt": _clean_alt(match.group(2))}
+        for match in _CELL_TAG.finditer(src)
+    ]
+    if tagged:
+        return tagged[:9]
+    if _CELL_ID.fullmatch(src):
+        return [{"id": src, "alt": "🎁"}]
+    if re.fullmatch(r"[\d\s,;]+", src):
+        ids = re.findall(r"(?<!\d)(\d{5,32})(?!\d)", src)
+        return [{"id": item, "alt": "🎁"} for item in ids[:9]]
+    return []
+
+
+def _coerce_cells(raw) -> list:
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return parse_cell_paste(text)
+        return parsed if isinstance(parsed, list) else []
+    if isinstance(raw, list):
+        return raw
+    return []
+
+
+def _one_cell(raw, fallback: dict) -> dict:
+    if isinstance(raw, dict):
+        emoji_id = str(raw.get("id") or raw.get("emojiId") or raw.get("emoji_id") or "").strip()
+        alt = raw.get("alt") if raw.get("alt") not in (None, "") else raw.get("fallback") or ""
+        if _CELL_ID.fullmatch(emoji_id):
+            return {"id": emoji_id, "alt": _clean_alt(alt)}
+        pasted = parse_cell_paste(emoji_id or str(alt or ""))
+        if pasted:
+            return pasted[0]
+        return {"id": fallback["id"], "alt": fallback["alt"]}
+    pasted = parse_cell_paste(str(raw or ""))
+    if pasted:
+        return pasted[0]
+    return {"id": fallback["id"], "alt": fallback["alt"]}
+
+
+def board_cells(raw=None) -> list[dict]:
+    """Ровно 9 клеток. Пустое и битое место остаётся эмодзи по умолчанию на этой позиции."""
+    items = _coerce_cells(raw)
+    out = []
+    for index, fallback in enumerate(DEFAULT_BOARD_CELLS):
+        piece = items[index] if index < len(items) else None
+        out.append(dict(fallback) if piece is None else _one_cell(piece, fallback))
+    return out
+
+
+def canon_board_cells(raw=None) -> str:
+    return json.dumps(board_cells(raw), ensure_ascii=False, separators=(",", ":"))
+
+
+def board_cell_faces(raw=None) -> list[str]:
+    """Теги для кнопок 3×3. Порядок тот же, что в сетке вкладки."""
+    return [
+        f"<tg-emoji emoji-id='{cell['id']}'>{cell['alt']}</tg-emoji>"
+        for cell in board_cells(raw)
+    ]
 
 
 def _pick(raw: dict, *keys, default=None):
