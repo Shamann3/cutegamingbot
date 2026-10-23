@@ -36,7 +36,6 @@ def screen_intro(*, mult: int, kuty_lo: int, kuty_hi: int, items_on: bool, item_
         f"{emoji(GIFT)} <b>Бонус +</b>{mult_bit}\n"
         "<blockquote>"
         "<b>Это улучшенный бонус, с более крутыми подарками</b>\n"
-        f"С клетки: <b>+{int(kuty_lo)}…{int(kuty_hi)}</b> кут."
         f"{extra}\n"
         "<i>Спасибо, что вы с нами.</i>"
         "</blockquote>\n"
