@@ -11,6 +11,7 @@ import {
 import DarkPick from '../../components/DarkPick'
 import DexItemSearchPicker from '../../components/DexItemSearchPicker'
 import '../../styles/flame.css'
+import FlameAsk, { ASK } from './FlameAsk'
 
 const KIND_OPTIONS = [
   { value: 'bonus', label: 'Обычный бонус' },
@@ -173,6 +174,7 @@ function CellBoard({ cells, onChange }) {
             }
           }}
         />
+        <FlameAsk {...ASK.cellPaste} />
       </label>
       <div className="flame-cell-actions">
         <button type="button" className="sec-btn" onClick={() => applyText(draft)}>
@@ -246,7 +248,7 @@ function kindLabel(kind) {
   return KIND_OPTIONS.find((row) => row.value === kind)?.label || 'Награда'
 }
 
-function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel = 'Выберите предмет', catalog = [] }) {
+function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel = 'Выберите предмет', catalog = [], ask = null }) {
   return (
     <div className="flame-item-pick">
       <DexItemSearchPicker
@@ -261,6 +263,7 @@ function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel =
         placeholder="Название или эмодзи…"
         hint="Каталог предметов. Ищите по эмодзи, названию, коду или id."
       />
+      {ask ? <FlameAsk {...ask} /> : null}
     </div>
   )
 }
@@ -575,31 +578,43 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Норма и защита</h3>
-                <FlameSwitch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)}>
-                  {form.enabled ? 'Огонёк включён' : 'Огонёк выключен'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)}>
+                    {form.enabled ? 'Огонёк включён' : 'Огонёк выключен'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.enabled} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.enabled)}>
                 <div className="flame-grid-2">
                   <label className="flame-field">
                     <span>Сообщений в первый день</span>
                     <input inputMode="numeric" value={form.baseMessages} onChange={(e) => patch('baseMessages', digits(e.target.value))} />
+                    <FlameAsk {...ASK.baseMessages} />
                   </label>
                   <label className="flame-field">
                     <span>Минимум слов в сообщении</span>
                     <input inputMode="numeric" value={form.minWords} onChange={(e) => patch('minWords', digits(e.target.value))} />
+                    <FlameAsk {...ASK.minWords} />
                   </label>
                 </div>
-                <FlameSwitch checked={form.blockDup} onChange={(e) => patch('blockDup', e.target.checked)}>
-                  Не считать одинаковый текст подряд
-                </FlameSwitch>
-                <FlameSwitch checked={form.profitEnabled} onChange={(e) => patch('profitEnabled', e.target.checked)}>
-                  Вечерняя карточка профита в личку
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.blockDup} onChange={(e) => patch('blockDup', e.target.checked)}>
+                    Не считать одинаковый текст подряд
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.blockDup} />
+                </div>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.profitEnabled} onChange={(e) => patch('profitEnabled', e.target.checked)}>
+                    Вечерняя карточка профита в личку
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.profit} />
+                </div>
                 <FlameFold open={Boolean(form.profitEnabled)}>
                   <label className="flame-field">
                     <span>Час карточки (МСК)</span>
                     <input inputMode="numeric" value={form.profitHour} onChange={(e) => patch('profitHour', digits(e.target.value))} />
+                    <FlameAsk {...ASK.profitHour} />
                   </label>
                 </FlameFold>
                 <p className="flame-note">
@@ -620,6 +635,7 @@ export default function FlameSection() {
                           const value = digits(e.target.value)
                           setSteps((rows) => rows.map((item, i) => i === index ? { ...item, fromDay: value } : item))
                         }} />
+                        <FlameAsk {...ASK.stepFrom} />
                       </label>
                       <label>
                         <span>Сообщений</span>
@@ -627,6 +643,7 @@ export default function FlameSection() {
                           const value = digits(e.target.value)
                           setSteps((rows) => rows.map((item, i) => i === index ? { ...item, messages: value } : item))
                         }} />
+                        <FlameAsk {...ASK.stepMessages} />
                       </label>
                       <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setSteps((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                     </li>
@@ -683,6 +700,7 @@ export default function FlameSection() {
                             value={pack.day}
                             onChange={(e) => setDayForPack(pack, digits(e.target.value))}
                           />
+                          <FlameAsk {...ASK.rewardDay} />
                         </label>
                         <div className="flame-actions">
                           <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addGiftToPack(pack)}>
@@ -701,13 +719,16 @@ export default function FlameSection() {
                       <ul className="flame-rows is-reward">
                         {pack.gifts.map((row) => (
                           <li key={`reward-${row._index}`}>
-                            <DarkPick
-                              label="Что дать"
-                              value={row.kind}
-                              options={KIND_OPTIONS}
-                              searchable={false}
-                              onChange={(kind) => patchReward(row._index, { kind })}
-                            />
+                            <div className="flame-ask-slot">
+                              <DarkPick
+                                label="Что дать"
+                                value={row.kind}
+                                options={KIND_OPTIONS}
+                                searchable={false}
+                                onChange={(kind) => patchReward(row._index, { kind })}
+                              />
+                              <FlameAsk {...ASK.rewardKind} />
+                            </div>
                             <label>
                               <span>{row.kind === 'item' ? 'Штук' : row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
                               <input
@@ -715,12 +736,14 @@ export default function FlameSection() {
                                 value={row.amount}
                                 onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
                               />
+                              <FlameAsk {...ASK.rewardAmount} />
                             </label>
                             {row.kind === 'item' && (
                               <div className="is-wide">
                                 <FlameItemPick
                                   catalog={catalog}
                                   value={row.itemName}
+                                  ask={ASK.rewardItem}
                                   onChange={(itemName) => patchReward(row._index, { itemName })}
                                 />
                               </div>
@@ -764,9 +787,12 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Тёплый час</h3>
-                <FlameSwitch checked={form.warmEnabled} onChange={(e) => patch('warmEnabled', e.target.checked)}>
-                  {form.warmEnabled ? 'Включён' : 'Выключен'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.warmEnabled} onChange={(e) => patch('warmEnabled', e.target.checked)}>
+                    {form.warmEnabled ? 'Включён' : 'Выключен'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.warm} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.warmEnabled)}>
               <p className="flame-note">{warmHint}. Каждый день в заданном окне выбирается один час.</p>
@@ -774,14 +800,17 @@ export default function FlameSection() {
                 <label className="flame-field">
                   <span>С какого дня серии</span>
                   <input inputMode="numeric" value={form.warmMinDay} onChange={(e) => patch('warmMinDay', digits(e.target.value))} />
+                  <FlameAsk {...ASK.warmMinDay} />
                 </label>
                 <label className="flame-field">
                   <span>Каждые N сообщений</span>
                   <input inputMode="numeric" value={form.warmEvery} onChange={(e) => patch('warmEvery', digits(e.target.value))} />
+                  <FlameAsk {...ASK.warmEvery} />
                 </label>
                 <label className="flame-field">
                   <span>Макс. наград за день</span>
                   <input inputMode="numeric" value={form.warmCap} onChange={(e) => patch('warmCap', digits(e.target.value))} />
+                  <FlameAsk {...ASK.warmCap} />
                 </label>
               </div>
               <div className="flame-card-head">
@@ -793,19 +822,23 @@ export default function FlameSection() {
               <ul className="flame-rows is-warm">
                 {warmRewards.map((row, index) => (
                   <li key={`warm-${index}`}>
-                    <DarkPick
-                      label="Что"
-                      value={row.kind}
-                      options={KIND_OPTIONS}
-                      searchable={false}
-                      onChange={(kind) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
-                    />
+                    <div className="flame-ask-slot">
+                      <DarkPick
+                        label="Что"
+                        value={row.kind}
+                        options={KIND_OPTIONS}
+                        searchable={false}
+                        onChange={(kind) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
+                      />
+                      <FlameAsk {...ASK.warmKind} />
+                    </div>
                     <label>
                       <span>Сколько</span>
                       <input inputMode="numeric" value={row.amount} onChange={(e) => {
                         const value = digits(e.target.value)
                         setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, amount: value } : item))
                       }} />
+                      <FlameAsk {...ASK.warmAmount} />
                     </label>
                     <label>
                       <span>Вес</span>
@@ -813,12 +846,14 @@ export default function FlameSection() {
                         const value = digits(e.target.value)
                         setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, weight: value } : item))
                       }} />
+                      <FlameAsk {...ASK.warmWeight} />
                     </label>
                     {row.kind === 'item' && (
                       <div className="is-wide">
                         <FlameItemPick
                           catalog={catalog}
                           value={row.itemName}
+                          ask={ASK.warmItem}
                           onChange={(itemName) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))}
                         />
                       </div>
@@ -859,9 +894,12 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Статусы огонька</h3>
-                <FlameSwitch checked={form.statusEnabled} onChange={(e) => patch('statusEnabled', e.target.checked)}>
-                  {form.statusEnabled ? 'В профиле видны' : 'Скрыты'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.statusEnabled} onChange={(e) => patch('statusEnabled', e.target.checked)}>
+                    {form.statusEnabled ? 'В профиле видны' : 'Скрыты'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.status} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.statusEnabled)}>
               <p className="flame-note">Короткий титул в профиле и в топе. Пример: «Искра», «Живой огонь», «Негасимый».</p>
@@ -877,6 +915,7 @@ export default function FlameSection() {
                         const value = digits(e.target.value)
                         setTitles((rows) => rows.map((item, i) => i === index ? { ...item, fromDay: value } : item))
                       }} />
+                      <FlameAsk {...ASK.titleFrom} />
                     </label>
                     <label className="is-wide">
                       <span>Название</span>
@@ -884,6 +923,7 @@ export default function FlameSection() {
                         const title = e.target.value
                         setTitles((rows) => rows.map((item, i) => i === index ? { ...item, title } : item))
                       }} />
+                      <FlameAsk {...ASK.titleName} />
                     </label>
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setTitles((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
@@ -914,9 +954,12 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Бонус + · предмет 🎁</h3>
-                <FlameSwitch checked={form.giftEnabled} onChange={(e) => patch('giftEnabled', e.target.checked)}>
-                  {form.giftEnabled ? 'Работает' : 'Выключен'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.giftEnabled} onChange={(e) => patch('giftEnabled', e.target.checked)}>
+                    {form.giftEnabled ? 'Работает' : 'Выключен'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.gift} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.giftEnabled)}>
               <p className="flame-note">
@@ -930,18 +973,22 @@ export default function FlameSection() {
                 <label className="flame-field">
                   <span>Умножение клеток</span>
                   <input inputMode="numeric" value={form.giftMult} onChange={(e) => patch('giftMult', digits(e.target.value))} />
+                  <FlameAsk {...ASK.giftMult} />
                 </label>
                 <label className="flame-field">
                   <span>Куты на клетке: от</span>
                   <input inputMode="numeric" value={form.giftKutyMin} onChange={(e) => patch('giftKutyMin', digits(e.target.value))} />
+                  <FlameAsk {...ASK.giftKutyMin} />
                 </label>
                 <label className="flame-field">
                   <span>Куты на клетке: до</span>
                   <input inputMode="numeric" value={form.giftKutyMax} onChange={(e) => patch('giftKutyMax', digits(e.target.value))} />
+                  <FlameAsk {...ASK.giftKutyMax} />
                 </label>
                 <label className="flame-field">
                   <span>Запасные куты, % от цены</span>
                   <input inputMode="numeric" value={form.giftFallbackPct} onChange={(e) => patch('giftFallbackPct', digits(e.target.value))} />
+                  <FlameAsk {...ASK.giftFallback} />
                 </label>
               </div>
               <p className="flame-note">
@@ -950,23 +997,29 @@ export default function FlameSection() {
 
               <div className="flame-card-head">
                 <h3>Доп. куты</h3>
-                <FlameSwitch checked={form.giftExtraKutyOn} onChange={(e) => patch('giftExtraKutyOn', e.target.checked)}>
-                  {form.giftExtraKutyOn ? 'Включены' : 'Выключены'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.giftExtraKutyOn} onChange={(e) => patch('giftExtraKutyOn', e.target.checked)}>
+                    {form.giftExtraKutyOn ? 'Включены' : 'Выключены'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.extra} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.giftExtraKutyOn)}>
                 <div className="flame-grid-2">
                   <label className="flame-field">
                     <span>Шанс, %</span>
                     <input inputMode="numeric" value={form.giftExtraKutyChance} onChange={(e) => patch('giftExtraKutyChance', digits(e.target.value))} />
+                    <FlameAsk {...ASK.extraChance} />
                   </label>
                   <label className="flame-field">
                     <span>От</span>
                     <input inputMode="numeric" value={form.giftExtraKutyMin} onChange={(e) => patch('giftExtraKutyMin', digits(e.target.value))} />
+                    <FlameAsk {...ASK.extraMin} />
                   </label>
                   <label className="flame-field">
                     <span>До</span>
                     <input inputMode="numeric" value={form.giftExtraKutyMax} onChange={(e) => patch('giftExtraKutyMax', digits(e.target.value))} />
+                    <FlameAsk {...ASK.extraMax} />
                   </label>
                 </div>
               </FlameFold>
@@ -983,19 +1036,24 @@ export default function FlameSection() {
 
               <div className="flame-card-head">
                 <h3>Предметы</h3>
-                <FlameSwitch checked={form.giftItemOn} onChange={(e) => patch('giftItemOn', e.target.checked)}>
-                  {form.giftItemOn ? 'Включены' : 'Выключены'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.giftItemOn} onChange={(e) => patch('giftItemOn', e.target.checked)}>
+                    {form.giftItemOn ? 'Включены' : 'Выключены'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.items} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.giftItemOn)}>
               <div className="flame-grid-2">
                 <label className="flame-field">
                   <span>Шанс на каждый слот, %</span>
                   <input inputMode="numeric" value={form.giftItemChance} onChange={(e) => patch('giftItemChance', digits(e.target.value))} />
+                  <FlameAsk {...ASK.itemChance} />
                 </label>
                 <label className="flame-field">
                   <span>Сколько предметов за раз (1–5)</span>
                   <input inputMode="numeric" value={form.giftItemCount} onChange={(e) => patch('giftItemCount', digits(e.target.value))} />
+                  <FlameAsk {...ASK.itemCount} />
                 </label>
               </div>
               <div className="flame-preview">
@@ -1043,30 +1101,35 @@ export default function FlameSection() {
               <ul className="flame-rows is-gift">
                 {giftDrops.map((row, index) => (
                   <li key={`gift-${index}`} className={row.showPreview ? 'is-shown' : ''}>
-                    <label className="flame-show-check" title="Показать в «Что можно получить?»">
-                      <span>В списке</span>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(row.showPreview)}
-                        onChange={(e) => {
-                          const showPreview = e.target.checked
-                          setGiftDrops((rows) => rows.map((item, i) => (
-                            i === index ? { ...item, showPreview, kind: 'item' } : item
-                          )))
-                        }}
-                      />
-                    </label>
+                    <div className="flame-ask-slot">
+                      <label className="flame-show-check" title="Показать в «Что можно получить?»">
+                        <span>В списке</span>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(row.showPreview)}
+                          onChange={(e) => {
+                            const showPreview = e.target.checked
+                            setGiftDrops((rows) => rows.map((item, i) => (
+                              i === index ? { ...item, showPreview, kind: 'item' } : item
+                            )))
+                          }}
+                        />
+                      </label>
+                      <FlameAsk {...ASK.giftShow} />
+                    </div>
                     <label>
                       <span>Вес</span>
                       <input inputMode="numeric" value={row.weight} onChange={(e) => {
                         const value = digits(e.target.value)
                         setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, weight: value, kind: 'item' } : item))
                       }} />
+                      <FlameAsk {...ASK.giftWeight} />
                     </label>
                     <div className="is-wide">
                       <FlameItemPick
                         catalog={catalog}
                         value={row.itemName}
+                        ask={ASK.giftItem}
                         onChange={(itemName) => setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, itemName, kind: 'item' } : item))}
                       />
                     </div>
@@ -1109,9 +1172,12 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Вернуть погасший огонёк</h3>
-                <FlameSwitch checked={form.restoreEnabled} onChange={(e) => patch('restoreEnabled', e.target.checked)}>
-                  {form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}
-                </FlameSwitch>
+                <div className="flame-ask-slot">
+                  <FlameSwitch checked={form.restoreEnabled} onChange={(e) => patch('restoreEnabled', e.target.checked)}>
+                    {form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}
+                  </FlameSwitch>
+                  <FlameAsk {...ASK.restore} />
+                </div>
               </div>
               <FlameFold open={Boolean(form.restoreEnabled)}>
               <p className="flame-note">
@@ -1122,10 +1188,12 @@ export default function FlameSection() {
                 <label className="flame-field">
                   <span>Сколько дней можно вернуть</span>
                   <input inputMode="numeric" value={form.restoreDays} onChange={(e) => patch('restoreDays', digits(e.target.value))} />
+                  <FlameAsk {...ASK.restoreDays} />
                 </label>
                 <label className="flame-field">
                   <span>Цена в кутах, 0 — без кут</span>
                   <input inputMode="numeric" value={form.restoreKuty} onChange={(e) => patch('restoreKuty', digits(e.target.value))} />
+                  <FlameAsk {...ASK.restoreKuty} />
                 </label>
               </div>
               <FlameItemPick
@@ -1133,6 +1201,7 @@ export default function FlameSection() {
                 label="Предмет"
                 value={form.restoreItem || ''}
                 emptyLabel="Не брать предмет"
+                ask={ASK.restoreItem}
                 onChange={(restoreItem) => patch('restoreItem', restoreItem)}
               />
               <FlameFold open={Boolean(String(form.restoreItem || '').trim())}>
@@ -1143,6 +1212,7 @@ export default function FlameSection() {
                     value={form.restoreItemCount}
                     onChange={(e) => patch('restoreItemCount', digits(e.target.value))}
                   />
+                  <FlameAsk {...ASK.restoreCount} />
                 </label>
               </FlameFold>
               <p className="flame-preview-line">{restoreHint}</p>

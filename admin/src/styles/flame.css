@@ -196,9 +196,87 @@
   color: var(--e-text-2, #c4c4c8);
 }
 
-.flame-rows .dark-pick,
-.flame-rows .flame-item-pick {
-  align-self: end;
+.flame-drop {
+  margin-top: 1.35rem;
+}
+
+.flame-ask-slot {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  justify-items: start;
+}
+
+.flame-ask {
+  justify-self: start;
+  min-height: 26px;
+  margin: 0;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 176, 32, 0.38);
+  background: rgba(255, 140, 40, 0.08);
+  color: #f0d7b8;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.flame-ask:hover,
+.flame-ask.is-on {
+  background: rgba(255, 140, 40, 0.18);
+  border-color: rgba(255, 176, 32, 0.7);
+  box-shadow: 0 6px 16px rgba(255, 90, 31, 0.18);
+}
+
+.flame-ask:focus-visible {
+  outline: 2px solid #ffb020;
+  outline-offset: 2px;
+}
+
+.flame-ask-pop {
+  position: fixed;
+  z-index: 1600;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 176, 32, 0.4);
+  background: #1c1916;
+  color: #f6efe6;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.48);
+  animation: flame-ask-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.flame-ask-pop p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #f3e7da;
+}
+
+.flame-ask-title {
+  font-weight: 700;
+  color: #fff6ea;
+}
+
+.flame-ask-pop b {
+  color: #ffd7a8;
+  font-weight: 700;
+}
+
+@keyframes flame-ask-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .flame-rows .dark-pick-label {
@@ -379,7 +457,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
-  align-items: end;
+  align-items: start;
   overflow: visible;
 }
 
@@ -662,8 +740,11 @@
   .flame-tab,
   .flame-cell,
   .flame-knob,
-  .flame-knob::after {
+  .flame-knob::after,
+  .flame-ask,
+  .flame-ask-pop {
     transition: none;
+    animation: none;
   }
 }
 
