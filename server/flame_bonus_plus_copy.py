@@ -30,7 +30,6 @@ def screen_intro(*, mult: int = 1) -> str:
         "<b>Это улучшенный бонус, с более крутыми подарками</b>\n"
         "<i>Спасибо, что вы с нами.</i>"
         "</blockquote>\n"
-        "<b>Нажмите на одну из кнопок.</b>"
     )
 
 
@@ -70,18 +69,16 @@ def screen_possible(
     kuty = [str(x) for x in (kuty_lines or []) if str(x).strip()]
     gifts = [str(x) for x in (lines or []) if str(x).strip()]
     parts = [
-        f"{emoji(GIFT)} <b>Что можно получить</b>",
-        "<blockquote>Числа и предметы — как настроено для Бонуса +.\n"
-        "Что выпадет именно вам — после открытия.</blockquote>",
+        f"{emoji(GIFT)} <b>Что можно получить открыв бонус?</b>",
     ]
     if kuty:
         parts.append(f"{emoji(SPARK, '⚡️')} <b>Куты</b>")
         parts.extend(f"· {line}" for line in kuty)
     if gifts:
         if slots <= 1:
-            title = "Предмет · до <b>1</b> за раз"
+            title = "Предмет · до <b>1шт</b> за раз"
         else:
-            title = f"Предметы · до <b>{slots}</b> за раз"
+            title = f"Предметы · до <b>{slots}шт</b> за раз"
         if hidden:
             title += " · в списке не всё"
         parts.append(f"{emoji(GIFT)} <b>{title}</b>")
@@ -152,15 +149,15 @@ def screen_result(
     parts = [f"{emoji(GIFT)} <b>Бонус + ваш</b>"]
     if int(board_kuty or 0) > 0:
         parts.append(
-            f"<blockquote>{emoji(SPARK, '⚡️')} С клетки: <b>+{int(board_kuty)}</b> кут</blockquote>"
+            f"<blockquote>{emoji(SPARK, '⚡️')} С клетки : <b>+{int(board_kuty)}</b> кут</blockquote>"
         )
     if int(extra_kuty or 0) > 0:
-        parts.append(f"{emoji(STAR, '⭐️')} Ещё: <b>+{int(extra_kuty)}</b> кут")
+        parts.append(f"{emoji(STAR, '⭐️')} Ещё : <b>+{int(extra_kuty)}</b> кут")
     for line in lines:
         parts.append(f"{emoji(GIFT)} {line}")
     if int(project_kuty or 0) > 0:
         parts.append(
-            f"{emoji(STAR, '⭐️')} <b>Куты от проекта</b>: <b>+{int(project_kuty)}</b>"
+            f"{emoji(STAR, '⭐️')} <b>Куты от проекта</b> : <b>+{int(project_kuty)}</b>"
         )
     parts.append("<i>Спасибо, что вы с нами</i>")
     return "\n".join(parts)

@@ -29,7 +29,6 @@ from flame_bonus_plus_copy import (  # noqa: E402
     HISTORY_PROJECT,
     alert_gone,
     alert_stranger,
-    button_back,
     button_later,
     button_open,
     button_what,
@@ -50,11 +49,19 @@ def _pool(db):
     return getattr(db, "pool", None)
 
 
-def remember_pending(user_id: int, *, item_name: str, conf: dict, chat_id: int) -> None:
+def remember_pending(
+    user_id: int,
+    *,
+    item_name: str,
+    conf: dict,
+    chat_id: int,
+    message_id: int = 0,
+) -> None:
     _pending[int(user_id)] = {
         "item_name": str(item_name or ""),
         "conf": dict(conf or {}),
         "chat_id": int(chat_id),
+        "message_id": int(message_id or 0),
     }
 
 
@@ -97,6 +104,7 @@ def intro_markup(user_id: int, *, show_what: bool) -> InlineKeyboardMarkup:
 
 
 def possible_markup(user_id: int) -> InlineKeyboardMarkup:
+    """Список призов: открыть или отложить. «Назад» нет — карточка и есть ответ."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=button_open()[:64],
@@ -104,15 +112,29 @@ def possible_markup(user_id: int) -> InlineKeyboardMarkup:
             style="success",
         )],
         [InlineKeyboardButton(
-            text=button_back()[:64],
-            callback_data=f"bp:back:{int(user_id)}",
-        )],
-        [InlineKeyboardButton(
             text=button_later()[:64],
             callback_data=f"bp:no:{int(user_id)}",
             style="danger",
         )],
     ])
+
+
+def _owns_card(pending: dict | None, call) -> bool:
+    """Кнопки живы только на той карточке, которую открыл этот человек."""
+    if not pending:
+        return False
+    bound = int(pending.get("message_id") or 0)
+    if bound < 1:
+        return True
+    msg = getattr(call, "message", None)
+    mid = int(getattr(msg, "message_id", 0) or 0)
+    return mid == bound
+
+
+def _bind_card(user_id: int, message_id: int) -> None:
+    row = _pending.get(int(user_id))
+    if row is not None and int(message_id or 0) > 0:
+        row["message_id"] = int(message_id)
 
 
 def intro_text(conf: dict) -> str:
@@ -175,7 +197,7 @@ async def show_intro(message, db, *, item_name: str) -> bool:
         conf=conf,
         chat_id=int(message.chat.id),
     )
-    await message.reply(
+    sent = await message.reply(
         intro_text(conf),
         parse_mode="HTML",
         reply_markup=intro_markup(
@@ -184,6 +206,7 @@ async def show_intro(message, db, *, item_name: str) -> bool:
         ),
         disable_web_page_preview=True,
     )
+    _bind_card(int(message.from_user.id), int(getattr(sent, "message_id", 0) or 0))
     return False
 
 
@@ -289,7 +312,7 @@ async def apply_cell_rewards(db, user_id: int, board_amount: int, conf: dict) ->
     }
 
 
-async def _edit_or_answer(call, text: str, markup) -> None:
+async def _edit_or_answer(call, text: str, markup):
     try:
         await call.message.edit_text(
             text,
@@ -297,16 +320,17 @@ async def _edit_or_answer(call, text: str, markup) -> None:
             reply_markup=markup,
             disable_web_page_preview=True,
         )
+        return call.message
     except Exception:
         try:
-            await call.message.answer(
+            return await call.message.answer(
                 text,
                 parse_mode="HTML",
                 reply_markup=markup,
                 disable_web_page_preview=True,
             )
         except Exception:
-            pass
+            return None
 
 
 async def bonus_plus_click(call) -> None:
@@ -325,7 +349,15 @@ async def bonus_plus_click(call) -> None:
 
     from main import db
 
+    pending = peek_pending(clicker)
+
     if action == "no":
+        if pending and not _owns_card(pending, call):
+            try:
+                await call.answer(alert_gone(), show_alert=True)
+            except Exception:
+                pass
+            return
         take_pending(clicker)
         try:
             await call.message.edit_text(screen_later(), parse_mode="HTML")
@@ -340,24 +372,17 @@ async def bonus_plus_click(call) -> None:
             pass
         return
 
-    pending = peek_pending(clicker)
     if action in ("see", "back"):
-        if not pending:
+        if not pending or not _owns_card(pending, call):
             try:
                 await call.answer(alert_gone(), show_alert=True)
             except Exception:
                 pass
             return
         conf = pending.get("conf") or {}
-        if action == "see":
-            text = await possible_text(db, conf)
-            await _edit_or_answer(call, text, possible_markup(clicker))
-        else:
-            await _edit_or_answer(
-                call,
-                intro_text(conf),
-                intro_markup(clicker, show_what=_has_what_button(conf)),
-            )
+        shown = await _edit_or_answer(call, await possible_text(db, conf), possible_markup(clicker))
+        if shown is not None:
+            _bind_card(clicker, int(getattr(shown, "message_id", 0) or 0))
         try:
             await call.answer()
         except Exception:
@@ -378,6 +403,20 @@ async def bonus_plus_click(call) -> None:
         except Exception:
             pass
         return
+    # Сняли сессию до проверки карточки — вернём, если это чужое сообщение того же человека.
+    if not _owns_card(pending, call):
+        remember_pending(
+            clicker,
+            item_name=str(pending.get("item_name") or ""),
+            conf=pending.get("conf") or {},
+            chat_id=int(pending.get("chat_id") or 0),
+            message_id=int(pending.get("message_id") or 0),
+        )
+        try:
+            await call.answer(alert_gone(), show_alert=True)
+        except Exception:
+            pass
+        return
 
     conf = pending.get("conf") or {}
     item_name = str(pending.get("item_name") or "")
@@ -390,7 +429,13 @@ async def bonus_plus_click(call) -> None:
     except Exception:
         cute_ok = "cute" in (user.first_name or "").lower()
     if not cute_ok:
-        remember_pending(clicker, item_name=item_name, conf=conf, chat_id=chat_id)
+        remember_pending(
+            clicker,
+            item_name=item_name,
+            conf=conf,
+            chat_id=chat_id,
+            message_id=int(getattr(call.message, "message_id", 0) or 0),
+        )
         shown = html.escape((user.first_name or "имя").strip() or "имя")
         try:
             await call.message.edit_text(screen_need_cute(shown), parse_mode="HTML")
@@ -406,7 +451,13 @@ async def bonus_plus_click(call) -> None:
         ok = await open_board_for(user, chat_id, call.message, conf)
     except Exception as exc:
         print(f"[BONUS+] open: {exc}")
-        remember_pending(clicker, item_name=item_name, conf=conf, chat_id=chat_id)
+        remember_pending(
+            clicker,
+            item_name=item_name,
+            conf=conf,
+            chat_id=chat_id,
+            message_id=int(getattr(call.message, "message_id", 0) or 0),
+        )
         try:
             await call.message.edit_text(screen_fail(), parse_mode="HTML")
         except Exception:
@@ -423,7 +474,13 @@ async def bonus_plus_click(call) -> None:
         except Exception as exc:
             print(f"[BONUS+] consume {clicker}: {exc}")
     elif not ok:
-        remember_pending(clicker, item_name=item_name, conf=conf, chat_id=chat_id)
+        remember_pending(
+            clicker,
+            item_name=item_name,
+            conf=conf,
+            chat_id=chat_id,
+            message_id=int(getattr(call.message, "message_id", 0) or 0),
+        )
         try:
             await call.message.edit_text(screen_fail(), parse_mode="HTML")
         except Exception:
