@@ -351,9 +351,80 @@ RESTORE_COMMANDS = (
 )
 
 
+def _fold_cmd(text: str) -> str:
+    import re
+    folded = (text or "").lower().replace("ё", "е").replace("Ё", "е")
+    folded = re.sub(r"[^\w\s]+", " ", folded, flags=re.UNICODE)
+    return " ".join(folded.split())
+
+
 def is_restore_command(text: str) -> bool:
-    folded = " ".join((text or "").lower().replace("ё", "е").replace("Ё", "е").split())
+    folded = _fold_cmd(text)
     return folded in RESTORE_COMMANDS
+
+
+# Справка по огоньку: «хелп огонёк», «что такое огонёк», «как пользоваться…»
+_HELP_EXACT = frozenset({
+    "хелп огонек", "огонек хелп", "помощь огонек", "огонек помощь",
+    "хелп огоньки", "огоньки хелп",
+    "справка огонек", "огонек справка", "инструкция огонек", "огонек инструкция",
+    "help flame", "flame help", "help огонек", "огонек help",
+    "что такое огонек", "что такое огоньки", "что за огонек", "что это огонек",
+    "что это за огонек", "зачем огонек", "зачем нужен огонек",
+    "как пользоваться огоньком", "как пользоваться огонек",
+    "как использовать огонек", "как использовать огоньком",
+    "как работает огонек", "как работает огонек сообщений",
+    "огонек что это", "огонек что такое", "расскажи про огонек",
+    "объясни огонек", "про огонек", "про огонек сообщений",
+    "хелп огонек сообщений", "огонек сообщений хелп",
+    "помощь огонек сообщений",
+})
+
+_HELP_HINTS = frozenset({
+    "хелп", "хелпа", "помощь", "help", "хепл", "hepl",
+    "справка", "справку", "инструкция", "инструкцию", "гайд",
+})
+
+_ASK_HINTS = (
+    "что такое",
+    "что за",
+    "что это",
+    "что это за",
+    "зачем",
+    "как пользоваться",
+    "как использовать",
+    "как работает",
+    "как открыть",
+    "расскажи",
+    "объясни",
+    "подскажи",
+)
+
+
+def _has_flame_word(folded: str) -> bool:
+    import re
+    return bool(re.search(r"(?:^|\s)(?:огон[еь]к\w*|flame)(?:\s|$)", folded))
+
+
+def is_flame_help_text(text: str) -> bool:
+    """True — показать справку огонька (как вкладка в «хелп»)."""
+    folded = _fold_cmd(text)
+    if not folded or len(folded) > 90:
+        return False
+    if folded in RESTORE_COMMANDS:
+        return False
+    if ("вернуть" in folded or "восстановить" in folded) and _has_flame_word(folded):
+        return False
+    if folded in _HELP_EXACT:
+        return True
+    if not _has_flame_word(folded):
+        return False
+    tokens = set(folded.split())
+    if tokens & _HELP_HINTS:
+        return True
+    if any(hint in folded for hint in _ASK_HINTS):
+        return True
+    return False
 
 
 def button_help() -> str:

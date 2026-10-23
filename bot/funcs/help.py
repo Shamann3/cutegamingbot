@@ -695,6 +695,14 @@ async def help(message: Message):
     if is_commission_help_text(message.text):
         await send_commission_help(message)
 
+    try:
+        from bot.funcs.flame import is_flame_help, send_flame_help
+        from bot.db_create.db import db as _flame_db
+        if is_flame_help(message.text):
+            await send_flame_help(message, _flame_db)
+    except Exception as exc:
+        print(f"[HELP][FLAME] {exc}")
+
     if message.text and message.text.lower() in ["хелп царь", "царь хелп", "царь помощь", "help king"]:
         await message.reply(kinghelp, parse_mode="HTML", disable_web_page_preview=True)
 

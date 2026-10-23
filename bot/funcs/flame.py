@@ -22,6 +22,7 @@ from flame_copy import (  # noqa: E402
     button_cancel,
     button_item,
     button_kuty,
+    is_flame_help_text,
     is_restore_command,
     profit_loot,
     profit_next,
@@ -442,6 +443,28 @@ def start_flame_worker(db) -> None:
 
 def is_restore_text(text: str) -> bool:
     return is_restore_command(text)
+
+
+def is_flame_help(text: str) -> bool:
+    return is_flame_help_text(text)
+
+
+async def send_flame_help(message, db) -> None:
+    """Справка огонька — тот же текст, что вкладка «Огонёк» в хелпе."""
+    from bot.design.buttons import btn_help
+    from bot.funcs.help import _help_register_message
+
+    text = await help_text(db)
+    sent = await message.reply(
+        text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=btn_help,
+    )
+    try:
+        _help_register_message(int(message.from_user.id), int(sent.message_id))
+    except Exception:
+        pass
 
 
 def _restore_screen(view: dict) -> str:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from flame_copy import is_restore_command
+from flame_copy import is_flame_help_text, is_restore_command
 from flame_engine import (
     gap_starts_new_series,
     gift_preview,
@@ -133,6 +133,21 @@ def test_restore_window_and_blocks():
     assert gap_starts_new_series(date(2026, 10, 24), today) is False
     assert is_restore_command("Вернуть Огонёк") is True
     assert is_restore_command("просто огонёк") is False
+
+
+def test_flame_help_phrases():
+    assert is_flame_help_text("хелп огонёк") is True
+    assert is_flame_help_text("хелп огонек") is True
+    assert is_flame_help_text("что такое огонёк") is True
+    assert is_flame_help_text("как пользоваться огоньком") is True
+    assert is_flame_help_text("как использовать огонек") is True
+    assert is_flame_help_text("огонёк хелп") is True
+    assert is_flame_help_text("help flame") is True
+    assert is_flame_help_text("зачем нужен огонёк") is True
+    assert is_flame_help_text("вернуть огонёк") is False
+    assert is_flame_help_text("просто огонёк") is False
+    assert is_flame_help_text("хелп магазин") is False
+    assert is_flame_help_text("огонёк") is False
 
 
 def test_gift_preview_shows_average():
