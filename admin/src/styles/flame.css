@@ -291,9 +291,42 @@
 }
 
 .flame-rows.is-reward li,
-.flame-rows.is-warm li,
-.flame-rows.is-gift li {
+.flame-rows.is-warm li {
   grid-template-columns: minmax(4.5rem, 0.7fr) minmax(0, 1.2fr) minmax(4.5rem, 0.7fr) auto;
+}
+
+.flame-rows.is-gift li {
+  grid-template-columns: minmax(5.5rem, 0.55fr) minmax(4rem, 0.55fr) minmax(0, 1.4fr) auto;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.flame-rows.is-gift li.is-shown {
+  border-color: rgba(255, 140, 40, 0.35);
+  background: rgba(255, 140, 40, 0.08);
+}
+
+.flame-show-check {
+  display: grid;
+  gap: 6px;
+  align-content: end;
+  justify-items: start;
+  min-height: 44px;
+}
+
+.flame-show-check span {
+  font-size: 0.78rem;
+  color: var(--e-text-2, #c4c4c8);
+}
+
+.flame-show-check input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: #ff8c28;
+  cursor: pointer;
 }
 
 .flame-rows.is-title li {
@@ -439,6 +472,10 @@
   .flame-rows.is-gift li,
   .flame-rows.is-title li {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .flame-show-check {
+    grid-column: 1 / -1;
   }
 
   .flame-drop,

@@ -14,9 +14,10 @@ if str(_SERVER) not in sys.path:
 
 from flame_bonus_plus import (  # noqa: E402
     acquire_bonus_items,
-    board_range,
     gift_plus_defaults,
     pay_user_from_tech,
+    preview_max_gifts,
+    preview_show_names,
     roll_extra_bundle,
 )
 from flame_bonus_plus_copy import (  # noqa: E402
@@ -25,13 +26,17 @@ from flame_bonus_plus_copy import (  # noqa: E402
     HISTORY_PROJECT,
     alert_gone,
     alert_stranger,
+    button_back,
     button_later,
     button_open,
+    button_what,
+    preview_item_line,
     screen_fail,
     screen_intro,
     screen_later,
     screen_need_cute,
     screen_off,
+    screen_possible,
     screen_result,
 )
 
@@ -58,12 +63,45 @@ def peek_pending(user_id: int) -> dict | None:
     return _pending.get(int(user_id))
 
 
-def intro_markup(user_id: int) -> InlineKeyboardMarkup:
+def _has_what_button(conf: dict) -> bool:
+    return bool(preview_show_names(conf))
+
+
+def intro_markup(user_id: int, *, show_what: bool) -> InlineKeyboardMarkup:
+    rows = [[
+        InlineKeyboardButton(
+            text=button_open()[:64],
+            callback_data=f"bp:go:{int(user_id)}",
+            style="success",
+        ),
+    ]]
+    if show_what:
+        rows.append([
+            InlineKeyboardButton(
+                text=button_what()[:64],
+                callback_data=f"bp:see:{int(user_id)}",
+            ),
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text=button_later()[:64],
+            callback_data=f"bp:no:{int(user_id)}",
+            style="danger",
+        ),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def possible_markup(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=button_open()[:64],
             callback_data=f"bp:go:{int(user_id)}",
             style="success",
+        )],
+        [InlineKeyboardButton(
+            text=button_back()[:64],
+            callback_data=f"bp:back:{int(user_id)}",
         )],
         [InlineKeyboardButton(
             text=button_later()[:64],
@@ -75,17 +113,44 @@ def intro_markup(user_id: int) -> InlineKeyboardMarkup:
 
 def intro_text(conf: dict) -> str:
     clean = gift_plus_defaults(conf)
-    lo, hi = board_range(clean)
-    items_on = bool(clean["item_on"] and any(
-        str(row.get("kind")) == "item" and str(row.get("item_name") or row.get("itemName") or "").strip()
-        for row in (clean.get("drops") or [])
-    ))
-    return screen_intro(
-        mult=clean["mult"],
-        kuty_lo=lo,
-        kuty_hi=hi,
-        items_on=items_on,
-        item_count=int(clean.get("item_count") or 1),
+    return screen_intro(mult=clean["mult"])
+
+
+async def _faces_for_names(db, names: list[str]) -> dict[str, str]:
+    faces: dict[str, str] = {}
+    pool = _pool(db)
+    if pool is None or not names:
+        return faces
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT name, name1, COALESCE(NULLIF(BTRIM(emoji), ''), '🎁') AS emoji
+            FROM dex
+            WHERE name = ANY($1::text[]) OR name1 = ANY($1::text[])
+            """,
+            names,
+        )
+    except Exception:
+        return faces
+    wanted = set(names)
+    for row in rows or []:
+        emoji_face = str(row["emoji"] or "🎁").strip() or "🎁"
+        for key in (str(row["name"] or "").strip(), str(row["name1"] or "").strip()):
+            if key in wanted and key not in faces:
+                faces[key] = emoji_face
+    return faces
+
+
+async def possible_text(db, conf: dict) -> str:
+    names = preview_show_names(conf)
+    faces = await _faces_for_names(db, names)
+    lines = [
+        preview_item_line(faces.get(name, "🎁"), html.escape(name))
+        for name in names
+    ]
+    return screen_possible(
+        max_gifts=preview_max_gifts(conf) or int(gift_plus_defaults(conf).get("item_count") or 1),
+        lines=lines,
     )
 
 
@@ -106,7 +171,10 @@ async def show_intro(message, db, *, item_name: str) -> bool:
     await message.reply(
         intro_text(conf),
         parse_mode="HTML",
-        reply_markup=intro_markup(int(message.from_user.id)),
+        reply_markup=intro_markup(
+            int(message.from_user.id),
+            show_what=_has_what_button(conf),
+        ),
         disable_web_page_preview=True,
     )
     return False
@@ -214,6 +282,26 @@ async def apply_cell_rewards(db, user_id: int, board_amount: int, conf: dict) ->
     }
 
 
+async def _edit_or_answer(call, text: str, markup) -> None:
+    try:
+        await call.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=markup,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        try:
+            await call.message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=markup,
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
+
 async def bonus_plus_click(call) -> None:
     data = str(getattr(call, "data", "") or "")
     parts = data.split(":")
@@ -239,6 +327,30 @@ async def bonus_plus_click(call) -> None:
                 await call.message.answer(screen_later(), parse_mode="HTML")
             except Exception:
                 pass
+        try:
+            await call.answer()
+        except Exception:
+            pass
+        return
+
+    pending = peek_pending(clicker)
+    if action in ("see", "back"):
+        if not pending:
+            try:
+                await call.answer(alert_gone(), show_alert=True)
+            except Exception:
+                pass
+            return
+        conf = pending.get("conf") or {}
+        if action == "see":
+            text = await possible_text(db, conf)
+            await _edit_or_answer(call, text, possible_markup(clicker))
+        else:
+            await _edit_or_answer(
+                call,
+                intro_text(conf),
+                intro_markup(clicker, show_what=_has_what_button(conf)),
+            )
         try:
             await call.answer()
         except Exception:

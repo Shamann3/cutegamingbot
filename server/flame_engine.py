@@ -418,10 +418,12 @@ async def ensure_tables(pool) -> None:
             amount_min INT NOT NULL DEFAULT 1,
             amount_max INT NOT NULL DEFAULT 1,
             item_name TEXT NOT NULL DEFAULT '',
-            weight INT NOT NULL DEFAULT 1
+            weight INT NOT NULL DEFAULT 1,
+            show_preview BOOLEAN NOT NULL DEFAULT FALSE
         )
         """
     )
+    await _add_column(pool, "flame_gift_drops", "show_preview", "BOOLEAN NOT NULL DEFAULT FALSE")
     await pool.execute(
         """
         CREATE TABLE IF NOT EXISTS flame_users (
@@ -647,9 +649,15 @@ async def load_board(pool) -> dict:
             "amount_max": int(row["amount_max"] or 1),
             "item_name": row["item_name"] or "",
             "weight": int(row["weight"] or 1),
+            "show_preview": bool(row["show_preview"]) if "show_preview" in row.keys() else False,
         }
         for row in await pool.fetch(
-            "SELECT id, kind, amount_min, amount_max, item_name, weight FROM flame_gift_drops ORDER BY id"
+            """
+            SELECT id, kind, amount_min, amount_max, item_name, weight,
+                   COALESCE(show_preview, FALSE) AS show_preview
+            FROM flame_gift_drops
+            ORDER BY id
+            """
         )
     ]
     hour = await ensure_warm_hour(pool, settings=settings) if settings.get("warm_enabled") else None
@@ -964,6 +972,7 @@ async def save_gift_drops(pool, drops: list[dict]) -> None:
         a = int(row.get("amountMin") or row.get("amount_min") or 1)
         b = int(row.get("amountMax") or row.get("amount_max") or a)
         item = str(row.get("itemName") or row.get("item_name") or "").strip()[:80]
+        show = bool(row.get("showPreview") if "showPreview" in row else row.get("show_preview"))
         if kind not in GIFT_KINDS or weight < 1 or weight > 10_000:
             continue
         if kind == "item":
@@ -974,17 +983,19 @@ async def save_gift_drops(pool, drops: list[dict]) -> None:
             item = ""
             a = max(1, min(a, 1_000_000))
             b = max(a, min(b, 1_000_000))
-        clean.append((kind, a, b, item, weight))
+            show = False
+        clean.append((kind, a, b, item, weight, show))
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("DELETE FROM flame_gift_drops")
-            for kind, a, b, item, weight in clean:
+            for kind, a, b, item, weight, show in clean:
                 await conn.execute(
                     """
-                    INSERT INTO flame_gift_drops (kind, amount_min, amount_max, item_name, weight)
-                    VALUES ($1, $2, $3, $4, $5)
+                    INSERT INTO flame_gift_drops
+                        (kind, amount_min, amount_max, item_name, weight, show_preview)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     """,
-                    kind, a, b, item, weight,
+                    kind, a, b, item, weight, show,
                 )
 
 
@@ -1333,9 +1344,14 @@ async def gift_config(pool) -> dict:
             "amount_max": int(row["amount_max"] or 1),
             "item_name": row["item_name"] or "",
             "weight": int(row["weight"] or 1),
+            "show_preview": bool(row["show_preview"]) if "show_preview" in row.keys() else False,
         }
         for row in await pool.fetch(
-            "SELECT kind, amount_min, amount_max, item_name, weight FROM flame_gift_drops"
+            """
+            SELECT kind, amount_min, amount_max, item_name, weight,
+                   COALESCE(show_preview, FALSE) AS show_preview
+            FROM flame_gift_drops
+            """
         )
     ]
     return {

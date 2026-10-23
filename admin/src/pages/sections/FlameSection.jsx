@@ -34,7 +34,7 @@ const TAB_EFFECT = {
   rewards: 'В выбранный день серии человек получит все подарки этого дня сразу.',
   warm: 'В удачный час — ещё случайная награда из списка (вес = шанс).',
   status: 'Титул в профиле и топе, пока огонёк жив.',
-  gift: 'Предмет 🎁: куты с клетки + до N предметов из пула. Всё с техгрупп / магазина / биржи.',
+  gift: 'Предмет 🎁: куты с клетки + до N предметов. Галочка — показать в кнопке «Что можно получить?». Всё с техгрупп / магазина / биржи.',
   restore: 'Команда «вернуть огонёк» поднимает погасшую серию за куты или предмет.',
   live: 'Только просмотр: живые серии и последние выдачи.',
 }
@@ -179,6 +179,7 @@ export default function FlameSection() {
       amountMax: String(row.amount_max || 1),
       itemName: row.item_name || '',
       weight: String(row.weight || 1),
+      showPreview: Boolean(row.show_preview),
     })))
   }, [])
 
@@ -715,9 +716,9 @@ export default function FlameSection() {
                 </label>
               </div>
               <p className="flame-note">
-                Увеличенный бонус (код <code>freebonus</code>). Куты с клетки + до N предметов за одно открытие.
-                Всё списывается с техгрупп / покупается в магазине или на бирже — без выдачи «из воздуха».
-                Слова — <code>flame_bonus_plus_copy.py</code>.
+                Код предмета <code>freebonus</code>. В интро человек <b>не видит</b> точные награды.
+                Галочка у предмета включает его в кнопку «Что можно получить?» — там видно список и сколько максимум можно взять за раз.
+                Без галочки предмет всё равно может выпасть, но скрыт из списка.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">
@@ -738,8 +739,7 @@ export default function FlameSection() {
                 </label>
               </div>
               <p className="flame-note">
-                Нет предмета в магазине и на бирже → процент от цены как «куты от проекта», только если на техгруппах есть баланс.
-                Иначе слот пустой.
+                Куты и покупки — только с техгрупп / магазина / биржи. Нет остатка → слот пустой.
               </p>
 
               <div className="flame-card-head">
@@ -781,13 +781,9 @@ export default function FlameSection() {
                   <input inputMode="numeric" value={form.giftItemCount} onChange={(e) => patch('giftItemCount', digits(e.target.value))} />
                 </label>
               </div>
-              <p className="flame-note">
-                Каждый слот роллится отдельно. Один и тот же предмет в одном открытии не повторится.
-                Сначала магазин, потом биржа — покупка за техгруппы. Куты и предметы могут выпасть вместе.
-              </p>
 
               <div className="flame-preview">
-                <h4>Что увидит человек</h4>
+                <h4>Для вас (не для игрока)</h4>
                 <div className="flame-preview-grid">
                   <article>
                     <strong>{preview.kutyMin ?? '—'}–{preview.kutyMax ?? '—'}</strong>
@@ -802,21 +798,63 @@ export default function FlameSection() {
                     <span>слоты предметов</span>
                   </article>
                   <article>
-                    <strong>{form.giftFallbackPct}%</strong>
-                    <span>запасные куты</span>
+                    <strong>{giftDrops.filter((row) => row.showPreview && row.itemName).length}</strong>
+                    <span>в «Что можно получить?»</span>
                   </article>
                 </div>
+                {giftDrops.some((row) => row.showPreview && row.itemName) ? (
+                  <p className="flame-consequence">
+                    Игрок увидит до{' '}
+                    <b>
+                      {Math.min(
+                        Math.max(1, Number(form.giftItemCount) || 1),
+                        giftDrops.filter((row) => row.showPreview && row.itemName).length,
+                      )}
+                    </b>
+                    {' '}из:{' '}
+                    {giftDrops.filter((row) => row.showPreview && row.itemName).map((row) => row.itemName).join(' · ')}
+                  </p>
+                ) : (
+                  <p className="flame-note">Нет галочек — кнопки «Что можно получить?» не будет.</p>
+                )}
               </div>
 
               <div className="flame-card-head">
                 <h3>Пул предметов</h3>
-                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setGiftDrops((rows) => [...rows, { kind: 'item', amountMin: '1', amountMax: '1', itemName: '', weight: '1' }])}>
+                <button
+                  type="button"
+                  className="sec-btn sec-btn-ghost"
+                  onClick={() => setGiftDrops((rows) => [...rows, {
+                    kind: 'item',
+                    amountMin: '1',
+                    amountMax: '1',
+                    itemName: '',
+                    weight: '1',
+                    showPreview: true,
+                  }])}
+                >
                   Добавить
                 </button>
               </div>
+              <p className="flame-note">
+                Галочка «В списке» = показать в инлайн-кнопке до открытия. Вес = шанс внутри пула.
+              </p>
               <ul className="flame-rows is-gift">
                 {giftDrops.map((row, index) => (
-                  <li key={`gift-${index}`}>
+                  <li key={`gift-${index}`} className={row.showPreview ? 'is-shown' : ''}>
+                    <label className="flame-show-check" title="Показать в «Что можно получить?»">
+                      <span>В списке</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(row.showPreview)}
+                        onChange={(e) => {
+                          const showPreview = e.target.checked
+                          setGiftDrops((rows) => rows.map((item, i) => (
+                            i === index ? { ...item, showPreview, kind: 'item' } : item
+                          )))
+                        }}
+                      />
+                    </label>
                     <label>
                       <span>Вес</span>
                       <input inputMode="numeric" value={row.weight} onChange={(e) => {
@@ -851,6 +889,7 @@ export default function FlameSection() {
                         amountMax: 1,
                         itemName: row.itemName,
                         weight: Math.max(1, Number(row.weight) || 1),
+                        showPreview: Boolean(row.showPreview),
                       }))
                       .filter((row) => row.itemName),
                   }))}

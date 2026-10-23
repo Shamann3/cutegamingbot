@@ -22,21 +22,12 @@ def emoji(eid: str, fallback: str = "🎁") -> str:
     return f"<tg-emoji emoji-id='{eid}'>{fallback}</tg-emoji>"
 
 
-def screen_intro(*, mult: int, kuty_lo: int, kuty_hi: int, items_on: bool, item_count: int = 1) -> str:
+def screen_intro(*, mult: int = 1) -> str:
     mult_bit = f" · ×{int(mult)}" if int(mult or 1) > 1 else ""
-    slots = max(1, int(item_count or 1))
-    if items_on:
-        if slots > 1:
-            extra = f"\n{emoji(STAR, '⭐️')} Иногда рядом — до <b>{slots}</b> предметов."
-        else:
-            extra = f"\n{emoji(STAR, '⭐️')} Иногда рядом — ещё предмет."
-    else:
-        extra = ""
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>{mult_bit}\n"
         "<blockquote>"
         "<b>Это улучшенный бонус, с более крутыми подарками</b>\n"
-        f"{extra}\n"
         "<i>Спасибо, что вы с нами.</i>"
         "</blockquote>\n"
         "<b>Нажмите на одну из кнопок.</b>"
@@ -51,6 +42,14 @@ def button_later() -> str:
     return "Позже"
 
 
+def button_what() -> str:
+    return "Что можно получить?"
+
+
+def button_back() -> str:
+    return "Назад"
+
+
 def screen_later() -> str:
     return (
         "<code>🎁</code> <b>Предмет остался у вас.</b>\n"
@@ -59,13 +58,30 @@ def screen_later() -> str:
     )
 
 
+def screen_possible(*, max_gifts: int, lines: list[str]) -> str:
+    slots = max(1, int(max_gifts or 1))
+    if slots == 1:
+        cap = "За открытие — <b>1</b> подарок из списка."
+    else:
+        cap = f"За открытие — до <b>{slots}</b> подарков из списка."
+    body = "\n".join(f"· {line}" for line in lines if str(line).strip())
+    if not body:
+        body = "<i>Список пока скрыт.</i>"
+    return (
+        f"{emoji(GIFT)} <b>Что можно получить</b>\n"
+        f"<blockquote>{cap}\n"
+        "Что именно выпадет — узнаете после открытия."
+        "</blockquote>\n"
+        f"{body}\n"
+        "<b>Нажмите на одну из кнопок.</b>"
+    )
+
+
 def screen_board(*, mult: int, kuty_lo: int, kuty_hi: int) -> str:
-    mult_bit = f"×{int(mult)} · " if int(mult or 1) > 1 else ""
+    _ = (mult, kuty_lo, kuty_hi)
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
-        f"<blockquote>{mult_bit}<b>+{int(kuty_lo)}…{int(kuty_hi)}</b> кут\n"
-        "Нажмите клетку — награда сразу.\n"
-        "Победа в игре не нужна.</blockquote>"
+        "<blockquote><b>Нажмите на одну из кнопок.</b></blockquote>"
     )
 
 
@@ -74,29 +90,28 @@ def screen_need_cute(name: str) -> str:
         f"{emoji(NOTE, '❕')} <b>Добавьте в имя <code>Cute</code></b>\n"
         f"<blockquote>Сейчас: <b>{name}</b>\n"
         "Пример: <code>Имя Cute</code></blockquote>\n"
-        "<i>🎁 остался у вас.</i>"
+        "<i><code>🎁</code> Предмет остался у вас.</i>"
     )
 
 
 def screen_off() -> str:
     return (
-        f"{emoji(NOTE, '❕')} <b>Бонус + сейчас недоступен</b>\n"
-        "<i>Попробуйте позже — 🎁 остался у вас.</i>"
+        f"{emoji(NOTE, '❕')} <b>Бонус + недоступен</b>\n"
+        "<i>Позже — <code>🎁</code> предмет остался у вас.</i>"
     )
 
 
 def screen_fail() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Не удалось открыть</b>\n"
-        "<i>Попробуйте ещё раз — 🎁 остался у вас.</i>"
+        "<i>Ещё раз — <code>🎁</code> предмет остался у вас.</i>"
     )
 
 
 def screen_dry() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Сейчас наградить нечем</b>\n"
-        "<blockquote>Куты и предметы берутся из запасов проекта.\n"
-        "Попробуйте чуть позже.</blockquote>"
+        "<blockquote>Попробуйте чуть позже.</blockquote>"
     )
 
 
@@ -111,7 +126,12 @@ def screen_result(
     lines = [str(x) for x in (item_lines or []) if str(x).strip()]
     if item_line and item_line not in lines:
         lines.insert(0, item_line)
-    paid_any = int(board_kuty or 0) > 0 or int(extra_kuty or 0) > 0 or int(project_kuty or 0) > 0 or bool(lines)
+    paid_any = (
+        int(board_kuty or 0) > 0
+        or int(extra_kuty or 0) > 0
+        or int(project_kuty or 0) > 0
+        or bool(lines)
+    )
     if not paid_any:
         return screen_dry()
     parts = [f"{emoji(GIFT)} <b>Бонус + ваш</b>"]
@@ -120,13 +140,12 @@ def screen_result(
             f"<blockquote>{emoji(SPARK, '⚡️')} С клетки: <b>+{int(board_kuty)}</b> кут</blockquote>"
         )
     if int(extra_kuty or 0) > 0:
-        parts.append(f"{emoji(STAR, '⭐️')} Ещё куты: <b>+{int(extra_kuty)}</b>")
+        parts.append(f"{emoji(STAR, '⭐️')} Ещё: <b>+{int(extra_kuty)}</b> кут")
     for line in lines:
         parts.append(f"{emoji(GIFT)} {line}")
     if int(project_kuty or 0) > 0:
         parts.append(
-            f"{emoji(STAR, '⭐️')} <b>Дополнительные куты от проекта</b>: "
-            f"<b>+{int(project_kuty)}</b>"
+            f"{emoji(STAR, '⭐️')} <b>Куты от проекта</b>: <b>+{int(project_kuty)}</b>"
         )
     parts.append("<i>Спасибо, что вы с нами</i>")
     return "\n".join(parts)
@@ -137,26 +156,27 @@ def item_got(emoji_face: str, name: str) -> str:
     return f"Вам: <code>{face}</code> <b>{name}</b>"
 
 
+def preview_item_line(emoji_face: str, name: str) -> str:
+    face = (emoji_face or "🎁").strip() or "🎁"
+    return f"<code>{face}</code> <b>{name}</b>"
+
+
 def alert_stranger() -> str:
     return "Эта кнопка не ваша."
 
 
 def alert_gone() -> str:
-    return "Открытие уже неактуально. Снова «использовать 🎁»."
+    return "Уже неактуально. Снова «использовать 🎁»."
 
 
 def help_block(*, mult: int, item_count: int = 1) -> str:
-    mult_bit = f" Куты уже ×{int(mult)}." if int(mult or 1) > 1 else ""
-    slots = max(1, int(item_count or 1))
-    items = (
-        f" Иногда — до <b>{slots}</b> предметов."
-        if slots > 1
-        else " Иногда — предмет."
-    )
+    _ = item_count
+    mult_bit = f" ×{int(mult)}." if int(mult or 1) > 1 else ""
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
-        f"«использовать 🎁» — увеличенный бонус.{mult_bit}{items}\n"
-        "Нужна приписка <code>Cute</code>. Победа не нужна."
+        f"«использовать 🎁» — улучшенный бонус.{mult_bit}\n"
+        "Перед открытием можно глянуть, что бывает в призе.\n"
+        "Нужна приписка <code>Cute</code>."
     )
 
 

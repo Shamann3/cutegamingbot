@@ -4,8 +4,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from flame_bonus_plus import board_range, gift_plus_defaults, roll_extra_bundle
-from flame_bonus_plus_copy import screen_intro, screen_result
+from flame_bonus_plus import (
+    board_range,
+    gift_plus_defaults,
+    preview_max_gifts,
+    preview_show_names,
+    roll_extra_bundle,
+)
+from flame_bonus_plus_copy import screen_intro, screen_possible, screen_result
 
 
 def test_defaults_and_board_range():
@@ -61,20 +67,44 @@ def test_multi_item_slots_without_duplicate_preferred():
     assert len(set(preferred)) == 2
 
 
-def test_copy_mentions_bigger_bonus_and_project_kuty():
-    text = screen_intro(mult=2, kuty_lo=10, kuty_hi=30, items_on=True, item_count=2)
+def test_preview_only_checked_items():
+    conf = gift_plus_defaults({
+        "gift_item_on": True,
+        "gift_item_count": 3,
+        "drops": [
+            {"kind": "item", "item_name": "Купон", "weight": 1, "show_preview": True},
+            {"kind": "item", "item_name": "Секрет", "weight": 1, "show_preview": False},
+            {"kind": "item", "item_name": "Вода", "weight": 1, "showPreview": True},
+        ],
+    })
+    assert preview_show_names(conf) == ["Купон", "Вода"]
+    assert preview_max_gifts(conf) == 2
+
+
+def test_copy_keeps_intro_mysterious():
+    text = screen_intro(mult=2)
     assert "Бонус +" in text
     assert "улучшенный бонус" in text
     assert "Нажмите на одну из кнопок" in text
-    assert "10" in text and "30" in text
-    assert "2" in text
+    assert "кут" not in text.lower()
+    assert "Купон" not in text
+    possible = screen_possible(
+        max_gifts=2,
+        lines=["<code>🎁</code> <b>Купон</b>", "<code>💧</code> <b>Вода</b>"],
+    )
+    assert "до <b>2</b>" in possible
+    assert "Купон" in possible and "Вода" in possible
+    assert "узнаете после открытия" in possible
+
+
+def test_copy_mentions_project_kuty():
     result = screen_result(
         board_kuty=12,
         extra_kuty=5,
         project_kuty=9,
         item_lines=["Вам: <code>🎁</code> <b>Купон</b>", "Вам: <code>💧</code> <b>Вода</b>"],
     )
-    assert "дополнительные куты от проекта" in result.lower() or "Дополнительные куты от проекта" in result
+    assert "куты от проекта" in result.lower()
     assert "30%" not in result
     assert "+12" in result or "12" in result
     assert "Купон" in result and "Вода" in result

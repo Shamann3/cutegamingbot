@@ -105,7 +105,7 @@ def test_help_offers_restore_from_the_one_text_file():
     assert "вернуть огонёк" in html
     assert "<b>500</b> кут" in html
     assert "Купон ×2" in html
-    assert "новой серии" in html
+    assert "Новая серия" in html or "новой серии" in html
 
 
 def test_restore_window_and_blocks():

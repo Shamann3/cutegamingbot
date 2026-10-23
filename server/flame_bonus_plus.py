@@ -433,3 +433,36 @@ def board_range(conf: dict) -> tuple[int, int]:
     lo = max(1, int(conf["kuty_min"])) * conf["mult"]
     hi = max(lo, int(conf["kuty_max"]) * conf["mult"])
     return lo, hi
+
+
+def preview_show_names(conf: dict | None) -> list[str]:
+    """Имена предметов, отмеченных галочкой «показать в Что можно получить?»."""
+    conf = gift_plus_defaults(conf or {})
+    if not conf.get("item_on"):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for row in conf.get("drops") or []:
+        show = row.get("show_preview")
+        if show is None:
+            show = row.get("showPreview")
+        if not show:
+            continue
+        if str(row.get("kind") or "") != "item":
+            continue
+        name = str(row.get("item_name") or row.get("itemName") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def preview_max_gifts(conf: dict | None) -> int:
+    conf = gift_plus_defaults(conf or {})
+    if not conf.get("item_on"):
+        return 0
+    names = preview_show_names(conf)
+    if not names:
+        return 0
+    return min(int(conf.get("item_count") or 1), len(names))

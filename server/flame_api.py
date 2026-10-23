@@ -52,6 +52,7 @@ class SettingsBody(BaseModel):
     giftExtraKutyMax: int = Field(25, ge=0, le=1_000_000)
     giftItemOn: bool = True
     giftItemChance: int = Field(40, ge=0, le=100)
+    giftItemCount: int = Field(1, ge=1, le=5)
     giftFallbackPct: int = Field(30, ge=1, le=100)
     restoreEnabled: bool = True
     restoreDays: int = Field(3, ge=1, le=30)
@@ -116,6 +117,7 @@ class GiftDropBody(BaseModel):
     amountMax: int = Field(1, ge=1, le=1_000_000)
     itemName: str = ""
     weight: int = Field(1, ge=1, le=10_000)
+    showPreview: bool = False
     model_config = {"extra": "forbid"}
 
 

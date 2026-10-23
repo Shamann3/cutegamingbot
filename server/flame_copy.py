@@ -28,9 +28,9 @@ def kind_words(kind: str, amount: int, item: str = "") -> str:
     """Короткая подпись награды. Её же бот пишет в историю полученных наград."""
     amount = max(1, int(amount or 1))
     if kind == "bonus":
-        return "бесплатное открытие бонуса" if amount == 1 else f"бесплатных открытий бонуса: {amount}"
+        return "бесплатный бонус" if amount == 1 else f"бесплатный бонус ×{amount}"
     if kind == "bonus_x2":
-        return "бесплатное открытие бонуса ×2" if amount == 1 else f"бесплатных открытий бонуса ×2: {amount}"
+        return "бонус ×2" if amount == 1 else f"бонус ×2 ×{amount}"
     if kind == "kuty":
         return f"{amount} кут"
     if kind == "item" and item:
@@ -39,10 +39,9 @@ def kind_words(kind: str, amount: int, item: str = "") -> str:
 
 
 def profile_line(label: str, title: str = "", emoji_id: str = "") -> str:
-    # Строка в профиле, пока серия жива. {label} — «3 дня».
     if title:
         mark = emoji(emoji_id or STATUS_EMOJI)
-        return f"{mark} <b>{title}</b> · огонёк уже <b>{label}</b>"
+        return f"{mark} <b>{title}</b> · огонёк <b>{label}</b>"
     return f"{emoji(EMOJI)} <b>Огонёк уже {label}</b>"
 
 
@@ -64,31 +63,29 @@ def screen_help(
     restore_line: str,
     gift_item_count: int = 1,
 ) -> str:
-    # Сначала — что дадут за дни. Потом коротко, как работает.
     parts = [
         f"{emoji(EMOJI)} <b>Огонёк сообщений</b>",
         "",
         f"{emoji('5438440765908874600', '🎁')} <b>Награды за дни</b>",
     ]
     if rewards:
-        parts.append("<i>Всё сразу в личку · один раз за этот день серии</i>")
+        parts.append("<i>Один раз · сразу в личку</i>")
         parts.extend(rewards)
     else:
-        parts.append("<i>Награды скоро появятся — серия уже считается</i>")
+        parts.append("<i>Награды скоро появятся</i>")
     parts += [
         "",
         "<blockquote>"
-        f"Пишите в <b>официальных группах</b>: "
-        f"<b>{base}</b> сообщений от <b>{words}</b> слов за сутки (МСК).\n"
+        f"В <b>официальных группах</b>: <b>{base}</b> сообщений от <b>{words}</b> слов за сутки (МСК).\n"
         "Не считаются команды, игры и один текст подряд."
         "</blockquote>",
         "",
         f"{emoji('5321021153219732362', '⚡️')} <b>Как работает</b>",
-        "· норма закрыта → в 00:00 серия <b>+1 день</b>",
+        "· норма закрыта → в 00:00 серия <b>+1</b>",
         "· день пропущен → огонёк <b>гаснет</b>",
     ]
     if not enabled:
-        parts += ["", "<i>Сейчас огонёк временно выключен</i>"]
+        parts += ["", "<i>Сейчас огонёк выключен</i>"]
     if rises:
         parts += [
             "",
@@ -115,12 +112,12 @@ def screen_help(
             from flame_bonus_plus_copy import help_block
             parts += ["", help_block(mult=int(gift_mult or 1), item_count=int(gift_item_count or 1))]
         except Exception:
-            mult_bit = f" Куты уже ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
+            mult_bit = f" ×{gift_mult}." if int(gift_mult or 1) > 1 else ""
             parts += [
                 "",
                 f"{emoji('5438458242130806642', '🎁')} <b>Бонус +</b>",
-                f"«использовать 🎁» — увеличенный бонус.{mult_bit}",
-                "Нужна приписка <code>Cute</code>. Победа не нужна.",
+                f"«использовать 🎁» — улучшенный бонус.{mult_bit}",
+                "Нужна приписка <code>Cute</code>.",
             ]
     if restore_line:
         parts += [
@@ -133,7 +130,6 @@ def screen_help(
 
 
 def restore_ways(*, kuty: int, item: str, count: int) -> str:
-    # «500 кут или Купон ×1». Пустая строка — возвращать нечем.
     ways = []
     if int(kuty or 0) > 0:
         ways.append(f"<b>{int(kuty)}</b> кут")
@@ -144,17 +140,15 @@ def restore_ways(*, kuty: int, item: str, count: int) -> str:
 
 
 def restore_help_line(*, days: int, kuty: int, item: str, count: int) -> str:
-    # Одна строка в справке. Цены приходят из вкладки.
     price = restore_ways(kuty=kuty, item=item, count=count)
     return (
-        f"Напишите «<b>вернуть огонёк</b>» в течение <b>{int(days)}</b> дн. после того, как он погас. "
+        f"«<b>вернуть огонёк</b>» — в течение <b>{int(days)}</b> дн. после того, как погас. "
         f"Цена: {price}.\n"
-        "Успейте до новой серии: как только закроете норму заново, старый огонёк уже не вернуть."
+        "Новая серия сжигает старую — успейте раньше."
     )
 
 
 def screen_streak(label: str, title: str, gifts: str) -> str:
-    # Личное сообщение, когда день серии закрыт.
     head = f"<b>{title}</b>\n" if title else ""
     extra = (
         f"\n\n{emoji('5438440765908874600', '🎁')} Вам: <b>{gifts}</b>"
@@ -165,16 +159,15 @@ def screen_streak(label: str, title: str, gifts: str) -> str:
         f"{emoji(EMOJI)} <b>Огонёк уже {label}</b>\n"
         f"{head}"
         "<blockquote>День закрыт.\n"
-        "Завтра снова наберите норму — серия продолжится.</blockquote>"
+        "Завтра снова наберите норму.</blockquote>"
         f"{extra}"
     )
 
 
 def screen_warm(label: str) -> str:
-    # Личное сообщение за тёплый час.
     return (
         f"{emoji('5296561370303592127', '🌟')} <b>Тёплый час</b>\n"
-        "<blockquote>Вы писали в удачный час — вот награда.</blockquote>\n"
+        "<blockquote>Вы писали в удачный час.</blockquote>\n"
         f"{emoji('5438440765908874600', '🎁')} <b>{label}</b>"
     )
 
@@ -188,12 +181,11 @@ def screen_profit(
     next_line: str,
     loot_line: str,
 ) -> str:
-    # Вечерняя карточка в личку.
     head = f"<b>{title}</b>\n" if title else ""
     state = (
-        f"{emoji('5321021153219732362', '⚡️')} норма дня <b>закрыта</b>"
+        f"{emoji('5321021153219732362', '⚡️')} норма <b>закрыта</b>"
         if kept
-        else f"{emoji('5467519850576354798', '❕')} норма дня <b>ещё открыта</b>"
+        else f"{emoji('5467519850576354798', '❕')} норма <b>ещё открыта</b>"
     )
     return (
         f"{emoji(EMOJI)} <b>Ваш огонёк сегодня</b>\n{head}"
@@ -206,26 +198,26 @@ def screen_profit(
 def profit_next(day_label: str, left: int, day_word: str, gift: str) -> str:
     return (
         f"\n{emoji('5438440765908874600', '🎁')} "
-        f"До награды за <b>{day_label}</b> — ещё <b>{left}</b> {day_word}: {gift}"
+        f"До <b>{day_label}</b> — ещё <b>{left}</b> {day_word}: {gift}"
     )
 
 
 def profit_next_done() -> str:
-    return "\n<i>Все дневные награды уже собраны — держите серию дальше</i>"
+    return "\n<i>Все дневные награды собраны — держите серию</i>"
 
 
 def profit_loot(labels: list[str]) -> str:
     if not labels:
         return ""
     body = " · ".join(f"<b>{label}</b>" for label in labels)
-    return f"\nСегодня получили: {body}"
+    return f"\nСегодня: {body}"
 
 
 def screen_top_empty() -> str:
     return (
         f"{emoji('5354962501643578130')} <b>Лучшие огоньки</b>\n"
-        "<blockquote>Здесь самые длинные серии.\n"
-        "<i>Пока пусто — закройте норму дня, и вы появитесь в списке.</i></blockquote>"
+        "<blockquote>Самые длинные серии.\n"
+        "<i>Пока пусто — закройте норму дня.</i></blockquote>"
     )
 
 
@@ -248,19 +240,17 @@ def top_mark(index: int) -> str:
 
 
 def top_row(index: int, name_html: str, label: str, title: str = "", record: bool = False) -> str:
-    # Одна строка топа. {name_html} уже кликабельное имя.
-    mark = " · <i>личный рекорд</i>" if record else ""
+    mark = " · <i>рекорд</i>" if record else ""
     titled = f" · <b>{title}</b>" if title else ""
     return f"{top_mark(index)} {name_html} — <b>{label}</b>{titled}{mark}"
 
 
 def screen_restore_offer(label: str, days_left: int, ways: str) -> str:
-    # Карточка перед оплатой. {ways} — «500 кут или Купон ×1».
     window = "сегодня" if int(days_left) <= 1 else f"ещё {int(days_left)} дн."
     return (
         f"{emoji(EMOJI)} <b>Вернуть огонёк</b>\n"
         f"<blockquote>Погасшая серия: <b>{label}</b>.\n"
-        f"Вернуть можно {window}, пока не начнёте новую.</blockquote>\n"
+        f"Можно {window}, пока не начнёте новую.</blockquote>\n"
         f"Цена: {ways}"
     )
 
@@ -269,42 +259,44 @@ def screen_restore_done(label: str) -> str:
     return (
         f"{emoji(EMOJI)} <b>Огонёк снова горит</b>\n"
         f"<blockquote>Серия <b>{label}</b> на месте.\n"
-        "Сегодня ещё нужно закрыть норму — иначе в полночь он погаснет снова.</blockquote>"
+        "Сегодня ещё закройте норму — иначе погаснет снова.</blockquote>"
     )
 
 
 def screen_restore_alive() -> str:
     return (
         f"{emoji(EMOJI)} <b>Огонёк уже горит</b>\n"
-        "<blockquote>Возвращать нечего. Держите сегодняшнюю норму.</blockquote>"
+        "<blockquote>Возвращать нечего. Держите норму.</blockquote>"
     )
 
 
 def screen_restore_none() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возвращать нечего</b>\n"
-        "<blockquote>Погасшей серии нет. Когда огонёк погаснет, команда «вернуть огонёк» его поднимет.</blockquote>"
+        "<blockquote>Погасшей серии нет.\n"
+        "Когда огонёк погаснет — «вернуть огонёк».</blockquote>"
     )
 
 
 def screen_restore_late() -> str:
     return (
-        f"{emoji(EMOJI)} <b>Срок возврата прошёл</b>\n"
-        "<blockquote>Этот огонёк уже не поднять. Новую серию можно начать с сегодняшней нормы.</blockquote>"
+        f"{emoji(EMOJI)} <b>Срок прошёл</b>\n"
+        "<blockquote>Этот огонёк уже не поднять.\n"
+        "Новую серию можно начать с сегодняшней нормы.</blockquote>"
     )
 
 
 def screen_restore_off() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возврат выключен</b>\n"
-        "<blockquote>Сейчас погасший огонёк нельзя купить обратно.</blockquote>"
+        "<blockquote>Сейчас погасший огонёк нельзя вернуть.</blockquote>"
     )
 
 
 def screen_restore_poor(price: int) -> str:
     return (
         f"{emoji(EMOJI)} <b>Не хватает кут</b>\n"
-        f"<blockquote>Чтобы вернуть огонёк, нужно <b>{int(price)}</b> кут. Списание не прошло.</blockquote>"
+        f"<blockquote>Нужно <b>{int(price)}</b> кут. Списание не прошло.</blockquote>"
     )
 
 
@@ -312,18 +304,18 @@ def screen_restore_no_item(name: str, count: int) -> str:
     piece = name if int(count or 1) == 1 else f"{name} ×{int(count)}"
     return (
         f"{emoji(EMOJI)} <b>Нет предмета</b>\n"
-        f"<blockquote>Нужен <b>{piece}</b>. Предмет не списан.</blockquote>"
+        f"<blockquote>Нужен <b>{piece}</b>. Ничего не списано.</blockquote>"
     )
 
 
 def screen_restore_busy() -> str:
-    return "Огонёк уже вернули или срок прошёл. Списание отменено."
+    return "Уже вернули или срок прошёл. Списание отменено."
 
 
 def screen_restore_cancel() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возврат отменён</b>\n"
-        "<blockquote>Огонёк остался погасшим. Куты и предметы не списаны.</blockquote>"
+        "<blockquote>Огонёк погас. Куты и предметы не списаны.</blockquote>"
     )
 
 
@@ -345,7 +337,7 @@ def alert_stranger() -> str:
 
 
 def alert_poor(price: int) -> str:
-    return f"Нужно {int(price)} кут. Списание не прошло."
+    return f"Нужно {int(price)} кут."
 
 
 def alert_no_item(name: str, count: int) -> str:
@@ -353,7 +345,6 @@ def alert_no_item(name: str, count: int) -> str:
     return f"Нет предмета: {piece}."
 
 
-# Фразы команды. «ё» и регистр не важны — сравнение само приводит к «е».
 RESTORE_COMMANDS = (
     "вернуть огонек",
     "восстановить огонек",
@@ -366,12 +357,10 @@ def is_restore_command(text: str) -> bool:
 
 
 def button_help() -> str:
-    # Кнопка в меню помощи.
     return "Огонёк сообщений"
 
 
 def button_top() -> str:
-    # Кнопка в общем топе.
     return "Лучшие огоньки"
 
 
@@ -379,6 +368,5 @@ def alert_top_failed() -> str:
     return "Не удалось открыть огоньки."
 
 
-# Как причина пишется в историю кут.
 HISTORY_GRANT = "огонёк"
 HISTORY_RESTORE = "вернуть огонёк"
