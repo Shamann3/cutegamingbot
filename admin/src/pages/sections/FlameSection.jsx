@@ -186,14 +186,24 @@ function CellBoard({ cells, onChange }) {
   )
 }
 
-const TAB_EFFECT = {
-  norm: 'Меняет, сколько сообщений нужно в день и как растёт норма.',
-  rewards: 'В выбранный день серии человек получит все подарки этого дня сразу.',
-  warm: 'В удачный час — ещё случайная награда из списка (вес = шанс).',
-  status: 'Титул в профиле и топе, пока огонёк жив.',
-  gift: 'Предмет 🎁: куты с клетки и предметы. Сетка 3×3 — премиум-эмодзи кнопок, в том же порядке, что у игрока.',
-  restore: 'Команда «вернуть огонёк» поднимает погасшую серию за куты или предмет.',
-  live: 'Только просмотр: живые серии и последние выдачи.',
+function FlameSwitch({ checked, onChange, children }) {
+  return (
+    <label className="flame-switch">
+      <input type="checkbox" checked={Boolean(checked)} onChange={onChange} />
+      <span className="flame-knob" aria-hidden="true" />
+      <span>{children}</span>
+    </label>
+  )
+}
+
+function FlameFold({ open, children }) {
+  return (
+    <div className={open ? 'flame-fold is-open' : 'flame-fold'}>
+      <div className="flame-fold-inner">
+        {children}
+      </div>
+    </div>
+  )
 }
 
 function giftWords(row) {
@@ -428,11 +438,10 @@ export default function FlameSection() {
   }, [form.restoreEnabled, form.restoreKuty, form.restoreItem, form.restoreItemCount, form.restoreDays])
 
   const warmHint = useMemo(() => {
-    if (!form.warmEnabled) return 'Тёплый час выключен.'
-    if (warmHour == null) return 'Час выберется сам после включения.'
+    if (warmHour == null) return 'Час выберется сам в заданном окне.'
     const next = (Number(warmHour) + 1) % 24
     return `Сегодня тёплый час: ${String(warmHour).padStart(2, '0')}:00–${String(next).padStart(2, '0')}:00 МСК`
-  }, [form.warmEnabled, warmHour])
+  }, [warmHour])
 
   const rewardDays = useMemo(() => groupRewardDays(rewards), [rewards])
 
@@ -482,17 +491,6 @@ export default function FlameSection() {
     giftDrops,
   ])
 
-  const rewardPreview = useMemo(() => {
-    return rewardDays
-      .filter((pack) => String(pack.day || '').trim() !== '')
-      .map((pack) => {
-        const gifts = pack.gifts.map(giftWords).filter(Boolean)
-        if (!gifts.length) return null
-        return `день ${pack.day}: ${gifts.join(' · ')}`
-      })
-      .filter(Boolean)
-  }, [rewardDays])
-
   const patchReward = (index, patch) => {
     setRewards((rows) => rows.map((item, i) => (i === index ? { ...item, ...patch } : item)))
   }
@@ -540,28 +538,21 @@ export default function FlameSection() {
       {board && (
         <>
           <div className="flame-stats">
-            <article className="flame-rise">
+            <article>
               <strong>{board.alive || 0}</strong>
               <span>живых серий</span>
             </article>
-            <article className="flame-rise" style={{ animationDelay: '60ms' }}>
+            <article>
               <strong>{board.keptToday || 0}</strong>
               <span>закрыли сегодня</span>
             </article>
-            <article className="flame-rise" style={{ animationDelay: '120ms' }}>
-              <strong>{warmHour == null ? '—' : `${String(warmHour).padStart(2, '0')}:00`}</strong>
-              <span>тёплый час</span>
-            </article>
-          </div>
-
-          <aside className="flame-map">
-            <p><b>Сейчас:</b> {TAB_EFFECT[tab]}</p>
-            <p><b>Сохранить настройки</b> — норма, тёплый час, статусы, 🎁 и возврат. Списки наград / ступеней / пула — своими кнопками.</p>
-            <p><b>Слова людям</b> — <code>flame_copy.py</code> и <code>flame_bonus_plus_copy.py</code>. После правки перезапустите бота.</p>
-            {rewardPreview.length > 0 && tab === 'rewards' && (
-              <p className="flame-map-loot"><b>Люди увидят:</b> {rewardPreview.join(' · ')}</p>
+            {form.warmEnabled && (
+              <article>
+                <strong>{warmHour == null ? '—' : `${String(warmHour).padStart(2, '0')}:00`}</strong>
+                <span>тёплый час</span>
+              </article>
             )}
-          </aside>
+          </div>
 
           <div className="flame-work">
           <nav className="flame-tabs" aria-label="Разделы огонька">
@@ -581,88 +572,91 @@ export default function FlameSection() {
           <div className="flame-pane" key={tab}>
 
           {tab === 'norm' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Норма и защита</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)} />
-                  <span>{form.enabled ? 'Огонёк включён' : 'Огонёк выключен'}</span>
-                </label>
+                <FlameSwitch checked={form.enabled} onChange={(e) => patch('enabled', e.target.checked)}>
+                  {form.enabled ? 'Огонёк включён' : 'Огонёк выключен'}
+                </FlameSwitch>
               </div>
-              <div className="flame-grid-2">
-                <label className="flame-field">
-                  <span>Сообщений в первый день</span>
-                  <input inputMode="numeric" value={form.baseMessages} onChange={(e) => patch('baseMessages', digits(e.target.value))} />
-                </label>
-                <label className="flame-field">
-                  <span>Минимум слов в сообщении</span>
-                  <input inputMode="numeric" value={form.minWords} onChange={(e) => patch('minWords', digits(e.target.value))} />
-                </label>
-              </div>
-              <label className="flame-switch">
-                <input type="checkbox" checked={form.blockDup} onChange={(e) => patch('blockDup', e.target.checked)} />
-                <span>Не считать одинаковый текст подряд</span>
-              </label>
-              <label className="flame-switch">
-                <input type="checkbox" checked={form.profitEnabled} onChange={(e) => patch('profitEnabled', e.target.checked)} />
-                <span>Вечерняя карточка профита в личку</span>
-              </label>
-              <label className="flame-field">
-                <span>Час карточки (МСК)</span>
-                <input inputMode="numeric" value={form.profitHour} onChange={(e) => patch('profitHour', digits(e.target.value))} />
-              </label>
-              <p className="flame-note">
-                В счёт идут живые сообщения в официальных группах. Команды, игры и копипаст не кормят огонёк.
-              </p>
-              <div className="flame-card-head">
-                <h3>Рост нормы</h3>
-                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setSteps((rows) => [...rows, { fromDay: '', messages: '' }])}>
-                  Добавить день
-                </button>
-              </div>
-              <ul className="flame-rows">
-                {steps.map((row, index) => (
-                  <li key={`step-${index}`}>
-                    <label>
-                      <span>С дня</span>
-                      <input inputMode="numeric" value={row.fromDay} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setSteps((rows) => rows.map((item, i) => i === index ? { ...item, fromDay: value } : item))
-                      }} />
-                    </label>
-                    <label>
-                      <span>Сообщений</span>
-                      <input inputMode="numeric" value={row.messages} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setSteps((rows) => rows.map((item, i) => i === index ? { ...item, messages: value } : item))
-                      }} />
-                    </label>
-                    <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setSteps((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
-                  </li>
-                ))}
-              </ul>
+              <FlameFold open={Boolean(form.enabled)}>
+                <div className="flame-grid-2">
+                  <label className="flame-field">
+                    <span>Сообщений в первый день</span>
+                    <input inputMode="numeric" value={form.baseMessages} onChange={(e) => patch('baseMessages', digits(e.target.value))} />
+                  </label>
+                  <label className="flame-field">
+                    <span>Минимум слов в сообщении</span>
+                    <input inputMode="numeric" value={form.minWords} onChange={(e) => patch('minWords', digits(e.target.value))} />
+                  </label>
+                </div>
+                <FlameSwitch checked={form.blockDup} onChange={(e) => patch('blockDup', e.target.checked)}>
+                  Не считать одинаковый текст подряд
+                </FlameSwitch>
+                <FlameSwitch checked={form.profitEnabled} onChange={(e) => patch('profitEnabled', e.target.checked)}>
+                  Вечерняя карточка профита в личку
+                </FlameSwitch>
+                <FlameFold open={Boolean(form.profitEnabled)}>
+                  <label className="flame-field">
+                    <span>Час карточки (МСК)</span>
+                    <input inputMode="numeric" value={form.profitHour} onChange={(e) => patch('profitHour', digits(e.target.value))} />
+                  </label>
+                </FlameFold>
+                <p className="flame-note">
+                  В счёт идут живые сообщения в официальных группах. Команды, игры и копипаст не кормят огонёк.
+                </p>
+                <div className="flame-card-head">
+                  <h3>Рост нормы</h3>
+                  <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setSteps((rows) => [...rows, { fromDay: '', messages: '' }])}>
+                    Добавить день
+                  </button>
+                </div>
+                <ul className="flame-rows">
+                  {steps.map((row, index) => (
+                    <li key={`step-${index}`}>
+                      <label>
+                        <span>С дня</span>
+                        <input inputMode="numeric" value={row.fromDay} onChange={(e) => {
+                          const value = digits(e.target.value)
+                          setSteps((rows) => rows.map((item, i) => i === index ? { ...item, fromDay: value } : item))
+                        }} />
+                      </label>
+                      <label>
+                        <span>Сообщений</span>
+                        <input inputMode="numeric" value={row.messages} onChange={(e) => {
+                          const value = digits(e.target.value)
+                          setSteps((rows) => rows.map((item, i) => i === index ? { ...item, messages: value } : item))
+                        }} />
+                      </label>
+                      <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setSteps((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flame-actions">
+                  <button
+                    type="button"
+                    className="sec-btn"
+                    disabled={busy === 'steps'}
+                    onClick={() => run('steps', () => saveFlameSteps({
+                      steps: steps
+                        .map((row) => ({ fromDay: Number(row.fromDay), messages: Number(row.messages) }))
+                        .filter((row) => row.fromDay >= 1 && row.messages >= 1),
+                    }))}
+                  >
+                    {busy === 'steps' ? 'Сохраняем…' : 'Сохранить ступени'}
+                  </button>
+                </div>
+              </FlameFold>
               <div className="flame-actions">
                 <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
                   {busy === 'settings' ? 'Сохраняем…' : 'Сохранить настройки'}
-                </button>
-                <button
-                  type="button"
-                  className="sec-btn"
-                  disabled={busy === 'steps'}
-                  onClick={() => run('steps', () => saveFlameSteps({
-                    steps: steps
-                      .map((row) => ({ fromDay: Number(row.fromDay), messages: Number(row.messages) }))
-                      .filter((row) => row.fromDay >= 1 && row.messages >= 1),
-                  }))}
-                >
-                  {busy === 'steps' ? 'Сохраняем…' : 'Сохранить ступени'}
                 </button>
               </div>
             </section>
           )}
 
           {tab === 'rewards' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Награды за дни серии</h3>
                 <button type="button" className="sec-btn sec-btn-ghost" onClick={addDayPack}>
@@ -767,15 +761,15 @@ export default function FlameSection() {
           )}
 
           {tab === 'warm' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Тёплый час</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={form.warmEnabled} onChange={(e) => patch('warmEnabled', e.target.checked)} />
-                  <span>{form.warmEnabled ? 'Включён' : 'Выключен'}</span>
-                </label>
+                <FlameSwitch checked={form.warmEnabled} onChange={(e) => patch('warmEnabled', e.target.checked)}>
+                  {form.warmEnabled ? 'Включён' : 'Выключен'}
+                </FlameSwitch>
               </div>
-              <p className="flame-note">{warmHint}. Каждый день между 15:00 и 0:00 код сам выбирает один час.</p>
+              <FlameFold open={Boolean(form.warmEnabled)}>
+              <p className="flame-note">{warmHint}. Каждый день в заданном окне выбирается один час.</p>
               <div className="flame-grid-2">
                 <label className="flame-field">
                   <span>С какого дня серии</span>
@@ -832,41 +826,44 @@ export default function FlameSection() {
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setWarmRewards((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
                 ))}
-              </ul>
+                </ul>
+                <div className="flame-actions">
+                  <button
+                    type="button"
+                    className="sec-btn"
+                    disabled={busy === 'warm'}
+                    onClick={() => run('warm', () => saveFlameWarmRewards({
+                      rewards: warmRewards
+                        .map((row) => ({
+                          kind: row.kind,
+                          amount: Math.max(1, Number(row.amount) || 1),
+                          itemName: row.kind === 'item' ? row.itemName : '',
+                          weight: Math.max(1, Number(row.weight) || 1),
+                        }))
+                        .filter((row) => row.kind && (row.kind !== 'item' || row.itemName)),
+                    }))}
+                  >
+                    {busy === 'warm' ? 'Сохраняем…' : 'Сохранить награды часа'}
+                  </button>
+                </div>
+              </FlameFold>
               <div className="flame-actions">
                 <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
                   Сохранить час
-                </button>
-                <button
-                  type="button"
-                  className="sec-btn"
-                  disabled={busy === 'warm'}
-                  onClick={() => run('warm', () => saveFlameWarmRewards({
-                    rewards: warmRewards
-                      .map((row) => ({
-                        kind: row.kind,
-                        amount: Math.max(1, Number(row.amount) || 1),
-                        itemName: row.kind === 'item' ? row.itemName : '',
-                        weight: Math.max(1, Number(row.weight) || 1),
-                      }))
-                      .filter((row) => row.kind && (row.kind !== 'item' || row.itemName)),
-                  }))}
-                >
-                  {busy === 'warm' ? 'Сохраняем…' : 'Сохранить награды часа'}
                 </button>
               </div>
             </section>
           )}
 
           {tab === 'status' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Статусы огонька</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={form.statusEnabled} onChange={(e) => patch('statusEnabled', e.target.checked)} />
-                  <span>{form.statusEnabled ? 'В профиле видны' : 'Скрыты'}</span>
-                </label>
+                <FlameSwitch checked={form.statusEnabled} onChange={(e) => patch('statusEnabled', e.target.checked)}>
+                  {form.statusEnabled ? 'В профиле видны' : 'Скрыты'}
+                </FlameSwitch>
               </div>
+              <FlameFold open={Boolean(form.statusEnabled)}>
               <p className="flame-note">Короткий титул в профиле и в топе. Пример: «Искра», «Живой огонь», «Негасимый».</p>
               <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setTitles((rows) => [...rows, { fromDay: '', title: '', emojiId: '' }])}>
                 Добавить статус
@@ -891,38 +888,39 @@ export default function FlameSection() {
                     <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setTitles((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
                   </li>
                 ))}
-              </ul>
+                </ul>
+                <div className="flame-actions">
+                  <button
+                    type="button"
+                    className="sec-btn"
+                    disabled={busy === 'titles'}
+                    onClick={() => run('titles', () => saveFlameTitles({
+                      titles: titles
+                        .map((row) => ({ fromDay: Number(row.fromDay), title: row.title.trim(), emojiId: row.emojiId }))
+                        .filter((row) => row.fromDay >= 1 && row.title),
+                    }))}
+                  >
+                    {busy === 'titles' ? 'Сохраняем…' : 'Сохранить статусы'}
+                  </button>
+                </div>
+              </FlameFold>
               <div className="flame-actions">
                 <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>Сохранить переключатель</button>
-                <button
-                  type="button"
-                  className="sec-btn"
-                  disabled={busy === 'titles'}
-                  onClick={() => run('titles', () => saveFlameTitles({
-                    titles: titles
-                      .map((row) => ({ fromDay: Number(row.fromDay), title: row.title.trim(), emojiId: row.emojiId }))
-                      .filter((row) => row.fromDay >= 1 && row.title),
-                  }))}
-                >
-                  {busy === 'titles' ? 'Сохраняем…' : 'Сохранить статусы'}
-                </button>
               </div>
             </section>
           )}
 
           {tab === 'gift' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Бонус + · предмет 🎁</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={form.giftEnabled} onChange={(e) => patch('giftEnabled', e.target.checked)} />
-                  <span>{form.giftEnabled ? 'Работает' : 'Выключен'}</span>
-                </label>
+                <FlameSwitch checked={form.giftEnabled} onChange={(e) => patch('giftEnabled', e.target.checked)}>
+                  {form.giftEnabled ? 'Работает' : 'Выключен'}
+                </FlameSwitch>
               </div>
+              <FlameFold open={Boolean(form.giftEnabled)}>
               <p className="flame-note">
-                Код предмета <code>freebonus</code>. Интро без цифр.
-                Кнопка «Что можно получить?» берёт куты из полей ниже и предметы с галочкой «В списке».
-                Без галочки предмет может выпасть, но в списке его не будет.
+                Интро без цифр. «Что можно получить?» берёт куты из полей и предметы с галочкой «В списке».
               </p>
               <CellBoard
                 cells={form.giftCellEmojis}
@@ -952,33 +950,44 @@ export default function FlameSection() {
 
               <div className="flame-card-head">
                 <h3>Доп. куты</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={Boolean(form.giftExtraKutyOn)} onChange={(e) => patch('giftExtraKutyOn', e.target.checked)} />
-                  <span>{form.giftExtraKutyOn ? 'Включены' : 'Выключены'}</span>
-                </label>
+                <FlameSwitch checked={form.giftExtraKutyOn} onChange={(e) => patch('giftExtraKutyOn', e.target.checked)}>
+                  {form.giftExtraKutyOn ? 'Включены' : 'Выключены'}
+                </FlameSwitch>
               </div>
-              <div className="flame-grid-2">
-                <label className="flame-field">
-                  <span>Шанс, %</span>
-                  <input inputMode="numeric" value={form.giftExtraKutyChance} onChange={(e) => patch('giftExtraKutyChance', digits(e.target.value))} />
-                </label>
-                <label className="flame-field">
-                  <span>От</span>
-                  <input inputMode="numeric" value={form.giftExtraKutyMin} onChange={(e) => patch('giftExtraKutyMin', digits(e.target.value))} />
-                </label>
-                <label className="flame-field">
-                  <span>До</span>
-                  <input inputMode="numeric" value={form.giftExtraKutyMax} onChange={(e) => patch('giftExtraKutyMax', digits(e.target.value))} />
-                </label>
+              <FlameFold open={Boolean(form.giftExtraKutyOn)}>
+                <div className="flame-grid-2">
+                  <label className="flame-field">
+                    <span>Шанс, %</span>
+                    <input inputMode="numeric" value={form.giftExtraKutyChance} onChange={(e) => patch('giftExtraKutyChance', digits(e.target.value))} />
+                  </label>
+                  <label className="flame-field">
+                    <span>От</span>
+                    <input inputMode="numeric" value={form.giftExtraKutyMin} onChange={(e) => patch('giftExtraKutyMin', digits(e.target.value))} />
+                  </label>
+                  <label className="flame-field">
+                    <span>До</span>
+                    <input inputMode="numeric" value={form.giftExtraKutyMax} onChange={(e) => patch('giftExtraKutyMax', digits(e.target.value))} />
+                  </label>
+                </div>
+              </FlameFold>
+
+              <div className="flame-preview">
+                <h4>Кнопка «Что можно получить?»</h4>
+                <p className="flame-consequence">
+                  <b>Куты</b><br />
+                  {playerReveal.kuty.map((line) => (
+                    <span key={line} className="flame-reveal-line">· {line}</span>
+                  ))}
+                </p>
               </div>
 
               <div className="flame-card-head">
                 <h3>Предметы</h3>
-                <label className="flame-switch">
-                  <input type="checkbox" checked={Boolean(form.giftItemOn)} onChange={(e) => patch('giftItemOn', e.target.checked)} />
-                  <span>{form.giftItemOn ? 'Включены' : 'Выключены'}</span>
-                </label>
+                <FlameSwitch checked={form.giftItemOn} onChange={(e) => patch('giftItemOn', e.target.checked)}>
+                  {form.giftItemOn ? 'Включены' : 'Выключены'}
+                </FlameSwitch>
               </div>
+              <FlameFold open={Boolean(form.giftItemOn)}>
               <div className="flame-grid-2">
                 <label className="flame-field">
                   <span>Шанс на каждый слот, %</span>
@@ -989,45 +998,28 @@ export default function FlameSection() {
                   <input inputMode="numeric" value={form.giftItemCount} onChange={(e) => patch('giftItemCount', digits(e.target.value))} />
                 </label>
               </div>
-
               <div className="flame-preview">
-                <h4>Кнопка «Что можно получить?»</h4>
-                <p className="flame-note">
-                  Так увидит игрок после сохранения. Кнопка стоит под «Открыть Бонус +».
-                </p>
-                {!playerReveal.enabled && <p className="flame-note">Бонус + выключен — кнопки не будет.</p>}
-                {playerReveal.enabled && (
-                  <>
-                    <p className="flame-consequence">
-                      <b>Куты</b><br />
-                      {playerReveal.kuty.map((line) => (
-                        <span key={line} className="flame-reveal-line">· {line}</span>
-                      ))}
-                    </p>
-                    {playerReveal.shownNames.length > 0 ? (
-                      <p className="flame-consequence">
-                        <b>
-                          {playerReveal.slots <= 1
-                            ? 'Предмет · до 1 за раз'
-                            : `Предметы · до ${playerReveal.slots} за раз`}
-                          {playerReveal.hiddenNames.length > 0 ? ' · в списке не всё' : ''}
-                        </b>
-                        {playerReveal.shownNames.map((name) => (
-                          <span key={name} className="flame-reveal-line">· {name}</span>
-                        ))}
-                      </p>
-                    ) : (
-                      <p className="flame-note">В списке предметов пусто — игрок увидит только куты.</p>
-                    )}
-                    {playerReveal.hiddenNames.length > 0 && (
-                      <p className="flame-note">
-                        Скрыто от списка, но может выпасть: {playerReveal.hiddenNames.join(' · ')}
-                      </p>
-                    )}
-                  </>
+                {playerReveal.shownNames.length > 0 ? (
+                  <p className="flame-consequence">
+                    <b>
+                      {playerReveal.slots <= 1
+                        ? 'Предмет · до 1 за раз'
+                        : `Предметы · до ${playerReveal.slots} за раз`}
+                      {playerReveal.hiddenNames.length > 0 ? ' · в списке не всё' : ''}
+                    </b>
+                    {playerReveal.shownNames.map((name) => (
+                      <span key={name} className="flame-reveal-line">· {name}</span>
+                    ))}
+                  </p>
+                ) : (
+                  <p className="flame-note">В списке предметов пусто — игрок увидит только куты.</p>
+                )}
+                {playerReveal.hiddenNames.length > 0 && (
+                  <p className="flame-note">
+                    Скрыто от списка, но может выпасть: {playerReveal.hiddenNames.join(' · ')}
+                  </p>
                 )}
               </div>
-
               <div className="flame-card-head">
                 <h3>Пул предметов</h3>
                 <button
@@ -1046,7 +1038,7 @@ export default function FlameSection() {
                 </button>
               </div>
               <p className="flame-note">
-                Галочка «В списке» = показать в инлайн-кнопке до открытия. Вес = шанс внутри пула.
+                Галочка «В списке» показывает предмет до открытия. Вес — шанс внутри пула.
               </p>
               <ul className="flame-rows is-gift">
                 {giftDrops.map((row, index) => (
@@ -1083,9 +1075,6 @@ export default function FlameSection() {
                 ))}
               </ul>
               <div className="flame-actions">
-                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
-                  {busy === 'settings' ? 'Сохраняем…' : 'Сохранить Бонус +'}
-                </button>
                 <button
                   type="button"
                   className="sec-btn"
@@ -1106,22 +1095,25 @@ export default function FlameSection() {
                   {busy === 'gift' ? 'Сохраняем…' : 'Сохранить пул предметов'}
                 </button>
               </div>
+              </FlameFold>
+              </FlameFold>
+              <div className="flame-actions">
+                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
+                  {busy === 'settings' ? 'Сохраняем…' : 'Сохранить Бонус +'}
+                </button>
+              </div>
             </section>
           )}
 
           {tab === 'restore' && (
-            <section className="flame-card flame-rise">
+            <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Вернуть погасший огонёк</h3>
-                <label className="flame-switch">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(form.restoreEnabled)}
-                    onChange={(e) => patch('restoreEnabled', e.target.checked)}
-                  />
-                  <span>{form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}</span>
-                </label>
+                <FlameSwitch checked={form.restoreEnabled} onChange={(e) => patch('restoreEnabled', e.target.checked)}>
+                  {form.restoreEnabled ? 'Возврат включён' : 'Возврат выключен'}
+                </FlameSwitch>
               </div>
+              <FlameFold open={Boolean(form.restoreEnabled)}>
               <p className="flame-note">
                 Человек пишет «вернуть огонёк». Серия поднимается на столько дней, сколько сгорело.
                 Сегодня норму всё равно нужно закрыть. Как только начнётся новая серия, старую уже не купить.
@@ -1132,29 +1124,29 @@ export default function FlameSection() {
                   <input inputMode="numeric" value={form.restoreDays} onChange={(e) => patch('restoreDays', digits(e.target.value))} />
                 </label>
                 <label className="flame-field">
-                  <span>Цена в кутах, 0 — этот способ выключен</span>
+                  <span>Цена в кутах, 0 — без кут</span>
                   <input inputMode="numeric" value={form.restoreKuty} onChange={(e) => patch('restoreKuty', digits(e.target.value))} />
                 </label>
               </div>
-              <div className="flame-grid-2">
-                <FlameItemPick
-                  catalog={catalog}
-                  label="Предмет, пусто — этот способ выключен"
-                  value={form.restoreItem || ''}
-                  emptyLabel="Не брать предмет"
-                  onChange={(restoreItem) => patch('restoreItem', restoreItem)}
-                />
+              <FlameItemPick
+                catalog={catalog}
+                label="Предмет"
+                value={form.restoreItem || ''}
+                emptyLabel="Не брать предмет"
+                onChange={(restoreItem) => patch('restoreItem', restoreItem)}
+              />
+              <FlameFold open={Boolean(String(form.restoreItem || '').trim())}>
                 <label className="flame-field">
                   <span>Сколько предметов списать</span>
                   <input
                     inputMode="numeric"
                     value={form.restoreItemCount}
-                    disabled={!form.restoreItem}
                     onChange={(e) => patch('restoreItemCount', digits(e.target.value))}
                   />
                 </label>
-              </div>
+              </FlameFold>
               <p className="flame-preview-line">{restoreHint}</p>
+              </FlameFold>
               <div className="flame-actions">
                 <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
                   {busy === 'settings' ? 'Сохраняем…' : 'Сохранить возврат'}
@@ -1165,7 +1157,7 @@ export default function FlameSection() {
 
           {tab === 'live' && (
             <>
-              <section className="flame-card flame-rise">
+              <section className="flame-card">
                 <h3>Живые серии</h3>
                 {(board.people || []).length === 0 && <p className="flame-empty">Пока никто не держит огонёк.</p>}
                 <ol className="flame-people">
@@ -1177,7 +1169,7 @@ export default function FlameSection() {
                   ))}
                 </ol>
               </section>
-              <section className="flame-card flame-rise">
+              <section className="flame-card">
                 <h3>Последние награды</h3>
                 <p className="flame-note">Всё, что люди реально получили: дни серии, тёплый час и 🎁.</p>
                 {(board.loot || []).length === 0 && <p className="flame-empty">Пока пусто — награды появятся сами.</p>}

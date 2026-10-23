@@ -3,6 +3,23 @@
   gap: 14px;
   width: min(100%, 68rem);
   min-width: 0;
+  caret-color: #ffb020;
+}
+
+.flame-page ::selection {
+  background: rgba(255, 140, 40, 0.38);
+  color: #fffaf4;
+}
+
+.flame-page input::placeholder {
+  color: #d7c4b0;
+}
+
+.flame-page input:focus-visible,
+.flame-page .sec-btn:focus-visible,
+.flame-tab:focus-visible {
+  outline: 2px solid #ffb020;
+  outline-offset: 2px;
 }
 
 .flame-hero {
@@ -41,7 +58,7 @@
 
 .flame-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
   gap: 10px;
 }
 
@@ -66,27 +83,8 @@
   font-size: 0.86rem;
 }
 
-.flame-map {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255, 140, 40, 0.08);
-  border: 1px solid rgba(255, 140, 40, 0.22);
-  transition: border-color 220ms ease, background 220ms ease;
-}
-
-.flame-map p {
-  margin: 0;
-  line-height: 1.45;
-}
-
-.flame-map code {
-  font-size: 0.86em;
-}
-
-.flame-map-loot {
-  color: #ffd7a8;
+.flame-stats article {
+  animation: flame-unfurl 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .flame-day-list {
@@ -101,7 +99,6 @@
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  animation: flame-rise 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .flame-day-pack-head {
@@ -141,7 +138,7 @@
   display: grid;
   gap: 14px;
   min-width: 0;
-  animation: flame-rise 360ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: flame-unfurl 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .flame-tabs {
@@ -238,10 +235,101 @@
 }
 
 .flame-switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 40px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.flame-switch input {
+  position: absolute;
+  left: 0;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.flame-knob {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 220ms ease;
+}
+
+.flame-knob::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f4efe8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease;
+}
+
+.flame-switch input:checked + .flame-knob {
+  background: linear-gradient(180deg, #ffb347, #ff5a1f);
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(255, 90, 31, 0.35);
+}
+
+.flame-switch input:checked + .flame-knob::after {
+  transform: translateX(18px);
+  background: #fffaf4;
+}
+
+.flame-switch input:focus-visible + .flame-knob {
+  outline: 2px solid #ffb020;
+  outline-offset: 3px;
+}
+
+.flame-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 260ms cubic-bezier(0.4, 0, 1, 1),
+    opacity 150ms ease;
+}
+
+.flame-fold.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    grid-template-rows 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 260ms ease;
+}
+
+.flame-fold-inner {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.flame-fold.is-open .flame-fold-inner {
+  animation:
+    flame-bloom 460ms cubic-bezier(0.16, 1, 0.3, 1),
+    flame-unlock 0s linear 460ms forwards;
+}
+
+.flame-fold:not(.is-open) :is(button, input, select, textarea, a) {
+  visibility: hidden;
 }
 
 .flame-field,
@@ -438,13 +526,47 @@
 }
 
 @keyframes flame-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.06); }
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 120, 40, 0.4));
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 18px rgba(255, 80, 20, 0.72));
+  }
 }
 
 @keyframes flame-rise {
   from { opacity: 0; transform: translate3d(0, 10px, 0); }
   to { opacity: 1; transform: none; }
+}
+
+@keyframes flame-bloom {
+  from {
+    filter: blur(10px);
+    transform: translate3d(0, -8px, 0);
+  }
+  to {
+    filter: none;
+    transform: none;
+  }
+}
+
+@keyframes flame-unlock {
+  to { overflow: visible; }
+}
+
+@keyframes flame-unfurl {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 16% 0 round 18px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 round 18px);
+    filter: none;
+  }
 }
 
 @media (min-width: 960px) {
@@ -515,13 +637,32 @@
   .flame-orb,
   .flame-rise,
   .flame-pane,
-  .flame-day-pack {
+  .flame-day-pack,
+  .flame-stats article,
+  .flame-fold.is-open .flame-fold-inner {
     animation: none;
   }
 
+  .flame-fold.is-open .flame-fold-inner {
+    animation: none;
+    overflow: visible;
+    filter: none;
+    clip-path: none;
+    transform: none;
+  }
+
+  .flame-fold {
+    transition: none;
+  }
+
+  .flame-fold:not(.is-open) {
+    display: none;
+  }
+
   .flame-tab,
-  .flame-map,
-  .flame-cell {
+  .flame-cell,
+  .flame-knob,
+  .flame-knob::after {
     transition: none;
   }
 }
