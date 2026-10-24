@@ -154,29 +154,26 @@ def screen_result(
     )
     if not paid_any:
         return screen_dry()
-    parts = [
-        f"{emoji(GIFT)} <b>Бонус + ваш</b>",
-        "Вы открыли клетку. Вот что в ней было.",
-    ]
+    quote: list[str] = []
     if int(board_kuty or 0) > 0:
-        parts.append(
-            f"<blockquote>{emoji(SPARK, '⚡️')} С клетки : <b>+{int(board_kuty)}</b> кут</blockquote>"
-        )
+        quote.append(f"{emoji(SPARK, '⚡️')} <b>+ {int(board_kuty)} кут</b>")
     if int(extra_kuty or 0) > 0:
-        parts.append(f"{emoji(STAR, '⭐️')} Ещё : <b>+{int(extra_kuty)}</b> кут")
-    for line in lines:
-        parts.append(f"{emoji(GIFT)} {line}")
+        quote.append(f"{emoji(STAR, '⭐️')} <b>+ {int(extra_kuty)} кут</b>")
+    quote.extend(lines)
     if int(project_kuty or 0) > 0:
-        parts.append(
-            f"{emoji(STAR, '⭐️')} <b>Куты от проекта</b> : <b>+{int(project_kuty)}</b>"
-        )
-    parts.append("<i>Спасибо, что вы с нами</i>")
-    return "\n".join(parts)
+        quote.append(f"{emoji(STAR, '⭐️')} <b>Куты от проекта</b> : <b>+ {int(project_kuty)}</b>")
+    return "\n".join([
+        f"{emoji(GIFT)} <b>Бонус открыт</b>",
+        "<b><i>Вот что в нём было :</i></b>",
+        "<blockquote>" + "\n".join(quote) + "</blockquote>",
+        "",
+        "<i>Спасибо, что вы с нами</i>",
+    ])
 
 
 def item_got(emoji_face: str, name: str) -> str:
-    face = emoji_face or "🎁"
-    return f"Вам: <code>{face}</code> <b>{name}</b>"
+    face = (emoji_face or "🎁").strip() or "🎁"
+    return f"{face} + <b>{name}</b>"
 
 
 def preview_item_line(emoji_face: str, name: str) -> str:

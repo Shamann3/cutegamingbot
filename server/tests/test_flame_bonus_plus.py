@@ -152,8 +152,12 @@ def test_copy_mentions_project_kuty():
         board_kuty=12,
         extra_kuty=5,
         project_kuty=9,
-        item_lines=["Вам: <code>🎁</code> <b>Купон</b>", "Вам: <code>💧</code> <b>Вода</b>"],
+        item_lines=["🎁 + <b>Купон</b>", "💧 + <b>Вода</b>"],
     )
+    assert "Бонус открыт" in result
+    assert "Вот что в нём было :" in result
+    assert "<b>+ 12 кут</b>" in result
+    assert "<i>Спасибо, что вы с нами</i>" in result
     assert "куты от проекта" in result.lower()
     assert "30%" not in result
     assert "+12" in result or "12" in result
