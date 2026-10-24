@@ -31,7 +31,6 @@ from flame_copy import (  # noqa: E402
     PROFILE_OUT,
     mine_button_back,
     mine_button_close,
-    mine_button_gift,
     mine_button_restore,
     mine_button_rewards,
     mine_button_rules,
@@ -43,7 +42,6 @@ from flame_copy import (  # noqa: E402
     screen_mine,
     screen_mine_fail,
     screen_mine_how,
-    screen_mine_next,
     screen_mine_off,
     screen_mine_rewards,
     screen_mine_status,
@@ -632,7 +630,6 @@ async def _mine_view(
     db,
     user_id: int,
     *,
-    with_card: bool = False,
     with_ladder: bool = False,
     with_progress: bool = True,
     with_warm: bool = False,
@@ -676,9 +673,10 @@ async def _mine_view(
     pay = next_paying_day(rewards, best)
     replay = streak < best
     card = ""
-    ladder = ""
-    if with_card and pay:
+    if enabled and with_progress and pay:
         card = await _reward_cards(pool, rewards, {int(pay)})
+    prize_today = bool(pay) and not replay and not kept and int(pay) == int(streak) + 1
+    ladder = ""
     if with_ladder:
         ladder = await _reward_cards(pool, rewards)
     rises = any(
@@ -695,7 +693,7 @@ async def _mine_view(
     topics = []
     if show_restore and restore.get("code") == "ready":
         topics.append("restore")
-    topics.extend(["rewards", "next", "rules"])
+    topics.extend(["rewards", "rules"])
     if settings.get("warm_enabled"):
         topics.append("warm")
     if titles:
@@ -714,6 +712,8 @@ async def _mine_view(
             need=need,
             words=int(settings.get("min_words") or 2),
             next_day=span_label(pay) if pay else "",
+            next_card=card,
+            prize_today=prize_today,
             replay=replay,
             fresh=streak <= 0 and best <= 0,
         )
@@ -745,7 +745,6 @@ async def _mine_view(
             block_dup=bool(settings.get("block_dup", True)),
             rises=rises,
         ),
-        "next_screen": screen_mine_next(card, now, record_label, replay),
         "rewards_screen": screen_mine_rewards(ladder, replay),
         "status_screen": screen_mine_status(status_lines),
         "warm_screen": warm_text,
@@ -861,7 +860,6 @@ def _icon_button(text: str, data: str, icon: str = "", style: str = "primary"):
 _MINE_TOPICS = {
     "restore": (mine_button_restore, "restore", "5330346824299490543", "success"),
     "rewards": (mine_button_rewards, "rewards", "5438440765908874600", "success"),
-    "next": (mine_button_gift, "next", "5325547803936572038", "primary"),
     "rules": (mine_button_rules, "how", "5402485258211859739", "primary"),
     "warm": (mine_button_warm, "warm", "5354952069168009105", "primary"),
     "status": (mine_button_status, "status", "5952066863931331270", "primary"),
@@ -883,7 +881,7 @@ def _mine_keyboard(user_id: int, *, topics: list | None = None, back: bool = Fal
         ]])
     wide = {"restore", "warm", "close"}
     items = []
-    for key in topics or ["rewards", "next", "rules"]:
+    for key in topics or ["rewards", "rules"]:
         spec = _MINE_TOPICS.get(key)
         if spec is None:
             continue
@@ -1222,10 +1220,9 @@ async def flame_mine_click(call) -> None:
         view = await _mine_view(
             db,
             clicker,
-            with_card=action == "next",
             with_ladder=action == "rewards",
             with_warm=action == "warm",
-            with_progress=action in ("home", ""),
+            with_progress=action in ("home", "", "next"),
         )
     except Exception as exc:
         print(f"[FLAME] mine click {clicker}: {exc}")
@@ -1238,9 +1235,6 @@ async def flame_mine_click(call) -> None:
         return
     if action in ("how", "rules"):
         await _edit_mine(call, view["how"], _mine_keyboard(clicker, back=True))
-        return
-    if action == "next":
-        await _edit_mine(call, view["next_screen"], _mine_keyboard(clicker, back=True))
         return
     if action == "rewards":
         await _edit_mine(call, view["rewards_screen"], _mine_keyboard(clicker, back=True))

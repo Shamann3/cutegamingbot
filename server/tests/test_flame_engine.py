@@ -137,6 +137,7 @@ def test_help_lists_rewards_and_warm_hour():
     assert "Stremlenue" in html
     assert "мой огонёк" in html
     assert "Что делать сегодня" in html
+    assert "следующая награда" in html
     assert "🎁" in html
     assert "официальных группах" in html
     assert "Бонус +" not in html
@@ -288,7 +289,24 @@ def test_mine_phrase_is_exact_and_the_card_is_short():
     assert "без подарка" in card
     assert "хотя бы <b>2</b> слов" in card
     assert "станет длиннее" in card
+    assert "этот день сгорит" in card
     assert "Бонус +" not in card
+    shown = screen_mine(
+        now="3 дня",
+        record="10 дней",
+        have=40,
+        need=100,
+        words=2,
+        next_day="11 дней",
+        next_card="<b>11 дней</b>\n<blockquote>10 кут</blockquote>",
+        replay=True,
+    )
+    assert "Следующая награда" in shown
+    assert "<blockquote>10 кут</blockquote>" in shown
+    assert shown.index("10 кут") < shown.index("60 сообщений")
+    assert "Мой подарок" not in shown
+    assert "без подарка" in shown
+    assert "и она ваша" not in shown
     fresh = screen_mine(
         now="погас",
         record="нет",

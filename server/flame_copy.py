@@ -461,7 +461,7 @@ HELP_CLOSE = """<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b><i>�
 
 <tg-emoji emoji-id='5330346824299490543'>🕯</tg-emoji> <b>Что делать сегодня</b>
 Напишите <code>мой огонёк</code>
-Там будет написано, сколько сообщений осталось."""
+Там сразу видна следующая награда и сколько сообщений осталось."""
 
 
 def screen_help(
@@ -1065,15 +1065,16 @@ def is_flame_mine_text(text: str) -> bool:
 
 # ---------------------------------------------------------------------------
 # Карточка «мой огонёк»
-# Где: ответ на «мой огонёк». Первые строки — что сделать сегодня.
-# Кнопки открывают разделы в этом же сообщении: награды, подарок, правила.
+# Где: ответ на «мой огонёк». Сразу видна следующая награда, под ней — что сделать.
+# Кнопок «мой подарок» нет: награда уже в тексте.
 # Пустые «нет» сюда не пишите: новичку они мешают начать.
 # ---------------------------------------------------------------------------
-# Одна рамка на все состояния. {title} — заголовок. {task_line} — что сделать.
-# {facts} — цитата со справкой или пусто.
+# {prize} — карточка ближайшей награды или короткая строка, если карточки нет.
+# {task_line} — что сделать сегодня. {facts} — цитата или пусто.
 MINE_SHELL = """
 {head} <b>{title}</b>
 
+{prize}
 {task_line}
 {facts}
 """
@@ -1084,15 +1085,18 @@ MINE_TASK_START = """{task} Напишите <b>{need_words}</b> в официа
 # Уже есть прогресс или серия горит: называем только остаток.
 MINE_TASK_LEFT = """{task} Сегодня ещё <b>{left_words}</b>.
 В каждом сообщении — хотя бы <b>{words}</b> слов.
-Допишите до <b>00:00 МСК</b> — огонёк станет длиннее."""
+Допишите до <b>00:00 МСК</b> — огонёк станет длиннее.
+Не успеете — этот день сгорит."""
 # Норма набрана, день ещё не записан.
-MINE_TASK_MET = """{task} Норма уже есть.
+MINE_TASK_MET = """{task} Норма уже есть. Остался один шаг.
 Напишите ещё одно сообщение в официальной группе — огонёк станет длиннее."""
 # День уже продлён. {need_words} — норма завтра.
 MINE_TASK_DONE = """{task} Сегодня всё в порядке.
-Завтра снова <b>{need_words}</b> до <b>00:00 МСК</b>."""
+Завтра снова <b>{need_words}</b> до <b>00:00 МСК</b>.
+Пропустите завтра — огонёк погаснет."""
 MINE_TASK_DONE_PLAIN = """{task} Сегодня всё в порядке.
-Завтра снова до <b>00:00 МСК</b>."""
+Завтра снова до <b>00:00 МСК</b>.
+Пропустите завтра — огонёк погаснет."""
 MINE_TITLES = {
     "fresh": "Зажгите огонёк",
     "relight": "Зажгите огонёк снова",
@@ -1107,8 +1111,12 @@ MINE_RECORD = "<tg-emoji emoji-id='5424746623462823358'>🏅</tg-emoji> Реко
 MINE_STATUS_LINE = "{face} Статус · <b>{status}</b>"
 MINE_PRIZE = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Следующий подарок · <b>{day}</b>"
 MINE_PRIZE_FIRST = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Первый подарок · <b>{day}</b>"
-MINE_PRIZE_NONE = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Новых подарков пока нет. Огонёк всё равно можно держать"
+MINE_PRIZE_NONE = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Новых подарков пока нет. Огонёк всё равно можно держать: имя и рекорд растут и без них"
 MINE_REPLAY = "<tg-emoji emoji-id='5404424216902673748'>🎁</tg-emoji> Пока огонёк короче рекорда, эти дни без подарка. Когда станет длиннее — подарок придёт"
+# Под карточки награды, когда она уже нарисована в сообщении.
+MINE_HOOK_TODAY = "<tg-emoji emoji-id='5330346824299490543'>🕯</tg-emoji> Закроете этот день до <b>00:00 МСК</b> — и она ваша."
+MINE_HOOK_SOON = "<tg-emoji emoji-id='5325547803936572038'>✨</tg-emoji> Каждый закрытый день делает её ближе."
+MINE_HOOK_REPLAY = "<tg-emoji emoji-id='5404424216902673748'>🎁</tg-emoji> Пока огонёк короче рекорда, эти дни без подарка. Эта награда ждёт, когда серия станет длиннее."
 # Где: огонёк выключен во вкладке.
 MINE_OFF = """
 <tg-emoji emoji-id='5357421327470866510'>⚫️</tg-emoji> <b>Ваш огонёк</b>
@@ -1137,10 +1145,11 @@ MINE_NEXT_EMPTY = """
 MINE_REWARDS = """
 <tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Что я получу</b>
 Подарок приходит один раз, сразу в личку.
+Чем дальше день, тем заметнее награда.
 {note}
 {cards}
 
-<tg-emoji emoji-id='5330346824299490543'>🕯</tg-emoji> Пишите сегодня в официальных группах. Подарки придут сами.
+<tg-emoji emoji-id='5330346824299490543'>🕯</tg-emoji> Пишите сегодня в официальных группах. Каждый закрытый день приближает следующую.
 """
 MINE_REWARDS_NOTE = "Пока огонёк короче рекорда, старые дни без подарка."
 MINE_REWARDS_EMPTY = """
@@ -1152,6 +1161,7 @@ MINE_REWARDS_MORE = "Дальше дни есть в «хелп огонёк»."
 # Где: кнопка «Правила».
 MINE_HOW = """
 <tg-emoji emoji-id='5402485258211859739'>🎈</tg-emoji> <b>Как писать</b>
+Те же сообщения начинают приносить пользу.
 
 <tg-emoji emoji-id='5456504676801338603'>🎁</tg-emoji> Пишите в <b>официальных группах</b>.
 Нужно <b>{base} сообщений</b>. В каждом — хотя бы <b>{words}</b> слов.
@@ -1168,19 +1178,19 @@ MINE_HOW = """
 MINE_WARM = """
 <tg-emoji emoji-id='5354952069168009105'>🍦</tg-emoji> <b>Тёплый час</b>
 
-Это добавка, не вместо обычного дня.
+Это ещё подарок, сверх обычного дня.
 Сначала допишите сегодняшнюю норму.
 
 Если огонёк горит уже {warm_from},
-в <b>{hour} МСК</b> каждые <b>{every}</b> сообщений можно получить ещё подарок.
-За день не больше {cap}.
+в <b>{hour} МСК</b> каждые <b>{every}</b> сообщений можно забрать ещё подарок.
+За день не больше {cap}. Час один на всех и только сегодня.
 """
 # Где: кнопка «Статусы». {lines} строки «если огонёк горит уже…».
 MINE_STATUS = """
 <tg-emoji emoji-id='5952066863931331270'>⭐️</tg-emoji> <b>Мой статус</b>
 
 Пока огонёк горит, это имя видно в «кто я».
-Чем больше дней, тем заметнее имя.
+Его видят другие. Чем больше дней, тем заметнее имя.
 
 {lines}
 """
@@ -1191,7 +1201,7 @@ MINE_STATUS_EMPTY = """
 """
 
 MINE_BTN_REWARDS = "Что получу"  # Вся лестница подарков. Тегов нет.
-MINE_BTN_GIFT = "Мой подарок"  # Ближайший ещё не полученный день. Тегов нет.
+MINE_BTN_GIFT = "Мой подарок"  # Больше не на клавиатуре: награда сразу в карточке. Тегов нет.
 MINE_BTN_RULES = "Как писать"  # Как сообщения начинают считаться. Тегов нет.
 MINE_BTN_WARM = "Тёплый час"  # Добавка к обычному дню. Тегов нет.
 MINE_BTN_STATUS = "Мой статус"  # Имя в «кто я». Тегов нет.
@@ -1236,10 +1246,12 @@ def screen_mine(
     need: int = 0,
     words: int = 2,
     next_day: str = "",
+    next_card: str = "",
+    prize_today: bool = False,
     replay: bool = False,
     fresh: bool = False,
 ) -> str:
-    """Главная карточка. Сначала действие на сегодня, ниже только полезные факты."""
+    """Главная карточка. Сначала ближайшая награда, сразу под ней — что сделать сегодня."""
     have_n = max(0, int(have or 0))
     need_n = max(0, int(need or 0))
     left = max(0, need_n - have_n)
@@ -1272,12 +1284,33 @@ def screen_mine(
             status=html.escape(safe_status, quote=False),
         ))
     day = _mine_show(next_day)
-    if day:
-        prize = MINE_PRIZE_FIRST if mode == "fresh" else MINE_PRIZE
-        facts.append(_slots(prize, day=html.escape(day, quote=False)))
+    shown = str(next_card or "").strip()
+    if shown:
+        if replay and mode in {"relight", "go", "met", "done"}:
+            hook = MINE_HOOK_REPLAY
+        elif prize_today:
+            hook = MINE_HOOK_TODAY
+        else:
+            hook = MINE_HOOK_SOON
+        prize = (
+            emoji("5438440765908874600", "🎁")
+            + " <b>"
+            + ("Первый подарок" if mode == "fresh" else "Следующая награда")
+            + "</b>\n\n"
+            + shown
+            + "\n\n"
+            + hook
+        )
+    elif day:
+        prize = _slots(
+            MINE_PRIZE_FIRST if mode == "fresh" else MINE_PRIZE,
+            day=html.escape(day, quote=False),
+        )
     elif mode != "fresh":
-        facts.append(MINE_PRIZE_NONE)
-    if replay and mode in {"relight", "go", "met", "done"}:
+        prize = MINE_PRIZE_NONE
+    else:
+        prize = ""
+    if replay and mode in {"relight", "go", "met", "done"} and not shown:
         facts.append(MINE_REPLAY)
     task = emoji("5330346824299490543", "🕯")
     slots = {
@@ -1295,13 +1328,16 @@ def screen_mine(
     else:
         task_line = _slots(MINE_TASK_START, **slots)
     body = "\n".join(facts)
-    return _tighten(_slots(
+    # Карточку награды не прогоняем через слоты: в названии предмета может быть фигурная скобка.
+    shell = _slots(
         MINE_SHELL,
         head=emoji("5357421327470866510", "⚫️"),
         title=MINE_TITLES.get(mode, MINE_TITLES["go"]),
+        prize="\x00prize\x00",
         task_line=task_line,
         facts=("\n<blockquote>" + body + "</blockquote>") if body else "",
-    ))
+    )
+    return _tighten(shell.replace("\x00prize\x00", prize))
 
 
 def screen_mine_off() -> str:
