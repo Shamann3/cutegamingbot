@@ -3370,9 +3370,56 @@ body.perf-light .purse-days .act-bars button > i {
   margin: 0 0 0.55rem;
 }
 
+.deed-rates .rate-tune,
+.norm-who,
+.norm-card {
+  position: relative;
+  z-index: 1;
+  background: #141418;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+}
+
+.deed-rates .rate-tune {
+  padding: 0.9rem 1rem 1rem;
+}
+
+.deed-rates .deed-lead,
+.deed-rates .norm-scope,
+.deed-rates .norm-read,
+.deed-rates .norm-formula,
+.deed-rates .norm-head strong,
+.deed-rates .norm-pay {
+  color: #f4f4f5;
+}
+
 .norm-who {
+  display: grid;
+  gap: 0.4rem;
   max-width: 28rem;
-  margin-bottom: 0.35rem;
+  margin: 0;
+  padding: 0.85rem 1rem 0.95rem;
+}
+
+.norm-who > span,
+.norm-purse > span {
+  color: var(--e-text-2, #c8c8cc);
+  font-size: 0.86rem;
+}
+
+.norm-scope,
+.norm-read {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--e-text, #f4f4f5);
+  line-height: 1.45;
+}
+
+.deed-rates .panel-users-input,
+.norm-card .panel-users-input {
+  background: #0c0c10;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f7f7f8;
 }
 
 .deed-lines {
@@ -3380,26 +3427,61 @@ body.perf-light .purse-days .act-bars button > i {
   gap: 0.75rem;
 }
 
-.deed-rate {
+.norm-card {
   display: grid;
-  gap: 0.65rem;
-  padding: 0.95rem 1rem 1rem;
-  border-radius: 16px;
+  gap: 0.7rem;
+  padding: 0.95rem 1rem 1.05rem;
 }
 
-.deed-rate.is-off {
-  opacity: 0.78;
+.norm-card.is-off {
+  opacity: 0.86;
 }
 
 .norm-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem 0.6rem;
+  gap: 0.45rem 0.7rem;
 }
 
 .norm-head strong {
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  margin-right: auto;
+}
+
+.norm-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 36px;
+  margin: 0;
+}
+
+.norm-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+}
+
+.norm-formula input {
+  width: 5.6rem;
+  min-width: 0;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.norm-eq {
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+.norm-purse {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 24rem;
 }
 
 .norm-pill {
@@ -3413,12 +3495,6 @@ body.perf-light .purse-days .act-bars button > i {
 .norm-pill.is-own {
   color: var(--e-text, #f5f5f5);
   background: color-mix(in srgb, var(--e-accent, #fff) 16%, transparent);
-}
-
-.norm-inherit {
-  margin: 0;
-  color: var(--e-text-2, #c4c4c8);
-  line-height: 1.4;
 }
 
 @keyframes e-unfurl {

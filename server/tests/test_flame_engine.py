@@ -83,6 +83,8 @@ def test_help_lists_rewards_and_warm_hour():
     assert "18:00" in html
     assert "🎁" in html
     assert "официальных группах" in html
+    assert "Бонус +" not in html
+    assert "использовать" not in html
 
 
 def test_help_offers_restore_from_the_one_text_file():

@@ -449,13 +449,13 @@ export function DeedRates() {
     <div className="deed-rates">
       <RateTune stamp={tuneStamp} onDone={() => load()} />
       <label className="deed-field norm-who">
-        <span>Для кого норма</span>
+        <span>Кому эта норма</span>
         <select
           className="panel-users-input"
           value={who}
           onChange={(event) => setWho(Number(event.target.value) || 0)}
         >
-          <option value="0">Все — обычные нормы</option>
+          <option value="0">Всем сразу</option>
           {people.admins.length > 0 && (
             <optgroup label="Администраторы групп">
               {people.admins.map((person) => (
@@ -472,12 +472,12 @@ export function DeedRates() {
           )}
         </select>
       </label>
-      <p className="deed-lead">
+      <p className="norm-scope">
         {who
-          ? 'Своя норма заменяет обычную только у этого человека и только в выбранном виде наказания. «Как у всех» возвращает обычные числа.'
-          : 'Обычные нормы стоят у всех, у кого нет своей. Под каждым видом наказания — сколько дел и сколько кут. Деньги уходят только по «Выплатить».'}
-        {ownPeople > 0 ? ` Свои нормы сейчас у ${ownPeople}.` : ''}
-        {samePerson ? ' Он и администратор, и сотрудник: норма одна.' : ''}
+          ? 'Числа ниже только у этого человека. У остальных останется обычная норма.'
+          : 'Эти числа получат все, у кого нет своей нормы.'}
+        {ownPeople > 0 ? ` Своя норма сейчас у ${ownPeople}.` : ''}
+        {samePerson ? ' Он и администратор, и сотрудник — норма одна.' : ''}
       </p>
       {error && <p className="staff-hint" role="alert">{error}</p>}
       {notice && <p className="staff-hint" role="status">{notice}</p>}
@@ -487,93 +487,105 @@ export function DeedRates() {
         {rows.map((item) => {
           const base = items.find((row) => row.actionType === item.actionType) || item
           const custom = Boolean(who) && !item.ordinary
+          const showFormula = !who ? item.enabled : custom && item.enabled
+          const title = (who ? base.title : item.title) || item.actionType
+          const setCount = (raw) => {
+            const value = Number(String(raw).replace(/[^\d]/g, '')) || 0
+            if (who) patchPerson(item.actionType, 'everyN', value)
+            else patch(item.actionType, 'everyN', value)
+          }
+          const setPay = (raw) => {
+            const value = Number(String(raw).replace(/[^\d]/g, '')) || 0
+            if (who) patchPerson(item.actionType, 'rewardKut', value)
+            else patch(item.actionType, 'rewardKut', value)
+          }
+          const purse = who ? base.purse : item.purse
+          const purseWords = purse === 'manual' ? 'создатель платит сам' : 'из технических групп'
           return (
-            <article key={item.actionType} className={`staff-member-row deed-rate${item.enabled || item.ordinary ? '' : ' is-off'}`}>
+            <article key={item.actionType} className={`norm-card${showFormula ? '' : ' is-off'}`}>
               <header className="norm-head">
-                <strong>{base.title || item.actionType}</strong>
+                <strong>{title}</strong>
                 {who && item.ordinary && <span className="norm-pill">как у всех</span>}
                 {who && !item.ordinary && <span className="norm-pill is-own">своя</span>}
+                {!who && (
+                  <label className="norm-pay">
+                    <input type="checkbox" checked={item.enabled} onChange={(event) => patch(item.actionType, 'enabled', event.target.checked)} />
+                    <span>{item.enabled ? 'Платим' : 'Не платим'}</span>
+                  </label>
+                )}
+                {custom && (
+                  <label className="norm-pay">
+                    <input type="checkbox" checked={item.enabled} onChange={(event) => patchPerson(item.actionType, 'enabled', event.target.checked)} />
+                    <span>{item.enabled ? 'Платим ему' : 'Ему не платим'}</span>
+                  </label>
+                )}
               </header>
-              {!who && (
-                <label className="deed-field">
-                  <span>Название</span>
-                  <input className="panel-users-input" value={item.title} onChange={(event) => patch(item.actionType, 'title', event.target.value)} />
-                </label>
-              )}
-              {!who && (
-                <label className="deed-check">
-                  <input type="checkbox" checked={item.enabled} onChange={(event) => patch(item.actionType, 'enabled', event.target.checked)} />
-                  <span>{item.enabled ? 'Платим' : 'Выключено'}</span>
-                </label>
-              )}
+
               {who && item.ordinary && (
-                <p className="norm-inherit">
+                <p className="norm-read">
                   {base.enabled
-                    ? `Обычная: каждые ${base.everyN} = ${base.rewardKut} кут.`
-                    : 'Обычная норма этого вида выключена.'}
+                    ? `Как у всех: каждые ${base.everyN} · ${base.title || title} = ${base.rewardKut} кут, ${base.purse === 'manual' ? 'создатель платит сам' : 'из технических групп'}.`
+                    : 'У всех этот вид выключен. Своя норма может включить оплату только ему.'}
                 </p>
               )}
               {who && item.ordinary && (
                 <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => patchPerson(item.actionType, 'ordinary', false)}>
-                  Своя норма
+                  Поставить свою норму
                 </button>
               )}
-              {custom && (
-                <label className="deed-check">
-                  <input type="checkbox" checked={item.enabled} onChange={(event) => patchPerson(item.actionType, 'enabled', event.target.checked)} />
-                  <span>{item.enabled ? 'Платим ему' : 'Ему не платим'}</span>
-                </label>
+
+              {!showFormula && !item.ordinary && (
+                <p className="norm-read">За этот вид сейчас не платим.</p>
               )}
-              {( !who ? item.enabled : custom && item.enabled) && (
+
+              {showFormula && (
                 <>
-                  {item.enabled && !(Number(item.rewardKut) > 0) && (
-                    <p className="staff-answer-a">Сумма 0: норма видна, деньги не начислятся.</p>
-                  )}
-                  <label className="deed-field">
-                    <span>Сколько дел</span>
+                  <div className="norm-formula">
+                    <span>Каждые</span>
                     <input
                       className="panel-users-input"
                       inputMode="numeric"
+                      aria-label={`Сколько дел: ${title}`}
                       value={item.everyN}
-                      onChange={(event) => {
-                        const value = Number(event.target.value.replace(/[^\d]/g, '')) || 0
-                        if (who) patchPerson(item.actionType, 'everyN', value)
-                        else patch(item.actionType, 'everyN', value)
-                      }}
+                      onChange={(event) => setCount(event.target.value)}
                     />
-                  </label>
-                  <label className="deed-field">
-                    <span>Кут</span>
+                    <span>дел</span>
+                    <span className="norm-eq" aria-hidden="true">=</span>
                     <input
                       className="panel-users-input"
                       inputMode="numeric"
+                      aria-label={`Кут: ${title}`}
                       value={item.rewardKut}
-                      onChange={(event) => {
-                        const value = Number(event.target.value.replace(/[^\d]/g, '')) || 0
-                        if (who) patchPerson(item.actionType, 'rewardKut', value)
-                        else patch(item.actionType, 'rewardKut', value)
-                      }}
+                      onChange={(event) => setPay(event.target.value)}
                     />
-                  </label>
+                    <span>кут</span>
+                  </div>
+                  <p className="norm-read">
+                    {Number(item.rewardKut) > 0
+                      ? `Каждые ${item.everyN || 0} · ${title} = ${item.rewardKut} кут, ${purseWords}.`
+                      : `Каждые ${item.everyN || 0} · ${title}: сумма 0, деньги не начислятся.`}
+                  </p>
                   {!who && (
-                    <label className="deed-field">
+                    <label className="norm-purse">
                       <span>Откуда деньги</span>
                       <select className="panel-users-input" value={item.purse} onChange={(event) => patch(item.actionType, 'purse', event.target.value)}>
-                        <option value="tech">Кут с технических групп</option>
+                        <option value="tech">Из технических групп</option>
                         <option value="manual">Создатель платит сам</option>
                       </select>
                     </label>
                   )}
-                  {who && (
-                    <p className="norm-inherit">
-                      Деньги как у всех: {base.purse === 'manual' ? 'создатель платит сам' : 'кут с технических групп'}.
-                    </p>
+                  {!who && (
+                    <label className="norm-purse">
+                      <span>Название в списках</span>
+                      <input className="panel-users-input" value={item.title} aria-label={`Название: ${item.actionType}`} onChange={(event) => patch(item.actionType, 'title', event.target.value)} />
+                    </label>
                   )}
                 </>
               )}
+
               {custom && (
                 <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => patchPerson(item.actionType, 'ordinary', true)}>
-                  Как у всех
+                  Вернуть как у всех
                 </button>
               )}
             </article>
