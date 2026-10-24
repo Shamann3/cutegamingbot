@@ -13,6 +13,7 @@ export default function AdminSelect({
   const [menuStyle, setMenuStyle] = useState({})
   const rootRef = useRef(null)
   const triggerRef = useRef(null)
+  const menuRef = useRef(null)
 
   // Позиционируем меню относительно триггера через getBoundingClientRect
   const updateMenuPosition = () => {
@@ -24,7 +25,7 @@ export default function AdminSelect({
 
     setMenuStyle({
       position: 'fixed',
-      zIndex: 9999,
+      zIndex: 13000,
       left: rect.left,
       width: rect.width,
       ...(openUpward
@@ -38,19 +39,21 @@ export default function AdminSelect({
     updateMenuPosition()
 
     const close = (event) => {
-      if (!rootRef.current?.contains(event.target)) {
-        setOpen(false)
-      }
+      const target = event.target
+      if (!(target instanceof Node)) return
+      // Меню висит на body, не внутри кнопки. Касание пункта не должно
+      // закрывать список раньше клика — иначе нажатие падает в поле под ним.
+      if (rootRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
     }
     const reposition = () => updateMenuPosition()
 
-    document.addEventListener('mousedown', close)
-    document.addEventListener('touchstart', close)
+    document.addEventListener('pointerdown', close, true)
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
     return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('touchstart', close)
+      document.removeEventListener('pointerdown', close, true)
       window.removeEventListener('scroll', reposition, true)
       window.removeEventListener('resize', reposition)
     }
@@ -61,9 +64,11 @@ export default function AdminSelect({
 
   const menu = open ? (
     <ul
+      ref={menuRef}
       className="panel-select-menu"
       role="listbox"
       style={{ ...menuStyle, margin: 0 }}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       {options.length === 0 && (
         <li style={{ padding: '0.5rem 0.75rem', color: '#64748b', fontSize: '0.84rem' }}>
@@ -79,8 +84,9 @@ export default function AdminSelect({
               role="option"
               aria-selected={active}
               className={`panel-select-option${active ? ' panel-select-option-active' : ''}`}
-              onMouseDown={(e) => {
-                e.preventDefault() // prevent blur before click
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
                 onChange(opt.value)
                 setOpen(false)
               }}

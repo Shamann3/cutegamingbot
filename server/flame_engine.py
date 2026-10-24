@@ -162,9 +162,22 @@ def _reward_mark(day: int) -> str:
     return "✨"
 
 
+def _gift_face(kind: str, stored: str = "") -> str:
+    face = str(stored or "").strip()
+    if face:
+        return face
+    if kind == "kuty":
+        return "⚡️"
+    if kind == "bonus_x2":
+        return "✨"
+    return "🎁"
+
+
 def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
-    """Одна строка на день: знак срока и все подарки через «·»."""
-    by_day: dict[int, list[str]] = {}
+    """Каждый день — отдельная цитата. Предметы со своим эмодзи, всё на одной строке."""
+    from flame_copy import reward_day_card
+
+    by_day: dict[int, list[tuple[str, str]]] = {}
     for row in sorted(rewards or [], key=lambda item: (int(item.get("day") or 0), int(item.get("id") or 0))):
         day = int(row.get("day") or 0)
         if day < 1:
@@ -175,11 +188,10 @@ def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
         gift = _kind_words(kind, amount, item)
         if not gift:
             continue
-        by_day.setdefault(day, []).append(gift)
+        by_day.setdefault(day, []).append((_gift_face(kind, row.get("emoji") or ""), gift))
     lines = []
     for day in sorted(by_day):
-        body = " · ".join(f"<b>{gift}</b>" for gift in by_day[day])
-        lines.append(f"{_reward_mark(day)} <b>{span_label(day)}</b> — {body}")
+        lines.append(reward_day_card(_reward_mark(day), span_label(day), by_day[day]))
     return lines
 
 
@@ -645,6 +657,10 @@ async def load_board(pool) -> dict:
             "SELECT id, day, kind, amount, item_name FROM flame_rewards ORDER BY day, id"
         )
     ]
+    faces = await _item_faces(pool, [row["item_name"] for row in rewards if row["kind"] == "item"])
+    for row in rewards:
+        if row["kind"] == "item":
+            row["emoji"] = faces.get(str(row["item_name"]).strip().casefold(), "")
     titles = [
         {
             "from_day": int(row["from_day"]),
@@ -1031,6 +1047,43 @@ async def save_gift_drops(pool, drops: list[dict]) -> None:
                     """,
                     kind, a, b, item, weight, show,
                 )
+
+
+async def _item_faces(pool, names: list[str]) -> dict[str, str]:
+    """Эмодзи предметов из каталога. Ключ — имя без учёта регистра."""
+    wanted = []
+    seen = set()
+    for name in names or []:
+        text = " ".join(str(name or "").split())
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        wanted.append(key)
+    if not wanted:
+        return {}
+    try:
+        rows = await pool.fetch(
+            """
+            SELECT name, name1, emoji
+            FROM dex
+            WHERE lower(name) = ANY($1::text[])
+               OR lower(COALESCE(name1, '')) = ANY($1::text[])
+            """,
+            wanted,
+        )
+    except Exception:
+        return {}
+    faces: dict[str, str] = {}
+    for row in rows:
+        face = str(row["emoji"] or "").strip()
+        if not face:
+            continue
+        for raw in (row["name"], row["name1"]):
+            text = str(raw or "").strip()
+            if text:
+                faces.setdefault(text.casefold(), face)
+    return faces
 
 
 async def shop_catalog(pool) -> list[dict]:

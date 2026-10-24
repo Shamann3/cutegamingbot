@@ -1968,7 +1968,9 @@ body {
 
 .panel-select-menu {
   position: fixed;
-  z-index: 9999;
+  z-index: 13000;
+  pointer-events: auto;
+  touch-action: manipulation;
   /* top/left/width управляются через JS portal */
   margin: 0;
   padding: 0.35rem;
@@ -1994,17 +1996,22 @@ body {
 }
 
 .panel-select-option {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
+  min-height: 44px;
   border: none;
   border-radius: 0.45rem;
   background: transparent;
   color: #e5e7eb;
   font: inherit;
   font-size: 0.86rem;
+  line-height: 1.35;
   text-align: left;
   padding: 0.5rem 0.65rem;
   cursor: pointer;
+  touch-action: manipulation;
+  white-space: normal;
   transition: background 0.12s ease, color 0.12s ease;
 }
 

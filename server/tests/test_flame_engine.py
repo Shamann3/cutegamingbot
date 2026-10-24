@@ -88,6 +88,31 @@ def test_help_lists_rewards_and_warm_hour():
     assert "продлите огонёк" in html.lower()
     assert "закрыть день" not in html.lower()
     assert "вернуть огонёк можно ещё" not in html.lower()
+    assert html.count("<blockquote>") >= 2
+    assert "⚡️" in html
+
+
+def test_help_day_cards_keep_each_item_emoji():
+    html = help_html({
+        "settings": {"enabled": True, "base_messages": 100, "min_words": 2},
+        "steps": [],
+        "rewards": [
+            {"day": 2, "kind": "item", "amount": 1, "item_name": "Саженец", "emoji": "🌱"},
+            {"day": 2, "kind": "item", "amount": 1, "item_name": "Табак", "emoji": "🍂"},
+            {"day": 5, "kind": "item", "amount": 2, "item_name": "Ключ", "emoji": "🔑"},
+        ],
+        "titles": [],
+        "warm": {"enabled": False},
+        "gift": {"enabled": False},
+    })
+    cards = [line for line in html.split("\n") if line.startswith("<blockquote>")]
+    assert len(cards) == 2
+    assert "2 дня" in cards[0] and "🌱" in cards[0] and "Саженец" in cards[0]
+    assert "🍂" in cards[0] and "Табак" in cards[0]
+    assert "5 дней" in cards[1] and "🔑" in cards[1] and "Ключ ×2" in cards[1]
+    assert cards[0] != cards[1]
+    assert "закрыть день" not in html.lower()
+    assert "вернуть огонёк можно ещё" not in html.lower()
 
 
 def test_help_offers_restore_from_the_one_text_file():

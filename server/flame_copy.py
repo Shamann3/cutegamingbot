@@ -29,6 +29,23 @@ def emoji(eid: str, fallback: str = "⚫️") -> str:
     return f"<tg-emoji emoji-id='{eid}'>{fallback}</tg-emoji>"
 
 
+def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str]]) -> str:
+    """Один день наград в справке. Каждый день — своя цитата, у предмета свой эмодзи."""
+    bits = []
+    for face, words in gifts:
+        text = " ".join(str(words or "").split())
+        if not text:
+            continue
+        raw = str(face or "🎁").strip() or "🎁"
+        shown = raw if raw.startswith("<tg-emoji") else html.escape(raw, quote=False)
+        bits.append(f"{shown} <b>{html.escape(text, quote=False)}</b>")
+    body = " · ".join(bits) or "🎁 <b>награда</b>"
+    return (
+        f"<blockquote>{html.escape(str(mark or '✨'), quote=False)} "
+        f"<b>{html.escape(str(label or ''), quote=False)}</b> — {body}</blockquote>"
+    )
+
+
 def kind_words(kind: str, amount: int, item: str = "") -> str:
     """Короткая подпись награды. Её же бот пишет в историю полученных наград."""
     amount = max(1, int(amount or 1))
@@ -83,7 +100,7 @@ def screen_help(
     ]
     if rewards:
         parts.append("<i>Один раз, сразу в личку. Начните с ближайшего — дальше вкуснее.</i>")
-        parts.append("<blockquote>" + "\n".join(rewards) + "</blockquote>")
+        parts.extend(rewards)
     else:
         parts.append("<i>Награды за дни скоро появятся. Огонёк уже можно продлевать.</i>")
     parts += [
