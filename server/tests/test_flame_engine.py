@@ -103,6 +103,7 @@ def test_help_lists_rewards_and_warm_hour():
     assert html.index("50 кут") < html.index("Купон")
     assert html.index("Награды за дни") < html.index("Как работает")
     assert "Тёплый час" in html
+    assert "не больше 3 подарков за день" in html
     assert "18:00" in html
     assert "🎁" in html
     assert "официальных группах" in html
@@ -139,8 +140,8 @@ def test_help_day_cards_keep_each_item_emoji():
     assert "<b>2 дня</b>" in day2
     quote2 = day2.split("<blockquote>", 1)[1].split("</blockquote>", 1)[0]
     assert quote2 == "\n".join((
-        "🎁 Бонус — бесплатный бонус",
-        "✨ Бонус ×2 — бонус ×2",
+        "🎁 Бесплатный бонус",
+        "✨ Бонус ×2",
         "⚡️ Куты — 10 кут",
         "🌱 Саженец",
         "🍂 Табак",

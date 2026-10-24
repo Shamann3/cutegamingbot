@@ -164,8 +164,11 @@ REWARD_GIFT_GAP = " · "
 REWARD_DAY_HEAD = "{mark} <b>{days}</b>"
 # Одна цитата на все подарки дня. {body} строки через перевод строки.
 REWARD_QUOTE = "<blockquote>{body}</blockquote>"
-# Бонус, бонус ×2 или куты. {face} значок, {title} «Куты», {gifts} «10 кут».
+# Куты. {face} значок, {title} «Куты», {gifts} «10 кут».
+# Бонус сюда не подставляется: «Бонус — бесплатный бонус» звучит дважды.
 REWARD_GROUP = "{face} {title} — {gifts}"
+# Бонус и бонус ×2 одной ясной строкой. {face} значок, {words} «Бесплатный бонус».
+REWARD_PLAIN = "{face} {words}"
 # Один бонус / куты. {words} уже готовая подпись, например «10 кут».
 REWARD_GIFT = "{words}"
 # Один предмет — отдельная цитата. {face} эмодзи предмета, {words} имя.
@@ -231,6 +234,13 @@ def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) ->
                 safe = html.escape(text, quote=False)
                 lines.append(_slots(REWARD_ITEM, face=_coded_face(face), words=safe))
             continue
+        if key in {"bonus", "bonus_x2"}:
+            words = " · ".join(
+                _plain_reward(text) for _face, text in packed[key] if text
+            )
+            icon = html.escape(str(icons.get(key) or "🎁"), quote=False)
+            lines.append(_slots(REWARD_PLAIN, face=icon, words=html.escape(words, quote=False)))
+            continue
         bits = []
         for _face, text in packed[key]:
             bits.append(_slots(REWARD_GIFT, words=html.escape(text, quote=False)))
@@ -247,6 +257,23 @@ def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) ->
         days=html.escape(str(label or ""), quote=False),
     )
     return head + "\n" + _slots(REWARD_QUOTE, body=body)
+
+
+def _gift_cap(count: int) -> str:
+    """«больше N» требует родительный: 1 подарка, 2 подарков, 5 подарков."""
+    n = max(0, int(count or 0))
+    mod100 = n % 100
+    mod10 = n % 10
+    word = "подарка" if mod10 == 1 and mod100 != 11 else "подарков"
+    return f"{n} {word}"
+
+
+def _plain_reward(words: str) -> str:
+    """Первая буква заглавная, чтобы строка в цитате не начиналась со строчной."""
+    text = " ".join(str(words or "").split())
+    if not text:
+        return ""
+    return text[:1].upper() + text[1:]
 
 
 def kind_words(kind: str, amount: int, item: str = "") -> str:
@@ -332,10 +359,10 @@ HELP_WARM_BODY = (
 HELP_WARM_TODAY = "🕐 Сегодня это {warm_hour} МСК."  # текущий удачный час
 HELP_RESTORE_HEAD = "{flame} <b>Вернуть огонёк</b>"  # заголовок блока возврата
 HELP_CLOSE_RESTORE = (
-    "🌱 Один день — и серия ваша. Если погаснет, вернуть её ещё можно."
+    "🌱 Продлите один день — серия уже ваша. Если погаснет, вернуть её ещё можно."
 )  # финал, если возврат доступен
 HELP_CLOSE = (
-    "🌱 Один день — и серия ваша. Перестанете продлевать — огонёк погаснет."
+    "🌱 Продлите один день — серия уже ваша. Перестанете продлевать — огонёк погаснет."
 )  # финал без возврата
 
 
@@ -371,6 +398,7 @@ def screen_help(
     ]
     if rewards:
         parts.append(HELP_REWARDS_LEAD)
+        parts.append("")
         parts.append("\n\n".join(rewards))
     else:
         parts.append(HELP_REWARDS_EMPTY)
@@ -403,13 +431,14 @@ def screen_help(
                 HELP_WARM_BODY,
                 warm_from=str(warm_from),
                 warm_every=str(int(warm_every)),
-                warm_cap=str(int(warm_cap)),
+                warm_cap=_gift_cap(warm_cap),
             ),
         ]
         if warm_hour:
             parts.append(_slots(HELP_WARM_TODAY, warm_hour=str(warm_hour)))
     if restore_line:
         parts += ["", _slots(HELP_RESTORE_HEAD, flame=emoji(EMOJI)), restore_line]
+    parts.append("")
     if int(restore_days or 0) > 0:
         parts.append(HELP_CLOSE_RESTORE)
     else:
