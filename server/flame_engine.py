@@ -147,8 +147,23 @@ def _reward_line(row: dict) -> str:
     return f"· <b>{span_label(day)}</b> — {gift}"
 
 
+def _reward_mark(day: int) -> str:
+    n = int(day or 0)
+    if n >= 365:
+        return "🏆"
+    if n >= 90:
+        return "👑"
+    if n >= 30:
+        return "🌙"
+    if n >= 14:
+        return "💎"
+    if n >= 7:
+        return "🔥"
+    return "✨"
+
+
 def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
-    """Одна строка на день: все подарки этого дня через «·»."""
+    """Одна строка на день: знак срока и все подарки через «·»."""
     by_day: dict[int, list[str]] = {}
     for row in sorted(rewards or [], key=lambda item: (int(item.get("day") or 0), int(item.get("id") or 0))):
         day = int(row.get("day") or 0)
@@ -163,9 +178,8 @@ def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
         by_day.setdefault(day, []).append(gift)
     lines = []
     for day in sorted(by_day):
-        gifts = by_day[day]
-        body = " · ".join(gifts)
-        lines.append(f"· <b>{span_label(day)}</b> — {body}")
+        body = " · ".join(f"<b>{gift}</b>" for gift in by_day[day])
+        lines.append(f"{_reward_mark(day)} <b>{span_label(day)}</b> — {body}")
     return lines
 
 
