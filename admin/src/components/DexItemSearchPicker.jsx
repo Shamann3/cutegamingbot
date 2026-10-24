@@ -24,13 +24,13 @@ function matchesValue(item, value, valueMode) {
   return String(item.id) === String(value)
 }
 
-function DexItemRow({ item, active, onPick }) {
+function DexItemRow({ item, active, taken, onPick }) {
   return (
     <button
       type="button"
       role="option"
-      aria-selected={active}
-      className={`dex-item-search-option${active ? ' dex-item-search-option-active' : ''}`}
+      aria-selected={active || taken}
+      className={`dex-item-search-option${active ? ' dex-item-search-option-active' : ''}${taken ? ' is-taken' : ''}`}
       onClick={() => onPick(item)}
     >
       <span className="dex-item-search-option-emoji" aria-hidden>{item.emoji || '📦'}</span>
@@ -41,7 +41,9 @@ function DexItemRow({ item, active, onPick }) {
           {Number(item.price) > 0 ? <span className="dex-item-search-option-price">{item.price} кут</span> : null}
         </span>
       </span>
-      <span className="dex-item-search-option-id">#{item.id}</span>
+      {taken
+        ? <span className="dex-item-search-option-taken">выбран</span>
+        : <span className="dex-item-search-option-id">#{item.id}</span>}
     </button>
   )
 }
@@ -145,6 +147,9 @@ export default function DexItemSearchPicker({
   compact = false,
   className = '',
   catalog = null,
+  addMode = false,
+  takenNames = [],
+  onRemove = null,
 }) {
   const [query, setQuery] = useState('')
   const [items, setItems] = useState([])
@@ -161,6 +166,10 @@ export default function DexItemSearchPicker({
   const inputRef = useRef(null)
   const listId = useId()
   const localCatalog = Array.isArray(catalog) ? catalog : null
+  const takenSet = useMemo(
+    () => new Set((takenNames || []).map((name) => String(name || '').trim()).filter(Boolean)),
+    [takenNames],
+  )
 
   const loadItems = useCallback(async (q, nextOffset = 0, append = false) => {
     if (localCatalog) {
@@ -275,6 +284,13 @@ export default function DexItemSearchPicker({
   const hasMore = items.length < total
 
   const pickItem = (item) => {
+    if (addMode) {
+      const name = String(item?.name || '').trim()
+      if (!name) return
+      if (takenSet.has(name)) onRemove?.(name)
+      else onChange(name)
+      return
+    }
     setSelected(item)
     onChange(valueOf(item, valueMode))
     setOpen(false)
@@ -365,7 +381,8 @@ export default function DexItemSearchPicker({
             <DexItemRow
               key={`${item.id}-${item.name}`}
               item={item}
-              active={matchesValue(item, value, valueMode) || index === activeIndex}
+              taken={addMode && takenSet.has(String(item.name || '').trim())}
+              active={!addMode && matchesValue(item, value, valueMode) || index === activeIndex}
               onPick={pickItem}
             />
           ))}
@@ -379,7 +396,7 @@ export default function DexItemSearchPicker({
             Показать ещё ({items.length} из {total})
           </button>
         )}
-        {clearable && value ? (
+        {clearable && value && !addMode ? (
           <button type="button" className="panel-users-btn dex-item-search-clear" onClick={clearItem}>
             Сбросить выбор
           </button>

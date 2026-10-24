@@ -3134,6 +3134,17 @@ body {
   cursor: pointer;
 }
 
+.dex-item-search-option.is-taken {
+  background: rgba(255, 140, 40, 0.16);
+}
+
+.dex-item-search-option-taken {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #ffb060;
+  white-space: nowrap;
+}
+
 .dex-item-search-option:hover,
 .dex-item-search-option-active {
   border-color: rgba(96, 165, 250, 0.45);

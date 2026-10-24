@@ -248,6 +248,25 @@ function kindLabel(kind) {
   return KIND_OPTIONS.find((row) => row.value === kind)?.label || 'Награда'
 }
 
+function catalogFace(catalog, name) {
+  const raw = String(name || '').trim()
+  if (!raw) return null
+  return (catalog || []).find((row) => row.name === raw || row.name1 === raw) || null
+}
+
+function namedDrops(rows) {
+  const seen = new Set()
+  const out = []
+  for (const row of rows || []) {
+    const name = String(row.itemName || '').trim()
+    if (!name || seen.has(name)) continue
+    if (row.kind && row.kind !== 'item') continue
+    seen.add(name)
+    out.push(row)
+  }
+  return out
+}
+
 function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel = 'Выберите предмет', catalog = [], ask = null }) {
   return (
     <div className="flame-item-pick">
@@ -379,7 +398,49 @@ export default function FlameSection() {
 
   const patch = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
-  const saveAllSettings = () => run('settings', () => saveFlameSettings({
+  const bonusItems = useMemo(() => namedDrops(giftDrops), [giftDrops])
+  const bonusChance = Math.max(0, Math.min(100, Number(form.giftItemChance) || 0))
+  const bonusSlots = Math.max(1, Math.min(5, Number(form.giftItemCount) || 1))
+  const bonusCover = Math.min(5, bonusItems.length)
+  const bonusGivesAll = bonusItems.length > 0 && bonusSlots >= bonusCover && bonusChance >= 100
+  const bonusGive = Math.min(bonusSlots, bonusItems.length, 5)
+  const bonusDropLine = bonusItems.length === 0
+    ? 'Сначала отметьте предметы. Без них в открытии останутся только куты.'
+    : bonusChance < 1
+      ? `Выбрано ${bonusItems.length}. Шанс 0% — эти предметы не выпадут.`
+      : `Выбрано ${bonusItems.length}. За одно открытие выпадет до ${bonusGive} разных.${bonusChance >= 100 ? '' : ` Шанс каждого слота — ${bonusChance}%.`}${bonusItems.length > 5 ? ' Больше пяти разных за раз выдать нельзя.' : ''}`
+
+  const addBonusItem = (name) => {
+    const clean = String(name || '').trim()
+    if (!clean) return
+    const have = bonusItems.length
+    if (bonusItems.some((row) => String(row.itemName || '').trim() === clean)) return
+    setGiftDrops((rows) => [
+      ...rows,
+      { kind: 'item', amountMin: '1', amountMax: '1', itemName: clean, weight: '1', showPreview: true },
+    ])
+    setForm((prev) => {
+      const current = Math.max(1, Math.min(5, Number(prev.giftItemCount) || 1))
+      if (have > 0 && current >= have) {
+        return { ...prev, giftItemCount: String(Math.min(5, have + 1)) }
+      }
+      return prev
+    })
+  }
+
+  const removeBonusItem = (name) => {
+    const clean = String(name || '').trim()
+    setGiftDrops((rows) => rows.filter((row) => String(row.itemName || '').trim() !== clean))
+  }
+
+  const patchBonusItem = (name, next) => {
+    const clean = String(name || '').trim()
+    setGiftDrops((rows) => rows.map((row) => (
+      String(row.itemName || '').trim() === clean ? { ...row, ...next, kind: 'item' } : row
+    )))
+  }
+
+  const settingsPayload = () => ({
     enabled: form.enabled,
     baseMessages: Math.max(1, Number(form.baseMessages) || 1),
     warmEnabled: form.warmEnabled,
@@ -411,7 +472,45 @@ export default function FlameSection() {
     restoreItem: String(form.restoreItem || '').trim(),
     restoreItemCount: Math.max(1, Math.min(100, Number(form.restoreItemCount) || 1)),
     giftCellEmojis: boardCellsFrom(form.giftCellEmojis).map((cell) => ({ id: cell.id, alt: cell.alt })),
-  }))
+  })
+
+  const giftDropPayload = () => {
+    const seen = new Set()
+    const items = []
+    const legacy = []
+    for (const row of giftDrops) {
+      const name = String(row.itemName || '').trim()
+      if (!row.kind || row.kind === 'item' || name) {
+        if (!name || seen.has(name)) continue
+        seen.add(name)
+        items.push({
+          kind: 'item',
+          amountMin: 1,
+          amountMax: 1,
+          itemName: name,
+          weight: Math.max(1, Number(row.weight) || 1),
+          showPreview: row.showPreview !== false,
+        })
+      } else {
+        legacy.push({
+          kind: row.kind,
+          amountMin: Math.max(1, Number(row.amountMin) || 1),
+          amountMax: Math.max(1, Number(row.amountMax) || Number(row.amountMin) || 1),
+          itemName: '',
+          weight: Math.max(1, Number(row.weight) || 1),
+          showPreview: false,
+        })
+      }
+    }
+    return [...items, ...legacy]
+  }
+
+  const saveAllSettings = () => run('settings', () => saveFlameSettings(settingsPayload()))
+
+  const saveBonusPlus = () => run('settings', async () => {
+    await saveFlameSettings(settingsPayload())
+    return saveFlameGiftDrops({ drops: giftDropPayload() })
+  })
 
   const warmHour = board?.warm?.hour
   const catalog = useMemo(() => {
@@ -1045,6 +1144,65 @@ export default function FlameSection() {
                 </div>
               </div>
               <FlameFold open={Boolean(form.giftItemOn)}>
+              <p className="flame-note">
+                Отметьте несколько предметов. Именно они выпадают в Бонусе +. Повторное нажатие в каталоге снимает выбор.
+              </p>
+              <DexItemSearchPicker
+                addMode
+                catalog={catalog}
+                value=""
+                valueMode="name"
+                compact
+                clearable={false}
+                takenNames={bonusItems.map((row) => row.itemName)}
+                onChange={addBonusItem}
+                onRemove={removeBonusItem}
+                label="Какие предметы выпадают"
+                emptyLabel={bonusItems.length ? `Выбрано ${bonusItems.length} · добавить ещё` : 'Выбрать несколько предметов'}
+                placeholder="Название или эмодзи…"
+                hint="Можно отметить несколько подряд. Уже выбранные подсвечены."
+              />
+              {bonusItems.length === 0 ? (
+                <p className="flame-note">Пока пусто. Пока предметов нет, в открытии будут только куты.</p>
+              ) : (
+                <ul className="bonus-pool">
+                  {bonusItems.map((row) => {
+                    const face = catalogFace(catalog, row.itemName)
+                    const name = String(row.itemName || '').trim()
+                    return (
+                      <li key={name} className={row.showPreview ? 'bonus-pick is-shown' : 'bonus-pick'}>
+                        <span className="bonus-pick-emoji" aria-hidden="true">{face?.emoji || '📦'}</span>
+                        <div className="bonus-pick-main">
+                          <strong>{name}</strong>
+                          <label className="bonus-pick-show">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(row.showPreview)}
+                              onChange={(e) => patchBonusItem(name, { showPreview: e.target.checked })}
+                            />
+                            <span>{row.showPreview ? 'Виден до открытия' : 'Скрыт, но может выпасть'}</span>
+                          </label>
+                        </div>
+                        <label className="bonus-pick-weight">
+                          <span>Вес</span>
+                          <input
+                            inputMode="numeric"
+                            aria-label={`Вес: ${name}`}
+                            value={row.weight}
+                            onChange={(e) => patchBonusItem(name, { weight: digits(e.target.value) })}
+                          />
+                        </label>
+                        <button type="button" className="sec-btn sec-btn-ghost" onClick={() => removeBonusItem(name)}>Убрать</button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              <div className="flame-ask-row">
+                <FlameAsk {...ASK.giftShow} />
+                <FlameAsk {...ASK.giftWeight} />
+                <FlameAsk {...ASK.giftItem} />
+              </div>
               <div className="flame-grid-2">
                 <label className="flame-field">
                   <span>Шанс на каждый слот, %</span>
@@ -1052,11 +1210,26 @@ export default function FlameSection() {
                   <FlameAsk {...ASK.itemChance} />
                 </label>
                 <label className="flame-field">
-                  <span>Сколько предметов за раз (1–5)</span>
+                  <span>Сколько разных за раз (1–5)</span>
                   <input inputMode="numeric" value={form.giftItemCount} onChange={(e) => patch('giftItemCount', digits(e.target.value))} />
                   <FlameAsk {...ASK.itemCount} />
                 </label>
               </div>
+              <p className="flame-note">{bonusDropLine}</p>
+              {bonusItems.length > 0 && !bonusGivesAll && (
+                <div className="flame-actions">
+                  <button
+                    type="button"
+                    className="sec-btn sec-btn-ghost"
+                    onClick={() => {
+                      patch('giftItemCount', String(Math.min(5, bonusItems.length)))
+                      patch('giftItemChance', '100')
+                    }}
+                  >
+                    Выдавать выбранные за раз
+                  </button>
+                </div>
+              )}
               <div className="flame-preview">
                 {playerReveal.shownNames.length > 0 ? (
                   <p className="flame-consequence">
@@ -1071,7 +1244,7 @@ export default function FlameSection() {
                     ))}
                   </p>
                 ) : (
-                  <p className="flame-note">В списке предметов пусто — игрок увидит только куты.</p>
+                  <p className="flame-note">В списке до открытия пусто — игрок увидит только куты, пока не выпадет скрытый предмет.</p>
                 )}
                 {playerReveal.hiddenNames.length > 0 && (
                   <p className="flame-note">
@@ -1079,90 +1252,10 @@ export default function FlameSection() {
                   </p>
                 )}
               </div>
-              <div className="flame-card-head">
-                <h3>Пул предметов</h3>
-                <button
-                  type="button"
-                  className="sec-btn sec-btn-ghost"
-                  onClick={() => setGiftDrops((rows) => [...rows, {
-                    kind: 'item',
-                    amountMin: '1',
-                    amountMax: '1',
-                    itemName: '',
-                    weight: '1',
-                    showPreview: true,
-                  }])}
-                >
-                  Добавить
-                </button>
-              </div>
-              <p className="flame-note">
-                Галочка «В списке» показывает предмет до открытия. Вес — шанс внутри пула.
-              </p>
-              <ul className="flame-rows is-gift">
-                {giftDrops.map((row, index) => (
-                  <li key={`gift-${index}`} className={row.showPreview ? 'is-shown' : ''}>
-                    <div className="flame-ask-slot">
-                      <label className="flame-show-check" title="Показать в «Что можно получить?»">
-                        <span>В списке</span>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(row.showPreview)}
-                          onChange={(e) => {
-                            const showPreview = e.target.checked
-                            setGiftDrops((rows) => rows.map((item, i) => (
-                              i === index ? { ...item, showPreview, kind: 'item' } : item
-                            )))
-                          }}
-                        />
-                      </label>
-                      <FlameAsk {...ASK.giftShow} />
-                    </div>
-                    <label>
-                      <span>Вес</span>
-                      <input inputMode="numeric" value={row.weight} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, weight: value, kind: 'item' } : item))
-                      }} />
-                      <FlameAsk {...ASK.giftWeight} />
-                    </label>
-                    <div className="is-wide">
-                      <FlameItemPick
-                        catalog={catalog}
-                        value={row.itemName}
-                        ask={ASK.giftItem}
-                        onChange={(itemName) => setGiftDrops((rows) => rows.map((item, i) => i === index ? { ...item, itemName, kind: 'item' } : item))}
-                      />
-                    </div>
-                    <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setGiftDrops((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
-                  </li>
-                ))}
-              </ul>
-              <div className="flame-actions">
-                <button
-                  type="button"
-                  className="sec-btn"
-                  disabled={busy === 'gift'}
-                  onClick={() => run('gift', () => saveFlameGiftDrops({
-                    drops: giftDrops
-                      .map((row) => ({
-                        kind: 'item',
-                        amountMin: 1,
-                        amountMax: 1,
-                        itemName: row.itemName,
-                        weight: Math.max(1, Number(row.weight) || 1),
-                        showPreview: Boolean(row.showPreview),
-                      }))
-                      .filter((row) => row.itemName),
-                  }))}
-                >
-                  {busy === 'gift' ? 'Сохраняем…' : 'Сохранить пул предметов'}
-                </button>
-              </div>
               </FlameFold>
               </FlameFold>
               <div className="flame-actions">
-                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
+                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveBonusPlus}>
                   {busy === 'settings' ? 'Сохраняем…' : 'Сохранить Бонус +'}
                 </button>
               </div>
