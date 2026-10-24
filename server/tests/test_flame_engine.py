@@ -63,9 +63,28 @@ def test_profile_line_with_status_title():
     assert profile_line(0) == ""
     text = profile_line(2)
     assert "Огонёк уже 2 дня" in text
+    assert "<i>рекорд</i>" in text
     titled = profile_line(10, [{"from_day": 7, "title": "Живой огонь", "emoji_id": "1"}])
     assert "Живой огонь" in titled
     assert "10 дней" in titled
+    assert "<i>рекорд</i>" in titled
+    shorter = profile_line(3, None, 10)
+    assert "Огонёк уже 3 дня" in shorter
+    assert "рекорд <b>10 дней</b>" in shorter
+    gone = profile_line(0, None, 10)
+    assert "Рекорд огонька" in gone
+    assert "<b>10 дней</b>" in gone
+    assert "Огонёк уже" not in gone
+
+
+def test_passed_days_do_not_pay_again_after_the_flame_dies():
+    from flame_engine import reward_is_new
+
+    for day in range(1, 11):
+        assert reward_is_new(day, 10) is False
+    assert reward_is_new(11, 10) is True
+    assert reward_is_new(1, 0) is True
+    assert reward_is_new(10, 9) is True
 
 
 def test_title_picks_highest_unlocked():
@@ -95,16 +114,22 @@ def test_help_lists_rewards_and_warm_hour():
     assert "Норма сообщений для продлевания огонька будет расти со временем" in html
     assert "с 7-го — <b>250</b>" not in html
     assert "<b>3 дня</b>" in html
-    assert "🔥 <b>7 дней</b>" in html
+    assert "5325547803936572038" in html
+    assert "<b>7 дней</b>" in html
     assert "50 кут" in html
     assert "Купон" in html
-    # День 7 — одна цитата: куты строкой, предмет следующей строкой
-    assert "<blockquote>⚡️ Куты — 50 кут\n🎁 Купон</blockquote>" in html
+    assert "<blockquote><tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji> 50 кут\n<b>+ Предметы :</b>\n🎁 Купон</blockquote>" in html
     assert html.index("50 кут") < html.index("Купон")
     assert html.index("Награды за дни") < html.index("Как работает")
+    assert "Подарок приходит один раз" in html
+    assert "Награды за уже пройденные дни не выдаются" in html
+    assert "длиннее, чем уже был" in html
+    assert "приносить пользу" in html
     assert "Тёплый час" in html
-    assert "не больше 3 подарков за день" in html
+    assert "какой-то подарок от проекта" in html
     assert "18:00" in html
+    assert "5354952069168009105" in html
+    assert "Stremlenue" in html
     assert "🎁" in html
     assert "официальных группах" in html
     assert "Бонус +" not in html
@@ -112,10 +137,10 @@ def test_help_lists_rewards_and_warm_hour():
     assert "продлите огонёк" in html.lower()
     assert "закрыть день" not in html.lower()
     assert "вернуть огонёк можно ещё" not in html.lower()
+    assert "с 7-го" not in html
     assert html.count("<blockquote>") == 2
     assert not html.startswith("<blockquote>")
     assert "</blockquote>" not in html.split("Как работает", 1)[1].split("Тёплый час", 1)[0]
-    assert "⚡️" in html
 
 
 def test_help_day_cards_keep_each_item_emoji():
@@ -138,17 +163,22 @@ def test_help_day_cards_keep_each_item_emoji():
     day2 = html.split("<b>5 дней</b>")[0]
     day5 = html.split("<b>5 дней</b>", 1)[1]
     assert "<b>2 дня</b>" in day2
+    assert "5325547803936572038" in day2
     quote2 = day2.split("<blockquote>", 1)[1].split("</blockquote>", 1)[0]
+    gift = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji>"
+    money = "<tg-emoji emoji-id='5375296873982604963'>💰</tg-emoji>"
     assert quote2 == "\n".join((
-        "🎁 Бесплатный бонус",
-        "✨ Бонус ×2",
-        "⚡️ Куты — 10 кут",
+        f"{gift} Бесплатный бонус",
+        f"{gift} Бонус ×2",
+        f"{money} 10 кут",
+        "<b>+ Предметы :</b>",
         "🌱 Саженец",
         "🍂 Табак",
     ))
     assert "5 дней" not in day2
-    assert "<blockquote>🔑 Ключ ×2</blockquote>" in day5
+    assert "<blockquote><b>+ Предметы :</b>\n🔑 Ключ ×2</blockquote>" in day5
     assert "Бонус" not in day5
+    assert "Куты —" not in html
 
 
 def test_help_offers_restore_from_the_one_text_file():

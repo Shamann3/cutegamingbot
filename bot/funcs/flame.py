@@ -63,7 +63,7 @@ from flame_engine import (  # noqa: E402
     roll_gift_extra,
     roll_gift_stake,
     rollover,
-    streak_of,
+    streak_pair,
     titles_list,
     try_warm_hit,
     _row_settings,
@@ -408,11 +408,11 @@ async def profile_html(db, user_id: int) -> str:
         settings = await cached_settings(db)
         if not settings.get("enabled"):
             return ""
-        days = await streak_of(pool, int(user_id))
+        days, best = await streak_pair(pool, int(user_id))
         titles = await titles_list(pool) if settings.get("status_enabled") else []
     except Exception:
         return ""
-    return profile_line(days, titles)
+    return profile_line(days, titles, best)
 
 
 async def help_text(db) -> str:

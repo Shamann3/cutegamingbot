@@ -136,43 +136,49 @@ def emoji(eid: str, fallback: str = "⚫️") -> str:
 # Карточка дня в справке «хелп огонёк» (блок «Награды за дни»)
 # ---------------------------------------------------------------------------
 # Где: ответ на «хелп огонёк» / «что такое огонёк».
-# Как: над цитатой только срок «🌙 40 дней». Вся награда этого дня — одна цитата:
-#      куты и бонусы строкой «⚡️ Куты — 10 кут», каждый предмет со своей строки.
-#      Слоты: {mark} {days} {body} {face} {title} {gifts} {words}.
+# Как: строка «значок 40 дней», под ней одна цитата.
+#      Сначала бонус и куты, затем «+ Предметы :» и каждый предмет со своей строки.
+#      Слоты: {mark} {days} {body} {face} {gifts} {words}.
 
 # Значок слева от срока. Первое число — «с такого дня включительно».
+# Дальше id премиум-эмодзи и запасной значок, если премиум не рисуется.
 REWARD_DAY_MARKS = (
-    (365, "🏆"),  # от 365 дней
-    (90, "👑"),   # от 90
-    (30, "🌙"),   # от 30
-    (14, "💎"),   # от 14
-    (7, "🔥"),    # от 7
-    (0, "✨"),    # всё раньше
+    (365, "5357421327470866510", "⚫️"),  # от 365 дней
+    (100, "5357065356286405053", "⚫️"),  # от 100
+    (50, "5199552030615558774", "🪙"),   # от 50
+    (40, "5278467510604160626", "💰"),   # от 40
+    (30, "5952066863931331270", "⭐️"),   # от 30
+    (25, "5985379274524202415", "💲"),   # от 25
+    (20, "5382164415019768638", "🪙"),   # от 20
+    (10, "5424746623462823358", "🏅"),   # от 10
+    (0, "5325547803936572038", "✨"),    # всё раньше
 )
-# Порядок и подписи групп внутри одного дня. kind — из базы наград.
+# Значок строки «Бесплатный бонус» и «Бонус ×2» внутри цитаты дня.
+REWARD_BONUS_EMOJI = "5438440765908874600"
+# Значок строки кут внутри цитаты дня. Запасной — 💰.
+REWARD_KUTY_EMOJI = "5375296873982604963"
+# Порядок групп внутри одного дня. kind — из базы наград.
 REWARD_GROUPS = (
-    ("bonus", "🎁", "Бонус"),       # обычный бесплатный бонус
-    ("bonus_x2", "✨", "Бонус ×2"), # бонус с удвоением
-    ("kuty", "⚡️", "Куты"),         # куты с техгрупп
-    ("item", "📦", "Предметы"),     # предметы из каталога
+    ("bonus", "🎁", "Бонус"),
+    ("bonus_x2", "🎁", "Бонус ×2"),
+    ("kuty", "💰", "Куты"),
+    ("item", "📦", "Предметы"),
 )
 # Если у предмета в каталоге нет эмодзи — ставим это.
 REWARD_ITEM_FALLBACK = "🎁"
-# Между двумя подарками одной группы (например два предмета).
+# Между двумя подарками одной группы, если их пришлось склеить в одну строку.
 REWARD_GIFT_GAP = " · "
-# Строка над цитатой дня. {mark} значок, {days} «40 дней».
-# Как выглядит: «🌙 40 дней».
+# Строка над цитатой дня. {mark} премиум-значок, {days} «40 дней».
 REWARD_DAY_HEAD = "{mark} <b>{days}</b>"
 # Одна цитата на все подарки дня. {body} строки через перевод строки.
 REWARD_QUOTE = "<blockquote>{body}</blockquote>"
-# Куты. {face} значок, {title} «Куты», {gifts} «10 кут».
-# Бонус сюда не подставляется: «Бонус — бесплатный бонус» звучит дважды.
-REWARD_GROUP = "{face} {title} — {gifts}"
-# Бонус и бонус ×2 одной ясной строкой. {face} значок, {words} «Бесплатный бонус».
+# Куты внутри цитаты. {face} значок, {gifts} «10 кут».
+REWARD_KUTY = "{face} {gifts}"
+# Бонус и бонус ×2. {face} значок, {words} «Бесплатный бонус» или «Бонус ×2».
 REWARD_PLAIN = "{face} {words}"
-# Один бонус / куты. {words} уже готовая подпись, например «10 кут».
-REWARD_GIFT = "{words}"
-# Один предмет — отдельная цитата. {face} эмодзи предмета, {words} имя.
+# Заголовок списка предметов внутри цитаты. Пишется только если предметы есть.
+REWARD_ITEMS = "<b>+ Предметы :</b>"
+# Один предмет. {face} эмодзи из каталога, {words} имя.
 REWARD_ITEM = "{face} {words}"
 
 
@@ -200,11 +206,12 @@ def status_help_line(days: str, name: str) -> str:
 
 
 def reward_mark(day: int) -> str:
+    """Премиум-значок слева от срока в справке."""
     n = int(day or 0)
-    for start, face in REWARD_DAY_MARKS:
+    for start, eid, fallback in REWARD_DAY_MARKS:
         if n >= int(start):
-            return str(face)
-    return "✨"
+            return emoji(str(eid), str(fallback))
+    return emoji(REWARD_DAY_MARKS[-1][1], REWARD_DAY_MARKS[-1][2])
 
 
 def reward_face(kind: str, stored: str = "") -> str:
@@ -227,7 +234,7 @@ def _coded_face(face: str) -> str:
 
 
 def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) -> str:
-    """Один день: бонус, бонус ×2, куты и предметы — разными строками."""
+    """Один день: бонус и куты сверху, предметы списком под «+ Предметы :»."""
     packed: dict[str, list[tuple[str, str]]] = {}
     order = []
     for kind, face, words in gifts or []:
@@ -242,35 +249,45 @@ def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) ->
     known = [key for key, _face, _title in REWARD_GROUPS]
     sequence = [key for key in known if key in packed]
     sequence += [key for key in order if key not in sequence]
-    titles = {key: title for key, _face, title in REWARD_GROUPS}
-    icons = {key: face for key, face, _title in REWARD_GROUPS}
     lines = []
+    item_lines = []
     for key in sequence:
         if key == "item":
             for face, text in packed[key]:
-                safe = html.escape(text, quote=False)
-                lines.append(_slots(REWARD_ITEM, face=_coded_face(face), words=safe))
+                item_lines.append(_slots(
+                    REWARD_ITEM,
+                    face=_coded_face(face),
+                    words=html.escape(text, quote=False),
+                ))
             continue
         if key in {"bonus", "bonus_x2"}:
             words = " · ".join(
                 _plain_reward(text) for _face, text in packed[key] if text
             )
-            icon = html.escape(str(icons.get(key) or "🎁"), quote=False)
-            lines.append(_slots(REWARD_PLAIN, face=icon, words=html.escape(words, quote=False)))
+            lines.append(_slots(
+                REWARD_PLAIN,
+                face=emoji(REWARD_BONUS_EMOJI, "🎁"),
+                words=html.escape(words, quote=False),
+            ))
             continue
-        bits = []
-        for _face, text in packed[key]:
-            bits.append(_slots(REWARD_GIFT, words=html.escape(text, quote=False)))
-        lines.append(_slots(
-            REWARD_GROUP,
-            face=html.escape(str(icons.get(key) or "🎁"), quote=False),
-            title=html.escape(str(titles.get(key) or key), quote=False),
-            gifts=REWARD_GIFT_GAP.join(bits),
-        ))
-    body = "\n".join(lines) or _slots(REWARD_GIFT, words="награда")
+        bits = [
+            html.escape(text, quote=False)
+            for _face, text in packed[key]
+            if text
+        ]
+        if not bits:
+            continue
+        face = emoji(REWARD_KUTY_EMOJI, "💰") if key == "kuty" else _coded_face(
+            packed[key][0][0] or "🎁"
+        )
+        lines.append(_slots(REWARD_KUTY, face=face, gifts=REWARD_GIFT_GAP.join(bits)))
+    if item_lines:
+        lines.append(REWARD_ITEMS)
+        lines.extend(item_lines)
+    body = "\n".join(lines) or "награда"
     head = _slots(
         REWARD_DAY_HEAD,
-        mark=html.escape(str(mark or "✨"), quote=False),
+        mark=_coded_face(str(mark or "")) or emoji(REWARD_DAY_MARKS[-1][1], "✨"),
         days=html.escape(str(label or ""), quote=False),
     )
     return head + "\n" + _slots(REWARD_QUOTE, body=body)
@@ -332,14 +349,36 @@ def announce_label(kind: str, amount: int = 1, item: str = "") -> str:
     return kind_words(kind, amount, item)
 
 
-# Где: карточка человека, /stat. {emoji} значок, {title} статус, {label} «10 дней».
-PROFILE_TITLED = "{emoji} <b>{title}</b> · огонёк <b>{label}</b>"
-# Где: карточка человека, если статус выключен или ещё не открыт.
-PROFILE_PLAIN = "{emoji} <b>Огонёк уже {label}</b>"
+# Где: карточка человека, /stat, огонёк горит и есть статус.
+# {record} — хвост PROFILE_RECORD_MORE, PROFILE_RECORD_SAME или пусто.
+PROFILE_TITLED = "{emoji} <b>{title}</b> · огонёк <b>{label}</b>{record}"
+# Где: карточка человека, огонёк горит, статуса нет или он ещё не открыт.
+PROFILE_PLAIN = "{emoji} <b>Огонёк уже {label}</b>{record}"
+# Хвост, если рекорд длиннее текущей серии. {record} «10 дней».
+PROFILE_RECORD_MORE = " · рекорд <b>{record}</b>"
+# Хвост, если сейчас горит сам рекорд. Число уже стоит в строке, второй раз его не пишем.
+PROFILE_RECORD_SAME = " · <i>рекорд</i>"
+# Где: огонёк погас, но рекорд есть. {record} «10 дней».
+PROFILE_BEST = "{emoji} <b>Рекорд огонька</b> · <b>{record}</b>"
 
 
-def profile_line(label: str, title: str = "", emoji_id: str = "") -> str:
-    """Строка огонька в профиле. Слова — PROFILE_TITLED и PROFILE_PLAIN."""
+def profile_line(
+    label: str,
+    title: str = "",
+    emoji_id: str = "",
+    record: str = "",
+    at_best: bool = False,
+) -> str:
+    """Строка огонька в профиле. Слова — PROFILE_TITLED, PROFILE_PLAIN, PROFILE_BEST."""
+    safe_record = html.escape(str(record or ""), quote=False)
+    if not str(label or "").strip() and safe_record:
+        return _slots(PROFILE_BEST, emoji=emoji(EMOJI), record=safe_record)
+    if safe_record:
+        tail = _slots(PROFILE_RECORD_MORE, record=safe_record)
+    elif at_best and str(label or "").strip():
+        tail = PROFILE_RECORD_SAME
+    else:
+        tail = ""
     safe_label = html.escape(str(label or ""), quote=False)
     if title:
         return _slots(
@@ -347,44 +386,50 @@ def profile_line(label: str, title: str = "", emoji_id: str = "") -> str:
             emoji=emoji(emoji_id or STATUS_EMOJI),
             title=html.escape(str(title), quote=False),
             label=safe_label,
+            record=tail,
         )
-    return _slots(PROFILE_PLAIN, emoji=emoji(EMOJI), label=safe_label)
+    return _slots(PROFILE_PLAIN, emoji=emoji(EMOJI), label=safe_label, record=tail)
 
 
 # ---------------------------------------------------------------------------
 # Справка «хелп огонёк»
 # Где: ответ на «хелп огонёк», «что такое огонёк», «как пользоваться огоньком».
-# {flame} {gift} {spark} — значки. {base} {words} — норма из вкладки.
-# {rewards} — дни с подарками. {skip} — что не считается.
-# {how_extra} {off} {growth} {statuses} {warm} {restore} — пустые, если раздел выключен.
-# {close} — последняя строка.
+# {base} {words} — норма из вкладки. {rewards} — дни с подарками.
+# {skip} — что не считается.
+# {how_extra} {off} {growth} {warm} {restore} — пустые, если раздел выключен.
+# {close} — последняя строка, подпись идеи.
+# Статусы в эту справку не входят: они видны в профиле.
 # ---------------------------------------------------------------------------
 HELP = """
-{flame} <b>Огонёк сообщений</b>
-😴 Устали писать просто так? Пусть у сообщений появится цель.
-🔥 Продлите огонёк. Те же сообщения в официальных группах начнут приносить подарки.
+<tg-emoji emoji-id='5357421327470866510'>⚫️</tg-emoji> <b>Огонёк сообщений</b>
+<tg-emoji emoji-id='5352676440875769889'>🗽</tg-emoji> Устали писать просто так? Пусть у сообщений появится цель.
+<tg-emoji emoji-id='5330346824299490543'>🕯</tg-emoji> Продлите огонёк. И те же сообщения в официальных группах начнут приносить пользу
 
-{gift} <b>Награды за дни</b>
+<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Награды за дни</b>
 {rewards}
 
-{spark} <b>Как работает</b>
-📝 Напишите {base} сообщений в официальных группах. В каждом сообщении — от {words} слов.
-🕛 Успейте до 00:00 МСК. Набрали норму — огонёк сразу +1 день.
-❌ Не продлили до 00:00 — огонёк гаснет.
-🚫 {skip}{how_extra}{off}{growth}{statuses}{warm}{restore}
+<tg-emoji emoji-id='5402485258211859739'>🎈</tg-emoji> <b>Как работает</b>
+<tg-emoji emoji-id='5456504676801338603'>🎁</tg-emoji> <b>Напишите {base} сообщений в официальных группах.</b>
+В каждом сообщении - от {words} слов.
+
+<tg-emoji emoji-id='5474230973199587674'>🎁</tg-emoji> <b>Успейте до 00:00 МСК.</b> Набрали норму - огонёк продлевается на 1 день
+
+<tg-emoji emoji-id='5404424216902673748'>🎁</tg-emoji> Не продлили до <b>00:00 МСК</b> - огонёк гаснет. Награды за уже пройденные дни не выдаются. Следующая будет, только когда огонёк станет длиннее, чем уже был.
+
+<tg-emoji emoji-id='5427334027726055110'>🎁</tg-emoji> {skip}{how_extra}{off}{growth}{warm}{restore}
 
 {close}
 """
 
-# Где: справка, над карточками дней, если награды в базе есть. {cards} подставит бот.
+# Где: справка, под заголовком «Награды за дни», если награды в базе есть. {cards} подставит бот.
 HELP_REWARDS = """
-Подарок приходит один раз, сразу в личку. Сначала ближайший день — дальше приятнее.
+Подарок приходит один раз
 
 {cards}
 """
 
 # Где: справка, если дней с наградами ещё нет.
-HELP_REWARDS_EMPTY = "Награды за дни скоро появятся. Огонёк уже можно продлевать."
+HELP_REWARDS_EMPTY = "Подарок приходит один раз\n\nНаграды за дни скоро появятся. Огонёк уже можно продлевать."
 
 # Где: справка, строка «что не считается». Первая — когда повтор подряд не идёт в норму.
 HELP_SKIP_DUP = "Команды, игры и одно и то же сообщение подряд не считаются."
@@ -409,25 +454,22 @@ HELP_STATUS = """
 # Где: одна строка статуса в справке. {days} «10 дней», {name} название из вкладки.
 HELP_STATUS_LINE = "Если огонёк горит уже {days} — <b>{name}</b>"
 
-# Где: справка, блок тёплого часа. {today} — строка HELP_WARM_TODAY или пусто.
+# Где: справка, блок тёплого часа.
+# {warm_from} «1 день». {warm_hour} «20:00–21:00». {warm_every} сколько сообщений.
 HELP_WARM = """
-{warm} <b>Тёплый час</b>
-Если огонёк горит уже {warm_from}, один час в сутках даёт ещё подарок: каждые {warm_every} сообщений, и не больше {warm_cap} за день.
-{today}
+<tg-emoji emoji-id='5354952069168009105'>🍦</tg-emoji> <b>Тёплый час</b>
+Если огонёк горит уже {warm_from},
+в <b>{warm_hour} МСК.</b> написав {warm_every} сообщений, вы сможете получить какой-то подарок от проекта
 """
 
-# Где: справка, под тёплым часом. {warm_hour} — «20:00–21:00».
-HELP_WARM_TODAY = "🕐 Сегодня это {warm_hour} МСК."
-
-# Где: справка, блок возврата. {line} — текст restore_help_line.
+# Где: справка, блок возврата. {line} — текст restore_help_line. Только если возврат включён.
 HELP_RESTORE = """
 {flame} <b>Вернуть огонёк</b>
 {line}
 """
 
-# Где: последняя строка справки. Вторая — если возврат включён.
-HELP_CLOSE = "🌱 Продлите один день — серия уже ваша. Перестанете продлевать — огонёк погаснет."
-HELP_CLOSE_RESTORE = "🌱 Продлите один день — серия уже ваша. Если погаснет, вернуть её ещё можно."
+# Где: последняя строка справки «хелп огонёк».
+HELP_CLOSE = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b><i>Идея была придумана старшим сотрудником проекта <a href=\"https://t.me/Stremlenue\">@Stremlenue</a></i></b>"
 
 
 def screen_help(
@@ -451,7 +493,7 @@ def screen_help(
     restore_days: int = 0,
 ) -> str:
     """Собирает справку из HELP выше. Слова не добавляет — только подставляет слоты."""
-    _ = (gift_on, gift_mult, gift_item_count)
+    _ = (gift_on, gift_mult, gift_item_count, titles, warm_cap)
     reward_block = (
         _slots(HELP_REWARDS, cards="\n\n".join(rewards)).strip("\n")
         if rewards else HELP_REWARDS_EMPTY
@@ -459,33 +501,20 @@ def screen_help(
     how_extra = ""
     if int(restore_days or 0) > 0:
         how_extra = "\n" + _slots(HELP_RESTORE_WINDOW, restore=span_days(restore_days))
-    status = ""
-    if titles:
-        status = _slots(
-            HELP_STATUS,
-            star=emoji("5233479338791281256", "⭐️"),
-            lines="\n".join(titles),
-        ).strip("\n")
     warm = ""
     if warm_on:
-        today = _slots(HELP_WARM_TODAY, warm_hour=str(warm_hour)) if warm_hour else ""
+        hour = str(warm_hour or "").strip() or "этот час"
         warm = _slots(
             HELP_WARM,
-            warm=emoji("5296561370303592127", "🌟"),
             warm_from=str(warm_from),
             warm_every=str(int(warm_every)),
-            warm_cap=_gift_cap(warm_cap),
-            today=today,
+            warm_hour=hour,
         ).strip("\n")
     restore = ""
     if restore_line:
         restore = _slots(HELP_RESTORE, flame=emoji(EMOJI), line=restore_line).strip("\n")
-    close = HELP_CLOSE_RESTORE if int(restore_days or 0) > 0 else HELP_CLOSE
     return _tighten(_slots(
         HELP,
-        flame=emoji(EMOJI),
-        gift=emoji("5438440765908874600", "🎁"),
-        spark=emoji("5321021153219732362", "⚡️"),
         base=str(int(base)),
         words=str(int(words)),
         rewards=reward_block,
@@ -493,10 +522,9 @@ def screen_help(
         how_extra=how_extra,
         off=_gap(HELP_OFF) if not enabled else "",
         growth=_gap(HELP_GROWTH) if rises else "",
-        statuses=_gap(status),
         warm=_gap(warm),
         restore=_gap(restore),
-        close=close,
+        close=HELP_CLOSE,
     ))
 
 

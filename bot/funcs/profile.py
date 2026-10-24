@@ -1081,7 +1081,7 @@ async def _profile_collect_state_for_render(
 
 
 async def _profile_load_flame_line(db, user_id: int) -> str:
-    """Огонёк над последней активностью. Выключен или нулевая серия — пустая строка."""
+    """Огонёк над последней активностью. Выключен, нет серии и нет рекорда — пустая строка."""
     try:
         from bot.funcs.flame import profile_html
         return await profile_html(db, user_id)

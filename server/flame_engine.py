@@ -112,16 +112,28 @@ def title_for(days: int, titles: list[dict]) -> dict | None:
     return best
 
 
-def profile_line(days: int, titles: list[dict] | None = None) -> str:
-    if int(days or 0) <= 0:
+def profile_line(days: int, titles: list[dict] | None = None, best: int = 0) -> str:
+    """Строка профиля. best — рекорд. Пока серия его не переросла, оба числа видны."""
+    days = max(0, int(days or 0))
+    best = max(days, int(best or 0))
+    if days <= 0 and best <= 0:
         return ""
     from flame_copy import profile_line as draw
 
+    if days <= 0:
+        return draw("", record=span_label(best))
     badge = title_for(days, titles or [])
     label = span_label(days)
+    longer = span_label(best) if best > days else ""
     if badge:
-        return draw(label, badge["title"], badge["emoji_id"] or STATUS_EMOJI)
-    return draw(label)
+        return draw(
+            label,
+            badge["title"],
+            badge["emoji_id"] or STATUS_EMOJI,
+            record=longer,
+            at_best=not longer,
+        )
+    return draw(label, record=longer, at_best=not longer)
 
 
 def _reward_line(row: dict) -> str:
@@ -193,6 +205,16 @@ def _as_date(value) -> date | None:
     if isinstance(value, date):
         return value
     return None
+
+
+def reward_is_new(day: int, already: int) -> bool:
+    """Подарок за день выдаётся один раз.
+
+    already — самый длинный огонёк, который у человека уже был.
+    Пока новая серия не стала длиннее, эти дни проходят без подарка.
+    Награда за 11-й день приходит только когда огонёк снова дойдёт до 11.
+    """
+    return int(day or 0) > max(0, int(already or 0))
 
 
 def gap_starts_new_series(last: date | None, today: date) -> bool:
@@ -1177,6 +1199,20 @@ async def streak_of(pool, user_id: int) -> int:
     return int(value or 0)
 
 
+async def streak_pair(pool, user_id: int) -> tuple[int, int]:
+    """Текущая серия и рекорд. Рекорд не короче серии и не сбрасывается, когда огонёк гаснет."""
+    await ensure_tables(pool)
+    row = await pool.fetchrow(
+        "SELECT streak_days, best_days FROM flame_users WHERE user_id = $1",
+        int(user_id),
+    )
+    if row is None:
+        return 0, 0
+    streak = int(row["streak_days"] or 0)
+    best = max(streak, int(row["best_days"] or 0))
+    return streak, best
+
+
 async def titles_list(pool) -> list[dict]:
     await ensure_tables(pool)
     return [
@@ -1567,6 +1603,9 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
             target = streak + 1
             if count < need_for(target, settings["base_messages"], steps):
                 return None
+            # Рекорд не сбрасывается, когда огонёк гаснет. Пока серия его не переросла,
+            # подарки за старые дни не выдаются второй раз.
+            paid_through = best
             best = max(best, target)
             if row:
                 await conn.execute(
@@ -1586,20 +1625,22 @@ async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = 
                     """,
                     int(user_id), target, best, day,
                 )
-            rewards = await conn.fetch(
-                """
-                SELECT id, day, kind, amount, item_name
-                FROM flame_rewards
-                WHERE day = $1
-                  AND NOT EXISTS (
-                    SELECT 1 FROM flame_grants g
-                    WHERE g.user_id = $2 AND g.reward_id = flame_rewards.id
-                  )
-                ORDER BY id
-                """,
-                target,
-                int(user_id),
-            )
+            rewards = []
+            if reward_is_new(target, paid_through):
+                rewards = await conn.fetch(
+                    """
+                    SELECT id, day, kind, amount, item_name
+                    FROM flame_rewards
+                    WHERE day = $1
+                      AND NOT EXISTS (
+                        SELECT 1 FROM flame_grants g
+                        WHERE g.user_id = $2 AND g.reward_id = flame_rewards.id
+                      )
+                    ORDER BY id
+                    """,
+                    target,
+                    int(user_id),
+                )
             granted = []
             for reward in rewards:
                 await conn.execute(
