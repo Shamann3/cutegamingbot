@@ -181,3 +181,11 @@ def test_missed_day_is_before_yesterday():
     yesterday = today - timedelta(days=1)
     assert yesterday == date(2026, 10, 21)
     assert date(2026, 10, 20) < yesterday
+
+
+def test_kind_words_name_bonus_and_x2():
+    from flame_copy import kind_words
+    assert "бонус" in kind_words("bonus", 1).lower()
+    assert "×2" in kind_words("bonus_x2", 1) or "x2" in kind_words("bonus_x2", 1).lower()
+    assert kind_words("item", 1, "Купон") == "Купон"
+    assert "50" in kind_words("kuty", 50)

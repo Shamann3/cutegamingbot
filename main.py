@@ -12089,9 +12089,16 @@ def _is_valid_bns_callback(data: str) -> bool:
 # ═════════════════════════════════════════════════════════════
 bonus_owner: Dict[int, int] = LazyGameStore("_bonus_owner")  # message_id -> user_id
 bonus_gift_mode: Dict[int, dict] = LazyGameStore("_bonus_gift_mode")  # message_id -> gift conf
+bonus_flame_mode: Dict[int, str] = LazyGameStore("_bonus_flame_mode")  # message_id -> open|x2
 
 
-def set_bonus_owner(message_id: int, user_id: int, gift_conf: dict | None = None) -> None:
+def set_bonus_owner(
+    message_id: int,
+    user_id: int,
+    gift_conf: dict | None = None,
+    *,
+    flame_kind: str = "",
+) -> None:
     """Запомнить, что сообщение с bonus_message принадлежит user_id."""
     mid = int(message_id)
     bonus_owner[mid] = int(user_id)
@@ -12099,7 +12106,15 @@ def set_bonus_owner(message_id: int, user_id: int, gift_conf: dict | None = None
         bonus_gift_mode[mid] = dict(gift_conf)
     else:
         bonus_gift_mode.pop(mid, None)
-    _log(f"[OWNER] set owner msg_id={message_id} user_id={user_id} gift={bool(gift_conf)}")
+    kind = str(flame_kind or "").strip().lower()
+    if kind in ("open", "x2"):
+        bonus_flame_mode[mid] = kind
+    else:
+        bonus_flame_mode.pop(mid, None)
+    _log(
+        f"[OWNER] set owner msg_id={message_id} user_id={user_id} "
+        f"gift={bool(gift_conf)} flame={kind or '-'}"
+    )
 
 
 def check_bonus_owner(callback: CallbackQuery) -> bool:
@@ -12122,6 +12137,7 @@ def remove_bonus_owner(message_id: int) -> None:
     mid = int(message_id)
     bonus_owner.pop(mid, None)
     bonus_gift_mode.pop(mid, None)
+    bonus_flame_mode.pop(mid, None)
     _log(f"[OWNER] removed owner msg_id={message_id}")
 
 
@@ -12291,22 +12307,24 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         next_open_ts_num = bns_to_unix_ts(next_open_ts)
 
         gift_board = bool(bonus_gift_mode.get(int(message_id)))
-        flame_pass = False
-        on_bonus_cooldown = (
-            not gift_board
-            and last_bonus_open is not None
-            and next_open_ts_num is not None
-            and now_ts < float(next_open_ts_num)
-        )
-        if on_bonus_cooldown:
+        flame_kind = str(bonus_flame_mode.get(int(message_id)) or "").strip().lower()
+        flame_pass = flame_kind in ("open", "x2")
+        if not flame_pass and not gift_board:
             try:
                 from bot.funcs.flame import has_bonus_token
                 flame_pass = await has_bonus_token(db, user_id)
             except Exception:
                 flame_pass = False
+        on_bonus_cooldown = (
+            not gift_board
+            and not flame_pass
+            and last_bonus_open is not None
+            and next_open_ts_num is not None
+            and now_ts < float(next_open_ts_num)
+        )
 
-        # Кулдаун активен → таймер. Подарок огонька / предмет 🎁 пропускают ожидание.
-        if on_bonus_cooldown and not flame_pass:
+        # Кулдаун активен → таймер. Подарок огонька / предмет 🎁 / бесплатное открытие огонька — сразу.
+        if on_bonus_cooldown:
             _bonus_requests[(user_id, message_id)] = True
             rem_sec = int(float(next_open_ts_num) - now_ts)
             h, rem = divmod(rem_sec, 3600)
@@ -12379,7 +12397,8 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         # Кулдауна нет → начисляем бонус
         _bonus_requests[(user_id, message_id)] = True
 
-        if not gift_board and (last_bonus_open is None or next_open_ts_num is None):
+        # Бесплатное открытие огонька не запускает обычный таймер бонуса.
+        if not gift_board and not flame_pass and (last_bonus_open is None or next_open_ts_num is None):
             next_open_ts_num = now_ts + float(timebonus)
             try:
                 await db.add_bonus(
@@ -12399,11 +12418,18 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             await callback_query.answer("💭 Ошибка данных бонуса.", show_alert=True)
             return
 
-        # ×2 проверка (предмет 🎁 уже заложил умножение в сумму клетки)
+        # ×2: предмет 🎁 и огонёк ×2 уже заложены в сумму клетки.
+        # Обычный ×2 — премиум + био + рефералы.
         if gift_board:
             premium_ok = False
             bio_ok = False
             ref_count, ref_ok = 0, False
+            has_full_x2 = False
+        elif flame_kind == "x2":
+            premium_ok = False
+            bio_ok = False
+            ref_count, ref_ok = 0, False
+            has_full_x2 = True
         else:
             premium_ok = has_premium(callback_query.from_user)
             try:
@@ -12411,10 +12437,19 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
             except Exception:
                 bio_ok = False
             ref_count, ref_ok = await _get_ref_progress(user_id)
-        has_full_x2 = (not gift_board) and premium_ok and bio_ok and ref_ok
-
-        if has_full_x2:
-            bonus_amount *= 2
+            has_full_x2 = bool(premium_ok and bio_ok and ref_ok)
+            if has_full_x2:
+                bonus_amount *= 2
+            elif flame_pass and not flame_kind:
+                # Старая доска без метки: если остался токен ×2 — удвоим при выдаче.
+                try:
+                    from bot.funcs.flame import peek_bonus_kind
+                    if await peek_bonus_kind(db, user_id) == "x2":
+                        bonus_amount *= 2
+                        has_full_x2 = True
+                        flame_kind = "x2"
+                except Exception:
+                    pass
 
         formatted_bonus_amount = "{:,.0f}".format(bonus_amount)
 
@@ -12457,24 +12492,17 @@ async def bns_process_callback(callback_query: types.CallbackQuery):
         try:
             balance = await db.get_user_balance(user_id)
             await db.update_user_balance(user_id, balance + bonus_amount)
-            await db.cutehistory_plus(user_id, bonus_amount, "бонус")
+            history_tag = "огонёк ×2" if flame_kind == "x2" else ("огонёк бонус" if flame_kind == "open" else "бонус")
+            await db.cutehistory_plus(user_id, bonus_amount, history_tag)
             await db.add_bonusbet(user_id, new_first_name, bonus_amount, chat_id, chat_name, now_dt)
             if flame_pass:
                 try:
                     from bot.funcs.flame import take_bonus_token
-                    gift = await take_bonus_token(db, user_id)
-                except Exception:
-                    gift = ""
-                if gift == "x2" and not has_full_x2:
-                    try:
-                        balance = await db.get_user_balance(user_id)
-                        await db.update_user_balance(user_id, balance + bonus_amount)
-                        await db.cutehistory_plus(user_id, bonus_amount, "огонёк ×2")
-                        bonus_amount *= 2
-                        has_full_x2 = True
-                        formatted_bonus_amount = "{:,.0f}".format(bonus_amount)
-                    except Exception as extra_err:
-                        bns_dbg(f"[БОНУС][FLAME][ERROR] {type(extra_err).__name__}: {extra_err}")
+                    taken = await take_bonus_token(db, user_id, prefer=flame_kind or "")
+                    if flame_kind == "x2" and taken != "x2":
+                        bns_dbg(f"[БОНУС][FLAME] ожидали x2, списали {taken or 'ничего'}")
+                except Exception as flame_err:
+                    bns_dbg(f"[БОНУС][FLAME][ERROR] {type(flame_err).__name__}: {flame_err}")
             await callback_query.answer(f"✅ Бонус: {formatted_bonus_amount} кут", show_alert=False)
         except Exception as e:
             bns_dbg(f"[БОНУС][CREDIT][ERROR] {type(e).__name__}: {e}")
@@ -12935,7 +12963,40 @@ async def process_bonus_request(
     gift_conf: Optional[dict] = None,
 ):
     user_id = user.id
+    flame_kind = ""
+    on_bonus_cd = False
+    if not from_gift_item:
+        try:
+            last_open, next_open = await db.get_bonus_times(user_id)
+            if last_open and next_open:
+                if isinstance(next_open, datetime):
+                    next_dt = next_open
+                elif isinstance(next_open, str):
+                    try:
+                        next_dt = datetime.strptime(next_open, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        next_dt = datetime.fromisoformat(next_open)
+                else:
+                    next_dt = datetime.fromisoformat(str(next_open))
+                on_bonus_cd = bool(await _check_cooldown(user_id, next_dt))
+        except Exception:
+            on_bonus_cd = False
+        try:
+            from bot.funcs.flame import peek_bonus_kind
+            raw_flame = await peek_bonus_kind(db, user_id)
+        except Exception:
+            raw_flame = ""
+        # ×2 огонька — всегда, без премиума. Обычное открытие — чтобы обойти таймер.
+        if raw_flame == "x2":
+            flame_kind = "x2"
+        elif raw_flame == "open" and on_bonus_cd:
+            flame_kind = "open"
     if from_gift_item:
+        premium = False
+        bio_ok = False
+        ref_count, ref_ok = 0, False
+    elif flame_kind == "x2":
+        # Огонёк ×2: без премиума, био и рефералов — сразу двойной бонус.
         premium = False
         bio_ok = False
         ref_count, ref_ok = 0, False
@@ -12945,7 +13006,7 @@ async def process_bonus_request(
         ref_count, ref_ok = await _get_ref_progress(user_id)
     _log(
         f"process_bonus user={user_id}, require_x2={require_x2}, premium={premium}, "
-        f"bio={bio_ok}, refs={ref_count}, gift={from_gift_item}"
+        f"bio={bio_ok}, refs={ref_count}, gift={from_gift_item}, flame={flame_kind or '-'}"
     )
 
     if not enabled_bonus and not from_gift_item:
@@ -12996,15 +13057,15 @@ async def process_bonus_request(
         await _show_no_family_tag(user_id, chat_id, reply_to, edit_message)
         return False
 
-    # 2. Победа в игре — только для обычного бонуса
-    if not from_gift_item and not await _check_game_win(user_id):
+    # 2. Победа в игре — обычный бонус. Подарок огонька и бесплатные открытия огонька — без этой проверки.
+    if not from_gift_item and not flame_kind and not await _check_game_win(user_id):
         await _show_no_win(user_id, chat_id, reply_to, edit_message)
         return False
 
-    # 3. Кулдаун — предмет 🎁 открывается сразу
-    if not from_gift_item:
-        last_open, next_open = await db.get_bonus_times(user_id)
-        if last_open and next_open:
+    # 3. Кулдаун — предмет 🎁 и бесплатные открытия огонька открываются сразу
+    if not from_gift_item and not flame_kind and on_bonus_cd:
+        try:
+            _, next_open = await db.get_bonus_times(user_id)
             if isinstance(next_open, datetime):
                 next_dt = next_open
             elif isinstance(next_open, str):
@@ -13014,17 +13075,11 @@ async def process_bonus_request(
                     next_dt = datetime.fromisoformat(next_open)
             else:
                 next_dt = datetime.fromisoformat(str(next_open))
-
-            if await _check_cooldown(user_id, next_dt):
-                flame_pass = False
-                try:
-                    from bot.funcs.flame import has_bonus_token
-                    flame_pass = await has_bonus_token(db, user_id)
-                except Exception:
-                    flame_pass = False
-                if not flame_pass:
-                    await _show_cooldown_timer(user_id, next_dt, chat_id, reply_to, edit_message)
-                    return False
+        except Exception:
+            next_dt = None
+        if next_dt is not None:
+            await _show_cooldown_timer(user_id, next_dt, chat_id, reply_to, edit_message)
+            return False
 
     # 4. Умножение
     gift = gift_conf or {}
@@ -13034,6 +13089,18 @@ async def process_bonus_request(
         show_hint = False
         kuty_lo = max(1, int(gift.get("kuty_min") or 1)) * multiplier
         kuty_hi = max(kuty_lo, int(gift.get("kuty_max") or kuty_lo) * multiplier)
+    elif flame_kind == "x2":
+        multiplier = 2
+        bonus_label = "Огонёк ×2"
+        show_hint = False
+        kuty_lo = 1 * multiplier
+        kuty_hi = 3 * multiplier
+    elif flame_kind == "open":
+        multiplier = 1
+        bonus_label = "Огонёк"
+        show_hint = False
+        kuty_lo = 1
+        kuty_hi = 3
     else:
         can_x2 = premium and bio_ok and ref_ok
         if require_x2:
@@ -13111,8 +13178,17 @@ async def process_bonus_request(
             parse_mode="HTML",
             reply_to_message_id=getattr(reply_to, "message_id", None) if reply_to else None,
         )
-    bns_add_request(user_id, msg.message_id, reason=f"bonus_board_x{multiplier}{'gift' if from_gift_item else ''}")
-    set_bonus_owner(msg.message_id, user_id, gift if from_gift_item else None)
+    bns_add_request(
+        user_id,
+        msg.message_id,
+        reason=f"bonus_board_x{multiplier}{'gift' if from_gift_item else ''}{flame_kind and f'flame_{flame_kind}' or ''}",
+    )
+    set_bonus_owner(
+        msg.message_id,
+        user_id,
+        gift if from_gift_item else None,
+        flame_kind="" if from_gift_item else flame_kind,
+    )
     if BONUS_DEBUG:
         bns_dump_user(user_id)
     return True

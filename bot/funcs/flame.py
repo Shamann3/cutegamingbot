@@ -286,12 +286,28 @@ async def has_bonus_token(db, user_id: int) -> bool:
     return opens > 0 or x2 > 0
 
 
-async def take_bonus_token(db, user_id: int) -> str:
+async def peek_bonus_kind(db, user_id: int) -> str:
+    """Какой бесплатный бонус огонька есть: 'x2', 'open' или ''."""
     pool = _pool(db)
     if pool is None:
         return ""
     try:
-        return await consume_bonus(pool, int(user_id))
+        opens, x2 = await bonus_tokens(pool, int(user_id))
+    except Exception:
+        return ""
+    if x2 > 0:
+        return "x2"
+    if opens > 0:
+        return "open"
+    return ""
+
+
+async def take_bonus_token(db, user_id: int, prefer: str = "") -> str:
+    pool = _pool(db)
+    if pool is None:
+        return ""
+    try:
+        return await consume_bonus(pool, int(user_id), prefer=prefer)
     except Exception:
         return ""
 

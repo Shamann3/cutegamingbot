@@ -1168,8 +1168,14 @@ async def bonus_tokens(pool, user_id: int) -> tuple[int, int]:
     return int(row["bonus_opens"] or 0), int(row["bonus_x2"] or 0)
 
 
-async def consume_bonus(pool, user_id: int) -> str:
+async def consume_bonus(pool, user_id: int, prefer: str = "") -> str:
+    """Списать одно бесплатное открытие огонька.
+
+    prefer='x2' | 'open' — списать именно этот вид, если есть.
+    Иначе сначала ×2, потом обычное открытие.
+    """
     await ensure_tables(pool)
+    want = str(prefer or "").strip().lower()
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(
@@ -1180,18 +1186,24 @@ async def consume_bonus(pool, user_id: int) -> str:
                 return ""
             x2 = int(row["bonus_x2"] or 0)
             opens = int(row["bonus_opens"] or 0)
-            if x2 > 0:
-                await conn.execute(
-                    "UPDATE flame_users SET bonus_x2 = bonus_x2 - 1 WHERE user_id = $1",
-                    int(user_id),
-                )
-                return "x2"
-            if opens > 0:
-                await conn.execute(
-                    "UPDATE flame_users SET bonus_opens = bonus_opens - 1 WHERE user_id = $1",
-                    int(user_id),
-                )
-                return "open"
+            order = ("x2", "open")
+            if want == "open":
+                order = ("open", "x2")
+            elif want == "x2":
+                order = ("x2", "open")
+            for kind in order:
+                if kind == "x2" and x2 > 0:
+                    await conn.execute(
+                        "UPDATE flame_users SET bonus_x2 = GREATEST(COALESCE(bonus_x2, 0) - 1, 0) WHERE user_id = $1",
+                        int(user_id),
+                    )
+                    return "x2"
+                if kind == "open" and opens > 0:
+                    await conn.execute(
+                        "UPDATE flame_users SET bonus_opens = GREATEST(COALESCE(bonus_opens, 0) - 1, 0) WHERE user_id = $1",
+                        int(user_id),
+                    )
+                    return "open"
     return ""
 
 
