@@ -135,9 +135,8 @@ def emoji(eid: str, fallback: str = "⚫️") -> str:
 # Карточка дня в справке «хелп огонёк» (блок «Награды за дни»)
 # ---------------------------------------------------------------------------
 # Где: ответ на «хелп огонёк» / «что такое огонёк».
-# Как: вся справка — одна цитата на всё сообщение. День не в отдельной цитате.
-#      Внутри дня бонус / ×2 / куты / предметы идут разными строками, без жирного
-#      на каждом подарке. Слоты: {mark} {days} {groups} {face} {title} {gifts} {words}.
+# Как: шапка и правила без цитаты. Каждая награда — своя цитата,
+#      полоска тянется только по этому подарку. Слоты: {mark} {days} {line} {face} {title} {gifts} {words}.
 
 # Значок слева от срока. Первое число — «с такого дня включительно».
 REWARD_DAY_MARKS = (
@@ -159,14 +158,16 @@ REWARD_GROUPS = (
 REWARD_ITEM_FALLBACK = "🎁"
 # Между двумя подарками одной группы (например два предмета).
 REWARD_GIFT_GAP = " · "
-# Каркас одного дня. {mark} значок, {days} «10 дней», {groups} строки групп.
+# Строка над цитатами дня. {mark} значок, {days} «10 дней».
 # Как выглядит: «✨ Если огонёк горит уже 10 дней».
-REWARD_DAY = "{mark} Если огонёк горит уже <b>{days}</b>\n{groups}"
-# Одна группа внутри дня. {face} значок группы, {title} «Куты», {gifts} список.
+REWARD_DAY_HEAD = "{mark} Если огонёк горит уже <b>{days}</b>"
+# Цитата одной награды. {line} уже собранная строка подарка.
+REWARD_QUOTE = "<blockquote>{line}</blockquote>"
+# Бонус, бонус ×2 или куты. {face} значок, {title} «Куты», {gifts} «10 кут».
 REWARD_GROUP = "{face} {title} — {gifts}"
 # Один бонус / куты. {words} уже готовая подпись, например «10 кут».
 REWARD_GIFT = "{words}"
-# Один предмет. {face} эмодзи предмета, {words} имя. Без <code>, чтобы не дробить строку.
+# Один предмет — отдельная цитата. {face} эмодзи предмета, {words} имя.
 REWARD_ITEM = "{face} {words}"
 
 
@@ -222,28 +223,32 @@ def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) ->
     sequence += [key for key in order if key not in sequence]
     titles = {key: title for key, _face, title in REWARD_GROUPS}
     icons = {key: face for key, face, _title in REWARD_GROUPS}
-    groups = []
+    quotes = []
     for key in sequence:
+        if key == "item":
+            for face, text in packed[key]:
+                safe = html.escape(text, quote=False)
+                line = _slots(REWARD_ITEM, face=_coded_face(face), words=safe)
+                quotes.append(_slots(REWARD_QUOTE, line=line))
+            continue
         bits = []
-        for face, text in packed[key]:
-            safe = html.escape(text, quote=False)
-            if key == "item":
-                bits.append(_slots(REWARD_ITEM, face=_coded_face(face), words=safe))
-            else:
-                bits.append(_slots(REWARD_GIFT, words=safe))
-        groups.append(_slots(
+        for _face, text in packed[key]:
+            bits.append(_slots(REWARD_GIFT, words=html.escape(text, quote=False)))
+        line = _slots(
             REWARD_GROUP,
             face=html.escape(str(icons.get(key) or "🎁"), quote=False),
             title=html.escape(str(titles.get(key) or key), quote=False),
             gifts=REWARD_GIFT_GAP.join(bits),
-        ))
-    body = "\n".join(groups) or _slots(REWARD_GIFT, words="награда")
-    return _slots(
-        REWARD_DAY,
+        )
+        quotes.append(_slots(REWARD_QUOTE, line=line))
+    if not quotes:
+        quotes.append(_slots(REWARD_QUOTE, line=_slots(REWARD_GIFT, words="награда")))
+    head = _slots(
+        REWARD_DAY_HEAD,
         mark=html.escape(str(mark or "✨"), quote=False),
         days=html.escape(str(label or ""), quote=False),
-        groups=body,
     )
+    return head + "\n" + "\n".join(quotes)
 
 
 def kind_words(kind: str, amount: int, item: str = "") -> str:
@@ -411,8 +416,7 @@ def screen_help(
         parts.append(HELP_CLOSE_RESTORE)
     else:
         parts.append(HELP_CLOSE)
-    # Одна цитата на весь текст: полоска тянется от шапки до последней строки.
-    return "<blockquote>" + "\n".join(parts) + "</blockquote>"
+    return "\n".join(parts)
 
 
 def span_days(count: int) -> str:

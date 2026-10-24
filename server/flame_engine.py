@@ -138,7 +138,7 @@ def _reward_line(row: dict) -> str:
 
 
 def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
-    """Каждый день — цитата. Внутри бонус, бонус ×2, куты и предметы раздельно."""
+    """Каждый день отдельно. Бонус, бонус ×2, куты и каждый предмет — своя цитата."""
     from flame_copy import reward_day_card, reward_face, reward_mark
 
     by_day: dict[int, list[tuple[str, str, str]]] = {}

@@ -94,14 +94,14 @@ def test_help_lists_rewards_and_warm_hour():
     assert "200" in html
     assert "Норма сообщений для продлевания огонька будет расти со временем" in html
     assert "с 7-го — <b>250</b>" not in html
-    assert "Если огонёк горит уже 3 дня" in html
-    assert "Если огонёк горит уже 7 дней" in html
+    assert "Если огонёк горит уже <b>3 дня</b>" in html
+    assert "Если огонёк горит уже <b>7 дней</b>" in html
     assert "50 кут" in html
     assert "Купон" in html
-    # День 7 — один пакет: куты и предмет в одной карточке, но разными строками
-    day7 = next(part for part in html.split("</blockquote>") if "7 дней" in part)
-    assert "50 кут" in day7 and "Купон" in day7
-    assert day7.index("Куты") < day7.index("Предметы")
+    # День 7: куты и предмет — разные цитаты, предмет после кут
+    assert "<blockquote>⚡️ Куты — 50 кут</blockquote>" in html
+    assert "<blockquote>🎁 Купон</blockquote>" in html
+    assert html.index("50 кут") < html.index("Купон")
     assert html.index("Награды за дни") < html.index("Как работает")
     assert "Тёплый час" in html
     assert "18:00" in html
@@ -112,8 +112,9 @@ def test_help_lists_rewards_and_warm_hour():
     assert "продлите огонёк" in html.lower()
     assert "закрыть день" not in html.lower()
     assert "вернуть огонёк можно ещё" not in html.lower()
-    assert html.count("<blockquote>") == 1
-    assert html.startswith("<blockquote>") and html.endswith("</blockquote>")
+    assert html.count("<blockquote>") == 3
+    assert not html.startswith("<blockquote>")
+    assert "</blockquote>" not in html.split("Как работает", 1)[1].split("Тёплый час", 1)[0]
     assert "⚡️" in html
 
 
@@ -133,16 +134,17 @@ def test_help_day_cards_keep_each_item_emoji():
         "warm": {"enabled": False},
         "gift": {"enabled": False},
     })
-    assert html.count("<blockquote>") == 1
-    day2 = html.split("5 дней")[0]
-    day5 = html.split("5 дней", 1)[1]
-    assert "2 дня" in day2 and "Саженец" in day2 and "Табак" in day2
-    assert "🌱" in day2 and "🍂" in day2
-    assert "<code>" not in day2
-    assert day2.index("Бонус") < day2.index("Бонус ×2") < day2.index("Куты") < day2.index("Предметы")
-    assert "10 кут" in day2
+    assert html.count("<blockquote>") == 6
+    day2 = html.split("<b>5 дней</b>")[0]
+    day5 = html.split("<b>5 дней</b>", 1)[1]
+    assert "<blockquote>🎁 Бонус — бесплатный бонус</blockquote>" in day2
+    assert "<blockquote>✨ Бонус ×2 — бонус ×2</blockquote>" in day2
+    assert "<blockquote>⚡️ Куты — 10 кут</blockquote>" in day2
+    assert "<blockquote>🌱 Саженец</blockquote>" in day2
+    assert "<blockquote>🍂 Табак</blockquote>" in day2
+    assert day2.index("Бонус") < day2.index("Бонус ×2") < day2.index("Куты") < day2.index("Саженец")
     assert "5 дней" not in day2
-    assert "Ключ ×2" in day5 and "🔑" in day5
+    assert "<blockquote>🔑 Ключ ×2</blockquote>" in day5
     assert "Бонус" not in day5
 
 
