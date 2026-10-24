@@ -135,6 +135,8 @@ def test_help_lists_rewards_and_warm_hour():
     assert "18:00" in html
     assert "5354952069168009105" in html
     assert "Stremlenue" in html
+    assert "мой огонёк" in html
+    assert "Что делать сегодня" in html
     assert "🎁" in html
     assert "официальных группах" in html
     assert "Бонус +" not in html
@@ -284,7 +286,8 @@ def test_mine_phrase_is_exact_and_the_card_is_short():
     assert "Статус" not in card
     assert "11 дней" in card
     assert "без подарка" in card
-    assert "от <b>2</b> слов" in card
+    assert "хотя бы <b>2</b> слов" in card
+    assert "станет длиннее" in card
     assert "Бонус +" not in card
     fresh = screen_mine(
         now="погас",
@@ -297,6 +300,7 @@ def test_mine_phrase_is_exact_and_the_card_is_short():
         fresh=True,
     )
     assert "Зажгите огонёк" in fresh
+    assert "огонёк загорится" in fresh
     assert "100 сообщений" in fresh
     assert "официальных группах" in fresh
     assert "Первый подарок" in fresh
@@ -317,11 +321,11 @@ def test_mine_phrase_is_exact_and_the_card_is_short():
     assert "<blockquote>" in started
     from flame_copy import screen_mine_how, screen_mine_rewards
     rules = screen_mine_how(base=100, words=2, rises=True)
-    assert "Правила" in rules
-    assert "главной карточке" in rules
+    assert "Как писать" in rules
+    assert "Что делать" in rules
     assert "Норма сообщений для продлевания огонька будет расти со временем" in rules
     rewards = screen_mine_rewards("<b>2 дня</b>", replay=True)
-    assert "Награды за дни" in rewards
+    assert "Что я получу" in rewards
     assert "один раз" in rewards
     assert "старые дни без подарка" in rewards
     assert "Пишите сегодня" in rewards
