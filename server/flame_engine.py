@@ -259,7 +259,7 @@ def help_html(board: dict) -> str:
         name = str(row.get("title") or "").strip()
         if start < 1 or not name:
             continue
-        title_lines.append(f"· с {span_label(start)} — <b>{name}</b>")
+        title_lines.append(f"Если огонёк горит уже {span_label(start)} — <b>{name}</b>")
     warm_hour = ""
     if warm.get("hour") is not None:
         hour = int(warm["hour"])

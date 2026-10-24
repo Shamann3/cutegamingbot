@@ -94,14 +94,14 @@ def test_help_lists_rewards_and_warm_hour():
     assert "200" in html
     assert "Норма сообщений для продлевания огонька будет расти со временем" in html
     assert "с 7-го — <b>250</b>" not in html
-    assert "3 дня" in html
+    assert "Если огонёк горит уже 3 дня" in html
+    assert "Если огонёк горит уже 7 дней" in html
     assert "50 кут" in html
     assert "Купон" in html
     # День 7 — один пакет: куты и предмет в одной карточке, но разными строками
     day7 = next(part for part in html.split("</blockquote>") if "7 дней" in part)
     assert "50 кут" in day7 and "Купон" in day7
     assert day7.index("Куты") < day7.index("Предметы")
-    assert "<code>" in day7
     assert html.index("Награды за дни") < html.index("Как работает")
     assert "Тёплый час" in html
     assert "18:00" in html
@@ -112,12 +112,12 @@ def test_help_lists_rewards_and_warm_hour():
     assert "продлите огонёк" in html.lower()
     assert "закрыть день" not in html.lower()
     assert "вернуть огонёк можно ещё" not in html.lower()
-    assert html.count("<blockquote>") >= 2
+    assert html.count("<blockquote>") == 1
+    assert html.startswith("<blockquote>") and html.endswith("</blockquote>")
     assert "⚡️" in html
 
 
 def test_help_day_cards_keep_each_item_emoji():
-    import re
     html = help_html({
         "settings": {"enabled": True, "base_messages": 100, "min_words": 2},
         "steps": [],
@@ -133,14 +133,16 @@ def test_help_day_cards_keep_each_item_emoji():
         "warm": {"enabled": False},
         "gift": {"enabled": False},
     })
-    cards = re.findall(r"<blockquote>.*?</blockquote>", html, re.S)
-    assert len(cards) == 2
-    day2, day5 = cards
+    assert html.count("<blockquote>") == 1
+    day2 = html.split("5 дней")[0]
+    day5 = html.split("5 дней", 1)[1]
     assert "2 дня" in day2 and "Саженец" in day2 and "Табак" in day2
-    assert "<code>🌱</code>" in day2 and "<code>🍂</code>" in day2
+    assert "🌱" in day2 and "🍂" in day2
+    assert "<code>" not in day2
     assert day2.index("Бонус") < day2.index("Бонус ×2") < day2.index("Куты") < day2.index("Предметы")
-    assert "10 кут" in day2 and "<code>10" not in day2
-    assert "5 дней" in day5 and "<code>🔑</code>" in day5 and "Ключ ×2" in day5
+    assert "10 кут" in day2
+    assert "5 дней" not in day2
+    assert "Ключ ×2" in day5 and "🔑" in day5
     assert "Бонус" not in day5
 
 
