@@ -272,16 +272,59 @@ def test_mine_phrase_is_exact_and_the_card_is_short():
         status="нет",
         have=40,
         need=100,
+        words=2,
         next_day="11 дней",
         replay=True,
     )
+    assert "Продлите огонёк" in card
+    assert "60 сообщений" in card
+    assert "<b>40</b> из <b>100</b>" in card
     assert "Сейчас · <b>3 дня</b>" in card
     assert "Рекорд · <b>10 дней</b>" in card
-    assert "Статус · <b>нет</b>" in card
-    assert "<b>40</b> из <b>100</b>" in card
+    assert "Статус" not in card
     assert "11 дней" in card
     assert "без подарка" in card
+    assert "от <b>2</b> слов" in card
     assert "Бонус +" not in card
+    fresh = screen_mine(
+        now="погас",
+        record="нет",
+        status="нет",
+        have=0,
+        need=100,
+        words=2,
+        next_day="2 дня",
+        fresh=True,
+    )
+    assert "Зажгите огонёк" in fresh
+    assert "100 сообщений" in fresh
+    assert "официальных группах" in fresh
+    assert "Первый подарок" in fresh
+    assert "Рекорд" not in fresh
+    assert "Статус" not in fresh
+    started = screen_mine(
+        now="погас",
+        record="10 дней",
+        have=12,
+        need=100,
+        words=2,
+        next_day="11 дней",
+        replay=True,
+    )
+    assert "88 сообщений" in started
+    assert "Напишите" not in started
+    assert "<b>12</b> из <b>100</b>" in started
+    assert "<blockquote>" in started
+    from flame_copy import screen_mine_how, screen_mine_rewards
+    rules = screen_mine_how(base=100, words=2, rises=True)
+    assert "Правила" in rules
+    assert "главной карточке" in rules
+    assert "Норма сообщений для продлевания огонька будет расти со временем" in rules
+    rewards = screen_mine_rewards("<b>2 дня</b>", replay=True)
+    assert "Награды за дни" in rewards
+    assert "один раз" in rewards
+    assert "старые дни без подарка" in rewards
+    assert "Пишите сегодня" in rewards
 
 
 def test_next_gift_starts_after_the_record():

@@ -31,9 +31,12 @@ from flame_copy import (  # noqa: E402
     PROFILE_OUT,
     mine_button_back,
     mine_button_close,
-    mine_button_how,
-    mine_button_next,
+    mine_button_gift,
     mine_button_restore,
+    mine_button_rewards,
+    mine_button_rules,
+    mine_button_status,
+    mine_button_warm,
     reward_day_card,
     reward_face,
     reward_mark,
@@ -42,6 +45,10 @@ from flame_copy import (  # noqa: E402
     screen_mine_how,
     screen_mine_next,
     screen_mine_off,
+    screen_mine_rewards,
+    screen_mine_status,
+    screen_mine_warm,
+    status_help_line,
     profit_loot,
     profit_next,
     profit_next_done,
@@ -621,7 +628,15 @@ async def send_flame_help(message, db) -> None:
         pass
 
 
-async def _mine_view(db, user_id: int, *, with_card: bool = False, with_progress: bool = True) -> dict | None:
+async def _mine_view(
+    db,
+    user_id: int,
+    *,
+    with_card: bool = False,
+    with_ladder: bool = False,
+    with_progress: bool = True,
+    with_warm: bool = False,
+) -> dict | None:
     """Одна карточка человека: кэш правил и одна строка серии."""
     pool = _pool(db)
     if pool is None:
@@ -649,17 +664,23 @@ async def _mine_view(db, user_id: int, *, with_card: bool = False, with_progress
     enabled = bool(settings.get("enabled"))
     need = 0
     have = 0
-    if enabled and not kept and with_progress:
+    if enabled and (kept or with_progress):
         need = need_for(
             streak + 1,
             int(settings.get("base_messages") or 200),
             rules.get("steps") or [],
         )
-        have = await messages_on(pool, int(user_id), today, await official_ids())
-    pay = next_paying_day(rules.get("rewards") or [], best)
+        if with_progress and not kept:
+            have = await messages_on(pool, int(user_id), today, await official_ids())
+    rewards = rules.get("rewards") or []
+    pay = next_paying_day(rewards, best)
+    replay = streak < best
     card = ""
+    ladder = ""
     if with_card and pay:
-        card = await _reward_card(pool, rules.get("rewards") or [], pay)
+        card = await _reward_cards(pool, rewards, {int(pay)})
+    if with_ladder:
+        ladder = await _reward_cards(pool, rewards)
     rises = any(
         int(step.get("from_day") or 0) > 1 and int(step.get("messages") or 0) > 0
         for step in (rules.get("steps") or [])
@@ -667,20 +688,56 @@ async def _mine_view(db, user_id: int, *, with_card: bool = False, with_progress
     lost = int(row["lost_streak"] or 0) if row else 0
     lost_on = row["lost_on"] if row else None
     restore = restore_view(streak, lost, lost_on, settings, today)
-    home = screen_mine(
-        now=now,
-        record=record_label,
-        status=status,
-        status_emoji=status_emoji,
-        today_done=bool(kept),
-        have=have,
-        need=need,
-        next_day=span_label(pay) if pay else "",
-        replay=streak < best,
+    can_restore = bool(restore_price(settings).get("enabled"))
+    show_restore = can_restore and (
+        restore.get("code") == "ready" or (streak <= 0 and best > 0)
     )
+    topics = []
+    if show_restore and restore.get("code") == "ready":
+        topics.append("restore")
+    topics.extend(["rewards", "next", "rules"])
+    if settings.get("warm_enabled"):
+        topics.append("warm")
+    if titles:
+        topics.append("status")
+    if show_restore and restore.get("code") != "ready":
+        topics.append("restore")
+    home = ""
+    if kept or with_progress or not enabled:
+        home = screen_mine(
+            now=now,
+            record=record_label,
+            status=status,
+            status_emoji=status_emoji,
+            today_done=bool(kept),
+            have=have,
+            need=need,
+            words=int(settings.get("min_words") or 2),
+            next_day=span_label(pay) if pay else "",
+            replay=replay,
+            fresh=streak <= 0 and best <= 0,
+        )
+    status_lines = [
+        status_help_line(span_label(int(item.get("from_day") or 0)), str(item.get("title") or ""))
+        for item in titles
+        if int(item.get("from_day") or 0) > 0 and str(item.get("title") or "").strip()
+    ]
+    warm_text = ""
+    if with_warm and settings.get("warm_enabled"):
+        from flame_engine import ensure_warm_hour
+        hour_n = await ensure_warm_hour(pool, today, settings)
+        hour = ""
+        if hour_n is not None:
+            hour = f"{int(hour_n):02d}:00–{(int(hour_n) + 1) % 24:02d}:00"
+        warm_text = screen_mine_warm(
+            warm_from=span_label(int(settings.get("warm_min_day") or 1)),
+            every=int(settings.get("warm_every") or 40),
+            cap=int(settings.get("warm_cap") or 1),
+            hour=hour,
+        )
     return {
         "enabled": enabled,
-        "can_restore": bool(restore_price(settings).get("enabled")),
+        "topics": topics,
         "home": home,
         "how": screen_mine_how(
             base=int(settings.get("base_messages") or 200),
@@ -688,22 +745,34 @@ async def _mine_view(db, user_id: int, *, with_card: bool = False, with_progress
             block_dup=bool(settings.get("block_dup", True)),
             rises=rises,
         ),
-        "next_screen": screen_mine_next(card, now, record_label, streak < best),
+        "next_screen": screen_mine_next(card, now, record_label, replay),
+        "rewards_screen": screen_mine_rewards(ladder, replay),
+        "status_screen": screen_mine_status(status_lines),
+        "warm_screen": warm_text,
         "restore": restore,
     }
 
 
-async def _reward_card(pool, rewards: list, day: int) -> str:
-    rows = [row for row in rewards or [] if int(row.get("day") or 0) == int(day)]
+async def _reward_cards(pool, rewards: list, days: set | None = None) -> str:
+    """Карточки дней. days=None — вся лестница. Длинный список обрезается у конца."""
+    from flame_copy import MINE_REWARDS_MORE
     from flame_engine import _item_faces
 
+    chosen = []
+    for row in rewards or []:
+        day = int(row.get("day") or 0)
+        if day < 1:
+            continue
+        if days is not None and day not in days:
+            continue
+        chosen.append(row)
     faces = await _item_faces(pool, [
         str(row.get("item_name") or "")
-        for row in rows
+        for row in chosen
         if str(row.get("kind") or "") == "item"
     ])
-    gifts = []
-    for row in rows:
+    by_day: dict[int, list] = {}
+    for row in chosen:
         kind = str(row.get("kind") or "")
         amount = int(row.get("amount") or 1)
         item = str(row.get("item_name") or "")
@@ -711,10 +780,20 @@ async def _reward_card(pool, rewards: list, day: int) -> str:
         if not words:
             continue
         face = faces.get(item.strip().casefold(), "") if kind == "item" else ""
-        gifts.append((kind, reward_face(kind, face), words))
-    if not gifts:
+        by_day.setdefault(int(row.get("day") or 0), []).append(
+            (kind, reward_face(kind, face), words)
+        )
+    blocks = [
+        reward_day_card(reward_mark(day), span_label(day), by_day[day])
+        for day in sorted(by_day)
+    ]
+    if not blocks:
         return ""
-    return reward_day_card(reward_mark(day), span_label(day), gifts)
+    more = ""
+    while len("\n\n".join(blocks)) > 3200 and len(blocks) > 1:
+        blocks.pop()
+        more = "\n\n" + MINE_REWARDS_MORE
+    return "\n\n".join(blocks) + more
 
 
 async def send_flame_mine(message, db) -> None:
@@ -733,7 +812,7 @@ async def send_flame_mine(message, db) -> None:
         text, markup = screen_mine_off(), _mine_keyboard(user.id, close_only=True)
     else:
         text = view["home"]
-        markup = _mine_keyboard(user.id, restore=view["can_restore"])
+        markup = _mine_keyboard(user.id, topics=view["topics"])
     try:
         await message.reply(
             text,
@@ -779,7 +858,18 @@ def _icon_button(text: str, data: str, icon: str = "", style: str = "primary"):
     return InlineKeyboardButton(**kwargs)
 
 
-def _mine_keyboard(user_id: int, *, restore: bool = False, back: bool = False, close_only: bool = False):
+_MINE_TOPICS = {
+    "restore": (mine_button_restore, "restore", "5330346824299490543", "success"),
+    "rewards": (mine_button_rewards, "rewards", "5438440765908874600", "success"),
+    "next": (mine_button_gift, "next", "5325547803936572038", "primary"),
+    "rules": (mine_button_rules, "how", "5402485258211859739", "primary"),
+    "warm": (mine_button_warm, "warm", "5354952069168009105", "primary"),
+    "status": (mine_button_status, "status", "5952066863931331270", "primary"),
+}
+
+
+def _mine_keyboard(user_id: int, *, topics: list | None = None, back: bool = False, close_only: bool = False):
+    """Короткие разделы по два. Вернуть, тёплый час и закрыть — на всю ширину, чтобы не промахнуться."""
     from aiogram.types import InlineKeyboardMarkup
 
     uid = int(user_id)
@@ -791,23 +881,31 @@ def _mine_keyboard(user_id: int, *, restore: bool = False, back: bool = False, c
         return InlineKeyboardMarkup(inline_keyboard=[[
             _icon_button(mine_button_close(), f"fm:close:{uid}", style="danger"),
         ]])
-    first = [_icon_button(
-        mine_button_next(), f"fm:next:{uid}", "5438440765908874600", "success",
-    )]
-    second = []
-    if restore:
-        first.append(_icon_button(
-            mine_button_restore(), f"fm:restore:{uid}", "5330346824299490543", "primary",
-        ))
-        second.append(_icon_button(
-            mine_button_how(), f"fm:how:{uid}", "5402485258211859739", "primary",
-        ))
-    else:
-        first.append(_icon_button(
-            mine_button_how(), f"fm:how:{uid}", "5402485258211859739", "primary",
-        ))
-    second.append(_icon_button(mine_button_close(), f"fm:close:{uid}", style="danger"))
-    return InlineKeyboardMarkup(inline_keyboard=[first, second])
+    wide = {"restore", "warm", "close"}
+    items = []
+    for key in topics or ["rewards", "next", "rules"]:
+        spec = _MINE_TOPICS.get(key)
+        if spec is None:
+            continue
+        label, action, icon, style = spec
+        items.append((key, _icon_button(label(), f"fm:{action}:{uid}", icon, style)))
+    items.append(("close", _icon_button(mine_button_close(), f"fm:close:{uid}", style="danger")))
+    rows = []
+    pair = []
+    for key, button in items:
+        if key in wide:
+            if pair:
+                rows.append(pair)
+                pair = []
+            rows.append([button])
+            continue
+        pair.append(button)
+        if len(pair) == 2:
+            rows.append(pair)
+            pair = []
+    if pair:
+        rows.append(pair)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _restore_keyboard(user_id: int, view: dict, *, back: bool = False):
@@ -1125,7 +1223,9 @@ async def flame_mine_click(call) -> None:
             db,
             clicker,
             with_card=action == "next",
-            with_progress=action not in ("how", "restore", "next"),
+            with_ladder=action == "rewards",
+            with_warm=action == "warm",
+            with_progress=action in ("home", ""),
         )
     except Exception as exc:
         print(f"[FLAME] mine click {clicker}: {exc}")
@@ -1136,11 +1236,20 @@ async def flame_mine_click(call) -> None:
     if not view["enabled"]:
         await _edit_mine(call, screen_mine_off(), _mine_keyboard(clicker, close_only=True))
         return
-    if action == "how":
+    if action in ("how", "rules"):
         await _edit_mine(call, view["how"], _mine_keyboard(clicker, back=True))
         return
     if action == "next":
         await _edit_mine(call, view["next_screen"], _mine_keyboard(clicker, back=True))
+        return
+    if action == "rewards":
+        await _edit_mine(call, view["rewards_screen"], _mine_keyboard(clicker, back=True))
+        return
+    if action == "warm":
+        await _edit_mine(call, view["warm_screen"] or view["how"], _mine_keyboard(clicker, back=True))
+        return
+    if action == "status":
+        await _edit_mine(call, view["status_screen"], _mine_keyboard(clicker, back=True))
         return
     if action == "restore":
         restore = view["restore"]
@@ -1150,4 +1259,4 @@ async def flame_mine_click(call) -> None:
             markup = _mine_keyboard(clicker, back=True)
         await _edit_mine(call, _restore_screen(restore), markup)
         return
-    await _edit_mine(call, view["home"], _mine_keyboard(clicker, restore=view["can_restore"]))
+    await _edit_mine(call, view["home"], _mine_keyboard(clicker, topics=view["topics"]))
