@@ -299,6 +299,7 @@ def help_html(board: dict) -> str:
         gift_mult=int(gift.get("mult") or 1),
         gift_item_count=int(gift.get("item_count") or settings.get("gift_item_count") or 1),
         restore_line=restore_line,
+        restore_days=int(price["days"]) if price["enabled"] else 0,
         block_dup=bool(settings.get("block_dup", True)),
     )
 

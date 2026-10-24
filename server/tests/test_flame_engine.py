@@ -85,6 +85,9 @@ def test_help_lists_rewards_and_warm_hour():
     assert "официальных группах" in html
     assert "Бонус +" not in html
     assert "использовать" not in html
+    assert "продлите огонёк" in html.lower()
+    assert "закрыть день" not in html.lower()
+    assert "вернуть огонёк можно ещё" not in html.lower()
 
 
 def test_help_offers_restore_from_the_one_text_file():
@@ -109,6 +112,9 @@ def test_help_offers_restore_from_the_one_text_file():
     assert "<b>500</b> кут" in html
     assert "Купон ×2" in html
     assert "Новая серия" in html or "новой серии" in html
+    assert "вернуть огонёк можно ещё" in html.lower()
+    assert "<b>3</b> дня" in html
+    assert "закрыть день" not in html.lower()
 
 
 def test_restore_window_and_blocks():
