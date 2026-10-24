@@ -14,8 +14,29 @@ from aiogram.types import Message, MessageEntity, User
 
 _REPORT_PAUSE_SEC = 45
 _MENTIONS_PER_MESSAGE = 25
-_NOTE_LIMIT = 300
+_NOTE_LIMIT = 700
+_EXCERPT_LIMIT = 90
+_OFFICER_EMOJI = "5316887736823591263"
 _last_report: Dict[Tuple[int, int], float] = {}
+
+_PRIVATE = (
+    "<b><tg-emoji emoji-id='5316887736823591263'>👮</tg-emoji> "
+    "Напишите <code>/report</code> в группе.</b>\n"
+    "<blockquote><i>Бот ответит на сообщение и позовёт администраторов и сотрудников.</i></blockquote>"
+)
+_WAIT = (
+    "<b><tg-emoji emoji-id='5316887736823591263'>👮</tg-emoji> Состав уже звали.</b>\n"
+    "<blockquote><i>Подождите немного и напишите ещё раз, если никто не ответил.</i></blockquote>"
+)
+_FAIL = (
+    "<b><tg-emoji emoji-id='5256110225848543598'>✖️</tg-emoji> Не получилось собрать состав.</b>\n"
+    "<blockquote><i>Напишите ещё раз чуть позже.</i></blockquote>"
+)
+_EMPTY = (
+    "<b><tg-emoji emoji-id='5316887736823591263'>👮</tg-emoji> Сейчас некого позвать.</b>\n"
+    "<blockquote><i>В этой группе нет администраторов и сотрудников проекта.</i></blockquote>"
+)
+_NO_NOTE = "Без текста. Посмотрите сообщение, на которое это ответ."
 
 
 def _head(text: str) -> str:
@@ -57,38 +78,118 @@ def _label(name: str, fallback: str) -> str:
     return clean[:32]
 
 
+def _people_word(count: int) -> str:
+    n = abs(int(count)) % 100
+    tail = n % 10
+    if 11 <= n <= 14 or tail == 0 or tail >= 5:
+        word = "человек"
+    elif tail == 1:
+        word = "человек"
+    else:
+        word = "человека"
+    return f"{count} {word}"
+
+
+class _Card:
+    """Текст и сущности вместе: жирный, цитата и пинг не сбивают друг другу позиции."""
+
+    def __init__(self) -> None:
+        self.text = ""
+        self.entities: List[MessageEntity] = []
+
+    def add(
+        self,
+        text: str,
+        *kinds: str,
+        user: Optional[User] = None,
+        emoji_id: str = "",
+    ) -> None:
+        if not text:
+            return
+        offset = _utf16_len(self.text)
+        self.text += text
+        length = _utf16_len(text)
+        for kind in kinds:
+            extra = {}
+            if kind == "text_mention":
+                extra["user"] = user
+            if kind == "custom_emoji":
+                extra["custom_emoji_id"] = emoji_id
+            self.entities.append(MessageEntity(
+                type=kind, offset=offset, length=length, **extra,
+            ))
+
+
+def _title(card: _Card, words: str) -> None:
+    line = f"👮 {words}"
+    offset = _utf16_len(card.text)
+    card.text += line
+    card.entities.append(MessageEntity(type="bold", offset=offset, length=_utf16_len(line)))
+    card.entities.append(MessageEntity(
+        type="custom_emoji",
+        offset=offset,
+        length=_utf16_len("👮"),
+        custom_emoji_id=_OFFICER_EMOJI,
+    ))
+
+
+def _section(card: _Card, title: str) -> None:
+    if card.text:
+        card.add("\n\n")
+    card.add(title, "bold")
+    card.add("\n")
+
+
+def _excerpt(note: str) -> str:
+    flat = " ".join(note.split())
+    if len(flat) <= _EXCERPT_LIMIT:
+        return flat
+    return flat[: _EXCERPT_LIMIT - 1].rstrip() + "…"
+
+
 def mention_chunks(
     people: List[Tuple[int, str]],
     *,
     note: str,
+    author_name: str,
+    author_username: str = "",
 ) -> List[Tuple[str, List[MessageEntity]]]:
-    """Сообщения с text_mention: Telegram зовёт человека даже без @username."""
-    header = "Нужна помощь"
-    if note:
-        header = f"{header}\n{note}"
-    header = f"{header}\n\n"
-    chunks: List[Tuple[str, List[MessageEntity]]] = []
+    """Карточка репорта. Текст просьбы — отдельная цитата, имена зовут через text_mention."""
+    clean_note = "\n".join(line.rstrip() for line in (note or "").splitlines()).strip()
+    shown = clean_note or _NO_NOTE
+    name = _label(author_name, "Участник")
+    username = (author_username or "").lstrip("@").strip()
     batch = people[: _MENTIONS_PER_MESSAGE * 4]
+    chunks: List[Tuple[str, List[MessageEntity]]] = []
     for start in range(0, len(batch), _MENTIONS_PER_MESSAGE):
         piece = batch[start:start + _MENTIONS_PER_MESSAGE]
+        card = _Card()
         if start == 0:
-            text = header
+            _title(card, "Репорт")
+            _section(card, "Кто написал")
+            card.add(name, "bold")
+            if username:
+                card.add("  ·  ")
+                card.add(f"@{username}", "code")
+            _section(card, "Текст")
+            card.add(shown, "bold", "blockquote")
+            _section(card, f"Кого зовём  ·  {_people_word(len(batch))}")
         else:
-            text = "Ещё:\n"
-        entities: List[MessageEntity] = []
-        for index, (uid, name) in enumerate(piece):
+            _title(card, "Ещё зовём")
+            if clean_note:
+                _section(card, "Текст")
+                card.add(_excerpt(clean_note), "italic", "blockquote")
+            _section(card, "Кого зовём")
+        for index, (uid, person) in enumerate(piece):
             if index:
-                text += " "
-            label = _label(name, "сотрудник")
-            offset = _utf16_len(text)
-            text += label
-            entities.append(MessageEntity(
-                type="text_mention",
-                offset=offset,
-                length=_utf16_len(label),
+                card.add("  ·  ")
+            label = _label(person, "сотрудник")
+            card.add(
+                label,
+                "text_mention",
                 user=User(id=int(uid), is_bot=False, first_name=label[:64] or "сотрудник"),
-            ))
-        chunks.append((text, entities))
+            )
+        chunks.append((card.text, card.entities))
     return chunks
 
 
@@ -173,27 +274,36 @@ async def handle_report(message: Message) -> None:
     """Ответ на /report: пинг администраторов группы и сотрудников проекта."""
     chat = message.chat
     if chat is None or int(chat.id) >= 0:
-        await message.reply("Напишите /report в группе.", disable_web_page_preview=True)
+        await message.reply(_PRIVATE, parse_mode="HTML", disable_web_page_preview=True)
         return
-    author = getattr(message.from_user, "id", None)
+    user = message.from_user
+    author = getattr(user, "id", None)
     if author is None:
         return
     if not _remember(int(chat.id), int(author), time.monotonic()):
-        await message.reply(
-            "Состав уже звали. Подождите немного и напишите ещё раз, если никто не ответил.",
-            disable_web_page_preview=True,
-        )
+        await message.reply(_WAIT, parse_mode="HTML", disable_web_page_preview=True)
         return
     note = report_note(message.text or message.caption or "") or ""
     try:
         people = await _targets(int(chat.id), int(author))
     except Exception:
-        await message.reply("Не получилось собрать состав. Напишите ещё раз чуть позже.")
+        await message.reply(_FAIL, parse_mode="HTML", disable_web_page_preview=True)
         return
     if not people:
-        await message.reply("Сейчас некого позвать: в группе нет администраторов и сотрудников.")
+        await message.reply(_EMPTY, parse_mode="HTML", disable_web_page_preview=True)
         return
-    chunks = mention_chunks(people, note=note)
+    author_name = " ".join(
+        part for part in (
+            getattr(user, "first_name", "") or "",
+            getattr(user, "last_name", "") or "",
+        ) if part
+    )
+    chunks = mention_chunks(
+        people,
+        note=note,
+        author_name=author_name,
+        author_username=getattr(user, "username", "") or "",
+    )
     for index, (text, entities) in enumerate(chunks):
         kwargs = {
             "disable_web_page_preview": True,
