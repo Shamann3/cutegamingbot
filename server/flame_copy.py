@@ -135,8 +135,9 @@ def emoji(eid: str, fallback: str = "⚫️") -> str:
 # Карточка дня в справке «хелп огонёк» (блок «Награды за дни»)
 # ---------------------------------------------------------------------------
 # Где: ответ на «хелп огонёк» / «что такое огонёк».
-# Как: шапка и правила без цитаты. Каждая награда — своя цитата,
-#      полоска тянется только по этому подарку. Слоты: {mark} {days} {line} {face} {title} {gifts} {words}.
+# Как: над цитатой только срок «🌙 40 дней». Вся награда этого дня — одна цитата:
+#      куты и бонусы строкой «⚡️ Куты — 10 кут», каждый предмет со своей строки.
+#      Слоты: {mark} {days} {body} {face} {title} {gifts} {words}.
 
 # Значок слева от срока. Первое число — «с такого дня включительно».
 REWARD_DAY_MARKS = (
@@ -158,11 +159,11 @@ REWARD_GROUPS = (
 REWARD_ITEM_FALLBACK = "🎁"
 # Между двумя подарками одной группы (например два предмета).
 REWARD_GIFT_GAP = " · "
-# Строка над цитатами дня. {mark} значок, {days} «10 дней».
-# Как выглядит: «✨ Если огонёк горит уже 10 дней».
-REWARD_DAY_HEAD = "{mark} Если огонёк горит уже <b>{days}</b>"
-# Цитата одной награды. {line} уже собранная строка подарка.
-REWARD_QUOTE = "<blockquote>{line}</blockquote>"
+# Строка над цитатой дня. {mark} значок, {days} «40 дней».
+# Как выглядит: «🌙 40 дней».
+REWARD_DAY_HEAD = "{mark} <b>{days}</b>"
+# Одна цитата на все подарки дня. {body} строки через перевод строки.
+REWARD_QUOTE = "<blockquote>{body}</blockquote>"
 # Бонус, бонус ×2 или куты. {face} значок, {title} «Куты», {gifts} «10 кут».
 REWARD_GROUP = "{face} {title} — {gifts}"
 # Один бонус / куты. {words} уже готовая подпись, например «10 кут».
@@ -223,32 +224,29 @@ def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) ->
     sequence += [key for key in order if key not in sequence]
     titles = {key: title for key, _face, title in REWARD_GROUPS}
     icons = {key: face for key, face, _title in REWARD_GROUPS}
-    quotes = []
+    lines = []
     for key in sequence:
         if key == "item":
             for face, text in packed[key]:
                 safe = html.escape(text, quote=False)
-                line = _slots(REWARD_ITEM, face=_coded_face(face), words=safe)
-                quotes.append(_slots(REWARD_QUOTE, line=line))
+                lines.append(_slots(REWARD_ITEM, face=_coded_face(face), words=safe))
             continue
         bits = []
         for _face, text in packed[key]:
             bits.append(_slots(REWARD_GIFT, words=html.escape(text, quote=False)))
-        line = _slots(
+        lines.append(_slots(
             REWARD_GROUP,
             face=html.escape(str(icons.get(key) or "🎁"), quote=False),
             title=html.escape(str(titles.get(key) or key), quote=False),
             gifts=REWARD_GIFT_GAP.join(bits),
-        )
-        quotes.append(_slots(REWARD_QUOTE, line=line))
-    if not quotes:
-        quotes.append(_slots(REWARD_QUOTE, line=_slots(REWARD_GIFT, words="награда")))
+        ))
+    body = "\n".join(lines) or _slots(REWARD_GIFT, words="награда")
     head = _slots(
         REWARD_DAY_HEAD,
         mark=html.escape(str(mark or "✨"), quote=False),
         days=html.escape(str(label or ""), quote=False),
     )
-    return head + "\n" + "\n".join(quotes)
+    return head + "\n" + _slots(REWARD_QUOTE, body=body)
 
 
 def kind_words(kind: str, amount: int, item: str = "") -> str:
