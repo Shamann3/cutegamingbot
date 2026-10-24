@@ -10,11 +10,16 @@
 Где остальное
 - Вкладка «Огонёк»: включение, норма, награды, цены и срок возврата.
 - server/flame_engine.py: серия, полночь и окно возврата (функция restore_view).
+- Награда в личку и во все официальные группы: строки REWARD_PRIVATE и REWARD_HALL ниже.
+  Слоты в фигурных скобках бот подставляет сам. Остальные слова меняйте прямо в строке.
 
 Цены, предметы и срок возврата задаются во вкладке, не здесь.
 После правки этого файла перезапустите бота.
 """
 from __future__ import annotations
+
+import html
+import re
 
 EMOJI = "5355118129783553944"
 STATUS_EMOJI = "5355118129783553944"
@@ -169,28 +174,86 @@ def restore_help_line(*, days: int, kuty: int, item: str, count: int) -> str:
     )
 
 
+def _fill(template: str, **slots: str) -> str:
+    def swap(match):
+        return slots.get(match.group(1), match.group(0))
+
+    return re.sub(r"\{([a-z_]+)\}", swap, template)
+
+
+def _plain_gifts(gifts: list[str]) -> list[str]:
+    out = []
+    for gift in gifts or []:
+        text = " ".join(str(gift or "").split())
+        if text:
+            out.append(html.escape(text, quote=False))
+    return out
+
+
+# Награда за дни. Меняйте слова здесь. После правки перезапустите бота.
+# {days} — срок, например «5 дней»
+# {title} — строка статуса или пусто
+# {gifts} — подарки, уже собранные
+# {name} — имя со ссылкой
+# Эмодзи: EMOJI в начале файла и число в _GIFT_EMOJI.
+_GIFT_EMOJI = emoji("5438440765908874600", "🎁")
+REWARD_TITLE = "🏅 <b>{title}</b>\n"
+REWARD_GIFT_LINE = "✨ <b>{gift}</b>"
+REWARD_HALL_GAP = " · "
+REWARD_PRIVATE = (
+    f"{emoji(EMOJI)} <b>Огонёк уже {{days}}</b>\n"
+    f"{{title}}{_GIFT_EMOJI} <b>Вам пришло</b>\n"
+    "<blockquote>{gifts}</blockquote>\n"
+    "<i>Завтра до <b>00:00</b> МСК продлите снова.</i>"
+)
+REWARD_HALL = (
+    f"{emoji(EMOJI)} <b>{{name}}</b>\n"
+    "огонёк уже <b>{days}</b>\n"
+    "<blockquote>🎁 {gifts}</blockquote>\n"
+    "<code>хелп огонёк</code> — с <b>одного дня</b>."
+)
+
+
 def screen_streak(label: str, title: str, gifts: str) -> str:
-    head = f"<b>{title}</b>\n" if title else ""
-    extra = (
-        f"\n\n{emoji('5438440765908874600', '🎁')} За это продление вам: <b>{gifts}</b>"
-        if gifts
-        else ""
-    )
+    head = f"<b>{html.escape(title, quote=False)}</b>\n" if title else ""
     return (
-        f"{emoji(EMOJI)} <b>Огонёк уже {label}</b>\n"
+        f"{emoji(EMOJI)} <b>Огонёк уже {html.escape(label, quote=False)}</b>\n"
         f"{head}"
-        "<blockquote>Огонёк продлён на <b>1 день</b>. Серия сразу длиннее.\n"
-        "Завтра до <b>00:00</b> по Москве продлите его снова. Иначе погаснет.</blockquote>"
-        f"{extra}"
+        "<blockquote>🔥 Продлён ещё на <b>1 день</b>.\n"
+        "Завтра до <b>00:00</b> МСК продлите снова.</blockquote>"
+    )
+
+
+def screen_reward_private(label: str, title: str, gifts: list[str]) -> str:
+    """Личка тому, кто забрал награду. Слова — в REWARD_PRIVATE."""
+    lines = [_fill(REWARD_GIFT_LINE, gift=gift) for gift in _plain_gifts(gifts)]
+    title_line = _fill(REWARD_TITLE, title=html.escape(title, quote=False)) if title else ""
+    return _fill(
+        REWARD_PRIVATE,
+        days=html.escape(label, quote=False),
+        title=title_line,
+        gifts="\n".join(lines) or _fill(REWARD_GIFT_LINE, gift="награда"),
+    )
+
+
+def screen_reward_hall(name_html: str, label: str, gifts: list[str]) -> str:
+    """Одно и то же объявление во все официальные группы. Слова — в REWARD_HALL."""
+    body = REWARD_HALL_GAP.join(f"<b>{gift}</b>" for gift in _plain_gifts(gifts)) or "<b>награда</b>"
+    return _fill(
+        REWARD_HALL,
+        name=name_html or "Игрок",
+        days=html.escape(label, quote=False),
+        gifts=body,
     )
 
 
 def screen_warm(label: str) -> str:
+    safe = html.escape(" ".join(str(label or "награда").split()) or "награда", quote=False)
     return (
         f"{emoji('5296561370303592127', '🌟')} <b>Тёплый час</b>\n"
-        "<blockquote>Вы попали в удачный час.\n"
-        "Это отдельный подарок. День серии он не заменяет.</blockquote>\n"
-        f"{emoji('5438440765908874600', '🎁')} <b>{label}</b>"
+        "<blockquote>🌟 Вы попали в удачный час.\n"
+        "Подарок отдельно. День огонька он не заменяет.</blockquote>\n"
+        f"{emoji('5438440765908874600', '🎁')} <b>{safe}</b>"
     )
 
 

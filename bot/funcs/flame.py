@@ -37,6 +37,8 @@ from flame_copy import (  # noqa: E402
     screen_restore_none,
     screen_restore_off,
     screen_restore_offer,
+    screen_reward_hall,
+    screen_reward_private,
     screen_streak,
     screen_top,
     screen_top_empty,
@@ -161,7 +163,7 @@ async def note_flushed(db, pairs: list[tuple]) -> None:
             if not result:
                 continue
             await _pay(db, uid, result.get("rewards") or [])
-            await _tell_streak(uid, result)
+            await _tell_streak(db, uid, result)
 
 
 async def note_live_message(db, user_id: int, chat_id: int) -> None:
@@ -232,7 +234,7 @@ async def _pay(db, user_id: int, rewards: list[dict]) -> None:
             print(f"[FLAME] pay {user_id} {kind}: {exc}")
 
 
-def _gift_words(rewards: list[dict]) -> str:
+def _gift_labels(rewards: list[dict]) -> list[str]:
     gifts = []
     for reward in rewards or []:
         label = reward.get("label")
@@ -249,18 +251,102 @@ def _gift_words(rewards: list[dict]) -> str:
             gifts.append("бесплатное открытие бонуса ×2")
         elif kind == "bonus":
             gifts.append("бесплатное открытие бонуса")
-    return ", ".join(gifts)
+    return gifts
 
 
-async def _tell_streak(user_id: int, result: dict) -> None:
-    await _dm(
-        user_id,
-        screen_streak(
-            result.get("label") or "1 день",
-            str(result.get("title") or "").strip(),
-            _gift_words(result.get("rewards") or []),
-        ),
+def _gift_words(rewards: list[dict]) -> str:
+    return ", ".join(_gift_labels(rewards))
+
+
+async def _tell_streak(db, user_id: int, result: dict) -> None:
+    label = result.get("label") or "1 день"
+    title = str(result.get("title") or "").strip()
+    gifts = _gift_labels(result.get("rewards") or [])
+    if gifts:
+        await _dm(user_id, screen_reward_private(label, title, gifts))
+        asyncio.create_task(_hall_safe(db, int(user_id), label, gifts))
+        return
+    await _dm(user_id, screen_streak(label, title, ""))
+
+
+async def _hall_safe(db, user_id: int, label: str, gifts: list[str]) -> None:
+    try:
+        await _announce_reward(db, user_id, label, gifts)
+    except Exception as exc:
+        print(f"[FLAME] hall {user_id}: {exc}")
+
+
+_hall_lock = asyncio.Lock()
+
+
+def _official_targets(chats) -> list[int]:
+    targets = []
+    seen = set()
+    for raw in chats or []:
+        try:
+            chat_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if chat_id >= 0 or chat_id in seen:
+            continue
+        seen.add(chat_id)
+        targets.append(chat_id)
+    return targets
+
+
+async def _send_hall(bot, chat_id: int, text: str) -> None:
+    from aiogram.exceptions import TelegramRetryAfter
+
+    for attempt in (1, 2):
+        try:
+            await bot.send_message(
+                chat_id,
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+            return
+        except TelegramRetryAfter as exc:
+            wait = float(getattr(exc, "retry_after", 1) or 1) + 0.2
+            if attempt == 2:
+                print(f"[FLAME] hall {chat_id}: пауза {wait:.0f}с, пропуск")
+                return
+            await asyncio.sleep(wait)
+        except Exception as exc:
+            print(f"[FLAME] hall {chat_id}: {exc}")
+            return
+
+
+async def _announce_reward(db, user_id: int, label: str, gifts: list[str]) -> None:
+    """Один и тот же короткий текст во все официальные группы проекта."""
+    if not gifts:
+        return
+    pool = _pool(db)
+    if pool is None:
+        return
+    targets = _official_targets(await official_ids())
+    if not targets:
+        return
+    person = await pool.fetchrow(
+        """
+        SELECT COALESCE(first_name, '') AS first_name,
+               COALESCE(username, '') AS username
+        FROM users WHERE user_id = $1
+        """,
+        int(user_id),
     )
+    from bot.funcs.top import stat_person_html
+    name = stat_person_html(
+        (person["first_name"] if person else "") or "Игрок",
+        (person["username"] if person else "") or "",
+        int(user_id),
+    )
+    text = screen_reward_hall(name, label, gifts)
+    async with _hall_lock:
+        from main import bot1
+        for chat_id in targets:
+            await _send_hall(bot1, chat_id, text)
+            await asyncio.sleep(0.35)
 
 
 async def _tell_warm(user_id: int, gift: dict) -> None:
@@ -270,7 +356,12 @@ async def _tell_warm(user_id: int, gift: dict) -> None:
 async def _dm(user_id: int, text: str) -> None:
     try:
         from main import bot1
-        await bot1.send_message(int(user_id), text, parse_mode="HTML")
+        await bot1.send_message(
+            int(user_id),
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
     except Exception:
         pass
 

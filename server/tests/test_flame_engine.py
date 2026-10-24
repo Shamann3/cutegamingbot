@@ -183,6 +183,25 @@ def test_missed_day_is_before_yesterday():
     assert date(2026, 10, 20) < yesterday
 
 
+def test_reward_cards_name_the_person_and_the_day():
+    from flame_copy import screen_reward_hall, screen_reward_private
+
+    private = screen_reward_private("5 дней", "Живой огонь", ["Маленький кейс", "Ключ"])
+    assert "Огонёк уже 5 дней" in private
+    assert "Маленький кейс" in private
+    assert "Ключ" in private
+    assert "<blockquote>" in private
+
+    hall = screen_reward_hall("<a href=\"https://t.me/nick\">Аня</a>", "5 дней", ["Маленький кейс", "Ключ <"])
+    assert "Аня" in hall
+    assert "5 дней" in hall
+    assert "Маленький кейс" in hall
+    assert "Ключ &lt;" in hall
+    assert "хелп огонёк" in hall
+    assert "одного дня" in hall
+    assert "Бонус +" not in hall
+
+
 def test_kind_words_name_bonus_and_x2():
     from flame_copy import kind_words
     assert "бонус" in kind_words("bonus", 1).lower()
