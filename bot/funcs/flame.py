@@ -17,6 +17,7 @@ from flame_copy import (  # noqa: E402
     HISTORY_GRANT,
     HISTORY_RESTORE,
     alert_no_item,
+    announce_label,
     alert_poor,
     alert_stranger,
     button_cancel,
@@ -243,14 +244,10 @@ def _gift_labels(rewards: list[dict]) -> list[str]:
             continue
         kind = reward.get("kind")
         amount = int(reward.get("amount") or 1)
-        if kind == "kuty":
-            gifts.append(f"{amount} кут")
-        elif kind == "item" and reward.get("item_name"):
-            gifts.append(str(reward["item_name"]))
-        elif kind == "bonus_x2":
-            gifts.append("бесплатное открытие бонуса ×2")
-        elif kind == "bonus":
-            gifts.append("бесплатное открытие бонуса")
+        if kind in {"kuty", "item", "bonus", "bonus_x2"}:
+            label = announce_label(str(kind or ""), amount, str(reward.get("item_name") or ""))
+            if label:
+                gifts.append(label)
     return gifts
 
 

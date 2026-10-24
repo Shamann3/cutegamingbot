@@ -237,7 +237,7 @@ def restore_view(
 
 
 def help_html(board: dict) -> str:
-    from flame_copy import restore_help_line, screen_help
+    from flame_copy import restore_help_line, screen_help, status_help_line
 
     settings = board.get("settings") or {}
     steps = board.get("steps") or []
@@ -259,7 +259,7 @@ def help_html(board: dict) -> str:
         name = str(row.get("title") or "").strip()
         if start < 1 or not name:
             continue
-        title_lines.append(f"Если огонёк горит уже {span_label(start)} — <b>{name}</b>")
+        title_lines.append(status_help_line(span_label(start), name))
     warm_hour = ""
     if warm.get("hour") is not None:
         hour = int(warm["hour"])
