@@ -1214,3 +1214,149 @@
     width: 100%;
   }
 }
+
+/* ---- Статусы: линейки, карточки, превью ---- */
+.flame-status-desk {
+  display: grid;
+  gap: 14px;
+}
+
+.flame-status-presets {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #0c0c10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.flame-status-presets-head h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  color: #f4f4f5;
+}
+
+.flame-status-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 10px;
+}
+
+.flame-status-preset {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  text-align: left;
+  min-height: 100%;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 176, 32, 0.22);
+  background: linear-gradient(165deg, rgba(255, 140, 40, 0.12), #141418 55%);
+  color: #f4f4f5;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.flame-status-preset:hover {
+  border-color: rgba(255, 176, 32, 0.55);
+  transform: translateY(-1px);
+}
+
+.flame-status-preset strong {
+  font-size: 0.98rem;
+}
+
+.flame-status-preset > span {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #d7c4b0;
+}
+
+.flame-status-preset ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.flame-status-preset li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: #e8e4dc;
+}
+
+.flame-status-preset li em {
+  flex: none;
+  font-style: normal;
+  color: #ffb020;
+  font-variant-numeric: tabular-nums;
+}
+
+.flame-status-preset li.is-more {
+  color: #a8a29e;
+}
+
+.flame-status-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #141418;
+  border: 1px dashed rgba(255, 176, 32, 0.35);
+}
+
+.flame-status-preview-line {
+  margin: 0;
+  font-size: 1rem;
+  color: #fffaf4;
+}
+
+.flame-status-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.flame-status-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flame-status-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #0c0c10;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.flame-status-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.flame-status-card-preview {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #e8e4dc;
+}
+
+@media (max-width: 720px) {
+  .flame-status-preset-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .flame-status-toolbar .flame-day-presets {
+    width: 100%;
+  }
+}

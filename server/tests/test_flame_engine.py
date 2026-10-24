@@ -18,14 +18,36 @@ from flame_engine import (
 )
 
 
-def test_span_label_days_months_years():
+def test_status_presets_cover_reward_days():
+    from flame_copy import STATUS_DAYS, status_presets
+
+    packs = status_presets()
+    assert len(packs) >= 3
+    assert STATUS_DAYS[0] == 2
+    assert STATUS_DAYS[-1] == 365
+    for pack in packs:
+        days = [row["from_day"] for row in pack["titles"]]
+        names = [row["title"] for row in pack["titles"]]
+        assert days == list(STATUS_DAYS)
+        assert len(names) == len(STATUS_DAYS)
+        assert len(set(names)) == len(names)
+        assert all(name.strip() for name in names)
+
+
+def test_span_label_is_the_exact_day_count():
     assert span_label(1) == "1 день"
     assert span_label(2) == "2 дня"
     assert span_label(5) == "5 дней"
     assert span_label(21) == "21 день"
-    assert span_label(90) == "3 месяца"
-    assert span_label(365) == "1 год"
-    assert span_label(400) == "1 год 1 месяц 5 дней"
+    assert span_label(30) == "30 дней"
+    assert span_label(40) == "40 дней"
+    assert span_label(50) == "50 дней"
+    assert span_label(90) == "90 дней"
+    assert span_label(100) == "100 дней"
+    assert span_label(365) == "365 дней"
+    assert span_label(400) == "400 дней"
+    assert "месяц" not in span_label(100)
+    assert "год" not in span_label(365)
 
 
 def test_need_grows_from_the_chosen_day():

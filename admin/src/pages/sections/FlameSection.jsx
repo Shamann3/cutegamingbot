@@ -546,6 +546,66 @@ export default function FlameSection() {
 
   const patch = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
+  const usedTitleDays = useMemo(
+    () => titles.map((row) => Number(row.fromDay)).filter((day) => day >= 1),
+    [titles],
+  )
+  const sortedTitles = useMemo(
+    () => [...titles].sort((a, b) => (Number(a.fromDay) || 0) - (Number(b.fromDay) || 0)),
+    [titles],
+  )
+  const activeStatusPreview = useMemo(() => {
+    const rows = sortedTitles.filter((row) => String(row.title || '').trim() && Number(row.fromDay) >= 1)
+    if (!rows.length) return null
+    const last = rows[rows.length - 1]
+    return {
+      day: Number(last.fromDay),
+      title: String(last.title || '').trim(),
+    }
+  }, [sortedTitles])
+  const statusPresetDays = useMemo(() => {
+    const first = (board?.statusPresets || [])[0]
+    const days = (first?.titles || []).map((row) => Number(row.from_day || row.fromDay)).filter((day) => day >= 1)
+    return days.length ? days : [2, 3, 5, 10, 20, 25, 30, 40, 50, 100, 365]
+  }, [board])
+
+  const applyStatusPreset = (pack) => {
+    setTitles((pack?.titles || []).map((row) => ({
+      fromDay: String(row.from_day || row.fromDay || ''),
+      title: row.title || '',
+      emojiId: row.emoji_id || row.emojiId || '',
+    })))
+  }
+
+  const addStatusRow = (wanted = null) => {
+    const taken = new Set(usedTitleDays)
+    let day = Number(wanted) || 0
+    if (day < 1) {
+      day = statusPresetDays.find((value) => !taken.has(value))
+        || Math.max(0, ...usedTitleDays, 0) + 1
+    }
+    while (taken.has(day)) day += 1
+    setTitles((rows) => [...rows, { fromDay: String(day), title: '', emojiId: '' }])
+  }
+
+  const patchTitle = (index, next) => {
+    setTitles((rows) => rows.map((item, i) => (i === index ? { ...item, ...next } : item)))
+  }
+
+  const saveStatusAll = () => run('titles', async () => {
+    await saveFlameSettings(settingsPayload())
+    return saveFlameTitles({
+      titles: titles
+        .map((row) => ({
+          fromDay: Number(row.fromDay),
+          title: String(row.title || '').trim(),
+          emojiId: row.emojiId || '',
+        }))
+        .filter((row) => row.fromDay >= 1 && row.title)
+        .sort((a, b) => a.fromDay - b.fromDay),
+    })
+  })
+
   const bonusItems = useMemo(() => namedDrops(giftDrops), [giftDrops])
   const bonusChance = Math.max(0, Math.min(100, Number(form.giftItemChance) || 0))
   const bonusSlots = Math.max(1, Math.min(5, Number(form.giftItemCount) || 1))
@@ -1321,9 +1381,12 @@ export default function FlameSection() {
           )}
 
           {tab === 'status' && (
-            <section className="flame-card">
+            <section className="flame-card flame-status-desk">
               <div className="flame-card-head">
-                <h3>Статусы огонька</h3>
+                <div>
+                  <h3>Статусы огонька</h3>
+                  <p className="flame-note">Подпись у имени, пока огонёк горит. На подарки не влияет — только престиж в профиле, топе и справке.</p>
+                </div>
                 <div className="flame-ask-slot">
                   <FlameSwitch checked={form.statusEnabled} onChange={(e) => patch('statusEnabled', e.target.checked)}>
                     {form.statusEnabled ? 'В профиле видны' : 'Скрыты'}
@@ -1331,53 +1394,151 @@ export default function FlameSection() {
                   <FlameAsk {...ASK.status} />
                 </div>
               </div>
+
               <FlameFold open={Boolean(form.statusEnabled)}>
-              <p className="flame-note">
-                Короткая подпись рядом с именем, пока огонёк горит. На подарки не влияет. Пример: «Искра», «Живой огонь».
-              </p>
-              <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setTitles((rows) => [...rows, { fromDay: '', title: '', emojiId: '' }])}>
-                Добавить статус
-              </button>
-              <ul className="flame-rows is-title">
-                {titles.map((row, index) => (
-                  <li key={`title-${index}`}>
-                    <label>
-                      <span>С дня</span>
-                      <input inputMode="numeric" value={row.fromDay} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setTitles((rows) => rows.map((item, i) => i === index ? { ...item, fromDay: value } : item))
-                      }} />
-                      <FlameAsk {...ASK.titleFrom} />
-                    </label>
-                    <label className="is-wide">
-                      <span>Название</span>
-                      <input value={row.title} maxLength={60} onChange={(e) => {
-                        const title = e.target.value
-                        setTitles((rows) => rows.map((item, i) => i === index ? { ...item, title } : item))
-                      }} />
-                      <FlameAsk {...ASK.titleName} />
-                    </label>
-                    <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setTitles((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
-                  </li>
-                ))}
-                </ul>
-                <div className="flame-actions">
-                  <button
-                    type="button"
-                    className="sec-btn"
-                    disabled={busy === 'titles'}
-                    onClick={() => run('titles', () => saveFlameTitles({
-                      titles: titles
-                        .map((row) => ({ fromDay: Number(row.fromDay), title: row.title.trim(), emojiId: row.emojiId }))
-                        .filter((row) => row.fromDay >= 1 && row.title),
-                    }))}
-                  >
-                    {busy === 'titles' ? 'Сохраняем…' : 'Сохранить статусы'}
-                  </button>
+                {(board?.statusPresets || []).length > 0 && (
+                  <div className="flame-status-presets">
+                    <div className="flame-status-presets-head">
+                      <h4>Готовые линейки</h4>
+                      <p className="flame-note">Нажмите набор — список ниже заполнится. Потом можно править любой день и название.</p>
+                    </div>
+                    <div className="flame-status-preset-grid">
+                      {(board.statusPresets || []).map((pack) => {
+                        const sample = (pack.titles || []).slice(0, 4)
+                        const more = Math.max(0, (pack.titles || []).length - sample.length)
+                        return (
+                          <button
+                            key={pack.id}
+                            type="button"
+                            className="flame-status-preset"
+                            onClick={() => applyStatusPreset(pack)}
+                          >
+                            <strong>{pack.label}</strong>
+                            {pack.hint ? <span>{pack.hint}</span> : null}
+                            <ul>
+                              {sample.map((row) => (
+                                <li key={`${pack.id}-${row.from_day || row.fromDay}`}>
+                                  <em>{row.from_day || row.fromDay} дн.</em>
+                                  {row.title}
+                                </li>
+                              ))}
+                              {more > 0 ? <li className="is-more">ещё {more}</li> : null}
+                            </ul>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flame-status-preview">
+                  <span className="flame-note">Как видит человек</span>
+                  {form.statusEnabled && activeStatusPreview ? (
+                    <p className="flame-status-preview-line">
+                      <b>{activeStatusPreview.title}</b>
+                      {' · огонёк '}
+                      <b>{activeStatusPreview.day} дн.</b>
+                    </p>
+                  ) : (
+                    <p className="flame-note">Пока статусов нет — в профиле будет только длина огонька.</p>
+                  )}
                 </div>
+
+                <div className="flame-status-toolbar">
+                  <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addStatusRow()}>
+                    Добавить статус
+                  </button>
+                  <div className="flame-day-presets" role="group" aria-label="Быстрый день статуса">
+                    {statusPresetDays.map((day) => {
+                      const busyDay = usedTitleDays.includes(day)
+                      return (
+                        <button
+                          key={`status-day-${day}`}
+                          type="button"
+                          className={`flame-chip${busyDay ? ' is-busy' : ''}`}
+                          disabled={busyDay}
+                          title={busyDay ? `День ${day} уже есть` : `Добавить статус с дня ${day}`}
+                          onClick={() => addStatusRow(day)}
+                        >
+                          {day}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {titles.length > 0 && (
+                    <button
+                      type="button"
+                      className="sec-btn sec-btn-ghost"
+                      onClick={() => {
+                        if (window.confirm('Очистить все статусы в списке? Сохранённые в базе останутся, пока не нажмёте «Сохранить».')) {
+                          setTitles([])
+                        }
+                      }}
+                    >
+                      Очистить список
+                    </button>
+                  )}
+                </div>
+
+                {titles.length === 0 ? (
+                  <p className="flame-empty">Статусов пока нет. Выберите линейку сверху или добавьте день вручную.</p>
+                ) : (
+                  <ul className="flame-status-list">
+                    {titles.map((row, index) => {
+                      const day = Number(row.fromDay) || 0
+                      const name = String(row.title || '').trim()
+                      return (
+                        <li key={`title-${index}`} className="flame-status-card">
+                          <div className="flame-status-card-head">
+                            <span className="flame-day-badge">{day >= 1 ? `${day} дн.` : 'день?'}</span>
+                            <button
+                              type="button"
+                              className="sec-btn sec-btn-ghost flame-drop"
+                              onClick={() => setTitles((rows) => rows.filter((_, i) => i !== index))}
+                            >
+                              Убрать
+                            </button>
+                          </div>
+                          <FlameDayPicker
+                            value={row.fromDay}
+                            onChange={(value) => patchTitle(index, { fromDay: value })}
+                            label="С какого дня серии"
+                            ask={ASK.titleFrom}
+                            usedDays={usedTitleDays.filter((value) => value !== day)}
+                            showPresets
+                          />
+                          <label className="flame-field">
+                            <span>Название статуса</span>
+                            <input
+                              value={row.title}
+                              maxLength={60}
+                              placeholder="Например: Живой огонь"
+                              onChange={(e) => patchTitle(index, { title: e.target.value })}
+                            />
+                            <FlameAsk {...ASK.titleName} />
+                          </label>
+                          <p className="flame-status-card-preview">
+                            {name ? (
+                              <>В профиле: <b>{name}</b> · огонёк <b>{day >= 1 ? `${day} дн.` : '…'}</b></>
+                            ) : (
+                              <span className="flame-note">Введите название — увидите, как оно встанет у имени.</span>
+                            )}
+                          </p>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+
+                <p className="flame-note">
+                  Действует самый поздний статус, чей день уже набран. В справке «хелп огонёк» список идёт по возрастанию дней.
+                </p>
               </FlameFold>
-              <div className="flame-actions">
-                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>Сохранить переключатель</button>
+
+              <div className="flame-actions flame-actions-sticky">
+                <button type="button" className="sec-btn" disabled={busy === 'titles' || busy === 'settings'} onClick={saveStatusAll}>
+                  {busy === 'titles' || busy === 'settings' ? 'Сохраняем…' : 'Сохранить статусы'}
+                </button>
               </div>
             </section>
           )}

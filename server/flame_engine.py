@@ -75,19 +75,9 @@ def ru_count(n: int, one: str, few: str, many: str) -> str:
 
 
 def span_label(days: int) -> str:
+    """Сколько дней нужно держать огонёк. Всегда числом дней, без месяцев и лет."""
     left = max(0, int(days))
-    if left <= 0:
-        return "0 дней"
-    years, rem = divmod(left, 365)
-    months, day = divmod(rem, 30)
-    parts: list[str] = []
-    if years:
-        parts.append(ru_count(years, "год", "года", "лет"))
-    if months:
-        parts.append(ru_count(months, "месяц", "месяца", "месяцев"))
-    if day or not parts:
-        parts.append(ru_count(day, "день", "дня", "дней"))
-    return " ".join(parts)
+    return ru_count(left, "день", "дня", "дней")
 
 
 def need_for(day: int, base: int, steps: list[dict]) -> int:
@@ -717,11 +707,14 @@ async def load_board(pool) -> dict:
             item_count=settings["gift_item_count"],
         ),
     }
+    from flame_copy import status_presets
+
     board = {
         "settings": settings,
         "steps": steps,
         "rewards": rewards,
         "titles": titles if settings.get("status_enabled") else titles,
+        "statusPresets": status_presets(),
         "warm": warm,
         "gift": gift,
         "people": people,
