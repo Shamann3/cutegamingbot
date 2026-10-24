@@ -36,7 +36,7 @@
 .flame-note,
 .flame-empty {
   margin: 0;
-  color: var(--e-text-2, #c4c4c8);
+  color: #e8e4dc;
   line-height: 1.45;
 }
 
@@ -68,8 +68,10 @@
   min-width: 0;
   padding: 14px 16px;
   border-radius: 18px;
-  background: var(--e-plate, #17171b);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #141418;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  position: relative;
+  z-index: 1;
 }
 
 .flame-stats strong {
@@ -89,28 +91,159 @@
 
 .flame-day-list {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .flame-day-pack {
   display: grid;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 12px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #121216;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  animation: flame-unfurl 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .flame-day-pack-head {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: end;
-  justify-content: space-between;
-  gap: 10px;
+}
+
+.flame-day-badge {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 4.2rem;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255, 176, 64, 0.28), rgba(255, 80, 20, 0.14));
+  border: 1px solid rgba(255, 176, 64, 0.4);
+  color: #fff6ea;
+}
+
+.flame-day-badge span {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.flame-day-badge strong {
+  font-size: 1.45rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .flame-day-num {
-  width: min(100%, 8.5rem);
+  width: min(100%, 10rem);
+}
+
+.flame-day-remove {
+  align-self: end;
+}
+
+.flame-day-add {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+}
+
+.flame-day-add-label {
+  font-size: 0.78rem;
+  color: #f0d7b8;
+  font-weight: 600;
+}
+
+.flame-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flame-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 176, 64, 0.35);
+  background: rgba(255, 140, 40, 0.1);
+  color: #ffe4c2;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.flame-chip:hover {
+  background: rgba(255, 140, 40, 0.2);
+  border-color: rgba(255, 176, 64, 0.6);
+}
+
+.flame-chip:active {
+  transform: scale(0.97);
+}
+
+.flame-gift-cards {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flame-gift-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #0c0c10;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.flame-gift-card.is-kuty {
+  border-color: rgba(80, 200, 140, 0.35);
+}
+
+.flame-gift-card.is-bonus,
+.flame-gift-card.is-bonus_x2 {
+  border-color: rgba(120, 160, 255, 0.35);
+}
+
+.flame-gift-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.flame-gift-card-top strong {
+  font-size: 0.95rem;
+}
+
+.flame-gift-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.flame-actions-sticky {
+  position: sticky;
+  bottom: 10px;
+  z-index: 2;
+  padding: 10px;
+  margin: 4px -4px 0;
+  border-radius: 16px;
+  background: rgba(20, 20, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
 }
 
 .flame-reveal-line {
@@ -431,10 +564,11 @@
   min-height: 44px;
   box-sizing: border-box;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0c0c10;
+  color: #f4f4f5;
   font: inherit;
+  font-size: 16px;
   padding: 0 12px;
 }
 
@@ -665,6 +799,11 @@
 }
 
 @media (max-width: 720px) {
+  .flame-page {
+    width: 100%;
+    gap: 12px;
+  }
+
   .flame-stats,
   .flame-grid-2,
   .flame-preview-grid {
@@ -695,12 +834,49 @@
   }
 
   .flame-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding: 2px 2px 8px;
+    margin: 0 -4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .flame-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .flame-tab {
+    flex: 0 0 auto;
+    min-width: 7.5rem;
+  }
+
+  .flame-day-pack-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .flame-day-remove {
+    grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .flame-day-num {
+    width: 100%;
+  }
+
+  .flame-gift-card-body {
+    grid-template-columns: 1fr;
+  }
+
+  .flame-chip {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .flame-actions-sticky {
+    bottom: 8px;
   }
 }
 
@@ -817,11 +993,11 @@
 .flame-item-pool {
   display: grid;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 4px;
   padding: 12px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0c0c10;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .flame-item-pool .flame-card-head {

@@ -693,11 +693,11 @@ export default function FlameSection() {
     setRewards((rows) => [...rows, { day: String(last + 1 || 1), kind: 'kuty', amount: '10', itemName: '' }])
   }
 
-  const addGiftToPack = (pack) => {
+  const addGiftToPack = (pack, kind = 'kuty', amount = '10') => {
     setRewards((rows) => [...rows, {
       day: pack.day || '',
-      kind: 'kuty',
-      amount: '10',
+      kind,
+      amount: String(amount),
       itemName: '',
     }])
   }
@@ -945,22 +945,27 @@ export default function FlameSection() {
                 </button>
               </div>
               <p className="flame-note">
-                Когда огонёк доходит до этого дня, человек один раз получает весь пакет в личку.
-                Можно дать куты, бонусы и сразу несколько предметов.
+                У каждого дня свой пакет. Всё из пакета приходит в личку один раз — в тот день, когда огонёк до него доходит.
+                Можно дать только куты, только предметы, или и то и другое вместе.
               </p>
               {rewardDays.length === 0 && (
-                <p className="flame-empty">Пока пусто. Добавьте день — награды появятся в справке первыми.</p>
+                <p className="flame-empty">Пока пусто. Нажмите «Добавить день» и соберите пакет.</p>
               )}
               <div className="flame-day-list">
                 {rewardDays.map((pack) => {
                   const items = packItems(pack)
                   const other = packOther(pack)
                   const summary = [...other, ...items].map(giftWords).filter(Boolean).join(' · ')
+                  const dayLabel = String(pack.day || '').trim() || '…'
                   return (
                     <article key={pack.key} className="flame-day-pack">
                       <div className="flame-day-pack-head">
+                        <div className="flame-day-badge" aria-hidden="true">
+                          <span>День</span>
+                          <strong>{dayLabel}</strong>
+                        </div>
                         <label className="flame-field flame-day-num">
-                          <span>На какой день серии</span>
+                          <span>Номер дня серии</span>
                           <input
                             inputMode="numeric"
                             value={pack.day}
@@ -968,60 +973,85 @@ export default function FlameSection() {
                           />
                           <FlameAsk {...ASK.rewardDay} />
                         </label>
-                        <div className="flame-actions">
-                          <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addGiftToPack(pack)}>
-                            + куты / бонус
+                        <button type="button" className="sec-btn sec-btn-ghost flame-day-remove" onClick={() => removePack(pack)}>
+                          Убрать день
+                        </button>
+                      </div>
+
+                      <div className="flame-day-add" role="group" aria-label="Добавить в пакет">
+                        <span className="flame-day-add-label">Добавить в этот день</span>
+                        <div className="flame-chip-row">
+                          <button type="button" className="flame-chip" onClick={() => addGiftToPack(pack, 'kuty', '50')}>
+                            + Куты
                           </button>
-                          <button type="button" className="sec-btn sec-btn-ghost" onClick={() => removePack(pack)}>
-                            Убрать день
+                          <button type="button" className="flame-chip" onClick={() => addGiftToPack(pack, 'bonus', '1')}>
+                            + Бонус
+                          </button>
+                          <button type="button" className="flame-chip" onClick={() => addGiftToPack(pack, 'bonus_x2', '1')}>
+                            + Бонус ×2
                           </button>
                         </div>
+                        <p className="flame-note">Предметы — в блоке ниже. Можно несколько сразу.</p>
                       </div>
-                      {summary && (
+
+                      {summary ? (
                         <p className="flame-consequence">
-                          В этот день получат: <b>{summary}</b>
+                          В день <b>{dayLabel}</b> получат: <b>{summary}</b>
                         </p>
+                      ) : (
+                        <p className="flame-empty">Пакет пустой. Добавьте куты, бонус или предметы.</p>
                       )}
+
                       {other.length > 0 && (
-                        <ul className="flame-rows is-reward">
+                        <ul className="flame-gift-cards">
                           {other.map((row) => (
-                            <li key={`reward-${row._index}`}>
-                              <div className="flame-ask-slot">
-                                <DarkPick
-                                  label="Что дать"
-                                  value={row.kind}
-                                  options={KIND_OPTIONS.filter((opt) => opt.value !== 'item')}
-                                  searchable={false}
-                                  onChange={(kind) => patchReward(row._index, { kind, itemName: '' })}
-                                />
-                                <FlameAsk {...ASK.rewardKind} />
+                            <li key={`reward-${row._index}`} className={`flame-gift-card is-${row.kind}`}>
+                              <div className="flame-gift-card-top">
+                                <strong>{kindLabel(row.kind)}</strong>
+                                <button
+                                  type="button"
+                                  className="sec-btn sec-btn-ghost sec-btn-sm"
+                                  aria-label={`Убрать ${kindLabel(row.kind)}`}
+                                  onClick={() => setRewards((rows) => rows.filter((_, i) => i !== row._index))}
+                                >
+                                  Убрать
+                                </button>
                               </div>
-                              <label>
-                                <span>{row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
-                                <input
-                                  inputMode="numeric"
-                                  value={row.amount}
-                                  onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
-                                />
-                                <FlameAsk {...ASK.rewardAmount} />
-                              </label>
-                              <button
-                                type="button"
-                                className="sec-btn sec-btn-ghost flame-drop"
-                                aria-label={`Убрать ${kindLabel(row.kind)}`}
-                                onClick={() => setRewards((rows) => rows.filter((_, i) => i !== row._index))}
-                              >
-                                Убрать
-                              </button>
+                              <div className="flame-gift-card-body">
+                                <div className="flame-ask-slot">
+                                  <DarkPick
+                                    label="Тип"
+                                    value={row.kind}
+                                    options={KIND_OPTIONS.filter((opt) => opt.value !== 'item')}
+                                    searchable={false}
+                                    onChange={(kind) => patchReward(row._index, { kind, itemName: '' })}
+                                  />
+                                  <FlameAsk {...ASK.rewardKind} />
+                                </div>
+                                <label className="flame-field">
+                                  <span>{row.kind === 'kuty' ? 'Сколько кут' : 'Сколько раз'}</span>
+                                  <input
+                                    inputMode="numeric"
+                                    value={row.amount}
+                                    onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
+                                  />
+                                  <FlameAsk {...ASK.rewardAmount} />
+                                </label>
+                              </div>
                             </li>
                           ))}
                         </ul>
                       )}
+
                       <FlameItemPool
                         catalog={catalog}
                         items={items}
                         label="Предметы этого дня"
-                        note="Отметьте несколько — все придут вместе в этот день."
+                        note={
+                          other.some((row) => row.kind === 'kuty')
+                            ? 'Предметы придут вместе с кутами и бонусами этого дня.'
+                            : 'Можно выдать только предметы — без кут. Или сначала добавьте куты кнопкой выше.'
+                        }
                         ask={ASK.rewardItem}
                         showAmount
                         onAdd={(name) => addItemToPack(pack, name)}
@@ -1032,23 +1062,25 @@ export default function FlameSection() {
                   )
                 })}
               </div>
-              <button
-                type="button"
-                className="sec-btn"
-                disabled={busy === 'rewards'}
-                onClick={() => run('rewards', () => saveFlameRewards({
-                  rewards: rewards
-                    .map((row) => ({
-                      day: Number(row.day),
-                      kind: row.kind,
-                      amount: Math.max(1, Number(row.amount) || 1),
-                      itemName: row.kind === 'item' ? row.itemName : '',
-                    }))
-                    .filter((row) => row.day >= 1 && row.kind && (row.kind !== 'item' || row.itemName)),
-                }))}
-              >
-                {busy === 'rewards' ? 'Сохраняем…' : 'Сохранить награды'}
-              </button>
+              <div className="flame-actions flame-actions-sticky">
+                <button
+                  type="button"
+                  className="sec-btn"
+                  disabled={busy === 'rewards'}
+                  onClick={() => run('rewards', () => saveFlameRewards({
+                    rewards: rewards
+                      .map((row) => ({
+                        day: Number(row.day),
+                        kind: row.kind,
+                        amount: Math.max(1, Number(row.amount) || 1),
+                        itemName: row.kind === 'item' ? row.itemName : '',
+                      }))
+                      .filter((row) => row.day >= 1 && row.kind && (row.kind !== 'item' || row.itemName)),
+                  }))}
+                >
+                  {busy === 'rewards' ? 'Сохраняем…' : 'Сохранить награды'}
+                </button>
+              </div>
             </section>
           )}
 
