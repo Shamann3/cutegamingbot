@@ -382,7 +382,7 @@ export default function DexItemSearchPicker({
               key={`${item.id}-${item.name}`}
               item={item}
               taken={addMode && takenSet.has(String(item.name || '').trim())}
-              active={!addMode && matchesValue(item, value, valueMode) || index === activeIndex}
+              active={(!addMode && matchesValue(item, value, valueMode)) || index === activeIndex}
               onPick={pickItem}
             />
           ))}

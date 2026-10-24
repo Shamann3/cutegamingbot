@@ -814,6 +814,24 @@
   gap: 8px;
 }
 
+.flame-item-pool {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.flame-item-pool .flame-card-head {
+  margin: 0;
+}
+
+.flame-item-pool .dex-item-search-picker {
+  width: 100%;
+}
+
 .bonus-pool {
   display: grid;
   gap: 8px;

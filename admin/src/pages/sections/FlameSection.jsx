@@ -21,13 +21,13 @@ const KIND_OPTIONS = [
 ]
 
 const TABS = [
-  { id: 'norm', label: 'Норма', hint: 'Сколько писать' },
-  { id: 'rewards', label: 'Награды', hint: 'Что дадут за дни' },
-  { id: 'warm', label: 'Тёплый час', hint: 'Случайный час' },
-  { id: 'status', label: 'Статусы', hint: 'Строка в профиле' },
-  { id: 'gift', label: 'Бонус +', hint: '🎁 · клетки 3×3' },
-  { id: 'restore', label: 'Вернуть', hint: 'Куты или предмет' },
-  { id: 'live', label: 'Живое', hint: 'Серии и награды' },
+  { id: 'norm', label: 'Норма', hint: 'Сколько писать в день' },
+  { id: 'rewards', label: 'Награды', hint: 'Подарки за дни серии' },
+  { id: 'warm', label: 'Тёплый час', hint: 'Бонус в удачный час' },
+  { id: 'status', label: 'Статусы', hint: 'Подпись в профиле' },
+  { id: 'gift', label: 'Бонус +', hint: 'Поле 3×3 · предмет 🎁' },
+  { id: 'restore', label: 'Вернуть', hint: 'Если огонёк погас' },
+  { id: 'live', label: 'Живое', hint: 'Кто сейчас горит' },
 ]
 
 const DEFAULT_BOARD_CELLS = [
@@ -283,6 +283,87 @@ function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel =
         hint="Каталог предметов. Ищите по эмодзи, названию, коду или id."
       />
       {ask ? <FlameAsk {...ask} /> : null}
+    </div>
+  )
+}
+
+function FlameItemPool({
+  catalog,
+  items,
+  onAdd,
+  onRemove,
+  onPatch,
+  label = 'Предметы',
+  note = '',
+  ask = null,
+  showAmount = false,
+  showWeight = false,
+}) {
+  const names = items.map((row) => String(row.itemName || '').trim()).filter(Boolean)
+  return (
+    <div className="flame-item-pool">
+      <div className="flame-card-head">
+        <h3>{label}</h3>
+        {ask ? <FlameAsk {...ask} /> : null}
+      </div>
+      {note ? <p className="flame-note">{note}</p> : null}
+      <DexItemSearchPicker
+        addMode
+        catalog={catalog}
+        value=""
+        valueMode="name"
+        compact
+        clearable={false}
+        takenNames={names}
+        onChange={onAdd}
+        onRemove={onRemove}
+        label=""
+        emptyLabel={names.length ? `Выбрано ${names.length} · добавить ещё` : 'Выбрать несколько предметов'}
+        placeholder="Название или эмодзи…"
+        hint="Можно отметить несколько подряд. Повторный клик снимает выбор."
+      />
+      {names.length === 0 ? (
+        <p className="flame-note">Пока пусто — отметьте предметы в каталоге выше.</p>
+      ) : (
+        <ul className="bonus-pool">
+          {items.map((row) => {
+            const name = String(row.itemName || '').trim()
+            if (!name) return null
+            const face = catalogFace(catalog, name)
+            return (
+              <li key={name} className="bonus-pick is-shown">
+                <span className="bonus-pick-emoji" aria-hidden="true">{face?.emoji || '📦'}</span>
+                <div className="bonus-pick-main">
+                  <strong>{name}</strong>
+                </div>
+                {showAmount ? (
+                  <label className="bonus-pick-weight">
+                    <span>Штук</span>
+                    <input
+                      inputMode="numeric"
+                      aria-label={`Штук: ${name}`}
+                      value={row.amount ?? '1'}
+                      onChange={(e) => onPatch?.(name, { amount: digits(e.target.value) })}
+                    />
+                  </label>
+                ) : null}
+                {showWeight ? (
+                  <label className="bonus-pick-weight">
+                    <span>Вес</span>
+                    <input
+                      inputMode="numeric"
+                      aria-label={`Вес: ${name}`}
+                      value={row.weight ?? '1'}
+                      onChange={(e) => onPatch?.(name, { weight: digits(e.target.value) })}
+                    />
+                  </label>
+                ) : null}
+                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => onRemove(name)}>Убрать</button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }
@@ -546,6 +627,11 @@ export default function FlameSection() {
   }, [warmHour])
 
   const rewardDays = useMemo(() => groupRewardDays(rewards), [rewards])
+  const warmItems = useMemo(() => namedDrops(warmRewards), [warmRewards])
+  const warmOther = useMemo(
+    () => warmRewards.map((row, index) => ({ ...row, _index: index })).filter((row) => row.kind !== 'item'),
+    [warmRewards],
+  )
 
   const playerReveal = useMemo(() => {
     const mult = Math.max(1, Math.min(10, Number(form.giftMult) || 1))
@@ -610,8 +696,8 @@ export default function FlameSection() {
   const addGiftToPack = (pack) => {
     setRewards((rows) => [...rows, {
       day: pack.day || '',
-      kind: 'item',
-      amount: '1',
+      kind: 'kuty',
+      amount: '10',
       itemName: '',
     }])
   }
@@ -621,13 +707,91 @@ export default function FlameSection() {
     setRewards((rows) => rows.filter((_, i) => !indexes.has(i)))
   }
 
+  const packItems = (pack) => namedDrops(pack.gifts)
+  const packOther = (pack) => pack.gifts.filter((row) => row.kind !== 'item')
+
+  const addItemToPack = (pack, name) => {
+    const clean = String(name || '').trim()
+    if (!clean) return
+    if (packItems(pack).some((row) => String(row.itemName || '').trim() === clean)) return
+    setRewards((rows) => [...rows, {
+      day: pack.day || '',
+      kind: 'item',
+      amount: '1',
+      itemName: clean,
+    }])
+  }
+
+  const removeItemFromPack = (pack, name) => {
+    const clean = String(name || '').trim()
+    const indexes = new Set(
+      pack.gifts
+        .filter((row) => row.kind === 'item' && String(row.itemName || '').trim() === clean)
+        .map((row) => row._index),
+    )
+    setRewards((rows) => rows.filter((_, i) => !indexes.has(i)))
+  }
+
+  const patchItemInPack = (pack, name, next) => {
+    const clean = String(name || '').trim()
+    const indexes = new Set(
+      pack.gifts
+        .filter((row) => row.kind === 'item' && String(row.itemName || '').trim() === clean)
+        .map((row) => row._index),
+    )
+    setRewards((rows) => rows.map((item, i) => (
+      indexes.has(i) ? { ...item, ...next, kind: 'item' } : item
+    )))
+  }
+
+  const addWarmItem = (name) => {
+    const clean = String(name || '').trim()
+    if (!clean) return
+    if (warmItems.some((row) => String(row.itemName || '').trim() === clean)) return
+    setWarmRewards((rows) => [...rows, { kind: 'item', amount: '1', itemName: clean, weight: '1' }])
+  }
+
+  const removeWarmItem = (name) => {
+    const clean = String(name || '').trim()
+    setWarmRewards((rows) => rows.filter((row) => !(row.kind === 'item' && String(row.itemName || '').trim() === clean)))
+  }
+
+  const patchWarmItem = (name, next) => {
+    const clean = String(name || '').trim()
+    setWarmRewards((rows) => rows.map((row) => (
+      row.kind === 'item' && String(row.itemName || '').trim() === clean
+        ? { ...row, ...next, kind: 'item' }
+        : row
+    )))
+  }
+
+  const saveWarmAll = () => run('warm', async () => {
+    await saveFlameSettings(settingsPayload())
+    return saveFlameWarmRewards({
+      rewards: [
+        ...warmOther.map((row) => ({
+          kind: row.kind,
+          amount: Math.max(1, Number(row.amount) || 1),
+          itemName: '',
+          weight: Math.max(1, Number(row.weight) || 1),
+        })),
+        ...warmItems.map((row) => ({
+          kind: 'item',
+          amount: Math.max(1, Number(row.amount) || 1),
+          itemName: String(row.itemName || '').trim(),
+          weight: Math.max(1, Number(row.weight) || 1),
+        })),
+      ].filter((row) => row.kind && (row.kind !== 'item' || row.itemName)),
+    })
+  })
+
   return (
     <section className="flame-page">
       <header className="flame-hero">
         <span className="flame-orb" aria-hidden="true" />
         <div>
           <h2>Огонёк</h2>
-          <p>Серия дней в чате. Награды за дни, тёплый час, статус в профиле и Бонус +.</p>
+          <p>Серия дней в чате: продлевайте огонёк сообщениями и получайте награды.</p>
         </div>
       </header>
 
@@ -714,14 +878,18 @@ export default function FlameSection() {
                   </label>
                 </FlameFold>
                 <p className="flame-note">
-                  В счёт идут живые сообщения в официальных группах. Команды, игры и одно и то же сообщение подряд не считаются. Как только за сутки по Москве норма набрана, огонёк сразу становится на день длиннее. Если до 00:00 нормы нет — гаснет.
+                  Считаются обычные сообщения в официальных группах. Команды и игры — нет.
+                  Норма набрана — огонёк сразу продлён на 1 день. До 00:00 по Москве не набрали — гаснет.
                 </p>
                 <div className="flame-card-head">
-                  <h3>Рост нормы</h3>
+                  <h3>Когда норма станет выше</h3>
                   <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setSteps((rows) => [...rows, { fromDay: '', messages: '' }])}>
-                    Добавить день
+                    Добавить ступень
                   </button>
                 </div>
+                <p className="flame-note">
+                  С выбранного дня серии человеку нужно писать уже больше сообщений. В справке точные числа не показываем — только что норма растёт.
+                </p>
                 <ul className="flame-rows">
                   {steps.map((row, index) => (
                     <li key={`step-${index}`}>
@@ -777,19 +945,22 @@ export default function FlameSection() {
                 </button>
               </div>
               <p className="flame-note">
-                Один день серии = один пакет. В пакет можно положить несколько подарков: все придут в личку сразу, в момент, когда серия доходит до этого дня. Куты и предметы берутся из техгрупп, магазина или биржи.
+                Когда огонёк доходит до этого дня, человек один раз получает весь пакет в личку.
+                Можно дать куты, бонусы и сразу несколько предметов.
               </p>
               {rewardDays.length === 0 && (
-                <p className="flame-empty">Пока пусто. Добавьте день — люди увидят награды в справке первыми.</p>
+                <p className="flame-empty">Пока пусто. Добавьте день — награды появятся в справке первыми.</p>
               )}
               <div className="flame-day-list">
                 {rewardDays.map((pack) => {
-                  const summary = pack.gifts.map(giftWords).filter(Boolean).join(' · ')
+                  const items = packItems(pack)
+                  const other = packOther(pack)
+                  const summary = [...other, ...items].map(giftWords).filter(Boolean).join(' · ')
                   return (
                     <article key={pack.key} className="flame-day-pack">
                       <div className="flame-day-pack-head">
                         <label className="flame-field flame-day-num">
-                          <span>День серии</span>
+                          <span>На какой день серии</span>
                           <input
                             inputMode="numeric"
                             value={pack.day}
@@ -799,7 +970,7 @@ export default function FlameSection() {
                         </label>
                         <div className="flame-actions">
                           <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addGiftToPack(pack)}>
-                            + подарок
+                            + куты / бонус
                           </button>
                           <button type="button" className="sec-btn sec-btn-ghost" onClick={() => removePack(pack)}>
                             Убрать день
@@ -808,52 +979,55 @@ export default function FlameSection() {
                       </div>
                       {summary && (
                         <p className="flame-consequence">
-                          Получат: <b>{summary}</b>
+                          В этот день получат: <b>{summary}</b>
                         </p>
                       )}
-                      <ul className="flame-rows is-reward">
-                        {pack.gifts.map((row) => (
-                          <li key={`reward-${row._index}`}>
-                            <div className="flame-ask-slot">
-                              <DarkPick
-                                label="Что дать"
-                                value={row.kind}
-                                options={KIND_OPTIONS}
-                                searchable={false}
-                                onChange={(kind) => patchReward(row._index, { kind })}
-                              />
-                              <FlameAsk {...ASK.rewardKind} />
-                            </div>
-                            <label>
-                              <span>{row.kind === 'item' ? 'Штук' : row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
-                              <input
-                                inputMode="numeric"
-                                value={row.amount}
-                                onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
-                              />
-                              <FlameAsk {...ASK.rewardAmount} />
-                            </label>
-                            {row.kind === 'item' && (
-                              <div className="is-wide">
-                                <FlameItemPick
-                                  catalog={catalog}
-                                  value={row.itemName}
-                                  ask={ASK.rewardItem}
-                                  onChange={(itemName) => patchReward(row._index, { itemName })}
+                      {other.length > 0 && (
+                        <ul className="flame-rows is-reward">
+                          {other.map((row) => (
+                            <li key={`reward-${row._index}`}>
+                              <div className="flame-ask-slot">
+                                <DarkPick
+                                  label="Что дать"
+                                  value={row.kind}
+                                  options={KIND_OPTIONS.filter((opt) => opt.value !== 'item')}
+                                  searchable={false}
+                                  onChange={(kind) => patchReward(row._index, { kind, itemName: '' })}
                                 />
+                                <FlameAsk {...ASK.rewardKind} />
                               </div>
-                            )}
-                            <button
-                              type="button"
-                              className="sec-btn sec-btn-ghost flame-drop"
-                              aria-label={`Убрать ${kindLabel(row.kind)}`}
-                              onClick={() => setRewards((rows) => rows.filter((_, i) => i !== row._index))}
-                            >
-                              Убрать
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                              <label>
+                                <span>{row.kind === 'kuty' ? 'Кут' : 'Раз'}</span>
+                                <input
+                                  inputMode="numeric"
+                                  value={row.amount}
+                                  onChange={(e) => patchReward(row._index, { amount: digits(e.target.value) })}
+                                />
+                                <FlameAsk {...ASK.rewardAmount} />
+                              </label>
+                              <button
+                                type="button"
+                                className="sec-btn sec-btn-ghost flame-drop"
+                                aria-label={`Убрать ${kindLabel(row.kind)}`}
+                                onClick={() => setRewards((rows) => rows.filter((_, i) => i !== row._index))}
+                              >
+                                Убрать
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <FlameItemPool
+                        catalog={catalog}
+                        items={items}
+                        label="Предметы этого дня"
+                        note="Отметьте несколько — все придут вместе в этот день."
+                        ask={ASK.rewardItem}
+                        showAmount
+                        onAdd={(name) => addItemToPack(pack, name)}
+                        onRemove={(name) => removeItemFromPack(pack, name)}
+                        onPatch={(name, next) => patchItemInPack(pack, name, next)}
+                      />
                     </article>
                   )
                 })}
@@ -889,97 +1063,115 @@ export default function FlameSection() {
                   <FlameAsk {...ASK.warm} />
                 </div>
               </div>
+              <p className="flame-note">
+                Это отдельная награда в один удачный час суток. День огонька она не заменяет.
+                {form.warmEnabled ? ` ${warmHint}` : ''}
+              </p>
               <FlameFold open={Boolean(form.warmEnabled)}>
-              <p className="flame-note">{warmHint}. Каждый день в заданном окне выбирается один час.</p>
               <div className="flame-grid-2">
                 <label className="flame-field">
-                  <span>С какого дня серии</span>
+                  <span>С какого дня серии доступен</span>
                   <input inputMode="numeric" value={form.warmMinDay} onChange={(e) => patch('warmMinDay', digits(e.target.value))} />
                   <FlameAsk {...ASK.warmMinDay} />
                 </label>
                 <label className="flame-field">
-                  <span>Каждые N сообщений</span>
+                  <span>Награда каждые N сообщений в этот час</span>
                   <input inputMode="numeric" value={form.warmEvery} onChange={(e) => patch('warmEvery', digits(e.target.value))} />
                   <FlameAsk {...ASK.warmEvery} />
                 </label>
                 <label className="flame-field">
-                  <span>Макс. наград за день</span>
+                  <span>Максимум наград одному человеку за сутки</span>
                   <input inputMode="numeric" value={form.warmCap} onChange={(e) => patch('warmCap', digits(e.target.value))} />
                   <FlameAsk {...ASK.warmCap} />
                 </label>
               </div>
+
               <div className="flame-card-head">
-                <h3>Что может выпасть</h3>
-                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setWarmRewards((rows) => [...rows, { kind: 'kuty', amount: '10', itemName: '', weight: '1' }])}>
-                  Добавить
+                <h3>Куты и бонусы</h3>
+                <button
+                  type="button"
+                  className="sec-btn sec-btn-ghost"
+                  onClick={() => setWarmRewards((rows) => [...rows, { kind: 'kuty', amount: '10', itemName: '', weight: '1' }])}
+                >
+                  Добавить строку
                 </button>
               </div>
+              <p className="flame-note">
+                За одно срабатывание выбирается одна строка из всего списка ниже — и куты/бонусы, и предметы — по весу.
+              </p>
+              {warmOther.length === 0 && (
+                <p className="flame-note">Кутов и бонусов пока нет. Можно добавить или оставить только предметы.</p>
+              )}
               <ul className="flame-rows is-warm">
-                {warmRewards.map((row, index) => (
-                  <li key={`warm-${index}`}>
+                {warmOther.map((row) => (
+                  <li key={`warm-${row._index}`}>
                     <div className="flame-ask-slot">
                       <DarkPick
                         label="Что"
                         value={row.kind}
-                        options={KIND_OPTIONS}
+                        options={KIND_OPTIONS.filter((opt) => opt.value !== 'item')}
                         searchable={false}
-                        onChange={(kind) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, kind } : item))}
+                        onChange={(kind) => setWarmRewards((rows) => rows.map((item, i) => (
+                          i === row._index ? { ...item, kind, itemName: '' } : item
+                        )))}
                       />
                       <FlameAsk {...ASK.warmKind} />
                     </div>
                     <label>
                       <span>Сколько</span>
-                      <input inputMode="numeric" value={row.amount} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, amount: value } : item))
-                      }} />
+                      <input
+                        inputMode="numeric"
+                        value={row.amount}
+                        onChange={(e) => {
+                          const value = digits(e.target.value)
+                          setWarmRewards((rows) => rows.map((item, i) => (
+                            i === row._index ? { ...item, amount: value } : item
+                          )))
+                        }}
+                      />
                       <FlameAsk {...ASK.warmAmount} />
                     </label>
                     <label>
                       <span>Вес</span>
-                      <input inputMode="numeric" value={row.weight} onChange={(e) => {
-                        const value = digits(e.target.value)
-                        setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, weight: value } : item))
-                      }} />
+                      <input
+                        inputMode="numeric"
+                        value={row.weight}
+                        onChange={(e) => {
+                          const value = digits(e.target.value)
+                          setWarmRewards((rows) => rows.map((item, i) => (
+                            i === row._index ? { ...item, weight: value } : item
+                          )))
+                        }}
+                      />
                       <FlameAsk {...ASK.warmWeight} />
                     </label>
-                    {row.kind === 'item' && (
-                      <div className="is-wide">
-                        <FlameItemPick
-                          catalog={catalog}
-                          value={row.itemName}
-                          ask={ASK.warmItem}
-                          onChange={(itemName) => setWarmRewards((rows) => rows.map((item, i) => i === index ? { ...item, itemName } : item))}
-                        />
-                      </div>
-                    )}
-                    <button type="button" className="sec-btn sec-btn-ghost flame-drop" onClick={() => setWarmRewards((rows) => rows.filter((_, i) => i !== index))}>Убрать</button>
+                    <button
+                      type="button"
+                      className="sec-btn sec-btn-ghost flame-drop"
+                      onClick={() => setWarmRewards((rows) => rows.filter((_, i) => i !== row._index))}
+                    >
+                      Убрать
+                    </button>
                   </li>
                 ))}
-                </ul>
-                <div className="flame-actions">
-                  <button
-                    type="button"
-                    className="sec-btn"
-                    disabled={busy === 'warm'}
-                    onClick={() => run('warm', () => saveFlameWarmRewards({
-                      rewards: warmRewards
-                        .map((row) => ({
-                          kind: row.kind,
-                          amount: Math.max(1, Number(row.amount) || 1),
-                          itemName: row.kind === 'item' ? row.itemName : '',
-                          weight: Math.max(1, Number(row.weight) || 1),
-                        }))
-                        .filter((row) => row.kind && (row.kind !== 'item' || row.itemName)),
-                    }))}
-                  >
-                    {busy === 'warm' ? 'Сохраняем…' : 'Сохранить награды часа'}
-                  </button>
-                </div>
+              </ul>
+
+              <FlameItemPool
+                catalog={catalog}
+                items={warmItems}
+                label="Предметы тёплого часа"
+                note="Отметьте несколько. Каждый предмет — отдельная строка в том же розыгрыше."
+                ask={ASK.warmItem}
+                showAmount
+                showWeight
+                onAdd={addWarmItem}
+                onRemove={removeWarmItem}
+                onPatch={patchWarmItem}
+              />
               </FlameFold>
               <div className="flame-actions">
-                <button type="button" className="sec-btn" disabled={busy === 'settings'} onClick={saveAllSettings}>
-                  Сохранить час
+                <button type="button" className="sec-btn" disabled={busy === 'warm' || busy === 'settings'} onClick={saveWarmAll}>
+                  {busy === 'warm' || busy === 'settings' ? 'Сохраняем…' : 'Сохранить тёплый час'}
                 </button>
               </div>
             </section>
@@ -997,7 +1189,9 @@ export default function FlameSection() {
                 </div>
               </div>
               <FlameFold open={Boolean(form.statusEnabled)}>
-              <p className="flame-note">Короткий титул в профиле и в топе. Пример: «Искра», «Живой огонь», «Негасимый».</p>
+              <p className="flame-note">
+                Короткая подпись рядом с именем, пока огонёк горит. На подарки не влияет. Пример: «Искра», «Живой огонь».
+              </p>
               <button type="button" className="sec-btn sec-btn-ghost" onClick={() => setTitles((rows) => [...rows, { fromDay: '', title: '', emojiId: '' }])}>
                 Добавить статус
               </button>
@@ -1058,12 +1252,12 @@ export default function FlameSection() {
               </div>
               <p className="flame-note">
                 {form.giftEnabled
-                  ? 'Человек пишет «использовать 🎁», нажимает «Открыть Бонус +» и выбирает одну клетку. Что внутри — только после выбора.'
-                  : 'Пока выключен. «использовать 🎁» ничего не откроет.'}
+                  ? 'Человек пишет «использовать 🎁» → «Открыть Бонус +» → одну клетку. Что внутри — только после нажатия.'
+                  : 'Выключен: «использовать 🎁» бонус не откроет, предмет останется.'}
               </p>
               <FlameFold open={Boolean(form.giftEnabled)}>
               <p className="flame-note">
-                Интро без цифр. «Что можно получить?» берёт куты из полей и предметы с галочкой «В списке».
+                В интро цифр нет. Кнопка «Что можно получить?» показывает куты из полей ниже и предметы с пометкой «виден до открытия».
               </p>
               <CellBoard
                 cells={form.giftCellEmojis}
@@ -1275,7 +1469,9 @@ export default function FlameSection() {
               </div>
               <FlameFold open={Boolean(form.restoreEnabled)}>
               <p className="flame-note">
-                Человек пишет «вернуть огонёк». Серия поднимается на столько дней, сколько сгорело. Сегодня до 00:00 по Москве огонёк всё равно нужно продлить снова, иначе он погаснет. Новая серия сжигает старую: после этого прошлую уже не вернуть.
+                Если огонёк погас, человек пишет «вернуть огонёк». Серия вернётся целиком.
+                Цена — куты, один предмет, или оба. После возврата сегодня огонёк снова нужно продлить до 00:00 по Москве.
+                Новая серия сжигает старую.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">
