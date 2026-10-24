@@ -11,6 +11,7 @@
 - Вкладка «Огонёк»: включение, норма, награды, цены и срок возврата.
 - server/flame_engine.py: серия, полночь и окно возврата (функция restore_view).
 - Награда в личку и во все официальные группы: строки REWARD_PRIVATE и REWARD_HALL ниже.
+- Карточка дня в «хелп огонёк»: REWARD_DAY, REWARD_GROUPS, REWARD_ITEM.
   Слоты в фигурных скобках бот подставляет сам. Остальные слова меняйте прямо в строке.
 
 Цены, предметы и срок возврата задаются во вкладке, не здесь.
@@ -29,20 +30,105 @@ def emoji(eid: str, fallback: str = "⚫️") -> str:
     return f"<tg-emoji emoji-id='{eid}'>{fallback}</tg-emoji>"
 
 
-def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str]]) -> str:
-    """Один день наград в справке. Каждый день — своя цитата, у предмета свой эмодзи."""
-    bits = []
-    for face, words in gifts:
+# Справка «хелп огонёк» — карточка одного дня.
+# Правьте значки, подписи и разделители здесь. После правки перезапустите бота.
+# Слоты: {mark} {days} {groups} {face} {title} {gifts} {words}
+# Эмодзи самого предмета попадает в {face} строки REWARD_ITEM и стоит в <code>.
+REWARD_DAY_MARKS = (
+    (365, "🏆"),
+    (90, "👑"),
+    (30, "🌙"),
+    (14, "💎"),
+    (7, "🔥"),
+    (0, "✨"),
+)
+REWARD_GROUPS = (
+    ("bonus", "🎁", "Бонус"),
+    ("bonus_x2", "✨", "Бонус ×2"),
+    ("kuty", "⚡️", "Куты"),
+    ("item", "📦", "Предметы"),
+)
+REWARD_ITEM_FALLBACK = "🎁"
+REWARD_GIFT_GAP = " · "
+REWARD_DAY = "<blockquote>{mark} <b>{days}</b>\n{groups}</blockquote>"
+REWARD_GROUP = "{face} <b>{title}</b> — {gifts}"
+REWARD_GIFT = "<b>{words}</b>"
+REWARD_ITEM = "<code>{face}</code> <b>{words}</b>"
+
+
+def _slots(template: str, **slots: str) -> str:
+    def swap(match):
+        return slots.get(match.group(1), match.group(0))
+
+    return re.sub(r"\{([a-z_]+)\}", swap, template)
+
+
+def reward_mark(day: int) -> str:
+    n = int(day or 0)
+    for start, face in REWARD_DAY_MARKS:
+        if n >= int(start):
+            return str(face)
+    return "✨"
+
+
+def reward_face(kind: str, stored: str = "") -> str:
+    face = str(stored or "").strip()
+    if face:
+        return face
+    if kind == "item":
+        return REWARD_ITEM_FALLBACK
+    for key, mark, _title in REWARD_GROUPS:
+        if key == kind:
+            return str(mark)
+    return "🎁"
+
+
+def _coded_face(face: str) -> str:
+    raw = str(face or REWARD_ITEM_FALLBACK).strip() or REWARD_ITEM_FALLBACK
+    if raw.startswith("<tg-emoji") or raw.startswith("<code>"):
+        return raw
+    return html.escape(raw, quote=False)
+
+
+def reward_day_card(mark: str, label: str, gifts: list[tuple[str, str, str]]) -> str:
+    """Один день: бонус, бонус ×2, куты и предметы — разными строками."""
+    packed: dict[str, list[tuple[str, str]]] = {}
+    order = []
+    for kind, face, words in gifts or []:
         text = " ".join(str(words or "").split())
         if not text:
             continue
-        raw = str(face or "🎁").strip() or "🎁"
-        shown = raw if raw.startswith("<tg-emoji") else html.escape(raw, quote=False)
-        bits.append(f"{shown} <b>{html.escape(text, quote=False)}</b>")
-    body = " · ".join(bits) or "🎁 <b>награда</b>"
-    return (
-        f"<blockquote>{html.escape(str(mark or '✨'), quote=False)} "
-        f"<b>{html.escape(str(label or ''), quote=False)}</b> — {body}</blockquote>"
+        key = str(kind or "item")
+        if key not in packed:
+            order.append(key)
+            packed[key] = []
+        packed[key].append((str(face or ""), text))
+    known = [key for key, _face, _title in REWARD_GROUPS]
+    sequence = [key for key in known if key in packed]
+    sequence += [key for key in order if key not in sequence]
+    titles = {key: title for key, _face, title in REWARD_GROUPS}
+    icons = {key: face for key, face, _title in REWARD_GROUPS}
+    groups = []
+    for key in sequence:
+        bits = []
+        for face, text in packed[key]:
+            safe = html.escape(text, quote=False)
+            if key == "item":
+                bits.append(_slots(REWARD_ITEM, face=_coded_face(face), words=safe))
+            else:
+                bits.append(_slots(REWARD_GIFT, words=safe))
+        groups.append(_slots(
+            REWARD_GROUP,
+            face=html.escape(str(icons.get(key) or "🎁"), quote=False),
+            title=html.escape(str(titles.get(key) or key), quote=False),
+            gifts=REWARD_GIFT_GAP.join(bits),
+        ))
+    body = "\n".join(groups) or _slots(REWARD_GIFT, words="награда")
+    return _slots(
+        REWARD_DAY,
+        mark=html.escape(str(mark or "✨"), quote=False),
+        days=html.escape(str(label or ""), quote=False),
+        groups=body,
     )
 
 

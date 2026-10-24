@@ -75,9 +75,11 @@ def test_help_lists_rewards_and_warm_hour():
     assert "3 дня" in html
     assert "50 кут" in html
     assert "Купон" in html
-    # День 7 — один пакет: куты и предмет в одной строке
-    day7 = [line for line in html.split("\n") if "7 дней" in line and "50 кут" in line]
-    assert day7 and "Купон" in day7[0]
+    # День 7 — один пакет: куты и предмет в одной карточке, но разными строками
+    day7 = next(part for part in html.split("</blockquote>") if "7 дней" in part)
+    assert "50 кут" in day7 and "Купон" in day7
+    assert day7.index("Куты") < day7.index("Предметы")
+    assert "<code>" in day7
     assert html.index("Награды за дни") < html.index("Как работает")
     assert "Тёплый час" in html
     assert "18:00" in html
@@ -93,10 +95,14 @@ def test_help_lists_rewards_and_warm_hour():
 
 
 def test_help_day_cards_keep_each_item_emoji():
+    import re
     html = help_html({
         "settings": {"enabled": True, "base_messages": 100, "min_words": 2},
         "steps": [],
         "rewards": [
+            {"day": 2, "kind": "bonus", "amount": 1, "item_name": ""},
+            {"day": 2, "kind": "bonus_x2", "amount": 1, "item_name": ""},
+            {"day": 2, "kind": "kuty", "amount": 10, "item_name": ""},
             {"day": 2, "kind": "item", "amount": 1, "item_name": "Саженец", "emoji": "🌱"},
             {"day": 2, "kind": "item", "amount": 1, "item_name": "Табак", "emoji": "🍂"},
             {"day": 5, "kind": "item", "amount": 2, "item_name": "Ключ", "emoji": "🔑"},
@@ -105,14 +111,15 @@ def test_help_day_cards_keep_each_item_emoji():
         "warm": {"enabled": False},
         "gift": {"enabled": False},
     })
-    cards = [line for line in html.split("\n") if line.startswith("<blockquote>")]
+    cards = re.findall(r"<blockquote>.*?</blockquote>", html, re.S)
     assert len(cards) == 2
-    assert "2 дня" in cards[0] and "🌱" in cards[0] and "Саженец" in cards[0]
-    assert "🍂" in cards[0] and "Табак" in cards[0]
-    assert "5 дней" in cards[1] and "🔑" in cards[1] and "Ключ ×2" in cards[1]
-    assert cards[0] != cards[1]
-    assert "закрыть день" not in html.lower()
-    assert "вернуть огонёк можно ещё" not in html.lower()
+    day2, day5 = cards
+    assert "2 дня" in day2 and "Саженец" in day2 and "Табак" in day2
+    assert "<code>🌱</code>" in day2 and "<code>🍂</code>" in day2
+    assert day2.index("Бонус") < day2.index("Бонус ×2") < day2.index("Куты") < day2.index("Предметы")
+    assert "10 кут" in day2 and "<code>10" not in day2
+    assert "5 дней" in day5 and "<code>🔑</code>" in day5 and "Ключ ×2" in day5
+    assert "Бонус" not in day5
 
 
 def test_help_offers_restore_from_the_one_text_file():

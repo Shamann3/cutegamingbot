@@ -147,37 +147,11 @@ def _reward_line(row: dict) -> str:
     return f"· <b>{span_label(day)}</b> — {gift}"
 
 
-def _reward_mark(day: int) -> str:
-    n = int(day or 0)
-    if n >= 365:
-        return "🏆"
-    if n >= 90:
-        return "👑"
-    if n >= 30:
-        return "🌙"
-    if n >= 14:
-        return "💎"
-    if n >= 7:
-        return "🔥"
-    return "✨"
-
-
-def _gift_face(kind: str, stored: str = "") -> str:
-    face = str(stored or "").strip()
-    if face:
-        return face
-    if kind == "kuty":
-        return "⚡️"
-    if kind == "bonus_x2":
-        return "✨"
-    return "🎁"
-
-
 def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
-    """Каждый день — отдельная цитата. Предметы со своим эмодзи, всё на одной строке."""
-    from flame_copy import reward_day_card
+    """Каждый день — цитата. Внутри бонус, бонус ×2, куты и предметы раздельно."""
+    from flame_copy import reward_day_card, reward_face, reward_mark
 
-    by_day: dict[int, list[tuple[str, str]]] = {}
+    by_day: dict[int, list[tuple[str, str, str]]] = {}
     for row in sorted(rewards or [], key=lambda item: (int(item.get("day") or 0), int(item.get("id") or 0))):
         day = int(row.get("day") or 0)
         if day < 1:
@@ -188,11 +162,11 @@ def _reward_lines_grouped(rewards: list[dict]) -> list[str]:
         gift = _kind_words(kind, amount, item)
         if not gift:
             continue
-        by_day.setdefault(day, []).append((_gift_face(kind, row.get("emoji") or ""), gift))
-    lines = []
-    for day in sorted(by_day):
-        lines.append(reward_day_card(_reward_mark(day), span_label(day), by_day[day]))
-    return lines
+        by_day.setdefault(day, []).append((kind, reward_face(kind, row.get("emoji") or ""), gift))
+    return [
+        reward_day_card(reward_mark(day), span_label(day), by_day[day])
+        for day in sorted(by_day)
+    ]
 
 
 def _kind_words(kind: str, amount: int, item: str = "") -> str:
