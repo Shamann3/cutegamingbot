@@ -1,8 +1,17 @@
 """Точное «админы» и /report с упоминаниями."""
 
-from bot.funcs.staff_call import is_exact_admins, mention_chunks, report_note
+from bot.funcs.staff_call import is_exact_admins, mention_chunks, report_note, without_spamblock
 from bot.admins.mute import _is_staff_roster_command
 from bot.games.invoke import command_line
+
+
+def test_spamblock_is_not_called():
+    people = without_spamblock(
+        {1: "Анна", 2: "Борис", 3: "Пётр"},
+        blocked={2},
+        author_id=3,
+    )
+    assert people == [(1, "Анна")]
 
 
 def test_admins_word_is_exact():

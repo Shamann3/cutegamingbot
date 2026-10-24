@@ -208,6 +208,19 @@ def _remember(chat_id: int, user_id: int, now: float) -> bool:
     return True
 
 
+def without_spamblock(
+    found: Dict[int, str],
+    blocked: set,
+    author_id: Optional[int] = None,
+) -> List[Tuple[int, str]]:
+    """Автор репорта и люди со спам-блоком в список вызова не попадают."""
+    skip = {int(uid) for uid in blocked if uid}
+    if author_id:
+        skip.add(int(author_id))
+    kept = ((uid, name) for uid, name in found.items() if int(uid) not in skip)
+    return sorted(kept, key=lambda item: item[0])
+
+
 async def _targets(chat_id: int, author_id: Optional[int]) -> List[Tuple[int, str]]:
     from bot.admins.mute import _db
 
@@ -215,6 +228,7 @@ async def _targets(chat_id: int, author_id: Optional[int]) -> List[Tuple[int, st
     if pool is None:
         return []
     found: Dict[int, str] = {}
+    blocked: set = set()
     async with pool.acquire() as conn:
         seats = await conn.fetch(
             """
@@ -225,8 +239,11 @@ async def _targets(chat_id: int, author_id: Optional[int]) -> List[Tuple[int, st
                      'админ'
                    ) AS name
             FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
             LEFT JOIN users u ON u.user_id = s.user_id
-            WHERE s.chat_id = $1 AND s.user_id IS NOT NULL
+            WHERE s.chat_id = $1
+              AND s.user_id IS NOT NULL
+              AND p.kind = 'post'
             """,
             int(chat_id),
         )
@@ -234,6 +251,19 @@ async def _targets(chat_id: int, author_id: Optional[int]) -> List[Tuple[int, st
             uid = int(row["user_id"])
             if uid > 0:
                 found.setdefault(uid, row["name"] or "админ")
+        # Спам-блок в любой группе: такого человека не зовём, даже если он в составе.
+        held = await conn.fetch(
+            """
+            SELECT s.user_id
+            FROM epsilon_seats s
+            JOIN epsilon_positions p ON p.id = s.position_id
+            WHERE p.kind = 'spamblock' AND s.user_id IS NOT NULL
+            """
+        )
+        for row in held:
+            uid = int(row["user_id"])
+            if uid > 0:
+                blocked.add(uid)
         try:
             owner = await conn.fetchrow(
                 "SELECT creator_id FROM chat WHERE chat_id = $1",
@@ -265,9 +295,7 @@ async def _targets(chat_id: int, author_id: Optional[int]) -> List[Tuple[int, st
             uid = int(row["user_id"])
             if uid > 0:
                 found.setdefault(uid, row["name"] or "сотрудник")
-    if author_id:
-        found.pop(int(author_id), None)
-    return sorted(found.items(), key=lambda item: item[0])
+    return without_spamblock(found, blocked, author_id)
 
 
 async def handle_report(message: Message) -> None:
