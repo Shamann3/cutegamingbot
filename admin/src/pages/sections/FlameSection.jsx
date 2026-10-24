@@ -267,6 +267,73 @@ function namedDrops(rows) {
   return out
 }
 
+const DAY_PRESETS = [1, 3, 7, 10, 14, 20, 30, 50, 100]
+
+function FlameDayPicker({
+  value,
+  onChange,
+  label = 'День серии',
+  ask = null,
+  usedDays = [],
+  showPresets = true,
+}) {
+  const current = Math.max(0, Number(String(value || '').replace(/[^\d]/g, '')) || 0)
+  const taken = new Set((usedDays || []).map((day) => Number(day)).filter((day) => day >= 1))
+  const bump = (delta) => {
+    const next = Math.max(1, Math.min(9999, (current || 1) + delta))
+    onChange(String(next))
+  }
+  return (
+    <div className="flame-day-picker">
+      <div className="flame-day-picker-main">
+        <label className="flame-field flame-day-num">
+          <span>{label}</span>
+          <div className="flame-day-stepper">
+            <button type="button" className="flame-day-step" aria-label="Минус 1 день" onClick={() => bump(-1)}>−</button>
+            <input
+              inputMode="numeric"
+              value={value}
+              placeholder="например 20"
+              aria-label={label}
+              onChange={(e) => onChange(digits(e.target.value))}
+              onBlur={() => {
+                if (!String(value || '').trim()) onChange('1')
+              }}
+            />
+            <button type="button" className="flame-day-step" aria-label="Плюс 1 день" onClick={() => bump(1)}>+</button>
+          </div>
+          {ask ? <FlameAsk {...ask} /> : null}
+        </label>
+        <div className="flame-day-nudge" role="group" aria-label="Шаг дня">
+          <button type="button" className="flame-chip is-quiet" onClick={() => bump(-10)}>−10</button>
+          <button type="button" className="flame-chip is-quiet" onClick={() => bump(10)}>+10</button>
+          <button type="button" className="flame-chip is-quiet" onClick={() => bump(20)}>+20</button>
+          <button type="button" className="flame-chip is-quiet" onClick={() => bump(30)}>+30</button>
+        </div>
+      </div>
+      {showPresets ? (
+        <div className="flame-day-presets" role="group" aria-label="Быстрый день">
+          {DAY_PRESETS.map((day) => {
+            const busy = taken.has(day) && current !== day
+            return (
+              <button
+                key={day}
+                type="button"
+                className={`flame-chip${current === day ? ' is-on' : ''}${busy ? ' is-busy' : ''}`}
+                disabled={busy}
+                title={busy ? `День ${day} уже есть` : `Поставить день ${day}`}
+                onClick={() => onChange(String(day))}
+              >
+                {day}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function FlameItemPick({ value, onChange, label = 'Предмет', emptyLabel = 'Выберите предмет', catalog = [], ask = null }) {
   return (
     <div className="flame-item-pick">
@@ -688,9 +755,26 @@ export default function FlameSection() {
     setRewards((rows) => rows.map((item, i) => (indexes.has(i) ? { ...item, day: value } : item)))
   }
 
-  const addDayPack = () => {
-    const last = rewards.reduce((max, row) => Math.max(max, Number(row.day) || 0), 0)
-    setRewards((rows) => [...rows, { day: String(last + 1 || 1), kind: 'kuty', amount: '10', itemName: '' }])
+  const usedRewardDays = useMemo(() => {
+    const days = new Set()
+    for (const row of rewards) {
+      const day = Number(row.day)
+      if (day >= 1) days.add(day)
+    }
+    return [...days].sort((a, b) => a - b)
+  }, [rewards])
+
+  const nextFreeDay = (from = 1) => {
+    const taken = new Set(usedRewardDays)
+    let day = Math.max(1, Number(from) || 1)
+    while (taken.has(day)) day += 1
+    return day
+  }
+
+  const addDayPack = (wanted = null) => {
+    const last = usedRewardDays.length ? usedRewardDays[usedRewardDays.length - 1] : 0
+    const day = wanted != null ? nextFreeDay(wanted) : nextFreeDay(last + 1 || 1)
+    setRewards((rows) => [...rows, { day: String(day), kind: 'kuty', amount: '10', itemName: '' }])
   }
 
   const addGiftToPack = (pack, kind = 'kuty', amount = '10') => {
@@ -940,7 +1024,7 @@ export default function FlameSection() {
             <section className="flame-card">
               <div className="flame-card-head">
                 <h3>Награды за дни серии</h3>
-                <button type="button" className="sec-btn sec-btn-ghost" onClick={addDayPack}>
+                <button type="button" className="sec-btn sec-btn-ghost" onClick={() => addDayPack()}>
                   Добавить день
                 </button>
               </div>
@@ -949,8 +1033,35 @@ export default function FlameSection() {
                 Можно только куты, только предметы, только бонус / бонус ×2, или любую смесь.
                 «Бонус» — одно бесплатное открытие обычного бонуса без таймера. «Бонус ×2» — сразу двойной бонус без премиума.
               </p>
+              <div className="flame-day-quick" role="group" aria-label="Быстро добавить день">
+                <span className="flame-day-add-label">Быстро добавить день</span>
+                <div className="flame-chip-row">
+                  {DAY_PRESETS.map((day) => {
+                    const busy = usedRewardDays.includes(day)
+                    return (
+                      <button
+                        key={`add-${day}`}
+                        type="button"
+                        className={`flame-chip${busy ? ' is-busy' : ''}`}
+                        disabled={busy}
+                        title={busy ? `День ${day} уже есть` : `Добавить пакет на день ${day}`}
+                        onClick={() => addDayPack(day)}
+                      >
+                        {day}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    className="flame-chip is-quiet"
+                    onClick={() => addDayPack(nextFreeDay((usedRewardDays[usedRewardDays.length - 1] || 0) + 1))}
+                  >
+                    Следующий
+                  </button>
+                </div>
+              </div>
               {rewardDays.length === 0 && (
-                <p className="flame-empty">Пока пусто. Нажмите «Добавить день» и соберите пакет.</p>
+                <p className="flame-empty">Пока пусто. Нажмите день выше или «Добавить день».</p>
               )}
               <div className="flame-day-list">
                 {rewardDays.map((pack) => {
@@ -958,6 +1069,7 @@ export default function FlameSection() {
                   const other = packOther(pack)
                   const summary = [...other, ...items].map(giftWords).filter(Boolean).join(' · ')
                   const dayLabel = String(pack.day || '').trim() || '…'
+                  const otherUsed = usedRewardDays.filter((day) => day !== Number(pack.day))
                   return (
                     <article key={pack.key} className="flame-day-pack">
                       <div className="flame-day-pack-head">
@@ -965,15 +1077,13 @@ export default function FlameSection() {
                           <span>День</span>
                           <strong>{dayLabel}</strong>
                         </div>
-                        <label className="flame-field flame-day-num">
-                          <span>Номер дня серии</span>
-                          <input
-                            inputMode="numeric"
-                            value={pack.day}
-                            onChange={(e) => setDayForPack(pack, digits(e.target.value))}
-                          />
-                          <FlameAsk {...ASK.rewardDay} />
-                        </label>
+                        <FlameDayPicker
+                          value={pack.day}
+                          label="Номер дня серии"
+                          ask={ASK.rewardDay}
+                          usedDays={otherUsed}
+                          onChange={(day) => setDayForPack(pack, day)}
+                        />
                         <button type="button" className="sec-btn sec-btn-ghost flame-day-remove" onClick={() => removePack(pack)}>
                           Убрать день
                         </button>

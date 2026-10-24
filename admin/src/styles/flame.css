@@ -108,7 +108,7 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
-  align-items: end;
+  align-items: start;
 }
 
 .flame-day-badge {
@@ -137,11 +137,110 @@
 }
 
 .flame-day-num {
-  width: min(100%, 10rem);
+  width: min(100%, 12rem);
 }
 
 .flame-day-remove {
   align-self: end;
+}
+
+.flame-day-picker {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.flame-day-picker-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+
+.flame-day-stepper {
+  display: grid;
+  grid-template-columns: 44px minmax(4.5rem, 1fr) 44px;
+  gap: 6px;
+  align-items: center;
+}
+
+.flame-day-stepper input {
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-height: 48px;
+}
+
+.flame-day-step {
+  min-height: 48px;
+  min-width: 44px;
+  margin: 0;
+  padding: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0c0c10;
+  color: #ffe4c2;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.flame-day-step:active {
+  transform: scale(0.96);
+}
+
+.flame-day-nudge,
+.flame-day-presets,
+.flame-day-quick {
+  display: grid;
+  gap: 6px;
+}
+
+.flame-day-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.flame-day-presets,
+.flame-day-quick .flame-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flame-day-quick {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.flame-chip.is-on {
+  background: linear-gradient(180deg, rgba(255, 176, 64, 0.35), rgba(255, 90, 31, 0.22));
+  border-color: rgba(255, 176, 64, 0.75);
+  color: #fff6ea;
+}
+
+.flame-chip.is-quiet {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #f0e6d8;
+  font-weight: 600;
+}
+
+.flame-chip.is-busy,
+.flame-chip:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .flame-day-add {
@@ -862,7 +961,16 @@
     width: 100%;
   }
 
-  .flame-day-num {
+  .flame-day-num,
+  .flame-day-picker {
+    width: 100%;
+  }
+
+  .flame-day-picker-main {
+    display: grid;
+  }
+
+  .flame-day-stepper {
     width: 100%;
   }
 
