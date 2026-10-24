@@ -24,7 +24,24 @@ from flame_copy import (  # noqa: E402
     button_item,
     button_kuty,
     is_flame_help_text,
+    is_flame_mine_text,
     is_restore_command,
+    kind_words,
+    PROFILE_NO_STATUS,
+    PROFILE_OUT,
+    mine_button_back,
+    mine_button_close,
+    mine_button_how,
+    mine_button_next,
+    mine_button_restore,
+    reward_day_card,
+    reward_face,
+    reward_mark,
+    screen_mine,
+    screen_mine_fail,
+    screen_mine_how,
+    screen_mine_next,
+    screen_mine_off,
     profit_loot,
     profit_next,
     profit_next_done,
@@ -53,18 +70,25 @@ from flame_engine import (  # noqa: E402
     gift_config,
     help_html,
     leaderboard,
+    live_streak,
     load_board,
     log_loot,
     msk_today,
+    need_for,
+    next_paying_day,
     profile_line,
+    restore_price,
+    rules_cached,
+    span_label,
+    title_for,
     profit_targets,
     restore_state,
     restore_view,
     roll_gift_extra,
     roll_gift_stake,
     rollover,
+    messages_on,
     streak_pair,
-    titles_list,
     try_warm_hit,
     _row_settings,
 )
@@ -79,12 +103,22 @@ def _pool(db):
     return getattr(db, "pool", None)
 
 
+_chats_cache = {"at": 0.0, "ids": None}
+
+
 async def official_ids() -> list[int]:
+    now = time.time()
+    cached = _chats_cache.get("ids")
+    if cached is not None and now - float(_chats_cache.get("at") or 0) < 20:
+        return cached
     try:
         from bot.admins.mute import official_chats_now
-        return [int(chat) for chat in await official_chats_now()]
+        ids = [int(chat) for chat in await official_chats_now()]
     except Exception:
-        return []
+        ids = list(cached or [])
+    _chats_cache["at"] = now
+    _chats_cache["ids"] = ids
+    return ids
 
 
 async def cached_settings(db) -> dict:
@@ -95,8 +129,8 @@ async def cached_settings(db) -> dict:
     if pool is None:
         return {}
     try:
-        board = await load_board(pool)
-        settings = board.get("settings") or {}
+        rules = await rules_cached(pool)
+        settings = rules.get("settings") or {}
     except Exception:
         settings = {}
     _settings_cache["at"] = now
@@ -150,21 +184,32 @@ async def note_flushed(db, pairs: list[tuple]) -> None:
         if cid not in chats or day < today - timedelta(days=1):
             continue
         by_day.setdefault(day, set()).add(uid)
-    done = 0
+    jobs = []
     for day in sorted(by_day):
         for uid in by_day[day]:
-            if done >= 400:
-                return
-            done += 1
+            if len(jobs) >= 400:
+                break
+            jobs.append((uid, day))
+        if len(jobs) >= 400:
+            break
+    if not jobs:
+        return
+    chat_ids = list(chats)
+    gate = asyncio.Semaphore(6)
+
+    async def _one(uid: int, day) -> None:
+        async with gate:
             try:
-                result = await advance(pool, uid, list(chats), day)
+                result = await advance(pool, uid, chat_ids, day)
             except Exception as exc:
                 print(f"[FLAME] advance {uid}: {exc}")
-                continue
+                return
             if not result:
-                continue
+                return
             await _pay(db, uid, result.get("rewards") or [])
             await _tell_streak(db, uid, result)
+
+    await asyncio.gather(*(_one(uid, day) for uid, day in jobs))
 
 
 async def note_live_message(db, user_id: int, chat_id: int) -> None:
@@ -405,11 +450,12 @@ async def profile_html(db, user_id: int) -> str:
     if pool is None:
         return ""
     try:
-        settings = await cached_settings(db)
+        rules = await rules_cached(pool)
+        settings = rules.get("settings") or {}
         if not settings.get("enabled"):
             return ""
         days, best = await streak_pair(pool, int(user_id))
-        titles = await titles_list(pool) if settings.get("status_enabled") else []
+        titles = (rules.get("titles") or []) if settings.get("status_enabled") else []
     except Exception:
         return ""
     return profile_line(days, titles, best)
@@ -553,6 +599,10 @@ def is_flame_help(text: str) -> bool:
     return is_flame_help_text(text)
 
 
+def is_flame_mine(text: str) -> bool:
+    return is_flame_mine_text(text)
+
+
 async def send_flame_help(message, db) -> None:
     """Справка огонька — тот же текст, что вкладка «Огонёк» в хелпе."""
     from bot.design.buttons import btn_help
@@ -569,6 +619,130 @@ async def send_flame_help(message, db) -> None:
         _help_register_message(int(message.from_user.id), int(sent.message_id))
     except Exception:
         pass
+
+
+async def _mine_view(db, user_id: int, *, with_card: bool = False, with_progress: bool = True) -> dict | None:
+    """Одна карточка человека: кэш правил и одна строка серии."""
+    pool = _pool(db)
+    if pool is None:
+        return None
+    rules = await rules_cached(pool)
+    settings = rules.get("settings") or {}
+    today = msk_today()
+    row = await pool.fetchrow(
+        """
+        SELECT streak_days, best_days, last_kept, lost_streak, lost_on
+        FROM flame_users WHERE user_id = $1
+        """,
+        int(user_id),
+    )
+    raw = int(row["streak_days"] or 0) if row else 0
+    record = int(row["best_days"] or 0) if row else 0
+    last = row["last_kept"] if row else None
+    streak, best, kept = live_streak(raw, record, last, today)
+    titles = (rules.get("titles") or []) if settings.get("status_enabled") else []
+    badge = title_for(streak, titles) if streak > 0 else None
+    now = PROFILE_OUT if streak <= 0 else span_label(streak)
+    record_label = span_label(best) if best > 0 else PROFILE_NO_STATUS
+    status = badge["title"] if badge else PROFILE_NO_STATUS
+    status_emoji = badge["emoji_id"] if badge else ""
+    enabled = bool(settings.get("enabled"))
+    need = 0
+    have = 0
+    if enabled and not kept and with_progress:
+        need = need_for(
+            streak + 1,
+            int(settings.get("base_messages") or 200),
+            rules.get("steps") or [],
+        )
+        have = await messages_on(pool, int(user_id), today, await official_ids())
+    pay = next_paying_day(rules.get("rewards") or [], best)
+    card = ""
+    if with_card and pay:
+        card = await _reward_card(pool, rules.get("rewards") or [], pay)
+    rises = any(
+        int(step.get("from_day") or 0) > 1 and int(step.get("messages") or 0) > 0
+        for step in (rules.get("steps") or [])
+    )
+    lost = int(row["lost_streak"] or 0) if row else 0
+    lost_on = row["lost_on"] if row else None
+    restore = restore_view(streak, lost, lost_on, settings, today)
+    home = screen_mine(
+        now=now,
+        record=record_label,
+        status=status,
+        status_emoji=status_emoji,
+        today_done=bool(kept),
+        have=have,
+        need=need,
+        next_day=span_label(pay) if pay else "",
+        replay=streak < best,
+    )
+    return {
+        "enabled": enabled,
+        "can_restore": bool(restore_price(settings).get("enabled")),
+        "home": home,
+        "how": screen_mine_how(
+            base=int(settings.get("base_messages") or 200),
+            words=int(settings.get("min_words") or 2),
+            block_dup=bool(settings.get("block_dup", True)),
+            rises=rises,
+        ),
+        "next_screen": screen_mine_next(card, now, record_label, streak < best),
+        "restore": restore,
+    }
+
+
+async def _reward_card(pool, rewards: list, day: int) -> str:
+    rows = [row for row in rewards or [] if int(row.get("day") or 0) == int(day)]
+    from flame_engine import _item_faces
+
+    faces = await _item_faces(pool, [
+        str(row.get("item_name") or "")
+        for row in rows
+        if str(row.get("kind") or "") == "item"
+    ])
+    gifts = []
+    for row in rows:
+        kind = str(row.get("kind") or "")
+        amount = int(row.get("amount") or 1)
+        item = str(row.get("item_name") or "")
+        words = kind_words(kind, amount, item)
+        if not words:
+            continue
+        face = faces.get(item.strip().casefold(), "") if kind == "item" else ""
+        gifts.append((kind, reward_face(kind, face), words))
+    if not gifts:
+        return ""
+    return reward_day_card(reward_mark(day), span_label(day), gifts)
+
+
+async def send_flame_mine(message, db) -> None:
+    """Личная карточка на фразу «мой огонёк»."""
+    user = getattr(message, "from_user", None)
+    if user is None:
+        return
+    try:
+        view = await _mine_view(db, int(user.id))
+    except Exception as exc:
+        print(f"[FLAME] mine {user.id}: {exc}")
+        view = None
+    if view is None:
+        text, markup = screen_mine_fail(), None
+    elif not view["enabled"]:
+        text, markup = screen_mine_off(), _mine_keyboard(user.id, close_only=True)
+    else:
+        text = view["home"]
+        markup = _mine_keyboard(user.id, restore=view["can_restore"])
+    try:
+        await message.reply(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+    except Exception as exc:
+        print(f"[FLAME] mine reply {getattr(user, 'id', 0)}: {exc}")
 
 
 def _restore_screen(view: dict) -> str:
@@ -592,7 +766,51 @@ def _restore_screen(view: dict) -> str:
     return screen_restore_off()
 
 
-def _restore_keyboard(user_id: int, view: dict):
+def _icon_button(text: str, data: str, icon: str = "", style: str = "primary"):
+    from aiogram.types import InlineKeyboardButton
+
+    kwargs = {
+        "text": str(text or "")[:64],
+        "callback_data": data,
+        "style": style,
+    }
+    if icon:
+        kwargs["icon_custom_emoji_id"] = str(icon)
+    return InlineKeyboardButton(**kwargs)
+
+
+def _mine_keyboard(user_id: int, *, restore: bool = False, back: bool = False, close_only: bool = False):
+    from aiogram.types import InlineKeyboardMarkup
+
+    uid = int(user_id)
+    if back:
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            _icon_button(mine_button_back(), f"fm:home:{uid}", style="primary"),
+        ]])
+    if close_only:
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            _icon_button(mine_button_close(), f"fm:close:{uid}", style="danger"),
+        ]])
+    first = [_icon_button(
+        mine_button_next(), f"fm:next:{uid}", "5438440765908874600", "success",
+    )]
+    second = []
+    if restore:
+        first.append(_icon_button(
+            mine_button_restore(), f"fm:restore:{uid}", "5330346824299490543", "primary",
+        ))
+        second.append(_icon_button(
+            mine_button_how(), f"fm:how:{uid}", "5402485258211859739", "primary",
+        ))
+    else:
+        first.append(_icon_button(
+            mine_button_how(), f"fm:how:{uid}", "5402485258211859739", "primary",
+        ))
+    second.append(_icon_button(mine_button_close(), f"fm:close:{uid}", style="danger"))
+    return InlineKeyboardMarkup(inline_keyboard=[first, second])
+
+
+def _restore_keyboard(user_id: int, view: dict, *, back: bool = False):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     rows = []
@@ -608,11 +826,14 @@ def _restore_keyboard(user_id: int, view: dict):
             callback_data=f"fl:item:{int(user_id)}",
             style="primary",
         )])
-    rows.append([InlineKeyboardButton(
-        text=button_cancel()[:64],
-        callback_data=f"fl:no:{int(user_id)}",
-        style="danger",
-    )])
+    if back:
+        rows.append([_icon_button(mine_button_back(), f"fm:home:{int(user_id)}", style="primary")])
+    else:
+        rows.append([InlineKeyboardButton(
+            text=button_cancel()[:64],
+            callback_data=f"fl:no:{int(user_id)}",
+            style="danger",
+        )])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -824,7 +1045,11 @@ async def flame_click(call) -> None:
                 await db.cutehistory_plus(clicker, -int(view.get("kuty") or 0), HISTORY_RESTORE)
             except Exception:
                 pass
-        await _edit_restore(call, screen_restore_done(view.get("label") or "серия"), None)
+        await _edit_restore(
+            call,
+            screen_restore_done(view.get("label") or "серия"),
+            _mine_keyboard(clicker, back=True),
+        )
         return
     if view.get("code") == "poor":
         try:
@@ -842,3 +1067,87 @@ async def flame_click(call) -> None:
             pass
         return
     await _edit_restore(call, _restore_screen(view), None)
+
+
+async def _edit_mine(call, text: str, markup) -> None:
+    """Сначала гасим часики на кнопке, потом меняем это же сообщение."""
+    try:
+        await call.answer()
+    except Exception:
+        pass
+    try:
+        await call.message.edit_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
+    except Exception as exc:
+        if "not modified" in str(exc).lower():
+            return
+        try:
+            await call.message.answer(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=markup,
+            )
+        except Exception:
+            pass
+
+
+async def flame_mine_click(call) -> None:
+    data = str(getattr(call, "data", "") or "")
+    parts = data.split(":")
+    if len(parts) != 3 or parts[0] != "fm":
+        return
+    action, owner = parts[1], parts[2]
+    clicker = int(getattr(getattr(call, "from_user", None), "id", 0) or 0)
+    if not owner.isdigit() or int(owner) != clicker:
+        try:
+            await call.answer(alert_stranger(), show_alert=True)
+        except Exception:
+            pass
+        return
+    if action == "close":
+        try:
+            await call.answer()
+        except Exception:
+            pass
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        return
+    from main import db
+    try:
+        view = await _mine_view(
+            db,
+            clicker,
+            with_card=action == "next",
+            with_progress=action not in ("how", "restore", "next"),
+        )
+    except Exception as exc:
+        print(f"[FLAME] mine click {clicker}: {exc}")
+        view = None
+    if view is None:
+        await _edit_mine(call, screen_mine_fail(), None)
+        return
+    if not view["enabled"]:
+        await _edit_mine(call, screen_mine_off(), _mine_keyboard(clicker, close_only=True))
+        return
+    if action == "how":
+        await _edit_mine(call, view["how"], _mine_keyboard(clicker, back=True))
+        return
+    if action == "next":
+        await _edit_mine(call, view["next_screen"], _mine_keyboard(clicker, back=True))
+        return
+    if action == "restore":
+        restore = view["restore"]
+        if restore.get("code") == "ready":
+            markup = _restore_keyboard(clicker, restore, back=True)
+        else:
+            markup = _mine_keyboard(clicker, back=True)
+        await _edit_mine(call, _restore_screen(restore), markup)
+        return
+    await _edit_mine(call, view["home"], _mine_keyboard(clicker, restore=view["can_restore"]))

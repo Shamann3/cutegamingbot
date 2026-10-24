@@ -34891,6 +34891,16 @@ async def add_firstname_to_usercheck_balance(message: Message):
         schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
         return
 
+    from bot.funcs.flame import is_flame_mine, send_flame_mine
+    if is_flame_mine(message.text or ""):
+        try:
+            await update(bot1, chat_id, db)
+        except GroupBanned:
+            return
+        await measure_time(send_flame_mine(message, db), "мой огонёк")
+        schedule_message_housekeeping(db, message, start_balance=start_balance, bot=bot1)
+        return
+
     # Достижения: мастер свободной награды (следующее сообщение админа)
     # и команды наградить / снять / помощь
     try:

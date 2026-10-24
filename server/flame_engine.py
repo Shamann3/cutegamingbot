@@ -2,7 +2,9 @@
 """Огонёк сообщений: серия, тёплый час, статусы, подарочный бонус 🎁."""
 from __future__ import annotations
 
+import asyncio
 import random
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -113,27 +115,19 @@ def title_for(days: int, titles: list[dict]) -> dict | None:
 
 
 def profile_line(days: int, titles: list[dict] | None = None, best: int = 0) -> str:
-    """Строка профиля. best — рекорд. Пока серия его не переросла, оба числа видны."""
+    """Блок «кто я»: сейчас, рекорд и статус. Пусто, если огонька ещё не было."""
     days = max(0, int(days or 0))
     best = max(days, int(best or 0))
     if days <= 0 and best <= 0:
         return ""
-    from flame_copy import profile_line as draw
+    from flame_copy import PROFILE_NO_STATUS, PROFILE_OUT, profile_line as draw
 
-    if days <= 0:
-        return draw("", record=span_label(best))
-    badge = title_for(days, titles or [])
-    label = span_label(days)
-    longer = span_label(best) if best > days else ""
-    if badge:
-        return draw(
-            label,
-            badge["title"],
-            badge["emoji_id"] or STATUS_EMOJI,
-            record=longer,
-            at_best=not longer,
-        )
-    return draw(label, record=longer, at_best=not longer)
+    badge = title_for(days, titles or []) if days > 0 else None
+    now = PROFILE_OUT if days <= 0 else span_label(days)
+    record = span_label(best) if best > 0 else PROFILE_NO_STATUS
+    status = badge["title"] if badge else PROFILE_NO_STATUS
+    emoji_id = badge["emoji_id"] if badge else ""
+    return draw(now, record, status, emoji_id)
 
 
 def _reward_line(row: dict) -> str:
@@ -329,7 +323,32 @@ async def _add_column(pool, table: str, column: str, spec: str) -> None:
         await pool.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
 
 
+_schema_ready = False
+_schema_lock: asyncio.Lock | None = None
+_rules_cache: dict = {"at": 0.0, "value": None}
+_RULES_TTL = 12.0
+
+
+def _schema_gate() -> asyncio.Lock:
+    global _schema_lock
+    if _schema_lock is None:
+        _schema_lock = asyncio.Lock()
+    return _schema_lock
+
+
 async def ensure_tables(pool) -> None:
+    """Схема создаётся один раз за запуск. Дальше огонёк не тратит время на ALTER."""
+    global _schema_ready
+    if _schema_ready:
+        return
+    async with _schema_gate():
+        if _schema_ready:
+            return
+        await _ensure_tables_body(pool)
+        _schema_ready = True
+
+
+async def _ensure_tables_body(pool) -> None:
     await pool.execute(
         """
         CREATE TABLE IF NOT EXISTS flame_settings (
@@ -488,6 +507,70 @@ async def ensure_tables(pool) -> None:
     await pool.execute(
         "CREATE INDEX IF NOT EXISTS flame_loot_user_idx ON flame_loot (user_id, id DESC)"
     )
+
+
+async def rules_cached(pool) -> dict:
+    """Настройки, ступени, статусы и дни наград. На 12 секунд, чтобы каждое сообщение не читало их заново."""
+    now = time.monotonic()
+    cached = _rules_cache.get("value")
+    if cached is not None and now - float(_rules_cache.get("at") or 0) < _RULES_TTL:
+        return cached
+    await ensure_tables(pool)
+    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    steps = [
+        {"from_day": int(row["from_day"]), "messages": int(row["messages"])}
+        for row in await pool.fetch("SELECT from_day, messages FROM flame_steps")
+    ]
+    titles = [
+        {
+            "from_day": int(row["from_day"]),
+            "title": row["title"],
+            "emoji_id": row["emoji_id"] or STATUS_EMOJI,
+        }
+        for row in await pool.fetch(
+            "SELECT from_day, title, emoji_id FROM flame_titles ORDER BY from_day"
+        )
+    ]
+    rewards = [
+        {
+            "id": int(row["id"]),
+            "day": int(row["day"]),
+            "kind": row["kind"],
+            "amount": int(row["amount"] or 1),
+            "item_name": row["item_name"] or "",
+        }
+        for row in await pool.fetch(
+            "SELECT id, day, kind, amount, item_name FROM flame_rewards ORDER BY day, id"
+        )
+    ]
+    packed = {"settings": settings, "steps": steps, "titles": titles, "rewards": rewards}
+    _rules_cache["at"] = now
+    _rules_cache["value"] = packed
+    return packed
+
+
+def live_streak(streak: int, best: int, last, today: date) -> tuple[int, int, bool]:
+    """Живая серия, рекорд и «сегодня уже продлён».
+
+    Пропущенный день гасит серию сразу для показа, даже если ночной сброс ещё не записал это в базу.
+    Рекорд при этом остаётся.
+    """
+    raw = max(0, int(streak or 0))
+    record = max(raw, int(best or 0))
+    if gap_starts_new_series(last, today):
+        return 0, record, False
+    return raw, record, _as_date(last) == today
+
+
+def next_paying_day(rewards: list[dict] | None, best: int) -> int | None:
+    """Ближайший день с подарком, который человек ещё не получал. Прошедший рекорд не повторяется."""
+    floor = max(0, int(best or 0))
+    days = sorted({
+        int(row.get("day") or 0)
+        for row in rewards or []
+        if int(row.get("day") or 0) > floor
+    })
+    return days[0] if days else None
 
 
 def _board_cells(settings: dict | None) -> list[dict]:
@@ -1200,16 +1283,20 @@ async def streak_of(pool, user_id: int) -> int:
 
 
 async def streak_pair(pool, user_id: int) -> tuple[int, int]:
-    """Текущая серия и рекорд. Рекорд не короче серии и не сбрасывается, когда огонёк гаснет."""
+    """Текущая серия и рекорд. Рекорд не сбрасывается, когда огонёк гаснет."""
     await ensure_tables(pool)
     row = await pool.fetchrow(
-        "SELECT streak_days, best_days FROM flame_users WHERE user_id = $1",
+        "SELECT streak_days, best_days, last_kept FROM flame_users WHERE user_id = $1",
         int(user_id),
     )
     if row is None:
         return 0, 0
-    streak = int(row["streak_days"] or 0)
-    best = max(streak, int(row["best_days"] or 0))
+    streak, best, _kept = live_streak(
+        int(row["streak_days"] or 0),
+        int(row["best_days"] or 0),
+        row["last_kept"],
+        msk_today(),
+    )
     return streak, best
 
 
@@ -1349,8 +1436,7 @@ def _pick_weighted(rows: list[dict]) -> dict | None:
 
 async def try_warm_hit(pool, user_id: int) -> dict | None:
     """Одно сообщение в тёплый час: прогресс и, возможно, награда."""
-    await ensure_tables(pool)
-    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    settings = (await rules_cached(pool))["settings"]
     if not settings["enabled"] or not settings["warm_enabled"]:
         return None
     now = msk_now()
@@ -1573,17 +1659,14 @@ async def profit_targets(pool) -> list[dict]:
 
 
 async def advance(pool, user_id: int, chat_ids: list[int], today: date | None = None) -> dict | None:
-    await ensure_tables(pool)
     day = today or msk_today()
-    settings = _row_settings(await pool.fetchrow("SELECT * FROM flame_settings WHERE id = 1"))
+    rules = await rules_cached(pool)
+    settings = rules["settings"]
     if not settings["enabled"]:
         return None
     count = await messages_on(pool, user_id, day, chat_ids)
-    steps = [
-        {"from_day": int(row["from_day"]), "messages": int(row["messages"])}
-        for row in await pool.fetch("SELECT from_day, messages FROM flame_steps")
-    ]
-    titles = await titles_list(pool) if settings.get("status_enabled") else []
+    steps = rules["steps"]
+    titles = rules["titles"] if settings.get("status_enabled") else []
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow(

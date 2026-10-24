@@ -349,46 +349,34 @@ def announce_label(kind: str, amount: int = 1, item: str = "") -> str:
     return kind_words(kind, amount, item)
 
 
-# Где: карточка человека, /stat, огонёк горит и есть статус.
-# {record} — хвост PROFILE_RECORD_MORE, PROFILE_RECORD_SAME или пусто.
-PROFILE_TITLED = "{emoji} <b>{title}</b> · огонёк <b>{label}</b>{record}"
-# Где: карточка человека, огонёк горит, статуса нет или он ещё не открыт.
-PROFILE_PLAIN = "{emoji} <b>Огонёк уже {label}</b>{record}"
-# Хвост, если рекорд длиннее текущей серии. {record} «10 дней».
-PROFILE_RECORD_MORE = " · рекорд <b>{record}</b>"
-# Хвост, если сейчас горит сам рекорд. Число уже стоит в строке, второй раз его не пишем.
-PROFILE_RECORD_SAME = " · <i>рекорд</i>"
-# Где: огонёк погас, но рекорд есть. {record} «10 дней».
-PROFILE_BEST = "{emoji} <b>Рекорд огонька</b> · <b>{record}</b>"
+# ---------------------------------------------------------------------------
+# Блок огонька в «кто я»
+# Где: профиль, команда «кто я», над строками активности.
+# Три факта и ничего больше: сколько горит сейчас, рекорд, статус.
+# {now} «3 дня» или «погас». {record} «10 дней». {status} название или «нет».
+# ---------------------------------------------------------------------------
+PROFILE = """
+{head} <b>Огонёк</b>
+<blockquote>{now_face} Сейчас · <b>{now}</b>
+{best_face} Рекорд · <b>{record}</b>
+{status_face} Статус · <b>{status}</b></blockquote>
+"""
+PROFILE_OUT = "погас"  # Сейчас, если серия не горит.
+PROFILE_NO_STATUS = "нет"  # Рекорд или статус, если их ещё нет.
 
 
-def profile_line(
-    label: str,
-    title: str = "",
-    emoji_id: str = "",
-    record: str = "",
-    at_best: bool = False,
-) -> str:
-    """Строка огонька в профиле. Слова — PROFILE_TITLED, PROFILE_PLAIN, PROFILE_BEST."""
-    safe_record = html.escape(str(record or ""), quote=False)
-    if not str(label or "").strip() and safe_record:
-        return _slots(PROFILE_BEST, emoji=emoji(EMOJI), record=safe_record)
-    if safe_record:
-        tail = _slots(PROFILE_RECORD_MORE, record=safe_record)
-    elif at_best and str(label or "").strip():
-        tail = PROFILE_RECORD_SAME
-    else:
-        tail = ""
-    safe_label = html.escape(str(label or ""), quote=False)
-    if title:
-        return _slots(
-            PROFILE_TITLED,
-            emoji=emoji(emoji_id or STATUS_EMOJI),
-            title=html.escape(str(title), quote=False),
-            label=safe_label,
-            record=tail,
-        )
-    return _slots(PROFILE_PLAIN, emoji=emoji(EMOJI), label=safe_label, record=tail)
+def profile_line(now: str, record: str, status: str, status_emoji: str = "") -> str:
+    """Блок огонька в профиле. Слова — PROFILE."""
+    return _tighten(_slots(
+        PROFILE,
+        head=emoji("5357421327470866510", "⚫️"),
+        now_face=emoji("5330346824299490543", "🕯"),
+        best_face=emoji("5424746623462823358", "🏅"),
+        status_face=emoji(status_emoji or "5952066863931331270", "⭐️"),
+        now=html.escape(str(now or ""), quote=False),
+        record=html.escape(str(record or ""), quote=False),
+        status=html.escape(str(status or ""), quote=False),
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -1031,7 +1019,7 @@ def is_flame_help_text(text: str) -> bool:
     folded = _fold_cmd(text)
     if not folded or len(folded) > 90:
         return False
-    if folded in RESTORE_COMMANDS:
+    if folded in _MINE_EXACT or folded in RESTORE_COMMANDS:
         return False
     if ("вернуть" in folded or "восстановить" in folded) and _has_flame_word(folded):
         return False
@@ -1045,6 +1033,194 @@ def is_flame_help_text(text: str) -> bool:
     if any(hint in folded for hint in _ASK_HINTS):
         return True
     return False
+
+
+# «мой огонёк» — только эта фраза, без хвоста. ё/е и регистр уже сняты.
+# Где: человек пишет в чат или личку и получает свою карточку.
+_MINE_EXACT = frozenset({
+    "мой огонек",
+    "огонек мой",
+    "мойогонек",
+    "мой огонечек",
+    "огонечек мой",
+    "мой огонь",
+    "огонь мой",
+    "мой flame",
+    "my flame",
+    "flame мой",
+})
+
+
+def is_flame_mine_text(text: str) -> bool:
+    """True — открыть личную карточку. Лишние слова не подходят."""
+    folded = _fold_cmd(text)
+    if not folded or len(folded) > 40:
+        return False
+    return folded in _MINE_EXACT
+
+
+# ---------------------------------------------------------------------------
+# Карточка «мой огонёк»
+# Где: ответ на «мой огонёк». Кнопки под сообщением меняют этот же текст.
+# {now} {record} {status} — как в профиле. {extra} — сегодня, следующий подарок.
+# ---------------------------------------------------------------------------
+MINE = """
+{head} <b>Ваш огонёк</b>
+
+{now_face} Сейчас · <b>{now}</b>
+{best_face} Рекорд · <b>{record}</b>
+{status_face} Статус · <b>{status}</b>
+{extra}
+"""
+# Где: карточка, если сегодняшняя норма уже закрыта.
+MINE_TODAY_DONE = "<tg-emoji emoji-id='5474230973199587674'>🎁</tg-emoji> Сегодня огонёк уже продлён"
+# Где: карточка, пока норма не закрыта. {have} уже написано, {need} сколько нужно.
+MINE_TODAY = "<tg-emoji emoji-id='5456504676801338603'>🎁</tg-emoji> Сегодня · <b>{have}</b> из <b>{need}</b>"
+# Где: карточка, ближайший ещё не полученный день. {day} «11 дней».
+MINE_NEXT = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Следующий подарок · <b>{day}</b>"
+# Где: карточка, если дней с новым подарком больше нет.
+MINE_NEXT_NONE = "<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> Дальше подарков пока нет"
+# Где: карточка, если серия короче рекорда.
+MINE_REPLAY = "<tg-emoji emoji-id='5404424216902673748'>🎁</tg-emoji> Дни до рекорда идут без подарка"
+# Где: огонёк выключен во вкладке.
+MINE_OFF = """
+<tg-emoji emoji-id='5357421327470866510'>⚫️</tg-emoji> <b>Ваш огонёк</b>
+
+Сейчас огонёк выключен. Когда включат — здесь появится серия.
+"""
+# Где: база недоступна.
+MINE_FAIL = "Огонёк сейчас не открывается. Напишите ещё раз."
+# Где: кнопка «Что дальше».
+MINE_NEXT_SCREEN = """
+<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Следующий подарок</b>
+
+{card}
+
+{lead}
+"""
+MINE_NEXT_LEAD = "Сейчас <b>{now}</b>. Рекорд <b>{record}</b>."
+MINE_NEXT_EMPTY = """
+<tg-emoji emoji-id='5438440765908874600'>🎁</tg-emoji> <b>Следующий подарок</b>
+
+Дальше дней с подарком пока нет.
+"""
+# Где: кнопка «Как устроен». {base} {words} норма. {skip} что не считается. {growth} или пусто.
+MINE_HOW = """
+<tg-emoji emoji-id='5402485258211859739'>🎈</tg-emoji> <b>Как устроен</b>
+
+<tg-emoji emoji-id='5456504676801338603'>🎁</tg-emoji> <b>Напишите {base} сообщений</b> в официальных группах.
+В каждом — от {words} слов.
+
+<tg-emoji emoji-id='5474230973199587674'>🎁</tg-emoji> До <b>00:00 МСК</b>. Набрали норму — огонёк +1 день.
+
+<tg-emoji emoji-id='5404424216902673748'>🎁</tg-emoji> Не успели — огонёк гаснет. Пройденные дни второй раз не награждаются.
+
+<tg-emoji emoji-id='5427334027726055110'>🎁</tg-emoji> {skip}{growth}
+"""
+
+MINE_BTN_NEXT = "Что дальше"  # Кнопка следующего подарка. Тегов нет.
+MINE_BTN_RESTORE = "Вернуть"  # Кнопка возврата серии. Тегов нет.
+MINE_BTN_HOW = "Как устроен"  # Кнопка коротких правил. Тегов нет.
+MINE_BTN_BACK = "Назад"  # Кнопка к карточке. Тегов нет.
+MINE_BTN_CLOSE = "Закрыть"  # Кнопка закрытия. Тегов нет.
+
+
+def _mine_faces(status_emoji: str = "") -> dict:
+    return {
+        "head": emoji("5357421327470866510", "⚫️"),
+        "now_face": emoji("5330346824299490543", "🕯"),
+        "best_face": emoji("5424746623462823358", "🏅"),
+        "status_face": emoji(status_emoji or "5952066863931331270", "⭐️"),
+    }
+
+
+def screen_mine(
+    *,
+    now: str,
+    record: str,
+    status: str,
+    status_emoji: str = "",
+    today_done: bool = False,
+    have: int = 0,
+    need: int = 0,
+    next_day: str = "",
+    replay: bool = False,
+) -> str:
+    """Главный экран «мой огонёк». Слова — MINE и соседние строки."""
+    parts = []
+    if today_done:
+        parts.append(MINE_TODAY_DONE)
+    elif int(need or 0) > 0:
+        parts.append(_slots(MINE_TODAY, have=str(int(have)), need=str(int(need))))
+    if next_day:
+        parts.append(_slots(MINE_NEXT, day=html.escape(str(next_day), quote=False)))
+    else:
+        parts.append(MINE_NEXT_NONE)
+    if replay:
+        parts.append(MINE_REPLAY)
+    extra = "\n" + "\n".join(parts) if parts else ""
+    return _tighten(_slots(
+        MINE,
+        extra=extra,
+        now=html.escape(str(now or ""), quote=False),
+        record=html.escape(str(record or ""), quote=False),
+        status=html.escape(str(status or ""), quote=False),
+        **_mine_faces(status_emoji),
+    ))
+
+
+def screen_mine_off() -> str:
+    return _tighten(MINE_OFF)
+
+
+def screen_mine_fail() -> str:
+    return MINE_FAIL
+
+
+def screen_mine_next(card: str, now: str, record: str, replay: bool = False) -> str:
+    """Экран «Что дальше». {card} — готовая карточка дня или пусто."""
+    if not str(card or "").strip():
+        return _tighten(MINE_NEXT_EMPTY)
+    lead = _slots(
+        MINE_NEXT_LEAD,
+        now=html.escape(str(now or ""), quote=False),
+        record=html.escape(str(record or ""), quote=False),
+    )
+    if replay:
+        lead = lead + "\n" + MINE_REPLAY
+    return _tighten(_slots(MINE_NEXT_SCREEN, card=str(card), lead=lead))
+
+
+def screen_mine_how(*, base: int, words: int, block_dup: bool = True, rises: bool = False) -> str:
+    """Экран «Как устроен». Короче полной справки."""
+    growth = _gap(HELP_GROWTH) if rises else ""
+    return _tighten(_slots(
+        MINE_HOW,
+        base=str(int(base)),
+        words=str(int(words)),
+        skip=HELP_SKIP_DUP if block_dup else HELP_SKIP_PLAIN,
+        growth=growth,
+    ))
+
+
+def mine_button_next() -> str:
+    return MINE_BTN_NEXT
+
+
+def mine_button_restore() -> str:
+    return MINE_BTN_RESTORE
+
+
+def mine_button_how() -> str:
+    return MINE_BTN_HOW
+
+
+def mine_button_back() -> str:
+    return MINE_BTN_BACK
+
+
+def mine_button_close() -> str:
+    return MINE_BTN_CLOSE
 
 
 def button_help() -> str:

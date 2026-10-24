@@ -5,9 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from flame_copy import is_flame_help_text, is_restore_command
+from flame_copy import is_flame_help_text, is_flame_mine_text, is_restore_command, screen_mine
 from flame_engine import (
     gap_starts_new_series,
+    live_streak,
+    next_paying_day,
     gift_preview,
     help_html,
     need_for,
@@ -62,19 +64,22 @@ def test_need_grows_from_the_chosen_day():
 def test_profile_line_with_status_title():
     assert profile_line(0) == ""
     text = profile_line(2)
-    assert "Огонёк уже 2 дня" in text
-    assert "<i>рекорд</i>" in text
+    assert "Сейчас" in text
+    assert "Рекорд" in text
+    assert "Статус" in text
+    assert "<b>2 дня</b>" in text
+    assert "<blockquote>" in text
     titled = profile_line(10, [{"from_day": 7, "title": "Живой огонь", "emoji_id": "1"}])
     assert "Живой огонь" in titled
-    assert "10 дней" in titled
-    assert "<i>рекорд</i>" in titled
+    assert "<b>10 дней</b>" in titled
+    assert "emoji-id='1'" in titled
     shorter = profile_line(3, None, 10)
-    assert "Огонёк уже 3 дня" in shorter
-    assert "рекорд <b>10 дней</b>" in shorter
+    assert "Сейчас · <b>3 дня</b>" in shorter
+    assert "Рекорд · <b>10 дней</b>" in shorter
     gone = profile_line(0, None, 10)
-    assert "Рекорд огонька" in gone
-    assert "<b>10 дней</b>" in gone
-    assert "Огонёк уже" not in gone
+    assert "Сейчас · <b>погас</b>" in gone
+    assert "Рекорд · <b>10 дней</b>" in gone
+    assert "Статус · <b>нет</b>" in gone
 
 
 def test_passed_days_do_not_pay_again_after_the_flame_dies():
@@ -250,6 +255,49 @@ def test_flame_help_phrases():
     assert is_flame_help_text("огонёк") is False
 
 
+def test_mine_phrase_is_exact_and_the_card_is_short():
+    assert is_flame_mine_text("мой огонёк") is True
+    assert is_flame_mine_text("Мой Огонек") is True
+    assert is_flame_mine_text("  мой   огонёк! ") is True
+    assert is_flame_mine_text("огонёк мой") is True
+    assert is_flame_mine_text("мойогонёк") is True
+    assert is_flame_mine_text("мой огонёк пожалуйста") is False
+    assert is_flame_mine_text("хелп огонёк") is False
+    assert is_flame_mine_text("вернуть огонёк") is False
+    assert is_flame_mine_text("огонёк") is False
+    assert is_flame_help_text("мой огонёк") is False
+    card = screen_mine(
+        now="3 дня",
+        record="10 дней",
+        status="нет",
+        have=40,
+        need=100,
+        next_day="11 дней",
+        replay=True,
+    )
+    assert "Сейчас · <b>3 дня</b>" in card
+    assert "Рекорд · <b>10 дней</b>" in card
+    assert "Статус · <b>нет</b>" in card
+    assert "<b>40</b> из <b>100</b>" in card
+    assert "11 дней" in card
+    assert "без подарка" in card
+    assert "Бонус +" not in card
+
+
+def test_next_gift_starts_after_the_record():
+    rewards = [{"day": 2}, {"day": 10}, {"day": 11}]
+    assert next_paying_day(rewards, 10) == 11
+    assert next_paying_day(rewards, 0) == 2
+    assert next_paying_day(rewards, 11) is None
+    today = date(2026, 10, 24)
+    streak, best, kept = live_streak(10, 10, date(2026, 10, 22), today)
+    assert (streak, best, kept) == (0, 10, False)
+    streak, best, kept = live_streak(3, 10, date(2026, 10, 23), today)
+    assert (streak, best, kept) == (3, 10, False)
+    streak, best, kept = live_streak(3, 3, today, today)
+    assert kept is True and streak == 3
+
+
 def test_gift_preview_shows_average():
     preview = gift_preview(
         [
@@ -289,7 +337,7 @@ def test_reward_cards_name_the_person_and_the_day():
     assert "Маленький кейс" in hall
     assert "Ключ &lt;" in hall
     assert "хелп огонёк" in hall
-    assert "одного дня" in hall
+    assert "первого дня" in hall
     assert "Бонус +" not in hall
 
 
