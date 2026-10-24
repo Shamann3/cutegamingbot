@@ -71,6 +71,7 @@ def screen_possible(
     gifts = [str(x) for x in (lines or []) if str(x).strip()]
     parts = [
         f"{emoji(GIFT)} <b>Что можно получить открыв бонус?</b>",
+        "Это список до открытия. Точную клетку вы увидите только после того, как нажмёте её.",
     ]
     if kuty:
         parts.append(f"{emoji(SPARK, '⚡️')} <b>Куты</b>")
@@ -95,37 +96,42 @@ def screen_board(*, mult: int, kuty_lo: int, kuty_hi: int) -> str:
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
         "<blockquote><b>Выберите одну клетку.</b>\n"
-        "Что внутри — узнаете сразу.</blockquote>"
+        "Что внутри — узнаете сразу.\n"
+        "Откроется только нажатая клетка. Остальные в этот раз закрыты.</blockquote>"
     )
 
 
 def screen_need_cute(name: str) -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Добавьте в имя <code>Cute</code></b>\n"
-        f"<blockquote>Сейчас: <b>{name}</b>\n"
+        "<blockquote>Бонус + открывается только с этой припиской в имени.\n"
+        f"Сейчас у вас: <b>{name}</b>\n"
         "Пример: <code>Имя Cute</code></blockquote>\n"
-        "<i><code>🎁</code> Предмет остался у вас.</i>"
+        "<i><code>🎁</code> Предмет остался у вас. После смены имени напишите «использовать 🎁» снова.</i>"
     )
 
 
 def screen_off() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Бонус + недоступен</b>\n"
-        "<i>Позже — <code>🎁</code> предмет остался у вас.</i>"
+        "<blockquote>Сейчас его нельзя открыть: он выключен.</blockquote>\n"
+        "<i><code>🎁</code> Предмет остался у вас. Когда бонус снова включат, напишите «использовать 🎁».</i>"
     )
 
 
 def screen_fail() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Не удалось открыть</b>\n"
-        "<i>Ещё раз — <code>🎁</code> предмет остался у вас.</i>"
+        "<blockquote>Поле с клетками не открылось. Попробуйте ещё раз.</blockquote>\n"
+        "<i><code>🎁</code> Предмет остался у вас. Напишите «использовать 🎁» снова.</i>"
     )
 
 
 def screen_dry() -> str:
     return (
         f"{emoji(NOTE, '❕')} <b>Сейчас наградить нечем</b>\n"
-        "<blockquote>Попробуйте чуть позже.</blockquote>"
+        "<blockquote>Клетка открыта, но выдать куты или предмет сейчас не получилось.\n"
+        "Попробуйте следующий 🎁 чуть позже.</blockquote>"
     )
 
 
@@ -148,7 +154,10 @@ def screen_result(
     )
     if not paid_any:
         return screen_dry()
-    parts = [f"{emoji(GIFT)} <b>Бонус + ваш</b>"]
+    parts = [
+        f"{emoji(GIFT)} <b>Бонус + ваш</b>",
+        "Вы открыли клетку. Вот что в ней было.",
+    ]
     if int(board_kuty or 0) > 0:
         parts.append(
             f"<blockquote>{emoji(SPARK, '⚡️')} С клетки : <b>+{int(board_kuty)}</b> кут</blockquote>"
@@ -180,17 +189,24 @@ def alert_stranger() -> str:
 
 
 def alert_gone() -> str:
-    return "Уже неактуально. Снова «использовать 🎁»."
+    return "Эта карточка уже не действует. Напишите «использовать 🎁» снова."
 
 
 def help_block(*, mult: int, item_count: int = 1) -> str:
     _ = item_count
-    mult_bit = f" ×{int(mult)}." if int(mult or 1) > 1 else ""
+    mult_bit = (
+        f" Куты на клетке умножаются на <b>{int(mult)}</b>."
+        if int(mult or 1) > 1
+        else ""
+    )
     return (
         f"{emoji(GIFT)} <b>Бонус +</b>\n"
-        f"«использовать 🎁» — улучшенный бонус.{mult_bit}\n"
-        "Кнопка «Что можно получить?» — куты и предметы из настройки.\n"
-        "Нужна приписка <code>Cute</code>."
+        f"Это отдельный подарок, не награда за день серии.{mult_bit}\n"
+        "Напишите «использовать 🎁». Нажмите «Открыть Бонус +» и выберите одну клетку. "
+        "Что внутри — узнаете после выбора.\n"
+        "Кнопка «Что можно получить?» показывает куты и предметы, которые могут выпасть.\n"
+        "Чтобы открыть, в имени должна быть приписка <code>Cute</code>. "
+        "Если нажмёте «Позже», предмет останется у вас: напишите «использовать 🎁» снова."
     )
 
 

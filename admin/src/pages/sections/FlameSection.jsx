@@ -425,7 +425,7 @@ export default function FlameSection() {
 
   const restoreHint = useMemo(() => {
     if (!form.restoreEnabled) {
-      return 'Возврат выключен. Команда «вернуть огонёк» ответит, что купить серию нельзя.'
+      return 'Возврат выключен. На «вернуть огонёк» человек получит ответ, что погасшую серию сейчас вернуть нельзя.'
     }
     const ways = []
     const kuty = Number(form.restoreKuty) || 0
@@ -437,7 +437,7 @@ export default function FlameSection() {
     if (!ways.length) {
       return 'Возврат включён, но цены нет. Поставьте куты больше нуля или выберите предмет.'
     }
-    return `«вернуть огонёк» живёт ${days} дн. после того, как серия погасла. Цена: ${ways.join(' или ')}. Новая серия сжигает старую.`
+    return `Если огонёк погас, «вернуть огонёк» живёт ${days} дн. Серия поднимется на столько дней, сколько сгорело. Цена: ${ways.join(' или ')}. Новая серия сжигает старую. После возврата сегодняшнюю норму всё равно нужно закрыть до 00:00 по Москве.`
   }, [form.restoreEnabled, form.restoreKuty, form.restoreItem, form.restoreItemCount, form.restoreDays])
 
   const warmHint = useMemo(() => {
@@ -453,7 +453,7 @@ export default function FlameSection() {
     const lo = Math.max(1, Number(form.giftKutyMin) || 1) * mult
     const hi = Math.max(lo, (Number(form.giftKutyMax) || lo) * mult)
     const kuty = []
-    kuty.push(lo === hi ? `+${lo} кут с клетки` : `+${lo}…${hi} кут с клетки`)
+    kuty.push(lo === hi ? `С выбранной клетки: +${lo} кут` : `С выбранной клетки: +${lo}…${hi} кут`)
     if (form.giftExtraKutyOn) {
       const chance = Math.max(0, Math.min(100, Number(form.giftExtraKutyChance) || 0))
       let a = Math.max(0, Number(form.giftExtraKutyMin) || 0)
@@ -462,7 +462,7 @@ export default function FlameSection() {
         a = Math.max(1, a)
         b = Math.max(a, b)
         const bit = a === b ? `+${a} кут` : `+${a}…${b} кут`
-        kuty.push(chance >= 100 ? `ещё ${bit}` : `иногда ещё ${bit}`)
+        kuty.push(chance >= 100 ? `ещё ${bit} — дополнительно к клетке` : `иногда ещё ${bit} — не в каждом открытии`)
       }
     }
     const shown = form.giftItemOn
@@ -528,10 +528,7 @@ export default function FlameSection() {
         <span className="flame-orb" aria-hidden="true" />
         <div>
           <h2>Огонёк</h2>
-          <p>
-            Награды за дни, тёплый час, статусы, Бонус + (🎁) и возврат.
-            Куты и предметы — только из техгрупп / магазина / биржи.
-          </p>
+          <p>Серия дней в чате. Награды за дни, тёплый час, статус в профиле и Бонус +.</p>
         </div>
       </header>
 
@@ -618,7 +615,7 @@ export default function FlameSection() {
                   </label>
                 </FlameFold>
                 <p className="flame-note">
-                  В счёт идут живые сообщения в официальных группах. Команды, игры и копипаст не кормят огонёк.
+                  В счёт идут живые сообщения в официальных группах. Команды, игры и одно и то же сообщение подряд не считаются. Как только за сутки по Москве норма набрана, огонёк сразу становится на день длиннее. Если до 00:00 нормы нет — гаснет.
                 </p>
                 <div className="flame-card-head">
                   <h3>Рост нормы</h3>
@@ -681,8 +678,7 @@ export default function FlameSection() {
                 </button>
               </div>
               <p className="flame-note">
-                Один день = один пакет. В пакет можно положить несколько подарков — все выдадутся сразу.
-                Куты и предметы берутся из техгрупп / магазина / биржи, не «из воздуха».
+                Один день серии = один пакет. В пакет можно положить несколько подарков: все придут в личку сразу, в момент, когда серия доходит до этого дня. Куты и предметы берутся из техгрупп, магазина или биржи.
               </p>
               {rewardDays.length === 0 && (
                 <p className="flame-empty">Пока пусто. Добавьте день — люди увидят награды в справке первыми.</p>
@@ -961,6 +957,11 @@ export default function FlameSection() {
                   <FlameAsk {...ASK.gift} />
                 </div>
               </div>
+              <p className="flame-note">
+                {form.giftEnabled
+                  ? 'Человек пишет «использовать 🎁», нажимает «Открыть Бонус +» и выбирает одну клетку. Что внутри — только после выбора.'
+                  : 'Пока выключен. «использовать 🎁» ничего не откроет.'}
+              </p>
               <FlameFold open={Boolean(form.giftEnabled)}>
               <p className="flame-note">
                 Интро без цифр. «Что можно получить?» берёт куты из полей и предметы с галочкой «В списке».
@@ -1181,8 +1182,7 @@ export default function FlameSection() {
               </div>
               <FlameFold open={Boolean(form.restoreEnabled)}>
               <p className="flame-note">
-                Человек пишет «вернуть огонёк». Серия поднимается на столько дней, сколько сгорело.
-                Сегодня норму всё равно нужно закрыть. Как только начнётся новая серия, старую уже не купить.
+                Человек пишет «вернуть огонёк». Серия поднимается на столько дней, сколько сгорело. Сегодня до 00:00 по Москве норму всё равно нужно закрыть, иначе огонёк погаснет снова. Новая серия сжигает старую: после этого прошлую уже не вернуть.
               </p>
               <div className="flame-grid-2">
                 <label className="flame-field">

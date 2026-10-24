@@ -6,12 +6,18 @@ function messageOf(error) {
 }
 
 export function TuneControls({ auto, busy, note, compact = false, onApply }) {
+  const [open, setOpen] = useState(false)
   const lead = note || (auto
     ? 'Группы сами держат нормы: за неделю зарплаты забирают не больше 15% их кут и не трогают последние 40%.'
     : 'Нормы зафиксированы вручную. Они не изменятся, пока не нажмёте «Подстроить сейчас».')
   return (
     <div className={`rate-tune${compact ? ' is-compact' : ''}`}>
-      <p className="deed-lead">{lead}</p>
+      <p className={`deed-lead${compact && !open ? ' is-clamp' : ''}`}>{lead}</p>
+      {compact && (
+        <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm rate-tune-more" onClick={() => setOpen((value) => !value)}>
+          {open ? 'Свернуть' : 'Как считаются нормы'}
+        </button>
+      )}
       <div className="rate-tune-row">
         <label className="deed-check">
           <input

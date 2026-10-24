@@ -2291,6 +2291,7 @@ export default function StaffSection({
       )}
 
       <div className="staff-desk-main">
+        <div key={`${activeOffice}-${activeId}-${onStaff ? activeWork || '' : ''}`} className="e-unfurl">
           {onStaff && activeId === 'pay' && (
             <CreatorPay
               showPayroll={perms.has('set_salary')}
@@ -2354,6 +2355,7 @@ export default function StaffSection({
           {onGroup && activeId === 'keys' && <InvitesTab isProjectCreator={isProjectCreator} scope="group" myUserId={myUserId} />}
 
           {!activeId && <p className="sec-empty">Нет доступных разделов</p>}
+        </div>
       </div>
     </section>
   )

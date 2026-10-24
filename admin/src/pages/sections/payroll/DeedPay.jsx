@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import PhotoLook from '../../../components/PhotoLook'
 import { BAND_LABEL } from '../../../lib/deedSort'
 import {
+  clearPersonRates,
   collectDeedRates,
   dropDeed,
   fetchDeedDone,
@@ -13,6 +14,7 @@ import {
   keepDeed,
   payDeed,
   saveDeedRates,
+  savePersonRates,
 } from '../../../lib/adminClient'
 import RateTune from './RateTune'
 
@@ -302,18 +304,27 @@ function DeedCard({ card, leaving = '' }) {
 
 export function DeedRates() {
   const [items, setItems] = useState([])
+  const [people, setPeople] = useState({ admins: [], staff: [] })
+  const [own, setOwn] = useState([])
+  const [who, setWho] = useState(0)
+  const [personDraft, setPersonDraft] = useState(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState('')
   const [tuneStamp, setTuneStamp] = useState(0)
 
+  const applyPayload = (data) => {
+    setItems(data.items || [])
+    setPeople(data.people || { admins: [], staff: [] })
+    setOwn(data.own || [])
+    setReady(true)
+  }
+
   const load = useCallback(async () => {
     setError('')
     try {
-      const data = await fetchDeedRates()
-      setItems(data.items || [])
-      setReady(true)
+      applyPayload(await fetchDeedRates())
     } catch (err) {
       setError(messageOf(err))
     }
@@ -321,8 +332,32 @@ export function DeedRates() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => {
+    if (!who) {
+      setPersonDraft(null)
+      return
+    }
+    setPersonDraft(items.map((item) => {
+      const custom = own.find((row) => row.userId === who && row.actionType === item.actionType)
+      if (!custom) return { ...item, ordinary: true }
+      return {
+        ...item,
+        everyN: custom.everyN,
+        rewardKut: custom.rewardKut,
+        enabled: custom.enabled,
+        ordinary: false,
+      }
+    }))
+  }, [who, items, own])
+
   const patch = (actionType, field, value) => {
     setItems((prev) => prev.map((item) => (item.actionType === actionType ? { ...item, [field]: value } : item)))
+  }
+
+  const patchPerson = (actionType, field, value) => {
+    setPersonDraft((prev) => (prev || []).map((item) => (
+      item.actionType === actionType ? { ...item, [field]: value } : item
+    )))
   }
 
   const save = async () => {
@@ -335,9 +370,49 @@ export function DeedRates() {
         everyN: Math.max(1, Number(item.everyN) || 1),
         rewardKut: Math.max(0, Number(item.rewardKut) || 0),
       }))
-      const data = await saveDeedRates(clean)
-      setItems(data.items || [])
-      setNotice('Нормы сохранены. Автоподстройка выключена: эти числа останутся, пока здесь же не нажмёте «Подстроить сейчас».')
+      applyPayload(await saveDeedRates(clean))
+      setNotice('Обычные нормы сохранены. Личные остались у тех, кому вы их ставили. Автоподстройка выключена.')
+      setTuneStamp((value) => value + 1)
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const savePerson = async () => {
+    if (!who || !personDraft) return
+    setBusy('person')
+    setError('')
+    setNotice('')
+    try {
+      const data = await savePersonRates({
+        userId: who,
+        items: personDraft.map((item) => ({
+          actionType: item.actionType,
+          everyN: Math.max(1, Number(item.everyN) || 1),
+          rewardKut: Math.max(0, Number(item.rewardKut) || 0),
+          enabled: Boolean(item.enabled),
+          ordinary: Boolean(item.ordinary),
+        })),
+      })
+      applyPayload(data)
+      setNotice('Нормы этого человека сохранены. Остальные по-прежнему на обычных.')
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const ordinaryAll = async () => {
+    setBusy('ordinary')
+    setError('')
+    setNotice('')
+    try {
+      applyPayload(await clearPersonRates())
+      setWho(0)
+      setNotice('Личные нормы сняты. У всех снова обычные числа.')
       setTuneStamp((value) => value + 1)
     } catch (err) {
       setError(messageOf(err))
@@ -364,54 +439,168 @@ export function DeedRates() {
     }
   }
 
+  const rows = who ? (personDraft || []) : items
+  const ownPeople = new Set(own.map((row) => row.userId)).size
+  const samePerson = Boolean(who)
+    && people.admins.some((person) => person.id === who)
+    && people.staff.some((person) => person.id === who)
+
   return (
     <div className="deed-rates">
       <RateTune stamp={tuneStamp} onDone={() => load()} />
+      <label className="deed-field norm-who">
+        <span>Для кого норма</span>
+        <select
+          className="panel-users-input"
+          value={who}
+          onChange={(event) => setWho(Number(event.target.value) || 0)}
+        >
+          <option value="0">Все — обычные нормы</option>
+          {people.admins.length > 0 && (
+            <optgroup label="Администраторы групп">
+              {people.admins.map((person) => (
+                <option key={`admin-${person.id}`} value={person.id}>{person.name}</option>
+              ))}
+            </optgroup>
+          )}
+          {people.staff.length > 0 && (
+            <optgroup label="Сотрудники проекта">
+              {people.staff.map((person) => (
+                <option key={`staff-${person.id}`} value={person.id}>{person.name}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </label>
       <p className="deed-lead">
-        Галочка отдаёт цены техническим группам. «Подстроить сейчас» ставит их сразу: за неделю не больше 15% кут групп, последние 40% не трогаются. Если сохранить числа вручную, группы их больше не меняют. Платят только тем, чей ответ совпал с вашим.
+        {who
+          ? 'Своя норма заменяет обычную только у этого человека и только в выбранном виде наказания. «Как у всех» возвращает обычные числа.'
+          : 'Обычные нормы стоят у всех, у кого нет своей. Под каждым видом наказания — сколько дел и сколько кут. Деньги уходят только по «Выплатить».'}
+        {ownPeople > 0 ? ` Свои нормы сейчас у ${ownPeople}.` : ''}
+        {samePerson ? ' Он и администратор, и сотрудник: норма одна.' : ''}
       </p>
-      {error && <p className="staff-hint">{error}</p>}
-      {notice && <p className="staff-hint">{notice}</p>}
+      {error && <p className="staff-hint" role="alert">{error}</p>}
+      {notice && <p className="staff-hint" role="status">{notice}</p>}
       {!ready && !error && <p className="staff-hint">Открываем нормы…</p>}
       {ready && !items.length && <p className="staff-hint">Норм ещё нет. Соберите задания из архива, затем включите нужные и поставьте сумму.</p>}
       <div className="deed-lines">
-        {items.map((item) => (
-          <article key={item.actionType} className="staff-member-row deed-rate">
-            <label className="deed-check">
-              <input type="checkbox" checked={item.enabled} onChange={(event) => patch(item.actionType, 'enabled', event.target.checked)} />
-              <span>{item.enabled ? 'Платим' : 'Выключено'}</span>
-            </label>
-            <label className="deed-field">
-              <span>Название</span>
-              <input className="panel-users-input" value={item.title} onChange={(event) => patch(item.actionType, 'title', event.target.value)} />
-            </label>
-            {item.enabled && !(Number(item.rewardKut) > 0) && (
-              <p className="staff-answer-a">Включено, сумма 0: администратор увидит норму, деньги не начислятся.</p>
-            )}
-            <label className="deed-field">
-              <span>Сколько наказаний</span>
-              <input className="panel-users-input" inputMode="numeric" value={item.everyN} onChange={(event) => patch(item.actionType, 'everyN', Number(event.target.value.replace(/[^\d]/g, '')) || 0)} />
-            </label>
-            <label className="deed-field">
-              <span>Кут</span>
-              <input className="panel-users-input" inputMode="numeric" value={item.rewardKut} onChange={(event) => patch(item.actionType, 'rewardKut', Number(event.target.value.replace(/[^\d]/g, '')) || 0)} />
-            </label>
-            <label className="deed-field">
-              <span>Откуда деньги</span>
-              <select className="panel-users-input" value={item.purse} onChange={(event) => patch(item.actionType, 'purse', event.target.value)}>
-                <option value="tech">Кут с технических групп</option>
-                <option value="manual">Создатель платит сам</option>
-              </select>
-            </label>
-          </article>
-        ))}
+        {rows.map((item) => {
+          const base = items.find((row) => row.actionType === item.actionType) || item
+          const custom = Boolean(who) && !item.ordinary
+          return (
+            <article key={item.actionType} className={`staff-member-row deed-rate${item.enabled || item.ordinary ? '' : ' is-off'}`}>
+              <header className="norm-head">
+                <strong>{base.title || item.actionType}</strong>
+                {who && item.ordinary && <span className="norm-pill">как у всех</span>}
+                {who && !item.ordinary && <span className="norm-pill is-own">своя</span>}
+              </header>
+              {!who && (
+                <label className="deed-field">
+                  <span>Название</span>
+                  <input className="panel-users-input" value={item.title} onChange={(event) => patch(item.actionType, 'title', event.target.value)} />
+                </label>
+              )}
+              {!who && (
+                <label className="deed-check">
+                  <input type="checkbox" checked={item.enabled} onChange={(event) => patch(item.actionType, 'enabled', event.target.checked)} />
+                  <span>{item.enabled ? 'Платим' : 'Выключено'}</span>
+                </label>
+              )}
+              {who && item.ordinary && (
+                <p className="norm-inherit">
+                  {base.enabled
+                    ? `Обычная: каждые ${base.everyN} = ${base.rewardKut} кут.`
+                    : 'Обычная норма этого вида выключена.'}
+                </p>
+              )}
+              {who && item.ordinary && (
+                <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => patchPerson(item.actionType, 'ordinary', false)}>
+                  Своя норма
+                </button>
+              )}
+              {custom && (
+                <label className="deed-check">
+                  <input type="checkbox" checked={item.enabled} onChange={(event) => patchPerson(item.actionType, 'enabled', event.target.checked)} />
+                  <span>{item.enabled ? 'Платим ему' : 'Ему не платим'}</span>
+                </label>
+              )}
+              {( !who ? item.enabled : custom && item.enabled) && (
+                <>
+                  {item.enabled && !(Number(item.rewardKut) > 0) && (
+                    <p className="staff-answer-a">Сумма 0: норма видна, деньги не начислятся.</p>
+                  )}
+                  <label className="deed-field">
+                    <span>Сколько дел</span>
+                    <input
+                      className="panel-users-input"
+                      inputMode="numeric"
+                      value={item.everyN}
+                      onChange={(event) => {
+                        const value = Number(event.target.value.replace(/[^\d]/g, '')) || 0
+                        if (who) patchPerson(item.actionType, 'everyN', value)
+                        else patch(item.actionType, 'everyN', value)
+                      }}
+                    />
+                  </label>
+                  <label className="deed-field">
+                    <span>Кут</span>
+                    <input
+                      className="panel-users-input"
+                      inputMode="numeric"
+                      value={item.rewardKut}
+                      onChange={(event) => {
+                        const value = Number(event.target.value.replace(/[^\d]/g, '')) || 0
+                        if (who) patchPerson(item.actionType, 'rewardKut', value)
+                        else patch(item.actionType, 'rewardKut', value)
+                      }}
+                    />
+                  </label>
+                  {!who && (
+                    <label className="deed-field">
+                      <span>Откуда деньги</span>
+                      <select className="panel-users-input" value={item.purse} onChange={(event) => patch(item.actionType, 'purse', event.target.value)}>
+                        <option value="tech">Кут с технических групп</option>
+                        <option value="manual">Создатель платит сам</option>
+                      </select>
+                    </label>
+                  )}
+                  {who && (
+                    <p className="norm-inherit">
+                      Деньги как у всех: {base.purse === 'manual' ? 'создатель платит сам' : 'кут с технических групп'}.
+                    </p>
+                  )}
+                </>
+              )}
+              {custom && (
+                <button type="button" className="sec-btn sec-btn-ghost sec-btn-sm" onClick={() => patchPerson(item.actionType, 'ordinary', true)}>
+                  Как у всех
+                </button>
+              )}
+            </article>
+          )
+        })}
       </div>
       <div className="deed-choice">
-        <button type="button" className="sec-btn sec-btn-ghost" disabled={Boolean(busy)} onClick={collect}>
-          {busy === 'collect' ? 'Смотрим архив…' : 'Собрать задания из архива'}
+        {!who && (
+          <button type="button" className="sec-btn sec-btn-ghost" disabled={Boolean(busy)} onClick={collect}>
+            {busy === 'collect' ? 'Смотрим архив…' : 'Собрать задания из архива'}
+          </button>
+        )}
+        <button
+          type="button"
+          className="sec-btn sec-btn-ghost"
+          disabled={Boolean(busy) || ownPeople === 0}
+          onClick={ordinaryAll}
+        >
+          {busy === 'ordinary' ? 'Снимаем…' : 'Обычные нормы всем'}
         </button>
-        <button type="button" className="sec-btn" disabled={Boolean(busy) || !ready} onClick={save}>
-          {busy === 'save' ? 'Сохраняем…' : 'Сохранить нормы'}
+        <button
+          type="button"
+          className="sec-btn"
+          disabled={Boolean(busy) || !ready || (Boolean(who) && !personDraft)}
+          onClick={who ? savePerson : save}
+        >
+          {busy === 'save' || busy === 'person' ? 'Сохраняем…' : who ? 'Сохранить этому человеку' : 'Сохранить обычные нормы'}
         </button>
       </div>
     </div>

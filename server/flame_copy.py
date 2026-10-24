@@ -62,30 +62,46 @@ def screen_help(
     gift_mult: int,
     restore_line: str,
     gift_item_count: int = 1,
+    block_dup: bool = True,
 ) -> str:
+    skip = "команды и игры"
+    if block_dup:
+        skip = "команды, игры и одно и то же сообщение, отправленное подряд"
     parts = [
         f"{emoji(EMOJI)} <b>Огонёк сообщений</b>",
+        "Это серия дней. Каждый закрытый день делает её длиннее на 1 день и открывает награды, которые назначены на этот срок.",
         "",
         f"{emoji('5438440765908874600', '🎁')} <b>Награды за дни</b>",
     ]
     if rewards:
-        parts.append("<i>Один раз · сразу в личку</i>")
+        parts.append(
+            "Награда приходит <b>один раз</b> и сразу <b>в личку</b>, "
+            "в тот момент, когда жизнь огонька доходит до этого срока."
+        )
         parts.extend(rewards)
     else:
-        parts.append("<i>Награды скоро появятся</i>")
+        parts.append("<i>Награды за дни скоро появятся. Серию уже можно копить.</i>")
     parts += [
         "",
-        "<blockquote>"
-        f"В <b>официальных группах</b>: <b>{base}</b> сообщений от <b>{words}</b> слов за сутки (МСК).\n"
-        "Не считаются команды, игры и один текст подряд."
-        "</blockquote>",
-        "",
         f"{emoji('5321021153219732362', '⚡️')} <b>Как работает</b>",
-        "· норма закрыта → в 00:00 серия <b>+1</b>",
-        "· день пропущен → огонёк <b>гаснет</b>",
+        (
+            "Для того чтобы начать получать награды, достигая определённых дней жизни огонька, "
+            f"вам нужно написать <b>{int(base)}</b> сообщений в <b>официальных группах</b>. "
+            f"В каждом сообщении — не меньше <b>{int(words)}</b> слов."
+        ),
+        (
+            "Сутки считаются по Москве: с <b>00:00</b> до следующей <b>00:00</b>. "
+            "Как только за эти сутки норма набрана, огонёк <b>сразу</b> продлевается на <b>1 день</b>. "
+            "Ждать полуночи не нужно."
+        ),
+        (
+            "Если до <b>00:00</b> по Москве сообщений не хватило, огонёк <b>гаснет</b>. "
+            "Серия начинается заново, с нуля."
+        ),
+        f"В норму не идут {skip}.",
     ]
     if not enabled:
-        parts += ["", "<i>Сейчас огонёк выключен</i>"]
+        parts += ["", "<i>Сейчас огонёк выключен. Сообщения серию не копят, пока его снова не включат.</i>"]
     if rises:
         parts += [
             "",
@@ -95,17 +111,22 @@ def screen_help(
         parts += [
             "",
             f"{emoji('5233479338791281256', '⭐️')} <b>Статус в профиле</b>",
+            "Это подпись рядом с именем, пока огонёк горит. На награды она не влияет. Берётся самая старшая из тех, до которых серия уже дошла.",
             *titles,
         ]
     if warm_on:
         parts += [
             "",
             f"{emoji('5296561370303592127', '🌟')} <b>Тёплый час</b>",
-            f"С <b>{warm_from}</b>: каждые <b>{warm_every}</b> сообщений в удачный час "
-            f"— ещё награда (до <b>{warm_cap}</b>/день).",
+            (
+                f"Это отдельная награда, не вместо дня серии. Она открывается, когда огонёк уже живёт "
+                f"<b>{warm_from}</b>. В одни сутки по Москве выбирается один час. "
+                f"Каждые <b>{warm_every}</b> ваших сообщений в этот час дают ещё одну награду. "
+                f"За сутки таких наград не больше <b>{warm_cap}</b>."
+            ),
         ]
         if warm_hour:
-            parts.append(f"Сегодня: <code>{warm_hour}</code> МСК")
+            parts.append(f"Сегодня этот час: <code>{warm_hour}</code> МСК.")
     if gift_on:
         try:
             from flame_bonus_plus_copy import help_block
@@ -115,8 +136,8 @@ def screen_help(
             parts += [
                 "",
                 f"{emoji('5438458242130806642', '🎁')} <b>Бонус +</b>",
-                f"«использовать 🎁» — улучшенный бонус.{mult_bit}",
-                "Нужна приписка <code>Cute</code>.",
+                "Напишите «использовать 🎁», нажмите «Открыть Бонус +» и выберите одну клетку. "
+                f"Что внутри — только после выбора.{mult_bit} В имени нужна приписка <code>Cute</code>.",
             ]
     if restore_line:
         parts += [
@@ -124,7 +145,10 @@ def screen_help(
             f"{emoji(EMOJI)} <b>Вернуть огонёк</b>",
             restore_line,
         ]
-    parts += ["", "<i>Держите серию — награды ваши</i>"]
+    parts += [
+        "",
+        "<i>Держите серию каждый день до 00:00 по Москве — награды за дни ваши.</i>",
+    ]
     return "\n".join(parts)
 
 
@@ -141,24 +165,27 @@ def restore_ways(*, kuty: int, item: str, count: int) -> str:
 def restore_help_line(*, days: int, kuty: int, item: str, count: int) -> str:
     price = restore_ways(kuty=kuty, item=item, count=count)
     return (
-        f"«<b>вернуть огонёк</b>» — в течение <b>{int(days)}</b> дн. после того, как погас. "
-        f"Цена: {price}.\n"
-        "Новая серия сжигает старую — успейте раньше."
+        f"Если огонёк погас, напишите «<b>вернуть огонёк</b>» в течение <b>{int(days)}</b> дн. "
+        f"Серия поднимется на столько дней, сколько сгорело. Цена: {price}.\n"
+        "Новая серия сжигает старую: начать заново — значит, прошлую уже не вернуть. "
+        "После возврата сегодняшнюю норму всё равно нужно закрыть до 00:00 по Москве."
     )
 
 
 def screen_streak(label: str, title: str, gifts: str) -> str:
     head = f"<b>{title}</b>\n" if title else ""
     extra = (
-        f"\n\n{emoji('5438440765908874600', '🎁')} Вам: <b>{gifts}</b>"
+        f"\n\n{emoji('5438440765908874600', '🎁')} За этот день вам: <b>{gifts}</b>"
         if gifts
         else ""
     )
     return (
         f"{emoji(EMOJI)} <b>Огонёк уже {label}</b>\n"
         f"{head}"
-        "<blockquote>День закрыт.\n"
-        "Завтра снова наберите норму.</blockquote>"
+        "<blockquote>Норма сообщений за сегодня закрыта.\n"
+        "Огонёк сразу продлён на <b>1 день</b>.\n"
+        "Завтра до <b>00:00</b> по Москве снова напишите норму. "
+        "Если не напишете — огонёк погаснет.</blockquote>"
         f"{extra}"
     )
 
@@ -166,7 +193,8 @@ def screen_streak(label: str, title: str, gifts: str) -> str:
 def screen_warm(label: str) -> str:
     return (
         f"{emoji('5296561370303592127', '🌟')} <b>Тёплый час</b>\n"
-        "<blockquote>Вы писали в удачный час.</blockquote>\n"
+        "<blockquote>Вы написали сообщение в удачный час суток.\n"
+        "Это отдельная награда. День серии она не заменяет и не продлевает.</blockquote>\n"
         f"{emoji('5438440765908874600', '🎁')} <b>{label}</b>"
     )
 
@@ -181,14 +209,22 @@ def screen_profit(
     loot_line: str,
 ) -> str:
     head = f"<b>{title}</b>\n" if title else ""
-    state = (
-        f"{emoji('5321021153219732362', '⚡️')} норма <b>закрыта</b>"
-        if kept
-        else f"{emoji('5467519850576354798', '❕')} норма <b>ещё открыта</b>"
-    )
+    if kept:
+        state = (
+            f"{emoji('5321021153219732362', '⚡️')} Норма за сегодня <b>закрыта</b>. "
+            "Этот день уже засчитан: серия длиннее на 1 день. "
+            "Завтра до 00:00 по Москве снова напишите норму, иначе огонёк погаснет."
+        )
+    else:
+        state = (
+            f"{emoji('5467519850576354798', '❕')} Норма за сегодня <b>ещё не закрыта</b>. "
+            "Напишите нужное число сообщений в официальных группах до 00:00 по Москве. "
+            "Если не успеете — огонёк погаснет."
+        )
     return (
         f"{emoji(EMOJI)} <b>Ваш огонёк сегодня</b>\n{head}"
-        f"<blockquote>Серия: <b>{streak}</b> · место: <b>#{rank}</b>\n"
+        f"<blockquote>Серия сейчас: <b>{streak}</b>.\n"
+        f"В списке лучших огоньков вы на месте <b>#{rank}</b>.\n"
         f"{state}</blockquote>"
         f"{next_line}{loot_line}"
     )
@@ -197,33 +233,37 @@ def screen_profit(
 def profit_next(day_label: str, left: int, day_word: str, gift: str) -> str:
     return (
         f"\n{emoji('5438440765908874600', '🎁')} "
-        f"До <b>{day_label}</b> — ещё <b>{left}</b> {day_word}: {gift}"
+        f"До награды за <b>{day_label}</b> осталось ещё <b>{left}</b> {day_word}. "
+        f"В тот день вы получите: {gift}."
     )
 
 
 def profit_next_done() -> str:
-    return "\n<i>Все дневные награды собраны — держите серию</i>"
+    return (
+        "\n<i>Все награды за уже назначенные дни вы получили. "
+        "Дальше каждый закрытый день просто делает огонёк длиннее.</i>"
+    )
 
 
 def profit_loot(labels: list[str]) -> str:
     if not labels:
         return ""
     body = " · ".join(f"<b>{label}</b>" for label in labels)
-    return f"\nСегодня: {body}"
+    return f"\nСегодня вы уже получили: {body}."
 
 
 def screen_top_empty() -> str:
     return (
         f"{emoji('5354962501643578130')} <b>Лучшие огоньки</b>\n"
-        "<blockquote>Самые длинные серии.\n"
-        "<i>Пока пусто — закройте норму дня.</i></blockquote>"
+        "<blockquote>Здесь самые длинные живые серии.\n"
+        "<i>Пока никого нет. Напишите норму сообщений за сегодня — и ваш огонёк появится в списке.</i></blockquote>"
     )
 
 
 def screen_top(rows: list[str]) -> str:
     head = [
         f"{emoji('5354962501643578130')} <b>Лучшие огоньки</b>",
-        "<i>Самые длинные живые серии</i>",
+        "<i>Самые длинные серии, которые ещё горят. Погасшие сюда не попадают.</i>",
         "",
     ]
     return "\n".join(head + rows)
@@ -248,24 +288,29 @@ def screen_restore_offer(label: str, days_left: int, ways: str) -> str:
     window = "сегодня" if int(days_left) <= 1 else f"ещё {int(days_left)} дн."
     return (
         f"{emoji(EMOJI)} <b>Вернуть огонёк</b>\n"
-        f"<blockquote>Погасшая серия: <b>{label}</b>.\n"
-        f"Можно {window}, пока не начнёте новую.</blockquote>\n"
-        f"Цена: {ways}"
+        f"<blockquote>Погасшая серия была <b>{label}</b>.\n"
+        f"Вернуть её можно {window}, пока вы не начали новую.\n"
+        "Новая серия сжигает старую: после этого вернуть прошлую уже нельзя.\n"
+        "После возврата сегодня до 00:00 по Москве всё равно закройте норму сообщений. "
+        "Иначе огонёк погаснет снова.</blockquote>\n"
+        f"Цена: {ways}."
     )
 
 
 def screen_restore_done(label: str) -> str:
     return (
         f"{emoji(EMOJI)} <b>Огонёк снова горит</b>\n"
-        f"<blockquote>Серия <b>{label}</b> на месте.\n"
-        "Сегодня ещё закройте норму — иначе погаснет снова.</blockquote>"
+        f"<blockquote>Серия <b>{label}</b> снова на месте.\n"
+        "Сегодня до <b>00:00</b> по Москве закройте норму сообщений. "
+        "Если не закрыть — огонёк погаснет ещё раз.</blockquote>"
     )
 
 
 def screen_restore_alive() -> str:
     return (
         f"{emoji(EMOJI)} <b>Огонёк уже горит</b>\n"
-        "<blockquote>Возвращать нечего. Держите норму.</blockquote>"
+        "<blockquote>Возвращать нечего: серия жива.\n"
+        "Закройте сегодняшнюю норму сообщений до 00:00 по Москве.</blockquote>"
     )
 
 
@@ -273,29 +318,31 @@ def screen_restore_none() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возвращать нечего</b>\n"
         "<blockquote>Погасшей серии нет.\n"
-        "Когда огонёк погаснет — «вернуть огонёк».</blockquote>"
+        "Когда огонёк погаснет, напишите «вернуть огонёк» — если возврат будет открыт.</blockquote>"
     )
 
 
 def screen_restore_late() -> str:
     return (
         f"{emoji(EMOJI)} <b>Срок прошёл</b>\n"
-        "<blockquote>Этот огонёк уже не поднять.\n"
-        "Новую серию можно начать с сегодняшней нормы.</blockquote>"
+        "<blockquote>Этот огонёк уже не поднять: времени на возврат не осталось.\n"
+        "Новую серию можно начать сегодня. Для этого закройте норму сообщений до 00:00 по Москве.</blockquote>"
     )
 
 
 def screen_restore_off() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возврат выключен</b>\n"
-        "<blockquote>Сейчас погасший огонёк нельзя вернуть.</blockquote>"
+        "<blockquote>Сейчас погасший огонёк вернуть нельзя.\n"
+        "Новую серию начинайте обычной нормой сообщений.</blockquote>"
     )
 
 
 def screen_restore_poor(price: int) -> str:
     return (
         f"{emoji(EMOJI)} <b>Не хватает кут</b>\n"
-        f"<blockquote>Нужно <b>{int(price)}</b> кут. Списание не прошло.</blockquote>"
+        f"<blockquote>Чтобы вернуть огонёк, нужно <b>{int(price)}</b> кут с вашего баланса.\n"
+        "Их не хватило. Ничего не списано, серия не поднялась.</blockquote>"
     )
 
 
@@ -303,18 +350,20 @@ def screen_restore_no_item(name: str, count: int) -> str:
     piece = name if int(count or 1) == 1 else f"{name} ×{int(count)}"
     return (
         f"{emoji(EMOJI)} <b>Нет предмета</b>\n"
-        f"<blockquote>Нужен <b>{piece}</b>. Ничего не списано.</blockquote>"
+        f"<blockquote>Чтобы вернуть огонёк, нужен <b>{piece}</b> из вашего инвентаря.\n"
+        "Предмета не хватило. Ничего не списано, серия не поднялась.</blockquote>"
     )
 
 
 def screen_restore_busy() -> str:
-    return "Уже вернули или срок прошёл. Списание отменено."
+    return "Этот возврат уже сделан или срок прошёл. Куты и предметы не списаны."
 
 
 def screen_restore_cancel() -> str:
     return (
         f"{emoji(EMOJI)} <b>Возврат отменён</b>\n"
-        "<blockquote>Огонёк погас. Куты и предметы не списаны.</blockquote>"
+        "<blockquote>Огонёк остался погасшим.\n"
+        "Куты и предметы не списаны.</blockquote>"
     )
 
 
@@ -336,12 +385,12 @@ def alert_stranger() -> str:
 
 
 def alert_poor(price: int) -> str:
-    return f"Нужно {int(price)} кут."
+    return f"Чтобы вернуть огонёк, нужно {int(price)} кут."
 
 
 def alert_no_item(name: str, count: int) -> str:
     piece = name if int(count or 1) == 1 else f"{name} ×{int(count)}"
-    return f"Нет предмета: {piece}."
+    return f"Чтобы вернуть огонёк, нужен предмет: {piece}."
 
 
 RESTORE_COMMANDS = (
@@ -435,7 +484,7 @@ def button_top() -> str:
 
 
 def alert_top_failed() -> str:
-    return "Не удалось открыть огоньки."
+    return "Не удалось открыть список огоньков. Напишите ещё раз чуть позже."
 
 
 HISTORY_GRANT = "огонёк"

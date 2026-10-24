@@ -2394,6 +2394,14 @@ export async function saveDeedRates(items) {
   return adminRequest('/deed-pay/rates', { method: 'PUT', body: { items } })
 }
 
+export async function savePersonRates(body) {
+  return adminRequest('/deed-pay/rates/person', { method: 'PUT', body })
+}
+
+export async function clearPersonRates() {
+  return adminRequest('/deed-pay/rates/ordinary', { method: 'POST', body: {} })
+}
+
 export async function collectDeedRates() {
   return adminRequest('/deed-pay/rates/collect', { method: 'POST', body: {} })
 }

@@ -2029,7 +2029,7 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
 }
 
 .deck-col {
-  --look-max: min(46vh, 26rem);
+  --look-max: min(30vh, 16rem);
   position: relative;
   z-index: 2;
   min-width: 0;
@@ -2123,7 +2123,7 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   }
 
   .work-grid.has-card .deck-col {
-    --look-max: min(56vh, 32rem);
+    --look-max: min(34vh, 18rem);
   }
 
   .work-grid.has-card .tinder-card > .deed-copy {
@@ -2276,10 +2276,10 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
   margin-top: 0.85rem;
 }
 
-/* Кнопки в потоке страницы: sticky только прилипает к низу прокрутки и не закрывает текст. */
+/* Кнопки сразу под карточкой: не наезжают на причину и фото. */
 .deck-actions.work-choice {
-  position: sticky;
-  bottom: 0.75rem;
+  position: static;
+  bottom: auto;
   z-index: 12;
   margin-top: 0.65rem;
   padding: 0.55rem 0.45rem 0.5rem;
@@ -2309,8 +2309,8 @@ body.perf-light .access-sheet.is-leaving .access-sheet-card {
 
 html.is-phone .deck-actions.work-choice,
 html[data-viewport="phone"] .deck-actions.work-choice {
-  position: sticky;
-  bottom: 0.75rem;
+  position: static;
+  bottom: auto;
   z-index: 12;
   width: auto;
   max-width: none;
@@ -3359,11 +3359,102 @@ body.perf-light .purse-days .act-bars button > i {
   min-height: 44px;
 }
 
-.rate-tune.is-compact .deed-lead {
+.rate-tune.is-compact .deed-lead.is-clamp {
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.rate-tune-more {
+  margin: 0 0 0.55rem;
+}
+
+.norm-who {
+  max-width: 28rem;
+  margin-bottom: 0.35rem;
+}
+
+.deed-lines {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.deed-rate {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.95rem 1rem 1rem;
+  border-radius: 16px;
+}
+
+.deed-rate.is-off {
+  opacity: 0.78;
+}
+
+.norm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+}
+
+.norm-head strong {
+  font-size: 1.05rem;
+}
+
+.norm-pill {
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--e-text-2, #c4c4c8);
+  font-size: 0.75rem;
+}
+
+.norm-pill.is-own {
+  color: var(--e-text, #f5f5f5);
+  background: color-mix(in srgb, var(--e-accent, #fff) 16%, transparent);
+}
+
+.norm-inherit {
+  margin: 0;
+  color: var(--e-text-2, #c4c4c8);
+  line-height: 1.4;
+}
+
+@keyframes e-unfurl {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 12% 0 round 18px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 round 18px);
+    filter: none;
+  }
+}
+
+.panel-layout > :not(header):not(.elite-topbar):not(.craft-page-head):not(.staff-desk):not(.flame-page),
+.staff-desk-main > .e-unfurl,
+.grp-page > section,
+.pay-desk > .e-unfurl {
+  animation: e-unfurl 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-layout > :not(header):not(.elite-topbar):not(.craft-page-head):not(.staff-desk):not(.flame-page),
+  .staff-desk-main > .e-unfurl,
+  .grp-page > section,
+  .pay-desk > .e-unfurl {
+    animation: none;
+  }
+}
+
+body.perf-light .panel-layout > :not(header):not(.elite-topbar):not(.craft-page-head):not(.staff-desk):not(.flame-page),
+body.perf-light .staff-desk-main > .e-unfurl,
+body.perf-light .grp-page > section,
+body.perf-light .pay-desk > .e-unfurl {
+  animation: none;
 }
 
 /* Главные вкладки — одна группа в центре полосы. Шестерёнка остаётся у края и центр не сдвигает. */

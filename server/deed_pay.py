@@ -257,7 +257,9 @@ _CARD_SQL = """
     au.username AS admin_username,
     au.first_name AS admin_first,
     r.title AS rate_title,
-    r.every_n, r.reward_kut, r.enabled AS rate_enabled,
+    CASE WHEN rp.user_id IS NOT NULL THEN rp.every_n ELSE r.every_n END AS every_n,
+    CASE WHEN rp.user_id IS NOT NULL THEN rp.reward_kut ELSE r.reward_kut END AS reward_kut,
+    CASE WHEN rp.user_id IS NOT NULL THEN rp.enabled ELSE r.enabled END AS rate_enabled,
     ds.verdict AS sort_verdict,
     ds.sorter_id,
     COALESCE(NULLIF(btrim(su.first_name), ''), NULLIF(btrim(su.username), ''), '') AS sorter_name,
@@ -286,7 +288,26 @@ LEFT JOIN chat c ON c.chat_id = s.chat_id
 LEFT JOIN users tu ON tu.user_id = s.target_player_id
 LEFT JOIN users au ON au.user_id = s.admin_user_id
 LEFT JOIN epsilon_deed_rates r ON r.action_type = ({punish_type_sql("s")})
+LEFT JOIN epsilon_deed_rate_people rp
+    ON rp.user_id = s.admin_user_id
+   AND rp.action_type = ({punish_type_sql("s")})
 """
+
+
+def resolve_person_rate(base, own) -> dict:
+    """Личная норма заменяет обычную. Откуда деньги — всегда у обычной нормы."""
+    purse = "tech"
+    if base is not None and base.get("purse") in ("tech", "manual"):
+        purse = base["purse"]
+    source = own if own is not None else base
+    if source is None:
+        return {"every_n": 0, "reward_kut": 0, "enabled": False, "purse": purse}
+    return {
+        "every_n": int(source.get("every_n") or 0),
+        "reward_kut": int(source.get("reward_kut") or 0),
+        "enabled": bool(source.get("enabled")),
+        "purse": purse,
+    }
 
 
 def milestones_for(confirmed: int, every_n: int) -> int:
@@ -393,6 +414,18 @@ async def _install_deed_tables(conn) -> None:
             reward_kut BIGINT NOT NULL,
             purse TEXT NOT NULL DEFAULT 'tech',
             enabled BOOLEAN NOT NULL DEFAULT TRUE
+        )
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS epsilon_deed_rate_people (
+            user_id BIGINT NOT NULL,
+            action_type TEXT NOT NULL,
+            every_n INT NOT NULL,
+            reward_kut BIGINT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            PRIMARY KEY (user_id, action_type)
         )
         """
     )
@@ -896,7 +929,10 @@ async def _write_milestones(conn, action: str, every_n: int, reward: int, purse:
     for row in counts:
         admin_id = int(row["admin_id"])
         seen.append(admin_id)
-        top = milestones_for(int(row["n"]), every_n)
+        step = int(row["every_n"]) if row.get("every_n") is not None else every_n
+        pay = int(row["reward_kut"]) if row.get("reward_kut") is not None else reward
+        bag = row.get("purse") if row.get("purse") in ("tech", "manual") else purse
+        top = milestones_for(int(row["n"]), step)
         for milestone in range(1, top + 1):
             await conn.execute(
                 """
@@ -905,7 +941,7 @@ async def _write_milestones(conn, action: str, every_n: int, reward: int, purse:
                 VALUES ($1, $2, $3, $4, $5, 'owed')
                 ON CONFLICT (admin_id, action_type, milestone) DO NOTHING
                 """,
-                admin_id, action, milestone, reward, purse,
+                admin_id, action, milestone, pay, bag,
             )
         await conn.execute(
             """
@@ -913,7 +949,7 @@ async def _write_milestones(conn, action: str, every_n: int, reward: int, purse:
             SET reward_kut = $3, purse = $4
             WHERE admin_id = $1 AND action_type = $2 AND status = 'owed'
             """,
-            admin_id, action, reward, purse,
+            admin_id, action, pay, bag,
         )
         await conn.execute(
             """
@@ -938,38 +974,61 @@ async def _write_milestones(conn, action: str, every_n: int, reward: int, purse:
 
 
 async def _sync_owed(conn) -> None:
+    """Обычная норма — всем. Своя строка человека заменяет только его числа."""
     rates = await conn.fetch(
         """
-        SELECT action_type, every_n, reward_kut, purse
+        SELECT action_type, every_n, reward_kut, purse, enabled
         FROM epsilon_deed_rates
-        WHERE enabled = TRUE AND reward_kut > 0 AND every_n > 0
         """
     )
-    live = {row["action_type"] for row in rates}
-    if live:
+    own_rows = await conn.fetch(
+        """
+        SELECT user_id, action_type, every_n, reward_kut, enabled
+        FROM epsilon_deed_rate_people
+        """
+    )
+    base = {row["action_type"]: row for row in rates}
+    own_of: dict[str, dict[int, Any]] = {}
+    for row in own_rows:
+        own_of.setdefault(row["action_type"], {})[int(row["user_id"])] = row
+    role_of = {CHECK_ADMIN: "admin", CHECK_STAFF: "staff"}
+    actions = []
+    for action in list(base) + [name for name in own_of if name not in base]:
+        if action in role_of or action in PUNISH:
+            actions.append(action)
+    if actions:
         await conn.execute(
             """
             DELETE FROM epsilon_deed_payouts
             WHERE status = 'owed' AND NOT (action_type = ANY($1::text[]))
             """,
-            list(live),
+            actions,
         )
     else:
         await conn.execute("DELETE FROM epsilon_deed_payouts WHERE status = 'owed'")
         return
-    role_of = {CHECK_ADMIN: "admin", CHECK_STAFF: "staff"}
-    for rate in rates:
-        action = rate["action_type"]
-        every_n = int(rate["every_n"])
-        reward = int(rate["reward_kut"])
-        purse = rate["purse"] if rate["purse"] in ("tech", "manual") else "tech"
+    for action in actions:
+        rate = base.get(action)
+        people = own_of.get(action, {})
         if action in role_of:
             counts = await conn.fetch(CHECK_COUNT_SQL, role_of[action])
-        elif action in PUNISH:
-            counts = await conn.fetch(ISSUE_COUNT_SQL, action)
         else:
-            continue
-        await _write_milestones(conn, action, every_n, reward, purse, counts)
+            counts = await conn.fetch(ISSUE_COUNT_SQL, action)
+        numbered = {int(row["admin_id"]): int(row["n"]) for row in counts}
+        for user_id in people:
+            numbered.setdefault(user_id, 0)
+        rows = []
+        for admin_id, count in numbered.items():
+            spec = resolve_person_rate(rate, people.get(admin_id))
+            live = spec["enabled"] and spec["every_n"] > 0
+            rows.append({
+                "admin_id": admin_id,
+                "n": count,
+                "every_n": spec["every_n"] if live else 0,
+                "reward_kut": spec["reward_kut"] if live else 0,
+                "purse": spec["purse"],
+            })
+        await _write_milestones(conn, action, 0, 0, "tech", rows)
 
 
 class RateBody(BaseModel):
@@ -983,6 +1042,23 @@ class RateBody(BaseModel):
 
 class RatesBody(BaseModel):
     items: list[RateBody]
+
+
+class PersonRateItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actionType: str
+    everyN: int = Field(ge=1, le=100000)
+    rewardKut: int = Field(ge=0, le=10**12)
+    enabled: bool = True
+    ordinary: bool = False
+
+
+class PersonRatesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    userId: int = Field(ge=1)
+    items: list[PersonRateItem]
 
 
 class SortBody(BaseModel):
@@ -1959,18 +2035,79 @@ def _rate_row(row) -> dict:
     }
 
 
-@router.get("/rates")
-async def deed_rates(user_id: int = Depends(get_any_telegram_user_id)):
-    _require_creator(user_id)
-    await ensure_deed_tables()
-    rows = await db.pool.fetch(
+def _person_name(row, fallback: str) -> str:
+    name = (row["name"] or "").strip()
+    return name or fallback
+
+
+async def _rate_roster(conn) -> dict:
+    admins = []
+    if await conn.fetchval("SELECT to_regclass('public.epsilon_seats')"):
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (s.user_id)
+                s.user_id,
+                COALESCE(NULLIF(btrim(u.first_name), ''), NULLIF(btrim(u.username), ''), '') AS name
+            FROM epsilon_seats s
+            LEFT JOIN users u ON u.user_id = s.user_id
+            ORDER BY s.user_id, s.created_at DESC
+            """
+        )
+        admins = [{"id": int(row["user_id"]), "name": _person_name(row, "Администратор")} for row in rows]
+        admins.sort(key=lambda item: item["name"].casefold())
+    staff_rows = await conn.fetch(
+        """
+        SELECT DISTINCT ON (a.user_id)
+            a.user_id,
+            COALESCE(NULLIF(btrim(a.first_name), ''), NULLIF(btrim(a.username), ''), '') AS name
+        FROM admin_accounts a
+        WHERE a.status = 'active' AND a.role = ANY($1::text[])
+        ORDER BY a.user_id
+        """,
+        list(STAFF_ROLES),
+    )
+    staff = [{"id": int(row["user_id"]), "name": _person_name(row, "Сотрудник")} for row in staff_rows]
+    staff.sort(key=lambda item: item["name"].casefold())
+    return {"admins": admins, "staff": staff}
+
+
+async def _rates_payload(conn) -> dict:
+    rows = await conn.fetch(
         """
         SELECT action_type, title, every_n, reward_kut, purse, enabled
         FROM epsilon_deed_rates
         ORDER BY action_type
         """
     )
-    return {"items": [_rate_row(r) for r in rows]}
+    own = await conn.fetch(
+        """
+        SELECT user_id, action_type, every_n, reward_kut, enabled
+        FROM epsilon_deed_rate_people
+        ORDER BY user_id, action_type
+        """
+    )
+    return {
+        "items": [_rate_row(row) for row in rows],
+        "people": await _rate_roster(conn),
+        "own": [
+            {
+                "userId": int(row["user_id"]),
+                "actionType": row["action_type"],
+                "everyN": int(row["every_n"]),
+                "rewardKut": int(row["reward_kut"]),
+                "enabled": bool(row["enabled"]),
+            }
+            for row in own
+        ],
+    }
+
+
+@router.get("/rates")
+async def deed_rates(user_id: int = Depends(get_any_telegram_user_id)):
+    _require_creator(user_id)
+    await ensure_deed_tables()
+    async with db.pool.acquire() as conn:
+        return await _rates_payload(conn)
 
 
 @router.put("/rates")
@@ -2008,6 +2145,58 @@ async def deed_save_rates(body: RatesBody, user_id: int = Depends(get_any_telegr
             )
             await _sync_owed(conn)
     return await deed_rates(user_id)
+
+
+@router.put("/rates/person")
+async def deed_save_person_rates(body: PersonRatesBody, user_id: int = Depends(get_any_telegram_user_id)):
+    """Свои числа одному человеку. ordinary снимает личную строку — остаётся обычная норма."""
+    _require_creator(user_id)
+    await ensure_deed_tables()
+    async with db.pool.acquire() as conn:
+        known = {
+            row["action_type"]
+            for row in await conn.fetch("SELECT action_type FROM epsilon_deed_rates")
+        }
+        async with conn.transaction():
+            for item in body.items:
+                action = item.actionType.strip().lower()
+                if action not in known:
+                    raise HTTPException(status_code=400, detail="Такого вида наказания в нормах нет")
+                if item.ordinary:
+                    await conn.execute(
+                        """
+                        DELETE FROM epsilon_deed_rate_people
+                        WHERE user_id = $1 AND action_type = $2
+                        """,
+                        int(body.userId), action,
+                    )
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO epsilon_deed_rate_people
+                        (user_id, action_type, every_n, reward_kut, enabled)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (user_id, action_type) DO UPDATE SET
+                        every_n = EXCLUDED.every_n,
+                        reward_kut = EXCLUDED.reward_kut,
+                        enabled = EXCLUDED.enabled
+                    """,
+                    int(body.userId), action, int(item.everyN), int(item.rewardKut), bool(item.enabled),
+                )
+            await _sync_owed(conn)
+        return await _rates_payload(conn)
+
+
+@router.post("/rates/ordinary")
+async def deed_ordinary_rates(user_id: int = Depends(get_any_telegram_user_id)):
+    """Снять все личные нормы. У каждого остаются обычные числа."""
+    _require_creator(user_id)
+    await ensure_deed_tables()
+    async with db.pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM epsilon_deed_rate_people")
+            await _sync_owed(conn)
+        return await _rates_payload(conn)
 
 
 @router.post("/rates/collect")
@@ -2088,10 +2277,18 @@ async def deed_mine(user_id: int = Depends(get_any_telegram_user_id)):
         """
         SELECT action_type, title, every_n, reward_kut, purse, enabled
         FROM epsilon_deed_rates
-        WHERE enabled = TRUE
         ORDER BY action_type
         """
     )
+    own_rows = await db.pool.fetch(
+        """
+        SELECT action_type, every_n, reward_kut, enabled
+        FROM epsilon_deed_rate_people
+        WHERE user_id = $1
+        """,
+        user_id,
+    )
+    own = {row["action_type"]: row for row in own_rows}
     counts = await db.pool.fetch(
         """
         SELECT s.action_type, COUNT(*)::int AS n
@@ -2186,8 +2383,16 @@ async def deed_mine(user_id: int = Depends(get_any_telegram_user_id)):
                 continue
         else:
             confirmed = by_action.get(action, 0)
-        prog = progress_line(confirmed, int(rate["every_n"]), int(rate["reward_kut"]))
-        lines.append({**_rate_row(rate), **prog})
+        spec = resolve_person_rate(rate, own.get(action))
+        if not spec["enabled"]:
+            continue
+        prog = progress_line(confirmed, spec["every_n"], spec["reward_kut"])
+        shown = _rate_row(rate)
+        shown["everyN"] = spec["every_n"]
+        shown["rewardKut"] = spec["reward_kut"]
+        shown["enabled"] = True
+        shown["purse"] = spec["purse"]
+        lines.append({**shown, **prog})
     owed_kut = sum(int(r["reward_kut"]) for r in owed_rows if r["status"] == "owed")
     paid_kut = sum(int(r["reward_kut"]) for r in owed_rows if r["status"] == "paid")
     return {

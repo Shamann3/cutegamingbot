@@ -519,10 +519,7 @@ export function CreatorSelf() {
           )}
           {pileNote && card && <DeckPileNote text={pileNote} />}
           <p className="deed-lead">
-            Эти наказания ещё никто не разбирал. Ваш ответ забирает карточку у администраторов и сотрудников и сразу решает зарплату.
-          </p>
-          <p className="deck-why">
-            «Подходит» засчитывает тому, кто выдал — администратору группы или сотруднику проекта, это одно и то же. «Неправильно» и «непонятно» никого не оплачивают.
+            Никто ещё не ответил. Вправо — зарплата тому, кто выдал. Влево и вниз — никому.
           </p>
           {error && <p className="staff-hint deck-error" role="alert">{error}</p>}
           {!queue && !error && <p className="staff-hint">Открываем наказания…</p>}
@@ -531,13 +528,6 @@ export function CreatorSelf() {
           )}
           {queue && !card && !error && waiting === 0 && (
             <p className="work-empty">Сейчас проверять нечего. Сюда приходят наказания, которые ещё не открыл администратор или сотрудник.</p>
-          )}
-          {card && (
-            <p className="work-keys">
-              Потяните карточку: вправо — в зарплату, влево — выдано неправильно, вниз — непонятно.
-              {card.hasProof && card.proofMediaId ? ' Нажмите на фото, чтобы открыть его целиком.' : ''}
-              <span className="deck-keys-only"> На клавиатуре те же стрелки. Ctrl+Z возвращает ответ.</span>
-            </p>
           )}
         </div>
         {card && (
@@ -790,6 +780,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
         ))}
       </nav>
 
+      <div key={view} className="e-unfurl">
       {!preview && view !== 'cash' && view !== 'rates' && view !== 'payroll' && <RateTune compact />}
 
       {lens && preview && <p className="staff-hint deck-copy">В копии панели чужие проверки не открываются.</p>}
@@ -836,6 +827,7 @@ export default function CreatorPay({ showPayroll = false, payroll = null }) {
       {view === 'cash' && <PurseDesk />}
       {view === 'payouts' && <DeedPayouts />}
       {view === 'payroll' && showPayroll && payroll}
+      </div>
     </div>
   )
 }

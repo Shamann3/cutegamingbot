@@ -564,9 +564,9 @@ def preview_kuty_lines(conf: dict | None) -> list[str]:
     conf = gift_plus_defaults(conf or {})
     lo, hi = board_range(conf)
     if lo == hi:
-        lines = [f"<b>+{lo}</b> кут с клетки"]
+        lines = [f"С выбранной клетки: <b>+{lo}</b> кут"]
     else:
-        lines = [f"<b>+{lo}…{hi}</b> кут с клетки"]
+        lines = [f"С выбранной клетки: <b>+{lo}…{hi}</b> кут"]
     if not conf.get("extra_kuty_on"):
         return lines
     chance = int(conf.get("extra_kuty_chance") or 0)
@@ -580,9 +580,9 @@ def preview_kuty_lines(conf: dict | None) -> list[str]:
     b = max(a, b)
     bit = f"<b>+{a}</b> кут" if a == b else f"<b>+{a}…{b}</b> кут"
     if chance >= 100:
-        lines.append(f"ещё {bit}")
+        lines.append(f"ещё {bit} — дополнительно к клетке")
     else:
-        lines.append(f"иногда ещё {bit}")
+        lines.append(f"иногда ещё {bit} — не в каждом открытии")
     return lines
 
 

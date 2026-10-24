@@ -418,3 +418,22 @@ def test_norms_shrink_to_the_technical_purse_and_keep_a_reserve():
     assert "is_technical" in PURSE_SQL
     assert "purse = 'tech'" in PAID_SPLIT_SQL
     assert "check_admin" in DAYS_SQL and "check_staff" in DAYS_SQL
+
+
+def test_a_personal_norm_replaces_only_that_person():
+    from deed_pay import resolve_person_rate
+
+    ordinary = {"every_n": 100, "reward_kut": 200, "enabled": True, "purse": "tech"}
+    assert resolve_person_rate(ordinary, None) == {
+        "every_n": 100, "reward_kut": 200, "enabled": True, "purse": "tech",
+    }
+    own = {"every_n": 20, "reward_kut": 50, "enabled": True}
+    assert resolve_person_rate(ordinary, own)["every_n"] == 20
+    assert resolve_person_rate(ordinary, own)["reward_kut"] == 50
+    assert resolve_person_rate(ordinary, own)["purse"] == "tech"
+    off = {"every_n": 20, "reward_kut": 50, "enabled": False}
+    assert resolve_person_rate(ordinary, off)["enabled"] is False
+    manual = {**ordinary, "purse": "manual", "enabled": False}
+    assert resolve_person_rate(manual, own)["purse"] == "manual"
+    assert resolve_person_rate(manual, own)["enabled"] is True
+    assert resolve_person_rate(None, None)["enabled"] is False
