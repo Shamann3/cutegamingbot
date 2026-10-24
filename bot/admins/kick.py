@@ -65,6 +65,7 @@ from bot.admins.mute import (
   _get_command_text,
   _get_proof_file_id,
   _get_reply_target_message,
+  _message_has_reply_context,
   _reply_person,
   _has_command_text,
   _has_proof_media,
@@ -1110,7 +1111,11 @@ async def _handle_kick_command(message: Message) -> bool:
     return True
 
   command_text = _get_command_text(message)
-  if _is_kick_command(command_text) and len(command_text.split()) == 1:
+  if (
+    _is_kick_command(command_text)
+    and len(command_text.split()) == 1
+    and not _message_has_reply_context(message)
+  ):
     await _send_kick_help(message)
     return True
 

@@ -1276,6 +1276,8 @@ _STAFF_ROSTER_CMD_WORDS: frozenset = frozenset({
   "/staff", "staff", "/админы", "/админсостав", "/состав",
   "админы", "администрация", "админсостав", "админ-состав",
 })
+# «админы» — только это слово целиком. «админы привет» молчит.
+_STAFF_ROSTER_EXACT_WORDS: frozenset = frozenset({"админы", "/админы"})
 _STAFF_ROSTER_PHRASE_RE = re.compile(
   r"^(?:"
   r"кто\s+(?:тут\s+|здесь\s+|у\s+нас\s+|из\s+)?админ(?:ы|ов|истратор(?:ы|ов)?)?|"
@@ -2855,11 +2857,17 @@ def _strip_punishments_prefix(text: str) -> str:
 
 
 def _is_staff_roster_command(text: str) -> bool:
-  """«кто админ», «/staff», «админ состав», «список админов» и т.п."""
+  """«кто админ», «/staff», «админ состав», «список админов» и т.п.
+
+  Слово «админы» и «/админы» срабатывает только без продолжения.
+  """
   t = (text or "").strip()
   if not t:
     return False
-  if _cmd_word(t) in _STAFF_ROSTER_CMD_WORDS:
+  word = _cmd_word(t)
+  if word in _STAFF_ROSTER_EXACT_WORDS:
+    return len(t.split()) == 1
+  if word in _STAFF_ROSTER_CMD_WORDS:
     return True
   return bool(_STAFF_ROSTER_PHRASE_RE.match(t))
 
@@ -3721,12 +3729,52 @@ def _body_starts_with_duration(parts: List[str]) -> bool:
   return bool(span and span[0] == 0)
 
 
+def _message_has_reply_context(message: Message) -> bool:
+  """Есть ли ответ/цитата на другое сообщение (даже если автора ещё не разобрали)."""
+  if message.reply_to_message:
+    return True
+  if getattr(message, "external_reply", None) is not None:
+    return True
+  params = getattr(message, "reply_parameters", None)
+  if params is not None and getattr(params, "message_id", None):
+    return True
+  return False
+
+
+def _stub_from_external_reply(ext) -> Optional[Message]:
+  """Сообщение-нарушитель из external_reply (цитата из другого чата/треда)."""
+  origin = getattr(ext, "origin", None)
+  if origin is None:
+    return None
+  sender = getattr(origin, "sender_user", None)
+  if sender is None:
+    return None
+  from types import SimpleNamespace
+  return SimpleNamespace(  # type: ignore[return-value]
+    from_user=sender,
+    chat=getattr(ext, "chat", None),
+    message_id=getattr(ext, "message_id", None),
+    text="",
+    caption=None,
+    entities=(),
+    caption_entities=(),
+    reply_to_message=None,
+    new_chat_members=None,
+    left_chat_member=None,
+  )
+
+
 def _get_reply_target_message(message: Message) -> Optional[Message]:
   if message.reply_to_message:
     return message.reply_to_message
   ext = getattr(message, "external_reply", None)
-  if ext and getattr(ext, "from_user", None):
+  if ext is None:
+    return None
+  if getattr(ext, "from_user", None):
     return ext  # type: ignore[return-value]
+  stub = _stub_from_external_reply(ext)
+  if stub is not None:
+    return stub  # type: ignore[return-value]
   return None
 
 
@@ -3736,8 +3784,15 @@ def _reply_person(reply_msg):
   Ответ на карточку бота берёт нарушителя из неё. Статистика и списки
   никого не подставляют, чтобы команда не наказала самого бота.
   """
-  from bot.admins.card_target import reply_target_user
-  return reply_target_user(reply_msg)
+  from bot.admins.card_target import CardPerson, reply_target_user
+  person = reply_target_user(reply_msg)
+  if person is not None:
+    return person
+  from bot.funcs.reply_origin import person_behind_bot_message
+  behind = person_behind_bot_message(reply_msg)
+  if behind:
+    return CardPerson(int(behind))
+  return None
 
 
 async def _confirm_lookup_user_id(
@@ -4313,13 +4368,13 @@ async def _resolve_cancel_mute_target(message: Message) -> ParsedMute | ParseErr
 async def parse_mute_command(message: Message) -> ParsedMute | ParseError:
   text = _command_text_with_people(message)
   parts = text.split()
-  MuteDebug.log("PARSE", "start", text=text, parts=parts, reply=bool(message.reply_to_message))
-
-  if len(parts) < 2:
-    return ParseError("help", MuteText.ERR_NEED_TIME, "too few parts")
+  MuteDebug.log(
+    "PARSE", "start", text=text, parts=parts,
+    reply=_message_has_reply_context(message),
+  )
 
   reply_msg = _get_reply_target_message(message)
-  body = parts[1:]
+  body = parts[1:] if len(parts) > 1 else []
   source_chat_id = message.chat.id
   reply_user = _reply_person(reply_msg)
   clause = await read_punish_clause(body, reply_user=reply_user, source_chat_id=source_chat_id)
@@ -6077,7 +6132,11 @@ async def _handle_mute_command(message: Message) -> bool:
     return True
 
   command_text = _get_command_text(message)
-  if _is_mute_command(command_text) and len(command_text.split()) == 1:
+  if (
+    _is_mute_command(command_text)
+    and len(command_text.split()) == 1
+    and not _message_has_reply_context(message)
+  ):
     await _send_help(message)
     return True
 

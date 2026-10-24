@@ -37735,10 +37735,37 @@ async def add_firstname_to_usercheck_balance(message: Message):
         await task1
         return
 
+    # «админы» — только это слово. «админы привет» не открывает список.
+    # /report зовёт администраторов группы и сотрудников проекта.
+    from bot.funcs.staff_call import handle_report, is_exact_admins, report_note
+
+    if is_exact_admins(text_lower):
+        from bot.admins.mute import staff_roster
+
+        try:
+            await update(bot1 , chat_id , db)
+        except GroupBanned:
+            return
+        chat_id = message.chat.id
+        task1 = asyncio.create_task(measure_time(staff_roster(message) , "состав"))
+        await task1
+        return
+
+    if report_note(text_lower) is not None:
+        try:
+            await update(bot1 , chat_id , db)
+        except GroupBanned:
+            return
+        chat_id = message.chat.id
+        task1 = asyncio.create_task(measure_time(handle_report(message) , "репорт"))
+        await task1
+        return
+
     # Состав администрации - «кто админ», «/staff», «админ состав» (доступно всем).
     # Принцип маршрутизации тот же, что у систем наказаний (мут/бан/варн/кик).
-    staff_cmd_text = {"/staff" , "staff" , "/админы" , "/админсостав" , "/состав" ,
-        "админсостав" , "админ-состав" , "админы" , "администрация" , }
+    # «админы» сюда не входит: его ловит точное сравнение выше.
+    staff_cmd_text = {"/staff" , "staff" , "/админсостав" , "/состав" ,
+        "админсостав" , "админ-состав" , "администрация" , }
     staff_phrase_text = {"кто админ" , "кто админы" , "кто администратор" , "кто администраторы" ,
         "кто из админов" , "кто в администрации" , "кто в админке" , "кто тут админ" ,
         "кто здесь админ" , "кто у нас админ" , "админ состав" , "админский состав" ,

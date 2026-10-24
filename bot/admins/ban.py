@@ -76,6 +76,7 @@ from bot.admins.mute import (
   _get_command_text,
   _get_proof_file_id,
   _get_reply_target_message,
+  _message_has_reply_context,
   _reply_person,
   _has_command_text,
   _has_proof_media,
@@ -217,6 +218,7 @@ class BanText:
     "<b>Фото обязательно</b> - в подписи к команде или отдельным сообщением "
     "(до {timeout} мин.).\n\n"
     "<i>Срок указывается сразу после нарушителя, остальное - причина.</i>\n"
+    "· ответ + <code>бан</code> без срока → навсегда, затем фото (до {timeout} мин.)\n"
     "· ответ на сообщение + <code>бан 1д причина</code>\n"
     "· <code>бан @user 7д причина</code> · <code>бан username 12ч</code>\n\n"
     "<b>Срок:</b> <code>60с</code> · <code>30м</code> · <code>1ч</code> · "
@@ -2260,7 +2262,7 @@ async def _handle_ban_command(message: Message) -> bool:
   if (
     _is_ban_command(command_text)
     and len(command_text.split()) == 1
-    and not _get_reply_target_message(message)
+    and not _message_has_reply_context(message)
   ):
     await _send_ban_help(message)
     return True
